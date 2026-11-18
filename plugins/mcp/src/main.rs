@@ -1,5 +1,8 @@
+mod collector;
 mod evidence;
 mod mcp;
+mod query;
+mod task;
 mod tasks;
 use serde_json::json;
 use std::{
@@ -135,7 +138,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 "config" => return Ok(json!({"data":{"config":app.config(),"token":app.token}})),
                 "cancel" => {
-                    app.cancel(&p["data"]).map_err(|e| e.to_string())?;
+                    let target = app.view_target(&owner).map_err(|e| e.to_string())?;
+                    let result = app
+                        .cancel(&p["data"], Some(&target.id))
+                        .map_err(|e| e.to_string())?;
+                    return Ok(json!({"data":result}));
                 }
                 _ => return Err("未知操作".into()),
             },

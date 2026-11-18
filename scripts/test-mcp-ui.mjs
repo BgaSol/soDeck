@@ -18,14 +18,15 @@ const server=createServer((req,res)=>{
 });
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const browser=await chromium.launch({headless:true}),themes=await readTestThemeTokens(browser),page=await browser.newPage({viewport:{width:320,height:850}});
-let snapshots=0,configs=0,clipboard='',actions=[],fail=false,hold,holdDetail,holdSettings,taskReads=[];
+let snapshots=0,configs=0,clipboard='',actions=[],fail=false,detailFail=false,hold,holdDetail,holdSettings,taskReads=[];
 let settingsSnapshot={pageId:'connection',definitionToken:'test-settings',revision:'1',values:{port:19846}},settingsSaves=[],conflict=false;
 const data={service:'ready',endpoint:'http://127.0.0.1:19846/mcp',target:{state:'connected',target:{name:'prod-consul-01',endpoint:'192.0.2.11:22',username:'ops'}},evidenceDirectory:'/home/ops/.local/share/sodeck/plugin-data/sodeck.mcp/evidence',tasks:[{taskId:'t1',kind:'exec',requestId:'collect-consul-logs',native:{state:'running'},done:false,evidence:{complete:false}},{taskId:'t2',kind:'download',requestId:'consul-evidence',native:{state:'completed'},done:true,evidence:{complete:true}},{taskId:'t3',kind:'exec',requestId:'inspect-network',native:{state:'failed',exitCode:7},done:true,evidence:{complete:false,error:{message:'输出超出额度，请导出文件后下载。'}}}]};
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 Object.assign(data.tasks[0],{input:{command:"journalctl -u consul --since '15 minutes ago' --no-pager"},createdAt:Date.now()-12000});
 Object.assign(data.tasks[1],{input:{remotePath:'/tmp/consul-evidence.log'},createdAt:Date.now()-20000,finishedAt:Date.now()-15000,evidence:{complete:true,path:'/evidence/t2/download.bin'}});
 Object.assign(data.tasks[2],{input:{command:'printf "<img src=x onerror=alert(1)>"\n'+'x'.repeat(16000)},createdAt:Date.now()-40000,finishedAt:Date.now()-35000});
-data.target.targetId='target-a';for(const task of data.tasks)task.targetId='target-a';
+data.target.targetId='target-a';for(const task of data.tasks){task.targetId='target-a';task.target=structuredClone(data.target.target);}
+function summary(task){const {input,directory,...row}=structuredClone(task);const value=input?.command??input?.remotePath??task.requestId;row.inputPreview=value.slice(0,256);row.inputTruncated=value.length>256;if(row.evidence)delete row.evidence.path;return row;}
 const records=new Map(data.tasks.map(task=>[task.taskId,task]));
 await page.exposeFunction('mcpRequest',async(method,p)=>{
   if(method==='openView'){actions.push(p);return {};}
@@ -38,14 +39,16 @@ await page.exposeFunction('mcpRequest',async(method,p)=>{
   if(method==='data'){actions.push(p);return {};}
   actions.push(p.action);
   if(p.action==='config'){configs++;return {token:'illustrative-secret',config:'[mcp_servers.sodeck]\nurl = "http://127.0.0.1:19846/mcp"\nhttp_headers = { Authorization = "Bearer illustrative-secret" }'};}
+  if(p.action==='cancel')return {cancelRequested:true};
   if(p.action==='task'){
+    if(detailFail)throw new Error('详情超过界面传输大小，请使用本地证据或 MCP 读取');
     taskReads.push(p);const task=structuredClone(data.tasks.find(task=>task.taskId===p.taskId)||records.get(p.taskId));
     if(holdDetail&&p.taskId==='t3'){const resolve=holdDetail;holdDetail=null;await new Promise(r=>resolve(r));}
     if(task.kind==='exec')task.output={stdout:p.tail?'latest output':p.cursor==='100'?'second page':'first page <img src=x onerror=alert(1)>',stderr:p.tail?'':'stderr evidence',nextCursor:p.cursor==='100'?'200':'100',hasMore:!p.tail&&p.cursor!=='100'};
     return task;
   }
   if(p.action==='snapshot'){snapshots++;if(hold)await new Promise(r=>{hold=r;});if(fail)throw new Error('核心暂不可用，请稍后刷新。');}
-  return structuredClone(data);
+  return {...structuredClone(data),tasks:data.tasks.map(summary)};
 });
 await page.addInitScript(()=>{
   if(window!==top)return;
@@ -73,6 +76,9 @@ try{
   await frame.locator('#detail-cancel').click();await frame.locator('#notice').filter({hasText:'等待远端实际结果'}).waitFor();assert(actions.includes('cancel'));assert(await frame.locator('#detail-cancel').isVisible(),'cancellation request does not claim completion');
   await frame.getByRole('button',{name:'查看命令详情 inspect-network'}).click();await frame.locator('#detail-command').filter({hasText:'printf'}).waitFor();assert.equal(await frame.locator('#detail-command').textContent(),data.tasks[2].input.command);assert((await frame.locator('#detail-state').textContent()).includes('退出码 7'));assert(await frame.locator('#detail-error').isVisible());
   const execName=await frame.getByRole('button',{name:'查看命令详情 inspect-network'}).getAttribute('aria-label');assert(execName.includes('prod-consul-01')&&execName.includes('退出码 7')&&execName.includes('printf'));assert(execName.length<300&&execName.endsWith('…'),'long command names stay concise while full input remains in detail');
+  detailFail=true;await frame.getByRole('button',{name:'刷新',exact:true}).click();await frame.locator('#detail-output').filter({hasText:'详情超过界面传输大小'}).waitFor();assert.equal(await frame.locator('#detail-command').textContent(),data.tasks[2].input.command,'summary refresh does not replace an already loaded full command');detailFail=false;
+  data.recordCount=100;data.tasks[0].phase='finalizing';await frame.getByRole('button',{name:'查看命令详情 collect-consul-logs'}).click();await frame.getByRole('button',{name:'刷新',exact:true}).click();await frame.locator('#detail-state').filter({hasText:'正在收尾'}).waitFor();assert(await frame.locator('#detail-cancel').isHidden());assert((await frame.locator('#task-count').textContent()).includes('/ 100'));delete data.recordCount;delete data.tasks[0].phase;
+  const recordedTarget=data.tasks[2].target;data.tasks[2].target=null;await frame.getByRole('button',{name:'查看命令详情 inspect-network'}).click();await frame.locator('#detail-server').filter({hasText:'服务器信息不可用'}).waitFor();data.tasks[2].target=recordedTarget;
   const newest={...structuredClone(data.tasks[0]),taskId:'t4',requestId:'new-active',input:{command:'ping -c 10 192.0.2.12'}};data.tasks.unshift(newest);
   await frame.getByRole('button',{name:'刷新',exact:true}).click();await frame.locator('#tasks').filter({hasText:'ping -c 10'}).waitFor();assert.equal(await frame.locator('#detail-request').textContent(),'inspect-network','new active operations do not replace history details');
   await frame.getByRole('button',{name:'查看下载详情 consul-evidence'}).click();assert(await frame.locator('#detail-output-section').isHidden());assert(await frame.locator('#detail-evidence').isVisible());assert.equal(await frame.locator('#detail-evidence').textContent(),'文件已保存');assert.equal(await frame.locator('#detail-path').textContent(),'/evidence/t2/download.bin');
@@ -113,6 +119,7 @@ try{
     await frame.getByRole('button',{name:'查看命令详情 collect-consul-logs'}).click();await frame.locator('main').evaluate(el=>el.scrollTop=0);
     if(width===320||width===1024)await page.screenshot({path:`artifacts/mcp-ui/${name}-${width}.png`,fullPage:true});
     await frame.getByRole('button',{name:'查看命令详情 inspect-network'}).click();
+    await frame.locator('#detail-command').filter({hasText:data.tasks[2].input.command}).waitFor();
     assert(await frame.locator('main').evaluate(el=>el.ownerDocument.documentElement.scrollWidth<=innerWidth+1),'long command detail fits narrow sidebars');
     if(width<=700){const detailTop=await frame.locator('#detail').evaluate(el=>el.getBoundingClientRect().top);assert(detailTop>=-1&&detailTop<=30,`narrow selection brings the details into view (${width}px: ${detailTop}px)`);}
     await frame.locator('main').evaluate(el=>el.scrollTop=0);

@@ -1,4 +1,5 @@
 use crate::tasks::App;
+use crate::{query, task::Kind};
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -25,8 +26,9 @@ fn tools() -> Vec<Tool> {
         json!({"targetId":string,"requestId":{"type":"string","minLength":1,"maxLength":128}});
     let definitions=[
         ("sodeck_targets_list","List current authenticated server targets and their actual endpoints. Choose a target explicitly.",json!({}),vec![],true,false),
+        ("sodeck_tasks_list","Find tasks from this plugin run without starting an operation. Filter a fixed target or server, requestId, kind and active/done; keep filters unchanged when paging.",json!({"targetId":string,"serverId":string,"requestId":{"type":"string","minLength":1,"maxLength":128},"status":{"type":"string","enum":["all","active","done"],"default":"all"},"kind":{"type":"string","enum":["all","exec","download"],"default":"all"},"limit":{"type":"integer","minimum":1,"maximum":50,"default":20},"cursor":{"type":"string","minLength":1,"maxLength":2048}}),vec![],true,false),
         ("sodeck_exec_start","Start a noninteractive remote command or multiline script. May modify or delete remote data. Keep requestId and parameters unchanged when retrying; query taskId until done.",{let mut p=starts.clone();p["command"]=json!({"type":"string","minLength":1,"maxLength":16384});p["timeoutSeconds"]=json!({"type":"integer","minimum":1,"maximum":3600,"default":300});p},vec!["targetId","requestId","command"],false,true),
-        ("sodeck_task_get","Get native execution/transfer facts and a bounded saved evidence page. Use nextCursor for more output. Check evidence.complete; local JSONL retains original bytes.",json!({"taskId":string,"cursor":{"type":"string","pattern":"^[0-9]+$"}}),vec!["taskId"],true,false),
+        ("sodeck_task_get","Read a task's execution and evidence facts. Prefer outputMode text for logs or none for status; full preserves original envelopes. Use nextCursor and latest revision for bounded waits. done is a stable collection result, not proof of success.",json!({"taskId":string,"cursor":{"type":"string","pattern":"^[0-9]+$","maxLength":20},"outputMode":{"type":"string","enum":["full","text","none"],"default":"full"},"waitMs":{"type":"integer","minimum":0,"maximum":20000,"default":0},"sinceRevision":{"type":"string","pattern":"^[0-9]+$","maxLength":20}}),vec!["taskId"],true,false),
         ("sodeck_task_cancel","Request cancellation. Query the task for actual completion; cancellation does not prove all remote descendants exited.",json!({"taskId":string}),vec!["taskId"],false,true),
         ("sodeck_file_download","Download one stable ordinary remote file into local evidence. Generate archives with exec first. Returns a taskId; query completion and the local path.",{let mut p=starts.clone();p["remotePath"]=json!({"type":"string","minLength":1,"maxLength":4096});p},vec!["targetId","requestId","remotePath"],false,false),
     ];
@@ -52,7 +54,7 @@ impl ServerHandler for Server {
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
-        _: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
         let name = request.name.to_string();
         let tool = self
@@ -68,16 +70,18 @@ impl ServerHandler for Server {
             return Err(ErrorData::invalid_params("Unexpected argument", None));
         }
         let app = self.0.clone();
-        let result = tokio::task::spawn_blocking(move || match name.as_str() {
-            "sodeck_targets_list" => Ok(app.targets()),
-            "sodeck_exec_start" => app.start("exec", params),
-            "sodeck_file_download" => app.start("download", params),
-            "sodeck_task_get" => app.get(&params),
-            "sodeck_task_cancel" => app.cancel(&params),
-            _ => unreachable!(),
-        })
-        .await
-        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        let result =
+            match name.as_str() {
+                "sodeck_targets_list" => Ok(tokio::task::spawn_blocking(move || app.targets())
+                    .await
+                    .map_err(|e| ErrorData::internal_error(e.to_string(), None))?),
+                "sodeck_tasks_list" => query::list(&app, &params),
+                "sodeck_exec_start" => app.start(Kind::Exec, params),
+                "sodeck_file_download" => app.start(Kind::Download, params),
+                "sodeck_task_get" => query::get(app, params, context.ct).await,
+                "sodeck_task_cancel" => app.cancel(&params, None),
+                _ => unreachable!(),
+            };
         Ok(match result {
             Ok(value) => CallToolResult::structured(value),
             Err(value) => CallToolResult::structured_error(json!({"error":value})),

@@ -6,6 +6,20 @@ use std::{
     path::{Path, PathBuf},
 };
 
+fn decode(chunk: &Value) -> Result<Vec<u8>, String> {
+    if chunk["v"] != 1
+        || !["stdout", "stderr"].contains(&chunk["source"].as_str().unwrap_or(""))
+        || chunk["sequence"]
+            .as_str()
+            .and_then(|s| s.parse::<u64>().ok())
+            .is_none()
+        || !chunk["receivedAt"].is_u64()
+    {
+        return Err("输出信封无效".into());
+    }
+    unbase64(chunk["dataBase64"].as_str().ok_or("输出编码缺失")?)
+}
+
 pub fn metadata(directory: &Path, value: &Value) -> Result<(), String> {
     let temporary = directory.join("metadata.tmp");
     let mut file = File::create(&temporary).map_err(|e| e.to_string())?;
@@ -32,17 +46,7 @@ impl Output {
     }
     pub fn append(&mut self, chunks: &[Value]) -> Result<(), String> {
         for chunk in chunks {
-            if chunk["v"] != 1
-                || !["stdout", "stderr"].contains(&chunk["source"].as_str().unwrap_or(""))
-                || chunk["sequence"]
-                    .as_str()
-                    .and_then(|s| s.parse::<u64>().ok())
-                    .is_none()
-                || !chunk["receivedAt"].is_u64()
-            {
-                return Err("核心输出块无效".into());
-            }
-            unbase64(chunk["dataBase64"].as_str().ok_or("核心输出编码缺失")?)?;
+            decode(chunk)?;
             let mut bytes = serde_json::to_vec(chunk).map_err(|e| e.to_string())?;
             bytes.push(b'\n');
             if bytes.len() > 16 * 1024 {
@@ -57,7 +61,12 @@ impl Output {
         self.file.sync_all().map_err(|e| e.to_string())
     }
 }
-pub fn page(path: PathBuf, committed: u64, offset: u64) -> Result<Value, String> {
+pub fn page(
+    path: PathBuf,
+    committed: u64,
+    offset: u64,
+    include_chunks: bool,
+) -> Result<Value, String> {
     if offset > committed {
         return Err("cursor 超出已保存范围".into());
     }
@@ -85,29 +94,36 @@ pub fn page(path: PathBuf, committed: u64, offset: u64) -> Result<Value, String>
             .read_until(b'\n', &mut line)
             .map_err(|e| e.to_string())?;
         if size == 0 {
+            if cursor != committed {
+                return Err("证据文件短于已保存水位".into());
+            }
             break;
         }
         if size > 16 * 1024 || !line.ends_with(b"\n") {
             return Err("证据行不完整或超限".into());
         }
-        if cursor - offset + size as u64 > 16 * 1024 && !chunks.is_empty() {
+        if cursor - offset + size as u64 > 16 * 1024 && cursor > offset {
             break;
         }
         let chunk: Value = serde_json::from_slice(&line).map_err(|e| e.to_string())?;
-        let bytes = unbase64(chunk["dataBase64"].as_str().ok_or("证据编码缺失")?)?;
+        let bytes = decode(&chunk)?;
         if chunk["source"] == "stderr" {
             stderr.extend(bytes);
         } else {
             stdout.extend(bytes);
         }
-        chunks.push(chunk);
+        if include_chunks {
+            chunks.push(chunk);
+        }
         cursor += size as u64;
     }
-    Ok(
-        json!({"chunks":chunks,"stdout":String::from_utf8_lossy(&stdout),"stderr":String::from_utf8_lossy(&stderr),"nextCursor":cursor.to_string(),"savedBytes":committed.to_string(),"hasMore":cursor<committed,"previewEncoding":"utf-8-lossy-per-page"}),
-    )
+    let mut value = json!({"stdout":String::from_utf8_lossy(&stdout),"stderr":String::from_utf8_lossy(&stderr),"nextCursor":cursor.to_string(),"savedBytes":committed.to_string(),"hasMore":cursor<committed,"previewEncoding":"utf-8-lossy-per-page"});
+    if include_chunks {
+        value["chunks"] = json!(chunks);
+    }
+    Ok(value)
 }
-pub fn tail(path: PathBuf, committed: u64) -> Result<Value, String> {
+pub fn tail(path: PathBuf, committed: u64, include_chunks: bool) -> Result<Value, String> {
     let mut offset = committed.saturating_sub(16 * 1024);
     if offset > 0 {
         let mut file = File::open(&path).map_err(|e| e.to_string())?;
@@ -120,7 +136,7 @@ pub fn tail(path: PathBuf, committed: u64) -> Result<Value, String> {
             .map_err(|e| e.to_string())?;
         offset = offset - 1 + count as u64;
     }
-    page(path, committed, offset)
+    page(path, committed, offset, include_chunks)
 }
 
 #[cfg(test)]
@@ -131,13 +147,16 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mcp-tail-{}", rand::random::<u64>()));
         fs::create_dir(&root).unwrap();
         let mut output = Output::new(&root).unwrap();
-        assert_eq!(tail(root.join("output.jsonl"), 0).unwrap()["stdout"], "");
+        assert_eq!(
+            tail(root.join("output.jsonl"), 0, true).unwrap()["stdout"],
+            ""
+        );
         for sequence in 1..=20 {
             let text = format!("line-{sequence} {}\n", "x".repeat(2000));
             output.append(&[json!({"v":1,"sequence":sequence.to_string(),"source":"stdout","receivedAt":1,"dataBase64":sodeck_plugin_client::encoding::base64(text.as_bytes())})]).unwrap();
         }
         output.file.write_all(b"uncommitted").unwrap();
-        let result = tail(root.join("output.jsonl"), output.committed).unwrap();
+        let result = tail(root.join("output.jsonl"), output.committed, true).unwrap();
         let text = result["stdout"].as_str().unwrap();
         assert!(text.contains("line-20 "));
         assert!(!text.contains("line-1 "));
@@ -156,13 +175,22 @@ mod tests {
         output.append(&[json!({"v":1,"sequence":"1","source":"stdout","receivedAt":1,"dataBase64":sodeck_plugin_client::encoding::base64(&raw)})]).unwrap();
         let committed = output.committed;
         output.file.write_all(b"partial").unwrap();
-        let a = page(root.join("output.jsonl"), committed, 0).unwrap();
-        assert_eq!(a, page(root.join("output.jsonl"), committed, 0).unwrap());
+        let a = page(root.join("output.jsonl"), committed, 0, true).unwrap();
+        let mut text = a.clone();
+        text.as_object_mut().unwrap().remove("chunks");
+        assert_eq!(
+            text,
+            page(root.join("output.jsonl"), committed, 0, false).unwrap()
+        );
+        assert_eq!(
+            a,
+            page(root.join("output.jsonl"), committed, 0, true).unwrap()
+        );
         assert_eq!(
             unbase64(a["chunks"][0]["dataBase64"].as_str().unwrap()).unwrap(),
             raw
         );
-        assert!(page(root.join("output.jsonl"), committed, 1).is_err());
+        assert!(page(root.join("output.jsonl"), committed, 1, true).is_err());
         metadata(&root, &json!({"done":false})).unwrap();
         metadata(&root, &json!({"done":true})).unwrap();
         assert_eq!(
@@ -181,6 +209,9 @@ mod tests {
             "failed OS writes do not advance the saved boundary"
         );
         drop(output);
+        fs::write(root.join("output.jsonl"), b"").unwrap();
+        assert!(page(root.join("output.jsonl"), committed, 0, true).is_err());
+        assert!(page(root.join("output.jsonl"), committed, 0, false).is_err());
         fs::remove_dir_all(root).unwrap();
     }
 }

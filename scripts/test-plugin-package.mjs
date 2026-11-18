@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import net from "node:net";
+import { spawnSync } from "node:child_process";
 import { validatePluginArchive } from "./prepare-native-packages.mjs";
 import { pluginPeer } from "./plugin-peer.mjs";
 import { sha256 } from "./core-artifacts.mjs";
@@ -83,7 +84,7 @@ try {
     const token=fs.readFileSync(path.join(directory,'data/access-token'),'utf8');
     let response;for(let i=0;i<50;i++){try{response=await fetch(mcpUrl,{method:'POST',headers:{Authorization:'Bearer '+token,Accept:'application/json, text/event-stream','Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'package-check',version:'1'}}})});break;}catch{await new Promise(r=>setTimeout(r,50));}}
     assert.equal(response?.status,200);const result=await response.json();assert(result.result.capabilities.tools);
-    const listed=await fetch(mcpUrl,{method:'POST',headers:{Authorization:'Bearer '+token,Accept:'application/json, text/event-stream','Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/list',params:{}})});assert.equal(listed.status,200);assert.equal((await listed.json()).result.tools.length,5);
+    const listed=await fetch(mcpUrl,{method:'POST',headers:{Authorization:'Bearer '+token,Accept:'application/json, text/event-stream','Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/list',params:{}})});assert.equal(listed.status,200);assert.equal((await listed.json()).result.tools.length,6);
     report.mcpHttp=true;
   }
   if (plugin === "system-status") { await peer.request("ui.event", { ...view, data: { action: "pause" } }); assert.equal((await peer.request("ui.event", { ...view, data: { action: "snapshot" } })).data.paused, true); }
@@ -92,6 +93,11 @@ try {
   assert.equal(resources.size, 0, "View resources must be released");
   await peer.close(); peer = null;
   if(plugin==='mcp')await assert.rejects(fetch(mcpUrl));
+  if(plugin==='mcp'){
+    const queries=spawnSync(process.execPath,['scripts/test-mcp-process.mjs'],{env:{...process.env,SODECK_TEST_MCP_PLUGIN:checked.root},stdio:'inherit',windowsHide:true,timeout:120000});
+    assert.equal(queries.status,0,String(queries.error??'Native task/query process verification failed'));
+    report.mcpQueries=true;
+  }
   assert.equal(sha256(path.join(input, metadata.file)), metadata.sha256);
   Object.assign(report, { passed: true, calls });
   console.log(`${plugin}: actual ${target} archive initialized, mounted, disposed and exited`);

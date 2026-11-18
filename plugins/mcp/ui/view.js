@@ -3,14 +3,14 @@ const event = data => sodeck.request('event', data);
 const unwrap = result => result.data ?? result;
 let visible = true, mounted = false, pending = false, epoch = 0, timer;
 let page = false, selectionClosed = false, settingsSnapshot, portDirty = false, portConflict = false, settingsSaving = false, settingsTicket;
-let snapshot, active, selected = null, cursor = '0', nextCursor = '0', pages = [], monitorSequence = 0, detailSequence = 0;
+let snapshot, active, monitorDetail, selected = null, detail, cursor = '0', nextCursor = '0', pages = [], monitorSequence = 0, detailSequence = 0;
 const rows = new Map();
-const labels = {opening:'正在启动', running:'执行中', committing:'正在提交', completed:'已结束', cancelled:'已取消', failed:'失败', unavailable:'结果不可用', unknown:'结果未知', rejected:'未接纳', pending:'等待接纳'};
+const labels = {opening:'正在启动', running:'执行中', committing:'正在提交', finalizing:'正在收尾', completed:'已结束', cancelled:'已取消', failed:'失败', unavailable:'结果不可用', unknown:'结果未知', rejected:'未接纳', pending:'等待接纳'};
 function text(id, value) { const el = $(id); if (el.textContent !== value) el.textContent = value; }
 function notice(message) { $('notice').hidden = !message; text('notice', message); }
 function theme(tokens) { for (const [key, value] of Object.entries(tokens || {})) document.documentElement.style.setProperty(key === 'color-scheme' ? key : '--' + key, value); }
-function command(task) { return task.input?.command ?? task.input?.remotePath ?? task.requestId; }
-function state(task) { return task.native?.state || task.native?.admission || 'pending'; }
+function command(task) { return task.input?.command ?? task.input?.remotePath ?? (task.inputPreview != null ? task.inputPreview + (task.inputTruncated ? '…' : '') : task.requestId); }
+function state(task) { return task.phase === 'finalizing' ? 'finalizing' : task.native?.state || task.native?.admission || 'pending'; }
 function status(task) { return `${labels[state(task)] || state(task)}${task.native?.exitCode != null ? ` · 退出码 ${task.native.exitCode}` : ''}`; }
 function stateClass(task) { return 'state' + (['failed','unavailable','unknown','rejected'].includes(state(task)) || task.native?.exitCode ? ' problem' : task.done ? ' ended' : ''); }
 function evidence(task) { return task.evidence?.complete ? '完整输出已保存' : task.done ? '证据不完整' : '正在保存'; }
@@ -23,15 +23,15 @@ function duration(task) {
 function output(page) { return [page?.stdout, page?.stderr ? `标准错误：\n${page.stderr}` : ''].filter(Boolean).join('\n') || '暂时没有输出。'; }
 function selectedTask() { return snapshot?.tasks?.find(task => task.taskId === selected); }
 function closeDetail() {
-  detailSequence++; selected = null; cursor = '0'; pages = []; nextCursor = '0'; selectionClosed = true; $('detail').hidden = true; $('choose-detail').hidden = !snapshot?.tasks?.length;
+  detailSequence++; selected = null; detail = null; cursor = '0'; pages = []; nextCursor = '0'; selectionClosed = true; $('detail').hidden = true; $('choose-detail').hidden = !snapshot?.tasks?.length;
   for (const row of rows.values()) row.button.setAttribute('aria-current', 'false');
 }
 function paintDetail(task) {
   $('detail').hidden = false;
   $('choose-detail').hidden = true;
   text('detail-state', status(task)); $('detail-state').className = stateClass(task);
-  text('detail-input-label', task.kind === 'exec' ? '实际命令' : '远程文件'); text('detail-command', command(task));
-  const target = task.target || snapshot.target?.target;
+  text('detail-input-label', task.kind === 'exec' ? '实际命令' : '远程文件'); text('detail-command', task.input ? command(task) : '正在读取完整详情…');
+  const target = task.target;
   text('detail-server', target ? `${target.name || target.endpoint} · ${target.endpoint} · ${target.username || '账号未提供'}` : '服务器信息不可用');
   text('detail-created', `提交于 ${time(task.createdAt)}`); text('detail-time', duration(task));
   text('detail-request', task.requestId); text('detail-id', task.taskId);
@@ -39,7 +39,7 @@ function paintDetail(task) {
   text('detail-path', task.evidence?.path || task.directory || '尚未提供');
   const errors = [task.evidence?.error, task.native?.error, task.cleanupError].filter(Boolean);
   text('detail-error', errors.map(error => error.message || String(error)).join('\n')); $('detail-error').hidden = !errors.length;
-  $('detail-output-section').hidden = task.kind !== 'exec'; $('output-pager').hidden = task.kind !== 'exec'; $('detail-cancel').hidden = task.done;
+  $('detail-output-section').hidden = task.kind !== 'exec'; $('output-pager').hidden = task.kind !== 'exec'; $('detail-cancel').hidden = task.done || task.phase === 'finalizing';
   $('detail-cancel').setAttribute('aria-label', `请求取消 ${task.requestId}`);
 }
 function render(data) {
@@ -77,22 +77,27 @@ function render(data) {
     row.label.textContent = `${task.kind === 'exec' ? '命令' : '下载'} · ${status(task)}`; row.label.className = stateClass(task);
     row.date.textContent = time(task.createdAt); if (task.createdAt) row.date.dateTime = new Date(task.createdAt).toISOString();
     if (row.input.textContent !== command(task)) row.input.textContent = command(task);
-    row.meta.textContent = `${task.target?.name || target?.name || target?.endpoint || '服务器不可用'} · ${duration(task)}`;
+    row.meta.textContent = `${task.target?.name || task.target?.endpoint || '服务器信息待确认'} · ${duration(task)}`;
     const preview = Array.from(command(task).replace(/\s+/g, ' ').trim());
-    row.button.setAttribute('aria-label', `查看${task.kind === 'exec' ? '命令' : '下载'}详情 ${task.requestId} · ${task.target?.name || target?.name || target?.endpoint || '服务器不可用'} · ${status(task)} · ${preview.slice(0,160).join('')}${preview.length > 160 ? '…' : ''}`); row.button.setAttribute('aria-current', String(selected === task.taskId));
+    row.button.setAttribute('aria-label', `查看${task.kind === 'exec' ? '命令' : '下载'}详情 ${task.requestId} · ${task.target?.name || task.target?.endpoint || '服务器信息待确认'} · ${status(task)} · ${preview.slice(0,160).join('')}${preview.length > 160 ? '…' : ''}`); row.button.setAttribute('aria-current', String(selected === task.taskId));
   });
   const running = tasks.filter(task => !task.done), previous = active?.taskId;
   active = running[0]; text('active-count', running.length ? `${running.length} 个操作` : '');
-  text('task-count', `${tasks.length} 条${running.length ? ` · ${running.length} 条执行中` : ''}`);
+  const total = Math.max(data.recordCount ?? tasks.length, tasks.length);
+  text('task-count', `${total > tasks.length ? `显示 ${tasks.length} / ${total} 条 · 更多记录请使用 MCP 或证据目录` : `${tasks.length} 条`}${running.length ? ` · ${running.length} 条执行中` : ''}`);
   $('idle').hidden = Boolean(active); $('monitor-body').hidden = !active;
   if (active) {
     text('monitor-state', status(active)); $('monitor-state').className = stateClass(active);
-    text('monitor-time', duration(active)); text('monitor-command', command(active));
+    text('monitor-time', duration(active)); text('monitor-command', command(monitorDetail?.taskId === active.taskId ? monitorDetail : active));
     $('monitor-cancel').setAttribute('aria-label', `请求取消 ${active.requestId}`);
+    $('monitor-cancel').hidden = active.phase === 'finalizing';
     text('monitor-progress', active.kind === 'download' ? '下载远程文件' : `提交于 ${time(active.createdAt)}`);
     if (previous !== active.taskId) { monitorSequence++; text('monitor-output', '等待读取输出'); }
   } else { monitorSequence++; text('monitor-output', ''); }
-  if (selectedTask()) paintDetail(selectedTask());
+  if (selectedTask()) {
+    const row = selectedTask();
+    paintDetail(detail?.taskId === row.taskId ? {...row, input:detail.input, directory:detail.directory, evidence:{...row.evidence,path:detail.evidence?.path}} : row);
+  }
   if (focus?.isConnected && pane.contains(focus) && document.activeElement !== focus) focus.focus({preventScroll:true});
   pane.scrollTop = anchor?.isConnected ? pane.scrollTop + anchor.getBoundingClientRect().top - anchorTop : scrollTop;
 }
@@ -102,21 +107,23 @@ async function loadMonitor() {
   try {
     const task = unwrap(await event({action:'task', taskId:id, tail:true}));
     if (current !== epoch || sequence !== monitorSequence || active?.taskId !== id) return;
+    monitorDetail = task; text('monitor-command', command(task));
     text('monitor-output', task.kind === 'exec' ? output(task.output) : task.evidence?.complete ? '文件已保存。' : '正在下载，完成后可在详情中查看本地路径。');
     $('monitor-output').scrollTop = $('monitor-output').scrollHeight;
   } catch (error) { if (current === epoch && sequence === monitorSequence) text('monitor-output', `输出读取失败：${error.message || error}`); }
 }
-async function loadDetail() {
+async function loadDetail(reveal = false) {
   const task = selectedTask();
   if (!task || !mounted || !visible) return;
   const id = selected, start = cursor, sequence = ++detailSequence, current = epoch;
   try {
     const result = unwrap(await event({action:'task', taskId:id, cursor:start}));
     if (current !== epoch || sequence !== detailSequence || selected !== id || cursor !== start) return;
-    paintDetail(result); text('detail-output', output(result.output));
+    detail = result; paintDetail(result); text('detail-output', output(result.output));
     nextCursor = result.output?.nextCursor || start;
     $('previous').disabled = !pages.length; $('next').disabled = !result.output?.hasMore;
     text('page-number', `第 ${pages.length + 1} 页`);
+    if (reveal && innerWidth <= 700) $('detail').scrollIntoView({block:'start'});
   } catch (error) {
     if (current === epoch && sequence === detailSequence) { text('detail-output', `输出读取失败：${error.message || error}`); $('next').disabled = true; }
   }
@@ -124,9 +131,9 @@ async function loadDetail() {
 function selectTask(id) {
   if (selected === id) { if (innerWidth <= 700) $('detail').scrollIntoView({block:'start'}); return; }
   selectionClosed = false;
-  selected = id; cursor = '0'; pages = []; nextCursor = '0'; detailSequence++;
+  selected = id; detail = null; cursor = '0'; pages = []; nextCursor = '0'; detailSequence++;
   $('previous').disabled = true; $('next').disabled = true; text('page-number','第 1 页'); text('detail-output','等待读取输出');
-  render(snapshot); void loadDetail(); if (innerWidth <= 700) $('detail').scrollIntoView({block:'start'});
+  render(snapshot); void loadDetail(true);
 }
 async function refresh() {
   if (!mounted || !visible || pending) return;
@@ -143,7 +150,7 @@ async function operate(button, action) {
   catch (error) { if (current === epoch) notice(String(error.message || error)); }
   finally { button.disabled = false; }
 }
-function cancel(button, task) { if (task) return operate(button, async current => { await event({action:'cancel', taskId:task.taskId}); if (current === epoch) notice('已请求取消，等待远端实际结果。'); }); }
+function cancel(button, task) { if (task) return operate(button, async current => { const result = unwrap(await event({action:'cancel', taskId:task.taskId})); if (current === epoch) notice(result.cancelRequested ? '已请求取消，等待远端实际结果。' : '操作已进入收尾或结束，请查看实际结果。'); }); }
 $('monitor-cancel').onclick = () => cancel($('monitor-cancel'), active);
 $('detail-cancel').onclick = () => cancel($('detail-cancel'), selectedTask());
 $('open-page').onclick = () => operate($('open-page'), () => sodeck.request('openView', {viewType:'operations'}));

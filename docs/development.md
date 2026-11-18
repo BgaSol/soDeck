@@ -131,7 +131,7 @@ Linux 安装 Bash、Zsh 和 Python 3 后运行 `python3 scripts/test-terminal-sh
 
 ## 打包
 
-`npm run mcp:test` 在三个隔离 OpenSSH 服务上验证真实核心与 MCP 插件的首次采集、补采、去重和原字节下载；`mcp:process:test` 用实际插件进程注入接纳回包丢失与失败，`mcp:ui:test` 验证主题、窄屏、焦点、接入配置和隐藏/卸载。先执行 `npm run test:prepare -- mcp`。本机可选设 `SODECK_TEST_CODEX` 为已登录的 Codex CLI 路径，在同一真实三服务器夹具中增加实际 Codex 工具调用验收；此项依赖本机认证，不在无认证 CI 中自动运行。CI 业务矩阵包含前三项，独立插件包由原生 package/verify 验收。
+`npm run mcp:test` 在三个隔离 OpenSSH 服务上验证真实核心与 MCP 插件的首次采集、补采、任务查找、文本/状态等待、去重和原字节下载；`mcp:process:test` 用实际插件进程验证接纳回包丢失、归属、稳定收尾、输出模式、分页、等待唤醒/HTTP 中断及容量、最终元数据和清理失败。`mcp:ui:test` 验证摘要与完整详情、主题、窄屏、焦点、接入配置和隐藏/卸载。先执行 `npm run test:prepare -- mcp`。本机可选设 `SODECK_TEST_CODEX` 为已登录的 Codex CLI 路径，在同一真实三服务器夹具中增加实际 Codex 工具调用验收；此项依赖本机认证，不在无认证 CI 中自动运行。CI 业务矩阵包含前三项；独立插件 package/verify 在五个原生目标验收实际包，并对 MCP 原包运行同一进程查询与断开测试。
 
 核心与插件各自打包。核心打包只依赖核心和自身运行资源，不需要构建业务插件。
 
