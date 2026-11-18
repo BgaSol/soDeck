@@ -3,6 +3,7 @@ mod evidence;
 mod mcp;
 mod query;
 mod response;
+mod targets;
 mod task;
 mod tasks;
 use serde_json::json;
@@ -50,7 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = sodeck_plugin_client::run(move |client, method, p| {
         if method == "initialize" {
             for cap in [
-                "session.target.v1",
+                "session.target.v2",
                 "session.stream.process.v1",
                 "files.pluginData.v1",
                 "files.operations.v2",

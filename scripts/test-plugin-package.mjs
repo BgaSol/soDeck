@@ -72,12 +72,13 @@ try {
     calls.push(method);
     if (method === "settings.get") return { values: { dynamicIntervalSeconds: "5", refreshSeconds: "30", logTail: "200", directoryMode: "off",port:String(mcpPort) } };
     if (method === "session.state") return { context, state: "disconnected" };
+    if (method === "session.target.describe") { assert.deepEqual(params.expectedContext,context);return {context,state:"disconnected",closing:false,capabilities:[],target:null,targetSource:"unknown"}; }
     if (["logging.write", "messages.publish", "ui.updateView"].includes(method)) return {};
     if (method === "terminal.open" || (method === "files.request" && params.action === "open")) { resources.add("fixture"); return { id: "fixture" }; }
     if (method === "terminal.close" || (method === "files.request" && params.action === "close")) { assert(resources.delete(params.id)); return {}; }
     unexpected.push(method); throw new Error(`Unexpected package RPC: ${method}`);
   });
-  const capabilities = ["commands.v1", "terminal.v1", "viewData.v1", "terminal.history.v1", "files.v1", "files.directoryCursors.v1", "files.operations.v1", "files.operations.v2", "files.editor.v1", "files.localInputs.v1", "net.tcp.v1", "net.listenerLifecycle.v1", "ui.dialog.v1", "session.exec.v1", "session.stream.v1", "session.target.v1","session.stream.process.v1","files.pluginData.v1","content.export.v1", "ui.background.v1", "settings.v1", "ui.workbench.v2", "ui.openView.v1"];
+  const capabilities = ["commands.v1", "terminal.v1", "viewData.v1", "terminal.history.v1", "files.v1", "files.directoryCursors.v1", "files.operations.v1", "files.operations.v2", "files.editor.v1", "files.localInputs.v1", "net.tcp.v1", "net.listenerLifecycle.v1", "ui.dialog.v1", "session.exec.v1", "session.stream.v1", "session.target.v1","session.target.v2","session.stream.process.v1","files.pluginData.v1","content.export.v1", "ui.background.v1", "settings.v1", "ui.workbench.v2", "ui.openView.v1"];
   const initialized = await peer.request("initialize", { apiVersion: "1", capabilities, dataDirectory: path.join(directory, "data") });
   assert.equal(initialized.apiVersion, "1");
   if (manifest.commands) {

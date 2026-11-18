@@ -166,6 +166,14 @@ fn main() {
                         {
                             params["viewId"] = json!(id);
                         }
+                        if rpc == "session.target.describe" {
+                            if params.get("viewId").is_none() {
+                                params["viewId"] = json!(id);
+                            }
+                            if params.get("expectedContext").is_none() {
+                                params["expectedContext"] = p["context"].clone();
+                            }
+                        }
                         send(json!({"jsonrpc":"2.0","id":request,"method":rpc,"params":params}));
                         continue;
                     }

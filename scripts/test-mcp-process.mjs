@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 import http from 'node:http';
+import {isDeepStrictEqual} from 'node:util';
 import {pluginPeer} from './plugin-peer.mjs';
 import {testPluginDirectory} from './test-plugin-directory.mjs';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -13,13 +14,21 @@ assert.equal(manifest.name,'Agent MCP');assert.equal(manifest.ui.views[0].title,
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-mcp-process-'));
 const socket=net.createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r));
 const contexts=Object.fromEntries(['a','b','c'].map(view=>[view,{workspaceId:view,serverId:'server-'+view,connectionId:'connection-'+view,generation:1}]));
-const capabilities=['session.target.v1','session.stream.process.v1','files.pluginData.v1','files.operations.v2','ui.background.v1','settings.v1'];
+const capabilities=['session.target.v2','session.stream.process.v1','files.pluginData.v1','files.operations.v2','ui.background.v1','settings.v1'];
+const descriptions=Object.fromEntries(Object.keys(contexts).map(view=>[view,{name:view,protocol:'ssh',host:view==='a'?'10.0.0.187':view==='b'?'10.0.1.187':'db187.example.com',port:22,username:'ops'}]));
+const targetFaults=new Map(),targetStates=new Map(),targetCalls=[],targetGates=[];let gateTargets=false;
+function targetReply(view){const state=targetStates.get(view)??'connected',target=descriptions[view];return {context:contexts[view],state,closing:false,capabilities:state==='connected'?['exec','files']:[],targetSource:state==='connected'?'current':'lastConnected',target:{...target,endpoint:`${target.host.includes(':')?'['+target.host+']':target.host}:${target.port}`}};}
 const streams=new Map(),requests=[],releases=[],files=new Map(),batches=new Set(),failedBatches=new Set();let number=0,lost=true,peer,confirmUnknown=false,releaseGate;
 const bytes=Buffer.from('Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n'),chunk={v:1,sequence:'1',source:'stdout',receivedAt:Date.now(),dataBase64:bytes.toString('base64')};
 peer=pluginPeer(path.join(root,manifest.entry),(method,p)=>{
   if(method==='settings.get')return {values:{port:String(port)}};
   if(['logging.write','messages.publish'].includes(method))return {};
-  if(method==='session.state')return {context:contexts[p.viewId],state:'connected',closing:false,target:{name:p.viewId,protocol:'ssh',endpoint:p.viewId+':22',username:'ops'}};
+  if(method==='session.target.describe'){
+    targetCalls.push(p);
+    if(!isDeepStrictEqual(p.expectedContext,contexts[p.viewId]))throw Object.assign(new Error('context changed'),{code:-32000,data:{code:'staleContext'}});
+    if(targetFaults.has(p.viewId)){const fault=targetFaults.get(p.viewId);if(fault instanceof Error)throw fault;return fault;}
+    const reply=targetReply(p.viewId);if(gateTargets)return new Promise(resolve=>targetGates.push(()=>resolve(reply)));return reply;
+  }
   if(method==='session.stream.open'){
     requests.push(p);const streamId='stream-'+(++number);streams.set(streamId,{p,held:['hang','quiet','unknown'].includes(p.command),cancelled:false,started:Date.now()});
     if(p.command==='unknown')throw Object.assign(new Error('unknown receipt'),{code:-32003});
@@ -47,28 +56,65 @@ peer=pluginPeer(path.join(root,manifest.entry),(method,p)=>{
   }
   throw new Error('Unexpected RPC: '+method);
 });
-const samples=[],shortRuns=[];let token,sequence=0;
+const samples=[],shortRuns=[],targetSamples=[];let token,sequence=0;
 async function call(method,params,headers={},signal){
   const started=performance.now();
   const response=await fetch(`http://127.0.0.1:${port}/mcp`,{method:'POST',signal,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',Accept:'application/json, text/event-stream','MCP-Protocol-Version':'2025-11-25',...headers},body:JSON.stringify({jsonrpc:'2.0',id:++sequence,method,params})});
-  assert.equal(response.status,200,await response.clone().text());const envelope=await response.json(),r=envelope.result??envelope;if(method==='tools/call'&&samples.length<32)samples.push({tool:params.name,args:params.arguments,elapsedMs:performance.now()-started,bytes:Buffer.byteLength(JSON.stringify(r)),result:r});return r;
+  assert.equal(response.status,200,await response.clone().text());const envelope=await response.json(),r=envelope.result??envelope;if(method==='tools/call'){const list=params.name==='sodeck_targets_list'?targetSamples:samples;if(list.length<64)list.push({tool:params.name,args:params.arguments,elapsedMs:performance.now()-started,bytes:Buffer.byteLength(JSON.stringify(r)),result:r});}return r;
 }
 async function tool(name,arguments_={},signal){const result=await call('tools/call',{name,arguments:arguments_},{},signal);assert(!('structuredContent' in result));assert.equal(result.content.length,1);assert.equal(result.content[0].type,'text');assert(Buffer.byteLength(JSON.stringify(result))<=256*1024);return {value:JSON.parse(result.content[0].text),error:result.isError};}
 async function until(read,predicate){const end=Date.now()+10000;while(Date.now()<end){const value=await read();if(predicate(value))return value;await delay(30);}throw new Error('MCP task timeout');}
+async function discoveryChecks(){
+  const read=async p=>(await tool('sodeck_targets_list',p)).value;
+  const all=await read({});assert.equal(all.resolution,'ambiguous');assert.equal(all.registryChanged,false);assert.equal(all.unresolved.length,0);
+  const a=all.targets.find(t=>t.workspaceId==='a'),b=all.targets.find(t=>t.workspaceId==='b');
+  for(const item of all.targets){assert(!('context'in item)&&!('state'in item)&&!('closing'in item));assert.equal(item.availability,'ready');}
+  const one=await read({query:'10.0.0.187'});assert.equal(one.resolution,'unique');assert.equal(one.targets[0].targetId,a.targetId);assert.deepEqual(one.targets[0].matchedBy,['hostExact']);
+  const both=await read({query:'187'});assert.equal(both.resolution,'ambiguous');assert.equal(both.targets.length,2);assert(both.targets.every(t=>t.matchedBy.includes('ipv4LastOctet')));
+  targetStates.set('b','disconnected');const mixed=await read({query:'187'});assert.equal(mixed.resolution,'ambiguous');assert.equal(mixed.targets[1].availability,'disconnected');assert.equal(mixed.targets[1].targetSource,'lastConnected');assert.equal(mixed.targets[1].target.host,'10.0.1.187');targetStates.delete('b');
+  const oldB={...descriptions.b};descriptions.b={...oldB,name:'187',host:'10.0.1.19'};const named=await read({query:'187'});assert.equal(named.targets.length,2);assert.deepEqual(named.targets[1].matchedBy,['nameExact']);descriptions.b=oldB;
+  assert.equal((await read({query:'187',match:'contains'})).targets.length,3);assert.equal((await read({query:'0187'})).resolution,'none');
+  const detail=await read({targetId:a.targetId,detail:true});assert.deepEqual(detail.targets[0].context,contexts.a);assert.equal(detail.targets[0].state,'connected');assert(!('rpc'in detail.targets[0]));
+  assert.equal((await read({targetId:'missing'})).resolution,'none');assert.equal((await tool('sodeck_targets_list',{targetId:a.targetId,query:'187'})).value.error.code,'invalidParams');
+  await assert.rejects(peer.request('ui.createView',{viewId:'a',viewType:'status',context:{workspaceId:'a',serverId:'server-a',generation:2}}),/上下文无效/);
+  assert.equal((await read({targetId:a.targetId})).targets[0].availability,'ready','invalid mount keeps the original target');
+  targetFaults.set('b',Object.assign(new Error('中'.repeat(200)),{code:-32000,data:{code:'unavailable',diagnostic:'retained'}}));
+  const partial=await read({query:'187'});assert.equal(partial.resolution,'incomplete');assert.equal(partial.targets.length,1);assert.equal(partial.unresolved.length,1);assert.equal(partial.unresolved[0].error.code,-32000);assert(partial.unresolved[0].error.messageTruncated);assert(Buffer.byteLength(partial.unresolved[0].error.message)<=512);assert(partial.unresolved[0].error.detailsAvailable);
+  const unavailable=await read({targetId:b.targetId});assert.equal(unavailable.resolution,'unique');assert.equal(unavailable.targets[0].availability,'unavailable');assert.equal(unavailable.targets[0].capabilities,null);
+  const fullError=await read({targetId:b.targetId,detail:true});assert.equal(fullError.targets[0].error.details.diagnostic,'retained');
+  targetFaults.set('b',{...targetReply('b'),target:null});assert.equal((await read({query:'187'})).resolution,'incomplete');targetFaults.clear();
+  const before=targetCalls.length;targetFaults.set('a',Object.assign(new Error('local transport failed'),{code:-32003}));const stopped=await read({query:'187'});assert.equal(stopped.resolution,'incomplete');assert.equal(stopped.unresolved.length,3);assert.equal(targetCalls.length,before+1);assert.equal(stopped.unresolved[1].error.code,'notObserved');assert.equal((await read({targetId:b.targetId})).targets[0].availability,'ready');targetFaults.clear();
+  const savedContext={...contexts.b};contexts.b={...savedContext,serverId:contexts.a.serverId};await peer.request('ui.createView',{viewId:'b',viewType:'status',context:contexts.b});const sameServer=await read({serverId:contexts.a.serverId});assert.equal(sameServer.resolution,'ambiguous');assert.equal(sameServer.targets.length,2);assert.equal((await read({serverId:contexts.a.serverId,workspaceId:'a'})).resolution,'unique');contexts.b=savedContext;await peer.request('ui.createView',{viewId:'b',viewType:'status',context:contexts.b});
+  for(const relevant of [false,true]){
+    gateTargets=true;const pending=read({serverId:contexts.a.serverId});await until(async()=>targetGates.length,n=>n===1);gateTargets=false;
+    contexts.d={workspaceId:'d',serverId:relevant?contexts.a.serverId:'server-d',connectionId:'connection-d',generation:1};descriptions.d={name:'d',protocol:'ssh',host:'outside.example.com',port:22,username:'ops'};await peer.request('ui.createView',{viewId:'d',viewType:'status',context:contexts.d});targetGates.shift()();const result=await pending;assert.equal(result.registryChanged,relevant);assert.equal(result.resolution,relevant?'incomplete':'unique');await peer.request('ui.disposeView',{viewId:'d'});delete contexts.d;delete descriptions.d;
+  }
+  gateTargets=true;const controllers=Array.from({length:4},()=>new AbortController());const blocked=controllers.map(c=>tool('sodeck_targets_list',{targetId:a.targetId},c.signal).catch(e=>e));await until(async()=>targetGates.length,n=>n===4);for(const c of controllers)c.abort();await Promise.all(blocked);
+  const occupied=await tool('sodeck_targets_list',{targetId:a.targetId});assert.equal(occupied.value.error.code,'resourceBusy','cancelled HTTP keeps physical RPC slots occupied');assert.equal(targetGates.length,4);gateTargets=false;for(const release of targetGates.splice(0))release();await until(async()=>read({targetId:a.targetId}),r=>r.resolution==='unique');
+  const extra=[];
+  for(let n=0;n<61;n++){const view='limit-'+n;extra.push(view);contexts[view]={workspaceId:view,serverId:'server-'+view,connectionId:'connection-'+view,generation:1};descriptions[view]={name:'\\'.repeat(1400),protocol:'ssh',host:view+'.example.com',port:22,username:'ops'};await peer.request('ui.createView',{viewId:view,viewType:'status',context:contexts[view]});}
+  const over=await tool('sodeck_targets_list',{});assert.equal(over.error,true);assert.equal(over.value.error.code,'resourceLimit');assert(!('targets'in over.value));assert(over.value.error.message.includes('identity'));
+  assert.equal((await read({workspaceId:extra[0]})).resolution,'unique');await assert.rejects(peer.request('ui.createView',{viewId:'overflow',viewType:'status',context:{workspaceId:'overflow',serverId:'overflow',connectionId:'overflow',generation:1}}),/目标已满/);
+  for(const view of extra){await peer.request('ui.disposeView',{viewId:view});delete contexts[view];delete descriptions[view];}
+  assert.equal(requests.length,0,'discovery never starts native operations');assert.equal((await tool('sodeck_tasks_list')).value.tasks.length,0);assert.deepEqual(fs.readdirSync(path.join(directory,'evidence')),[]);
+}
 try{
   await assert.rejects(peer.request('initialize',{dataDirectory:directory,capabilities:[]}),/核心缺少/);
+  await assert.rejects(peer.request('initialize',{dataDirectory:directory,capabilities:capabilities.map(c=>c==='session.target.v2'?'session.target.v1':c)}),/session.target.v2/);
   await peer.request('initialize',{dataDirectory:directory,capabilities});token=fs.readFileSync(path.join(directory,'access-token'),'utf8');
   for(const [viewId,context]of Object.entries(contexts))assert.equal((await peer.request('ui.createView',{viewId,viewType:'status',context})).metadata.title,'Agent MCP');
   await until(async()=>(await peer.request('ui.getView',{viewId:'a'})).data,s=>s.service==='ready');
   const initialized=await call('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'sodeck-test',version:'1'}});assert(initialized.capabilities.tools);
   const list=await call('tools/list',{});assert.equal(list.tools.length,6);assert.equal(list.tools.find(t=>t.name==='sodeck_exec_start').annotations.readOnlyHint,false);
+  assert(list.tools.find(t=>t.name==='sodeck_targets_list').inputSchema.properties.query);
+  await discoveryChecks();
   const targets=(await tool('sodeck_targets_list')).value.targets;assert.equal(targets.length,3);
   const sidebar={viewId:'a',viewType:'status',context:contexts.a};
   await peer.request('ui.createView',sidebar);assert.equal((await tool('sodeck_targets_list')).value.targets.length,3,'the sidebar reuses its background target');
   await assert.rejects(peer.request('ui.createView',{viewId:'old-page',viewType:'operations',context:contexts.a}),/未知视图/);
-  const target=targets.find(t=>t.context.workspaceId==='a').targetId;
+  let target=targets.find(t=>t.workspaceId==='a').targetId;
   assert.deepEqual((await tool('sodeck_tasks_list')).value.tasks,[]);
-  const input={targetId:target,requestId:'once',command:'collect'};
+  let input={targetId:target,requestId:'once',command:'collect'};
   const start=(await tool('sodeck_exec_start',input)).value;
   assert.equal(start.done,true);assert.equal(start.wait.reason,'done');assert.equal(start.wait.requestedMs,1000);assert.equal(start.output.stdout,bytes.toString());
   assert.equal((await tool('sodeck_exec_start',input)).value.taskId,start.taskId);
@@ -125,7 +171,7 @@ try{
   for(let i=16;i<24;i++){const job=(await tool('sodeck_exec_start',{...input,requestId:'quota-'+i,command:'quiet',waitMs:0})).value;await until(async()=>(await tool('sodeck_task_get',{taskId:job.taskId,outputMode:'none'})).value,s=>s.native.state==='running');quotaTasks.push(job);}
   assert.equal((await tool('sodeck_exec_start',{...input,requestId:'over-active',command:'must-not-run'})).value.error.code,'resourceBusy');
   for(const job of quotaTasks)await tool('sodeck_task_cancel',{taskId:job.taskId});for(const job of quotaTasks)await until(async()=>(await tool('sodeck_task_get',{taskId:job.taskId,outputMode:'none'})).value,s=>s.done);
-  const otherTarget=targets.find(t=>t.context.workspaceId==='b').targetId;
+  const otherTarget=targets.find(t=>t.workspaceId==='b').targetId;
   const other=(await tool('sodeck_exec_start',{targetId:otherTarget,requestId:'scope-regression',command:'hang'})).value;
   await until(async()=>(await tool('sodeck_task_get',{taskId:other.taskId})).value,s=>s.native.state==='running');
   await assert.rejects(peer.request('ui.event',{viewId:'a',data:{action:'cancel',taskId:other.taskId}}),/任务不属于当前服务器连接/,'UI cancellation must use the same target scope as reads');
@@ -174,16 +220,23 @@ try{
   const hugeDetail=await tool('sodeck_task_get',{taskId:huge.taskId,detail:true,outputMode:'none'});assert.equal(hugeDetail.error,true);assert.equal(hugeDetail.value.error.code,'resourceLimit');assert.equal(hugeDetail.value.error.taskId,huge.taskId);
   const hugeAgain=(await tool('sodeck_task_get',{taskId:huge.taskId,outputMode:'none'})).value;assert.equal(hugeAgain.revision,hugeResult.revision);assert.equal(hugeAgain.done,true);assert.equal(hugeAgain.native.error.code,-32000);
   const unknown=(await tool('sodeck_exec_start',{...input,requestId:'unknown',command:'unknown'})).value;await until(async()=>(await tool('sodeck_task_get',{taskId:unknown.taskId,outputMode:'none'})).value,s=>s.native.admission==='unknown');
-  await tool('sodeck_task_cancel',{taskId:unknown.taskId});assert.equal((await tool('sodeck_exec_start',{...input,requestId:'unknown',command:'unknown'})).value.taskId,unknown.taskId);assert.equal((await tool('sodeck_exec_start',{...input,requestId:'must-not-replay',command:'collect'})).value.error.code,'resourceBusy');assert.equal(requests.filter(p=>p.command==='unknown').length,1);confirmUnknown=true;await until(async()=>(await tool('sodeck_task_get',{taskId:unknown.taskId})).value,s=>s.done);
+  await tool('sodeck_task_cancel',{taskId:unknown.taskId});assert.equal((await tool('sodeck_exec_start',{...input,requestId:'unknown',command:'unknown'})).value.taskId,unknown.taskId);assert.equal((await tool('sodeck_exec_start',{...input,requestId:'must-not-replay',command:'collect'})).value.error.code,'resourceBusy');assert.equal(requests.filter(p=>p.command==='unknown').length,1);
+  const oldContext={...contexts.a}, oldTarget=target, opensBeforeRemount=requests.length;
+  await peer.request('ui.disposeView',{viewId:'a'});contexts.a={...contexts.a,connectionId:'reconnected-a',generation:2};await peer.request('ui.createView',{viewId:'a',viewType:'status',context:contexts.a});
+  const moved=(await tool('sodeck_targets_list',{workspaceId:'a'})).value;assert.equal(moved.resolution,'unique');assert.notEqual(moved.targets[0].targetId,oldTarget);assert.equal((await tool('sodeck_targets_list',{targetId:oldTarget})).value.resolution,'none');
+  const restoredOriginal=(await tool('sodeck_exec_start',{...input,waitMs:0})).value;assert.equal(restoredOriginal.taskId,start.taskId);assert.deepEqual((await tool('sodeck_task_get',{taskId:start.taskId,detail:true,outputMode:'none'})).value.context,oldContext);
+  const unknownAgain=(await tool('sodeck_exec_start',{...input,requestId:'unknown',command:'unknown',waitMs:0})).value;assert.equal(unknownAgain.taskId,unknown.taskId);assert.equal(unknownAgain.native.admission,'unknown');assert.equal(requests.length,opensBeforeRemount,'remount never replays completed or unknown requests');
+  confirmUnknown=true;await until(async()=>(await tool('sodeck_task_get',{taskId:unknown.taskId})).value,s=>s.done);
+  target=moved.targets[0].targetId;input={...input,targetId:target};
   for(const headers of [{Authorization:'Bearer wrong'},{Origin:'https://example.com'},{Host:'example.com'}]){
     const status=await new Promise((resolve,reject)=>{const request=http.request({hostname:'127.0.0.1',port,path:'/mcp',method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',Accept:'application/json, text/event-stream',...headers}},response=>{response.resume();response.on('end',()=>resolve(response.statusCode));});request.on('error',reject);request.end(JSON.stringify({jsonrpc:'2.0',id:99,method:'tools/list',params:{}}));});
     assert([401,403].includes(status),JSON.stringify({headers:Object.keys(headers),status}));
   }
-  contexts.a={...contexts.a,generation:2};assert.equal((await tool('sodeck_exec_start',{...input,requestId:'stale'})).value.taskId.startsWith('task-'),true);
+  contexts.a={...contexts.a,generation:3};assert.equal((await tool('sodeck_exec_start',{...input,requestId:'stale'})).value.taskId.startsWith('task-'),true);
   assert.equal((await peer.request('ui.getView',{viewId:'a'})).data.target.state,'unavailable','the sidebar does not present another connection generation as its recorded target');
   const countBefore=requests.length;await until(async()=>(await peer.request('ui.getView',{viewId:'a'})).data,s=>s.tasks.some(t=>t.requestId==='stale'&&t.done));assert.equal(requests.length,countBefore,'stale target must not execute');
   for(const viewId of Object.keys(contexts))await peer.request('ui.disposeView',{viewId});
   await peer.close();peer=null;await assert.rejects(fetch(`http://127.0.0.1:${port}/mcp`));
-  if(process.env.SODECK_TEST_MCP_REPORT)fs.writeFileSync(process.env.SODECK_TEST_MCP_REPORT,JSON.stringify({version:manifest.version,fixture:'representative lscpu output, not a live server',stdout:bytes.toString(),samples,shortRuns},null,2)+'\n');
+  if(process.env.SODECK_TEST_MCP_REPORT)fs.writeFileSync(process.env.SODECK_TEST_MCP_REPORT,JSON.stringify({version:manifest.version,fixture:'representative lscpu output and controlled core v2 facts, not a live server',stdout:bytes.toString(),samples,shortRuns,targetSamples},null,2)+'\n');
   console.log('MCP: six tools, scopes, stable finalization, text/none, keyset paging, wait timeout/wake/disconnect quotas, unknown admission, cleanup failures and exit passed');
 }finally{if(peer)await peer.kill();assert.equal(path.dirname(directory),os.tmpdir());fs.rmSync(directory,{recursive:true,force:true});}

@@ -38,10 +38,10 @@
 - [界面设计系统](../DESIGN.md)：三主题、公共控件、核心尺寸和插件视觉边界。
 - [通用文件编辑 SDK](features/file-editor.md)：组件自己的编辑页、草稿、保存、导出与关闭接入。
 - [插件 API](plugin-api.md)：清单、RPC、能力及兼容契约。
-- [MCP API](mcp-api.md)：Agent MCP的任务身份、工具、查询分页、输出模式、等待与错误契约。
+- [MCP API](mcp-api.md)：Agent MCP 的目标发现、歧义与任务身份、工具、查询分页、输出模式、等待与错误契约。
 - [开发指南](development.md)：环境、命令、检查范围与文档收束流程。
 - [分发文档](distribution.md)：五平台原生打包、签名、独立发布和失败恢复。
 - [临时计划](plans/)：尚未完成的改动或专项；不代表当前能力。
-- [核心版本记录](releases/)与 [GitHub Releases](https://github.com/BgaSol/soDeck/releases)：版本变化、原始包来源和验证范围；[核心 1.5.0](releases/v1.5.0.md)记录支持 MCP 排障插件的通用会话、命令流和证据复制能力，[核心 1.4.0](releases/v1.4.0.md)记录复制服务器预填与凭据沿用，[核心 1.3.3](releases/v1.3.3.md)记录动效连续性改进，[核心 1.3.1](releases/v1.3.1.md)记录插件加载底色与默认停靠修复，[核心 1.3.0](releases/v1.3.0.md)记录工作台动效，[核心 1.2.3](releases/v1.2.3.md)记录状态总览重构，[核心 1.2.2](releases/v1.2.2.md)记录连接树箭头与连线优化，[核心 1.2.1](releases/v1.2.1.md)记录管理台侧栏样式与分组调整，[核心 1.2.0](releases/v1.2.0.md)记录连接目录交互调整，[核心 1.1.1](releases/v1.1.1.md)记录管理台导航调整，[核心 1.1.0](releases/v1.1.0.md)记录日志工作台的核心交付与实际验收。
+- [核心版本记录](releases/)与 [GitHub Releases](https://github.com/BgaSol/soDeck/releases)：版本变化、原始包来源和验证范围；[核心 1.6.0](releases/v1.6.0.md)记录可靠会话目标摘要与旧接口兼容，[核心 1.5.0](releases/v1.5.0.md)记录支持 MCP 排障插件的通用会话、命令流和证据复制能力，[核心 1.4.0](releases/v1.4.0.md)记录复制服务器预填与凭据沿用，[核心 1.3.3](releases/v1.3.3.md)记录动效连续性改进，[核心 1.3.1](releases/v1.3.1.md)记录插件加载底色与默认停靠修复，[核心 1.3.0](releases/v1.3.0.md)记录工作台动效，[核心 1.2.3](releases/v1.2.3.md)记录状态总览重构，[核心 1.2.2](releases/v1.2.2.md)记录连接树箭头与连线优化，[核心 1.2.1](releases/v1.2.1.md)记录管理台侧栏样式与分组调整，[核心 1.2.0](releases/v1.2.0.md)记录连接目录交互调整，[核心 1.1.1](releases/v1.1.1.md)记录管理台导航调整，[核心 1.1.0](releases/v1.1.0.md)记录日志工作台的核心交付与实际验收。
 
 返回[项目首页](../README.md)。

@@ -27,6 +27,40 @@ fn brief_error(value: &Value) -> Value {
     }
     result
 }
+fn target_row(item: &crate::targets::Candidate, detail: bool, with_query: bool) -> Value {
+    let mut value = json!({"targetId":item.target.id,"serverId":item.target.context.server_id,"workspaceId":item.target.context.workspace_id,
+        "target":null,"targetSource":"unknown","availability":"unavailable","capabilities":null});
+    if let Some(observation) = &item.observation {
+        value["target"] = json!(observation.target);
+        value["targetSource"] = json!(observation.target_source);
+        value["availability"] = json!(observation.availability());
+        value["capabilities"] = json!(observation.capabilities);
+        if detail {
+            value["state"] = json!(observation.state);
+            value["closing"] = json!(observation.closing);
+        }
+    }
+    if let Some(error) = &item.error {
+        value["availability"] = json!(crate::targets::error_availability(error));
+        value["error"] = if detail {
+            error.clone()
+        } else {
+            brief_error(error)
+        };
+    }
+    if detail {
+        value["context"] = json!(item.target.context);
+    }
+    if with_query && !item.matched_by.is_empty() {
+        value["matchedBy"] = json!(item.matched_by);
+    }
+    value
+}
+pub fn mcp_targets(discovery: &crate::targets::Discovery) -> Value {
+    json!({"runId":discovery.run,"resolution":discovery.resolution(),"registryChanged":discovery.registry_changed,
+        "targets":discovery.targets.iter().map(|t|target_row(t,discovery.detail,discovery.with_query)).collect::<Vec<_>>(),
+        "unresolved":discovery.unresolved.iter().map(|t|target_row(t,discovery.detail,discovery.with_query)).collect::<Vec<_>>()})
+}
 fn native_facts(native: &Value, history: bool) -> Value {
     let mut value = json!({});
     for key in [
@@ -119,7 +153,7 @@ fn mcp_facts(c: &CapturedTask, detail: bool, body: bool) -> Value {
         ordinary(task, r)
     };
     if detail {
-        value["context"] = task.target.context.clone();
+        value["context"] = json!(task.target.context);
     }
     if task.kind == Kind::Download {
         value["file"] = json!({"remotePath":task.input["remotePath"],"localPath":if r.phase==Phase::Done && matches!(r.saved,Saved::Complete) {json!(r.path)} else {Value::Null}});
@@ -141,7 +175,7 @@ pub fn mcp_task(read: &TaskRead, detail: bool) -> Value {
 pub fn mcp_row(c: &CapturedTask) -> Value {
     let mut value = ordinary(&c.task, &c.record);
     row_fields(&mut value, c);
-    value["serverId"] = c.task.target.context["serverId"].clone();
+    value["serverId"] = json!(c.task.target.context.server_id);
     value
 }
 fn row_fields(value: &mut Value, c: &CapturedTask) {
@@ -220,7 +254,7 @@ pub fn ui_row(c: &CapturedTask) -> Value {
     value["evidence"] = saved;
     value["cleanupError"] = brief_error(&c.record.cleanup_error);
     value["observedAt"] = json!(c.record.observed);
-    value["context"] = c.task.target.context.clone();
+    value["context"] = json!(c.task.target.context);
     row_fields(&mut value, c);
     value
 }
@@ -230,7 +264,7 @@ pub fn ui_cancel(c: &CapturedTask) -> Value {
 pub fn metadata(task: &Task, r: &Record) -> Value {
     let mut value = diagnostic(task, r);
     value["schemaVersion"] = json!(1);
-    value["context"] = task.target.context.clone();
+    value["context"] = json!(task.target.context);
     value["outputInfo"] = json!({"savedBytes":if task.kind==Kind::Exec {json!(r.committed.to_string())} else {Value::Null}});
     value
 }
@@ -301,7 +335,8 @@ pub fn tool_result(
     cursor: Option<&str>,
 ) -> CallToolResult {
     encode(&value,error).unwrap_or_else(|_| {
-        let mut limit = json!({"error":{"code":"resourceLimit","message":"MCP result exceeds 256 KiB; read bounded text/none or local evidence","operation":operation}});
+        let message=if operation=="sodeck_targets_list"{"MCP result exceeds 256 KiB; narrow the identity filters, disable detail or inspect one targetId"}else{"MCP result exceeds 256 KiB; read bounded text/none or local evidence"};
+        let mut limit = json!({"error":{"code":"resourceLimit","message":message,"operation":operation}});
         if let Some(id) = task_id { limit["error"]["taskId"] = json!(id); }
         if let Some(cursor) = cursor { limit["error"]["cursor"] = json!(cursor); }
         encode(&limit,true).expect("bounded resourceLimit response")
@@ -347,7 +382,7 @@ mod tests {
         assert_eq!(diagnostic["native"], c.record.native);
         assert_eq!(diagnostic["evidence"]["error"], c.record.error);
         assert_eq!(diagnostic["cleanupError"], c.record.cleanup_error);
-        assert_eq!(diagnostic["context"], c.task.target.context);
+        assert_eq!(diagnostic["context"], json!(c.task.target.context));
         c.record.native = json!({"state":"completed","exitCode":7,"remoteExitConfirmed":true,"outputComplete":true});
         c.record.error = Value::Null;
         c.record.saved = Saved::Complete;

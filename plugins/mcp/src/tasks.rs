@@ -2,6 +2,7 @@ use crate::{
     collector, query,
     query::{TaskFailure, WaitSlots},
     response,
+    targets::Target,
     task::{CapturedTask, Kind, NewTask, Phase, Task},
 };
 use serde_json::{json, Value};
@@ -10,7 +11,7 @@ use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
         Arc, Mutex,
     },
     time::{Instant, SystemTime, UNIX_EPOCH},
@@ -158,42 +159,6 @@ impl StartedTask {
     }
 }
 #[derive(Default)]
-pub struct Admission {
-    pub sequence: u64,
-    pub file: Option<String>,
-    pub busy: bool,
-}
-pub struct Target {
-    pub id: String,
-    pub view: String,
-    pub context: Value,
-    pub closed: AtomicBool,
-    exec: Mutex<Admission>,
-    file: Mutex<Admission>,
-}
-impl Target {
-    pub fn new(id: String, view: String, context: Value) -> Self {
-        Self {
-            id,
-            view,
-            context,
-            closed: AtomicBool::new(false),
-            exec: Mutex::new(Admission::default()),
-            file: Mutex::new(Admission::default()),
-        }
-    }
-    pub fn admission(&self, kind: Kind) -> &Mutex<Admission> {
-        if kind == Kind::Exec {
-            &self.exec
-        } else {
-            &self.file
-        }
-    }
-    pub fn release_admission(&self, kind: Kind) {
-        self.admission(kind).lock().unwrap().busy = false;
-    }
-}
-#[derive(Default)]
 struct Registry {
     tasks: HashMap<String, Arc<Task>>,
     requests: HashMap<(String, String), String>,
@@ -210,9 +175,10 @@ pub struct App {
     pub waiting: Arc<Semaphore>,
     pub io: Arc<Semaphore>,
     active: Arc<Semaphore>,
-    views: Mutex<HashMap<String, Arc<Target>>>,
+    pub(crate) views: Mutex<HashMap<String, Arc<Target>>>,
     registry: Mutex<Registry>,
-    numbers: AtomicU64,
+    pub(crate) numbers: AtomicU64,
+    pub(crate) target_reads: Arc<Semaphore>,
 }
 impl App {
     pub fn new(
@@ -237,69 +203,13 @@ impl App {
             views: Mutex::new(HashMap::new()),
             registry: Mutex::new(Registry::default()),
             numbers: AtomicU64::new(1),
-        }
-    }
-    pub fn mount(&self, view: &str, context: &Value) -> Result<(), String> {
-        let mut views = self.views.lock().unwrap();
-        if let Some(old) = views.get(view) {
-            if old.context == *context {
-                return Ok(());
-            }
-            old.closed.store(true, Ordering::Release);
-        }
-        if views.len() >= 64 && !views.contains_key(view) {
-            return Err("服务器目标已满".into());
-        }
-        if !context["workspaceId"].is_string()
-            || !context["serverId"].is_string()
-            || !context["connectionId"].is_string()
-            || !context["generation"].is_u64()
-        {
-            return Err("工作区上下文无效".into());
-        }
-        let id = format!(
-            "{}-target-{}",
-            self.run,
-            self.numbers.fetch_add(1, Ordering::Relaxed)
-        );
-        views.insert(
-            view.into(),
-            Arc::new(Target::new(id, view.into(), context.clone())),
-        );
-        Ok(())
-    }
-    pub fn dispose(&self, view: &str) {
-        if let Some(target) = self.views.lock().unwrap().remove(view) {
-            target.closed.store(true, Ordering::Release);
+            target_reads: Arc::new(Semaphore::new(4)),
         }
     }
     pub fn rpc(&self, method: &str, p: Value) -> Result<Value, Value> {
         self.client
             .call_detailed(method, p)
             .map_err(|e: RpcError| json!({"code":e.code,"message":e.message,"details":e.data}))
-    }
-    pub fn view_target(&self, view: &str) -> Result<Arc<Target>, Value> {
-        self.views
-            .lock()
-            .unwrap()
-            .get(view)
-            .cloned()
-            .ok_or_else(|| failure("staleContext", "视图已关闭"))
-    }
-    pub fn target_state(&self, target: &Target) -> Result<Value, Value> {
-        if target.closed.load(Ordering::Acquire) {
-            return Err(failure("staleContext", "目标已关闭"));
-        }
-        let mut s = self.rpc("session.state", json!({"viewId":target.view}))?;
-        if s["context"] != target.context {
-            return Err(failure("staleContext", "连接代次已改变，请重新查询目标"));
-        }
-        s["targetId"] = json!(target.id);
-        Ok(s)
-    }
-    pub fn targets(&self) -> Value {
-        let targets: Vec<_> = self.views.lock().unwrap().values().cloned().collect();
-        json!({"runId":self.run,"targets":targets.iter().map(|t|self.target_state(t).unwrap_or_else(|e|json!({"targetId":t.id,"context":t.context,"state":"unavailable","error":e}))).collect::<Vec<_>>()})
     }
     pub fn start(
         self: &Arc<Self>,

@@ -160,6 +160,16 @@ pub(crate) struct Attempt {
     session: Mutex<Option<Arc<route::Session>>>,
 }
 impl Attempt {
+    pub(crate) fn session_for(&self, context: &Context) -> Option<Arc<Session>> {
+        if self.state.lock().unwrap().view.context.as_ref() != Some(context) {
+            return None;
+        }
+        self.session
+            .lock()
+            .unwrap()
+            .clone()
+            .filter(|s| !s.is_closed())
+    }
     fn view(&self) -> View {
         let mut v = self.state.lock().unwrap().view.clone();
         (v.sent_bytes, v.received_bytes) = self.counters.totals();
@@ -303,7 +313,7 @@ impl Attempt {
 }
 
 pub(crate) struct Connections {
-    entries: Mutex<HashMap<String, Arc<Attempt>>>,
+    pub(crate) entries: Mutex<HashMap<String, Arc<Attempt>>>,
     host_keys: Arc<host_keys::HostKeys>,
 }
 impl Connections {

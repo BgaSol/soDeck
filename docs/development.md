@@ -131,7 +131,7 @@ Linux 安装 Bash、Zsh 和 Python 3 后运行 `python3 scripts/test-terminal-sh
 
 ## 打包
 
-`npm run mcp:test` 在三个隔离 OpenSSH 服务上验证真实核心与 MCP 插件的首次采集、补采、任务查找、文本/状态等待、去重和原字节下载；`mcp:process:test` 用实际插件进程验证接纳回包丢失、归属、稳定收尾、输出模式、分页、等待唤醒/HTTP 中断及容量、最终元数据和清理失败。`mcp:ui:test` 验证摘要与完整详情、主题、窄屏、焦点、接入配置和隐藏/卸载。先执行 `npm run test:prepare -- mcp`。本机可选设 `SODECK_TEST_CODEX` 为已登录的 Codex CLI 路径，在同一真实三服务器夹具中增加实际 Codex 工具调用验收；此项依赖本机认证，不在无认证 CI 中自动运行。CI 业务矩阵包含前三项；独立插件 package/verify 在五个原生目标验收实际包，并对 MCP 原包运行同一进程查询与断开测试。
+`npm run mcp:test` 在三个隔离 OpenSSH 服务上验证真实核心与 MCP 插件的名称/主机/端点/IPv4 尾段目标发现、断开/重连与旧任务恢复、首次采集、补采、任务查找、文本/状态等待、去重和原字节下载；`mcp:process:test` 用实际插件进程验证接纳回包丢失、归属、稳定收尾、输出模式、分页、等待唤醒/HTTP 中断及容量、最终元数据和清理失败。`mcp:ui:test` 验证摘要与完整详情、主题、窄屏、焦点、接入配置和隐藏/卸载。先执行 `npm run test:prepare -- mcp`。本机可选设 `SODECK_TEST_MCP_BASELINE` 为旧 MCP 0.4.0 包目录，比较同一真实会话范围的全量回包与新定位回包；新核心的 v1 投影供旧包读取，不作为旧核心全套验收。本机可选设 `SODECK_TEST_CODEX` 为已登录的 Codex CLI 路径，在同一真实三服务器夹具中增加实际 Codex 工具调用验收，包括唯一目标两次调用、歧义不执行和重连后查询原任务；此项依赖本机认证，不在无认证 CI 中自动运行。CI 业务矩阵包含前三项；独立插件 package/verify 在五个原生目标验收实际包，并对 MCP 原包运行同一进程查询与断开测试。
 
 核心与插件各自打包。核心打包只依赖核心和自身运行资源，不需要构建业务插件。
 

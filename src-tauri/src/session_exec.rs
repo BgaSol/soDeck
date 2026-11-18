@@ -107,27 +107,10 @@ impl AppCore {
                 .ok_or_else(|| error("invalidParams", format!("缺少 {key}")))
         };
         if method == "session.state" {
-            let ui = self.ui_state();
-            let view = ui
-                .resource_view(text("viewId")?)
-                .map_err(|e| error("staleContext", e))?;
-            if view.plugin_id != plugin || view.plugin_instance_id != instance {
-                return Err(error("staleContext", "视图不属于此实例"));
-            }
-            let context = view.context.clone();
-            let frozen = ui.lifecycle.view_frozen(&view.id);
-            drop(ui);
-            let session = self.connection_session(&context).ok();
-            let connected = session.is_some();
-            let mut target = session
-                .map(|s| serde_json::to_value(&s.target).unwrap())
-                .unwrap_or(Value::Null);
-            if !target.is_null() {
-                target["name"] = json!(self.workspace_state().names().get(&context.workspace_id));
-            }
-            return Ok(
-                json!({"context":context,"target":target,"state":if connected {"connected"} else {"disconnected"},"closing":frozen,"capabilities":if connected {vec!["exec","files"]} else {vec![]}}),
-            );
+            return self.target_facts(plugin, instance, text("viewId")?, None, false);
+        }
+        if method == "session.target.describe" {
+            return self.describe_target(plugin, instance, p);
         }
         if method == "session.exec.start" {
             let request: Start = serde_json::from_value(p.clone())

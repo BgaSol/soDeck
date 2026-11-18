@@ -1,4 +1,4 @@
-use crate::tasks::{now, Target};
+use crate::{targets::Target, tasks::now};
 use serde_json::{json, Value};
 use std::{
     path::PathBuf,
@@ -21,8 +21,14 @@ pub fn fixture(root: PathBuf) -> Arc<Task> {
         admission_sequence: 1,
         target: Arc::new(Target::new(
             "target".into(),
+            1,
             "view".into(),
-            json!({"serverId":"server"}),
+            crate::targets::Context {
+                workspace_id: "workspace".into(),
+                server_id: "server".into(),
+                connection_id: "connection".into(),
+                generation: 1,
+            },
         )),
         input: json!({"requestId":"request","command":"中文\ncommand"}),
         kind: Kind::Exec,

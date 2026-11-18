@@ -504,7 +504,7 @@ pub fn list(app: &App, p: &Value) -> Result<TaskList, Value> {
             || filter
                 .server
                 .as_ref()
-                .is_some_and(|s| task.target.context["serverId"] != *s)
+                .is_some_and(|s| &task.target.context.server_id != s)
             || filter
                 .request
                 .as_ref()

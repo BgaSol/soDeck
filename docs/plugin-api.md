@@ -275,6 +275,16 @@ completed 表示收到远端退出状态，非零退出码仍可能 completed。
 
 `session.state({viewId})` 可选扩展返回 `target:{protocol,endpoint,username?,name?}`，来自已建立会话的不可变目标快照；name 为所属工作区当前名称。断开时 target 为 null，state/closing/Context 仍可查询。当前在线 capabilities 含 exec/files，只表示核心接口可用，不证明远端命令、软件或 SFTP 可用。摘要不含认证材料，不读取另一个插件的状态，也不提供全局凭据目录。新接纳继续由完整 Context 校验，摘要不能代替归属检查。
 
+### session.target.v2（核心 1.6.0）
+
+能力 session.target.v2 增加只读方法 session.target.describe({viewId,expectedContext})，返回 context/state/closing/capabilities/target/targetSource。viewId 和 Context 的三个 ID 均为 1–256 UTF-8 字节、无 NUL，generation 为正 u64；拒绝未知字段和错误类型。读取前核对插件/实例、view 与完整工作区 Context，失效为 staleContext，参数错误为 invalidParams。断开和关闭冻结仍可查询。
+
+target 是 null 或 {name,protocol,host,port,endpoint,username}；host/port 来自成功接纳的实际最终会话，不解析界面 endpoint，不从编辑后的目录资料回填。名称为工作区当前名称；endpoint 是主机加端口，IPv6 包含方括号，username 不进入 endpoint。目标摘要不含密钥、口令或认证材料。
+
+targetSource=current 表示当前有效会话；断开时工作区保留最近一次真实接纳的摘要，source=lastConnected；没有可信摘要时为 unknown/target=null。摘要与 Context 同时更新，失败重连不覆盖，关闭工作区后释放；只在运行内保留。connected/disconnected 表示本地实际会话状态，closing 独立表达冻结，capabilities 在线为 exec/files、断开为空数组；不能证明远端命令、权限或 SFTP 实际可用。
+
+读取按 connections → workbench → attempt 顺序捕获本地事实，锁释放后编码；不执行网络探测、目录枚举或连接操作。v1 session.state 共用事实捕获，但继续省略结构化 host/port 与 targetSource，并在断开时返回 target=null；原插件不改变契约。v2 是可选能力，不提升 RPC/API 主版本；依赖它的插件必须初始化检查。
+
 ## 目录与清单
 
 解压后选择含 `plugin.json` 的目录：

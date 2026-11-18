@@ -1,3 +1,13 @@
+# 0.5.0
+
+- targets_list 增加名称、主机、完整端点和规范 IPv4 尾段查找，返回 matchedBy、resolution、registryChanged、unresolved 与可用性；离线候选参与歧义，不按排序或焦点猜测。
+- 目标身份和核心 v2 摘要完整校验；无效重新登记不破坏旧目标。查询最多四个实际作业，无排队/缓存/自动连接，取消后位置随实际 RPC 结束释放。
+- 普通目标结果精简，detail=true 提供完整 Context 与错误，超限明确拒绝；旧目标换代后原任务和未知接纳继续按原身份查证，不自动重放。
+
+要求核心 1.6.0 的 session.target.v2；旧核心明确初始化失败。六工具、Token、端口、证据 schemaVersion=1、任务分页/等待和侧栏布局保持；无新增生产依赖。迁移见 [MCP API](../../docs/mcp-api.md)，行为见[功能说明](../../docs/features/mcp.md)。
+
+待发行：本次本机与来源 Check、五平台原生 package/verify、实际 Codex 和原包回归完成后记录来源提交、原始运行及 Release。
+
 # 0.4.0
 
 - exec_start 默认等待稳定完成最多 1000 ms，并返回普通任务事实与第一文本页。waitMs 可指定 0–20000；零等待立即交接，长任务到期继续执行，多页用原任务和游标接续。

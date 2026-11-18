@@ -12,6 +12,31 @@ pub struct Context {
     pub generation: u64,
 }
 
+/// Non-sensitive identity of an authenticated connection, retained by its workspace.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ConnectionTarget {
+    pub protocol: String,
+    pub host: String,
+    pub port: u16,
+    pub username: Option<String>,
+}
+impl ConnectionTarget {
+    pub fn endpoint(&self) -> String {
+        let host = if self.host.contains(':') {
+            format!("[{}]", self.host)
+        } else {
+            self.host.clone()
+        };
+        format!("{host}:{}", self.port)
+    }
+    pub(crate) fn workspace_endpoint(&self) -> String {
+        match &self.username {
+            Some(username) => format!("{username}@{}", self.endpoint()),
+            None => self.endpoint(),
+        }
+    }
+}
+
 /// Constructed by the connection service, never by a frontend command.
 pub struct ConnectedSession {
     pub server_id: String,
@@ -47,6 +72,8 @@ pub struct Workspace {
     pub connected: bool,
     #[serde(skip)]
     pub(crate) target_identity: Option<String>,
+    #[serde(skip)]
+    pub(crate) connection_target: Option<ConnectionTarget>,
     pub window_id: String,
     pub layout: Layout,
     // These are reserved component slots, not running plugins.
@@ -501,26 +528,45 @@ impl Runtime {
         self.revision += 1;
         Ok(())
     }
+    pub(crate) fn target_workspace(&self, context: &Context) -> Result<&Workspace, String> {
+        self.validate_identity(context)?;
+        Ok(&self.workspaces[&context.workspace_id])
+    }
+    pub(crate) fn reconnect_context(
+        &self,
+        context: &Context,
+        connection_id: String,
+    ) -> Result<Context, String> {
+        let w = self
+            .workspaces
+            .get(&context.workspace_id)
+            .ok_or("工作区已关闭")?;
+        if &w.context != context || w.connected || connection_id.is_empty() {
+            return Err("重连上下文已失效".into());
+        }
+        let generation = w
+            .context
+            .generation
+            .checked_add(1)
+            .ok_or("连接代次已超出范围")?;
+        Ok(Context {
+            connection_id,
+            generation,
+            ..context.clone()
+        })
+    }
     pub fn reconnect(
         &mut self,
         context: &Context,
         connection_id: String,
         endpoint: String,
+        connection_target: Option<ConnectionTarget>,
     ) -> Result<Context, String> {
-        let w = self
-            .workspaces
-            .get_mut(&context.workspace_id)
-            .ok_or("工作区已关闭")?;
-        if &w.context != context || w.connected || connection_id.is_empty() {
-            return Err("重连上下文已失效".into());
-        }
-        w.context.generation = w
-            .context
-            .generation
-            .checked_add(1)
-            .ok_or("连接代次已超出范围")?;
-        w.context.connection_id = connection_id;
+        let next = self.reconnect_context(context, connection_id)?;
+        let w = self.workspaces.get_mut(&context.workspace_id).unwrap();
+        w.context = next;
         w.endpoint = endpoint;
+        w.connection_target = connection_target;
         w.connected = true;
         self.revision += 1;
         Ok(w.context.clone())
@@ -852,6 +898,7 @@ impl AppCore {
             endpoint: session.endpoint,
             connected: true,
             target_identity: None,
+            connection_target: None,
             window_id: "main".into(),
             layout: Layout {
                 left_width,
