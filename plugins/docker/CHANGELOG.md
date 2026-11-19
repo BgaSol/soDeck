@@ -5,11 +5,17 @@
 - 区分 Client 和 Engine 系统，保留实际 Docker Root；Windows Engine 默认 cmd.exe，保护系统网络并隐藏暂停/恢复。通用资源删除与容器身份分开，慢速索引读完后再安排自动刷新。
 - 需要核心 1.8.1 的 session.program.v1；旧核心明确提示升级。无新增生产依赖。
 
-状态：待本次源码与五平台独立打包/实际包验收后发行，并按用户要求标为 GitHub Latest。包来源、原始 run、Release 和永久报告在交付后补齐。
+包来源：[94ca2cad441016f80f066be731e9031641e2c407](https://github.com/BgaSol/soDeck/commit/94ca2cad441016f80f066be731e9031641e2c407)；[来源完整 Check](https://github.com/BgaSol/soDeck/actions/runs/44514505907)；[原始独立打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/44514526683)。全部选中源码、脚本、浏览器、Windows 桌面与 SSH/真实业务检查通过，netem skipped。
+
+Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生归档、架构与资源、包内程序握手、视图生命周期及退出均通过。核心与插件独立打包，本插件保留同一原始 run 的五份程序归档，配套[核心 1.8.1](../../docs/releases/v1.8.1.md)。
+
+发行：[Docker 0.6.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.6.0)，按用户要求设为 GitHub Latest。草稿阶段只同步 Release 说明和更新清单 notes，不重建或覆盖程序归档。[永久发行证据](release-evidence/v0.6.0-assets.json)保存五份原生报告、来源、附件摘要及匿名公开下载核验。
 
 本机通过 17 项 Docker 单元测试、POSIX/Linux、Windows/Linux、Windows/Windows 的实际插件进程模拟回归，以及完整界面/连接表单回归。进程测试包含发现期间新开详情导致连接提交失败并保留旧配置，防止候选替换在途目标。
 
-真实回环 OpenSSH/Docker Desktop 4.96.3（原生 Windows amd64 CLI 29.9.2，WSL2 Linux amd64 Engine 29.9.2，desktop-linux 的 npipe）完整流程通过：四分类、详情/指标、中文历史日志、真实 PTY、关闭来源后终端独立运行、容器维护、卷/网络删除、多标签镜像拒绝、公开镜像拉取与断线日志保留。Linux 隔离 Engine 24.0.9/OpenSSH 的同一流程通过，自定义 Root 和挂载卷保持。
+真实回环 OpenSSH/Docker Desktop 4.96.3（原生 Windows amd64 CLI 29.9.2，WSL2 Linux amd64 Engine 29.9.2，desktop-linux 的 npipe）完整流程通过：四分类、详情/指标、中文历史日志、真实 PTY、关闭来源后终端独立运行、容器维护、卷/网络删除、多标签镜像拒绝、公开镜像拉取与断线日志保留。原核心候选联调 377.48 秒、最终核心 1.8.1 联调 394.95 秒均通过。Linux 隔离 Engine 24.0.9/OpenSSH 的同一流程通过，自定义 Root 和挂载卷保持。
+
+早期 Windows 联调曾在 7 秒初始化等待时超时，之后没有稳定复现；夹具补充失败快照与日志，未放宽等待时间或绕过断言。
 
 Windows Server Engine、ARM64 Docker 远端及全部版本/rootless/生产环境矩阵尚未真实验收；对应边界与剩余要求见[功能](../../docs/features/docker.md)和[待验收计划](../../docs/plans/docker-windows.md)。netem、正式旧版升级和新增 IME/DPI/读屏专项未执行。
 

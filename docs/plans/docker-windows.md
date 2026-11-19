@@ -1,6 +1,6 @@
 # Docker Windows 远端剩余验收
 
-状态：2026-11-19，实现已进入核心 1.8.1 / Docker 0.6.0；本次源码、真实 Docker Desktop/Linux 流程与独立五平台发行正在验收。正式行为、边界和契约已迁入 [Docker 功能](../features/docker.md)、[架构](../architecture.md)和[程序 API](../plugin-api.md#sessionprogramv1核心-181)。本文只保留尚未完成的约定验收，不代表这些远端组合已经通过。
+状态：2026-11-19，核心 1.8.1 / Docker 0.6.0 的源码、真实 Docker Desktop/Linux 流程与独立五平台发行验收完成；发行证据见[核心版本记录](../releases/v1.8.1.md)和[Docker CHANGELOG](../../plugins/docker/CHANGELOG.md)。正式行为、边界和契约已迁入 [Docker 功能](../features/docker.md)、[架构](../architecture.md)和[程序 API](../plugin-api.md#sessionprogramv1核心-181)。本文只保留尚未完成的真实远端要求，不代表这些组合已经通过。
 
 ## 尚未完成的真实远端范围
 
@@ -16,12 +16,6 @@ Windows Server Windows Engine 是原设计的完成条件，目前没有可用�
 6. cmd 和 PowerShell 默认 SSH shell 的实际远端完整流程；本机进程编码回归不能代替后一组合。
 
 ARM64 远端只在 Docker 原生发行物可用且真实测试后记为已验；五平台 SoDeck/插件原生客户端包不能推出远端 Docker 支持。rootless、更多 Engine 版本及生产环境按取得的具体环境补测，不从普通 Linux 夹具推出全矩阵通过。
-
-## 本轮交付收尾
-
-先完成本次 Windows Desktop 和隔离 Linux Engine 完整流程，再跑相关格式/类型、工程脚本、核心/插件测试与本机正式构建。源码 Check、核心与 Docker 独立 package/verify 按[发布流程](../distribution.md)保留五平台原生产物和实际包启动/退出。
-
-来源提交、原始运行、实际通过/失败与跳过范围迁入[核心 1.8.1](../releases/v1.8.1.md)及[Docker CHANGELOG](../../plugins/docker/CHANGELOG.md)，附件报告/摘要保存为永久发行证据。本轮完成后删除本节；真实 Windows Engine/远端范围完成后删除对应要求，不另建完成计划归档。
 
 资源树设备复核与日志工作台其他专项仍由[资源树计划](docker-expansion.md)和[日志计划](docker-log-viewer.md)维护，本主题不接管它们。
 
