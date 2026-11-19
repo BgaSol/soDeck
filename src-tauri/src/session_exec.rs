@@ -35,6 +35,7 @@ struct Output {
     sent: bool,
     finished: Option<Instant>,
     released: bool,
+    startup: Value,
 }
 #[derive(Clone, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -47,6 +48,21 @@ struct Start {
     timeout_ms: u64,
     #[serde(default = "output_budget")]
     max_output_bytes: usize,
+    #[serde(default)]
+    program_output: Option<String>,
+    #[serde(skip)]
+    environment_keys: Option<Vec<String>>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct EnvironmentStart {
+    view_id: String,
+    expected_context: Context,
+    operation_id: String,
+    sequence: String,
+    timeout_ms: u64,
+    #[serde(default)]
+    keys: Vec<String>,
 }
 fn output_budget() -> usize {
     256 * 1024
@@ -112,9 +128,29 @@ impl AppCore {
         if method == "session.target.describe" {
             return self.describe_target(plugin, instance, p);
         }
-        if method == "session.exec.start" {
-            let request: Start = serde_json::from_value(p.clone())
-                .map_err(|e| error("invalidParams", e.to_string()))?;
+        if method == "session.program.prepare" {
+            return self.prepare_program(plugin, instance, p);
+        }
+        if method == "session.exec.start" || method == "session.environment.start" {
+            let request: Start = if method == "session.environment.start" {
+                let r: EnvironmentStart = serde_json::from_value(p.clone())
+                    .map_err(|e| error("invalidParams", e.to_string()))?;
+                crate::remote_program::validate_keys(&r.keys)?;
+                Start {
+                    view_id: r.view_id,
+                    expected_context: r.expected_context,
+                    operation_id: r.operation_id,
+                    sequence: r.sequence,
+                    command: crate::remote_program::probe(&r.keys, true),
+                    timeout_ms: r.timeout_ms,
+                    max_output_bytes: 16 * 1024,
+                    program_output: None,
+                    environment_keys: Some(r.keys),
+                }
+            } else {
+                serde_json::from_value(p.clone())
+                    .map_err(|e| error("invalidParams", e.to_string()))?
+            };
             let sequence = decimal(&request.sequence)?;
             if request.command.is_empty()
                 || request.command.len() > 16 * 1024
@@ -123,6 +159,10 @@ impl AppCore {
                 || request.operation_id.len() > 128
                 || !(1000..=30000).contains(&request.timeout_ms)
                 || !(1..=1024 * 1024).contains(&request.max_output_bytes)
+                || request
+                    .program_output
+                    .as_deref()
+                    .is_some_and(|s| s != "startup-v1")
             {
                 return Err(error("invalidParams", "命令任务参数超出范围"));
             }
@@ -208,6 +248,7 @@ impl AppCore {
                     sent: false,
                     finished: None,
                     released: false,
+                    startup: json!({}),
                 }),
             });
             let id = self.next_id();
@@ -263,9 +304,12 @@ impl AppCore {
                 }
                 let ae = (a + 8192).min(out.stdout.len());
                 let be = (b + 8192).min(out.stderr.len());
-                Ok(
-                    json!({"state":out.state,"stdout":{"dataBase64":STANDARD.encode(&out.stdout[a..ae]),"nextOffset":ae.to_string()},"stderr":{"dataBase64":STANDARD.encode(&out.stderr[b..be]),"nextOffset":be.to_string()},"outputComplete":out.finished.is_some() && ae==out.stdout.len() && be==out.stderr.len(),"exitCode":out.exit_code,"exitSignal":out.exit_signal,"error":out.error,"remoteExitConfirmed":out.confirmed,"execSent":out.sent,"elapsedMs":out.finished.unwrap_or_else(Instant::now).duration_since(task.started).as_millis() as u64,"outputLimitExceeded":out.error["code"]=="outputLimit"}),
-                )
+                let mut value = json!({"state":out.state,"stdout":{"dataBase64":STANDARD.encode(&out.stdout[a..ae]),"nextOffset":ae.to_string()},"stderr":{"dataBase64":STANDARD.encode(&out.stderr[b..be]),"nextOffset":be.to_string()},"outputComplete":out.finished.is_some() && ae==out.stdout.len() && be==out.stderr.len(),"exitCode":out.exit_code,"exitSignal":out.exit_signal,"error":out.error,"remoteExitConfirmed":out.confirmed,"execSent":out.sent,"elapsedMs":out.finished.unwrap_or_else(Instant::now).duration_since(task.started).as_millis() as u64,"outputLimitExceeded":out.error["code"]=="outputLimit"});
+                value
+                    .as_object_mut()
+                    .unwrap()
+                    .extend(out.startup.as_object().unwrap().clone());
+                Ok(value)
             }
             _ => Err(error("unsupported", "未知会话方法")),
         }
@@ -294,37 +338,112 @@ async fn run(
     let parent = session.cancellation();
     let deadline = tokio::time::Instant::now() + Duration::from_millis(task.request.timeout_ms);
     let mut channel = None;
-    let result: Result<(), (&str, &str)> = tokio::select! {
-        _ = task.cancel.cancelled() => Err(("cancelled","命令已取消")),
-        _ = parent.cancelled() => Err(("sessionLost","服务器连接已断开")),
-        _ = tokio::time::sleep_until(deadline) => Err(("timedOut","命令超时")),
+    let result: Result<(), String> = tokio::select! {
+        _ = task.cancel.cancelled() => Err("cancelled:命令已取消".into()),
+        _ = parent.cancelled() => Err("sessionLost:服务器连接已断开".into()),
+        _ = tokio::time::sleep_until(deadline) => Err("timedOut:命令超时".into()),
         result = async {
-            channel = Some(session.open_channel().await.map_err(|_| ("sessionLost","无法打开命令通道"))?);
-            let channel = channel.as_mut().unwrap();
-            channel.exec(true, task.request.command.as_str()).await.map_err(|_| ("execRejected","远端拒绝执行"))?;
-            task.result.lock().unwrap().sent=true;
-            if let Some(c)=core.upgrade() { c.record_business(&task.owner, task.request.command.len() as u64, 0); }
-            channel.eof().await.map_err(|_| ("sessionLost","命令输入无法关闭"))?;
-            let mut accepted=false;
-            while let Some(message)=channel.wait().await {
-                match message {
-                    russh::ChannelMsg::Success => accepted=true,
-                    russh::ChannelMsg::Failure => return Err(("execRejected","远端拒绝执行")),
-                    ref message @ (russh::ChannelMsg::Data{..} | russh::ChannelMsg::ExtendedData{ext:1,..}) => {
-                        let (data, stderr)=match message {russh::ChannelMsg::Data{data}=>(data,false),russh::ChannelMsg::ExtendedData{data,..}=>(data,true),_=>unreachable!()};
-                        if let Some(c)=core.upgrade() { c.record_business(&task.owner,0,data.len() as u64); }
-                        let mut o=task.result.lock().unwrap();
-                        if o.stdout.len()+o.stderr.len()+data.len()>task.request.max_output_bytes { return Err(("outputLimit","命令输出超过预算")); }
-                        if stderr { o.stderr.extend_from_slice(&data); } else { o.stdout.extend_from_slice(&data); }
+            let commands = if let Some(keys) = &task.request.environment_keys {
+                vec![crate::remote_program::probe(keys, true), crate::remote_program::probe(keys, false)]
+            } else {
+                vec![task.request.command.clone()]
+            };
+            for command in commands {
+                channel = Some(session.open_channel().await.map_err(|_| "sessionLost:无法打开命令通道")?);
+                let c = channel.as_mut().unwrap();
+                c.exec(true, command.as_str()).await.map_err(|_| "execRejected:远端拒绝执行")?;
+                task.result.lock().unwrap().sent = true;
+                if let Some(core) = core.upgrade() {
+                    core.record_business(&task.owner, command.len() as u64, 0);
+                }
+                c.eof().await.map_err(|_|"sessionLost:命令输入无法关闭")?;
+                let mut decoder = crate::remote_program::Decoder::new(
+                    task.request.program_output.is_some(), task.request.max_output_bytes,
+                );
+                let mut probe_bytes = (Vec::new(), Vec::new());
+                let mut exit_code = None;
+                let mut exit_signal = None;
+                while let Some(message) = c.wait().await {
+                    match message {
+                        russh::ChannelMsg::Failure => return Err("execRejected:远端拒绝执行".into()),
+                        ref message @ (russh::ChannelMsg::Data { .. } | russh::ChannelMsg::ExtendedData { ext: 1, .. }) => {
+                            let (bytes, stderr) = match message {
+                                russh::ChannelMsg::Data { data } => (data, false),
+                                russh::ChannelMsg::ExtendedData { data, .. } => (data, true),
+                                _ => unreachable!(),
+                            };
+                            if let Some(core) = core.upgrade() {
+                                core.record_business(&task.owner, 0, bytes.len() as u64);
+                            }
+                            if task.request.environment_keys.is_some() {
+                                if probe_bytes.0.len() + probe_bytes.1.len() + bytes.len() > task.request.max_output_bytes {
+                                    return Err("outputLimit:环境探测输出超限".into());
+                                }
+                                if stderr {
+                                    probe_bytes.1.extend_from_slice(bytes);
+                                } else {
+                                    probe_bytes.0.extend_from_slice(bytes);
+                                }
+                            } else {
+                                let chunks = decoder.push(stderr, bytes)?;
+                                let mut out = task.result.lock().unwrap();
+                                out.startup = decoder.metadata();
+                                for (stderr, bytes) in chunks {
+                                    if out.stdout.len() + out.stderr.len() + bytes.len() > task.request.max_output_bytes {
+                                        return Err("outputLimit:命令输出超过预算".into());
+                                    }
+                                    if stderr {
+                                        out.stderr.extend(bytes);
+                                    } else {
+                                        out.stdout.extend(bytes);
+                                    }
+                                }
+                            }
+                        },
+                        russh::ChannelMsg::ExitStatus { exit_status } => {
+                            exit_code = Some(exit_status);
+                            if task.request.environment_keys.is_none() {
+                                let mut out = task.result.lock().unwrap();
+                                out.exit_code = exit_code;
+                                out.confirmed = true;
+                            }
+                        },
+                        russh::ChannelMsg::ExitSignal { signal_name, .. } => {
+                            exit_signal = Some(format!("{signal_name:?}"));
+                            if task.request.environment_keys.is_none() {
+                                let mut out = task.result.lock().unwrap();
+                                out.exit_signal = exit_signal.clone();
+                                out.confirmed = true;
+                            }
+                        },
+                        _ => {}
                     }
-                    russh::ChannelMsg::ExitStatus{exit_status} => { let mut o=task.result.lock().unwrap(); o.exit_code=Some(exit_status); o.confirmed=true; }
-                    russh::ChannelMsg::ExitSignal{signal_name,..} => { let mut o=task.result.lock().unwrap(); o.exit_signal=Some(format!("{signal_name:?}")); o.confirmed=true; }
-                    _ => {}
+                }
+                if exit_code.is_none() && exit_signal.is_none() {
+                    return Err("missingExitStatus:远端没有返回退出状态".into());
+                }
+                if let Some(keys) = &task.request.environment_keys {
+                    if let Some(code) = exit_code {
+                        if probe_bytes.1.is_empty() {
+                            if let Ok(value) = crate::remote_program::parse_environment(&probe_bytes.0, keys, code) {
+                                let mut out = task.result.lock().unwrap();
+                                out.stdout = serde_json::to_vec(&value).unwrap();
+                                out.exit_code = exit_code;
+                                out.confirmed = true;
+                                return Ok(());
+                            }
+                        }
+                    }
+                    if exit_signal.is_some() {
+                        return Err("unsupportedEnvironment:环境探测异常退出".into());
+                    }
+                    let _ = c.close().await;
+                } else {
+                    decoder.finish()?;
+                    return Ok(());
                 }
             }
-            let _=accepted;
-            if !task.result.lock().unwrap().confirmed { return Err(("missingExitStatus","远端没有返回退出状态")); }
-            Ok(())
+            Err("unsupportedEnvironment:远端缺少受支持的程序启动环境".into())
         } => result,
     };
     if result.is_err() {
@@ -347,12 +466,13 @@ async fn run(
     let mut out = task.result.lock().unwrap();
     out.state = match result {
         Ok(()) => "completed",
-        Err(("cancelled", _)) => "cancelled",
-        Err(("timedOut", _)) => "timedOut",
+        Err(ref e) if e.starts_with("cancelled:") => "cancelled",
+        Err(ref e) if e.starts_with("timedOut:") => "timedOut",
         _ => "failed",
     };
-    if let Err((code, message)) = result {
-        out.error = json!({"code":code,"message":message});
+    if let Err(message) = result {
+        out.error =
+            json!({"code":message.split(':').next().unwrap_or("commandFailed"),"message":message});
     }
     out.finished = Some(Instant::now());
 }

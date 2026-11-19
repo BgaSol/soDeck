@@ -1,5 +1,6 @@
 import {ResourceTree,icon} from './tree.js';
 import {TreeMenu} from './tree-menu.js';
+import {installConnectionForm} from './connection.js';
 const $=id=>document.getElementById(id);
 const operationNames={start:'启动',stop:'停止',restart:'重启',pause:'暂停',unpause:'恢复',remove:'删除容器','resource.remove':'删除资源'};
 const phases={checking:'检查中',running:'执行中',opening:'启动中',succeeded:'成功',failed:'失败',unknown:'结果未确认',skipped:'无需操作'};
@@ -8,6 +9,7 @@ export function installBrowserPage(releaseIncumbent){
   let active=false,enabled=false,frozen=false,visible=true,snapshot,epoch=0,timer,nav={},navTail=Promise.resolve(),navSequence=0,navPainted=0,composing=false,searchBefore,restoreScroll,selectedNode,formTarget,submitting=false,taskOffset=0,outputId,outputOffset='0',outputRemainder='',outputText='';
   const pending=new Set();
   let outputDecoder=new TextDecoder(),sourceDecoders=new Map();
+  const connection=installConnectionForm(send,()=>enabled&&!frozen);
   const menu=new TreeMenu($('tree-menu'),$('browser-panel'));
   const tree=new ResourceTree($('tree-viewport'),{select,toggle,open,menu:openMenu,window:windowPage,focusIndex,focusKey,rootPath:()=>snapshot?.engine?.dockerRootDir||'未读取'});
   const identity=()=>({engineId:snapshot.engine?.id,endpoint:snapshot.endpoint,expectedContext:structuredClone(snapshot.context),scopeEpoch:snapshot.scopeEpoch});
@@ -30,7 +32,7 @@ export function installBrowserPage(releaseIncumbent){
     $('engine-name').textContent=snapshot.engine?.version?'Engine '+snapshot.engine.version:'等待 Engine';$('engine-version').textContent=snapshot.engine?.arch||'';
     $('refresh').disabled=!enabled||frozen||snapshot.busy;$('cancel').hidden=!snapshot.busy;$('pause').hidden=true;
     $('browser-more').disabled=!enabled||frozen;
-    $('connection').hidden=false;if(document.activeElement!==$('socket'))$('socket').value=snapshot.endpoint;
+    $('connection').hidden=false;connection.render(snapshot);
     $('freshness').textContent=snapshot.state==='stale'?'离线快照 · 待刷新':snapshot.observedAt?'采集于 '+new Date(snapshot.observedAt).toLocaleTimeString():'等待首次采集';
     $('busy').textContent=snapshot.busy?'请求处理中':'';$('count').textContent='';$('operation').hidden=true;
     if(snapshot.error)message(snapshot.error);
@@ -46,7 +48,7 @@ export function installBrowserPage(releaseIncumbent){
     const tools=$('selected-actions');const rebuilding=box.dataset.key!==n.key;if(rebuilding)tools.replaceChildren();box.dataset.key=n.key;if(rebuilding)SoDeckMotion.revealMotion(box);
     const button=(text,fn,disabled=false)=>{const b=document.createElement('button');b.type='button';b.textContent=text;b.disabled=disabled;b.onclick=fn;tools.append(b);};
     if(rebuilding) {if(n.type==='root'){button('完整路径',()=>showRoot(n));button('复制路径',()=>copy(snapshot.engine?.dockerRootDir),!snapshot.engine?.dockerRootDir);}
-    else if(n.resource?.kind==='container'&&n.type==='resource'){button('日志',()=>openView('openLogs',n));if(rebuilding)tools.lastElementChild.dataset.focus='openLogs';button('终端',()=>terminal(n,nav.shell||'/bin/sh'),n.status!=='running'||!current(identity())||snapshot.terminal?.status==='pending');}
+    else if(n.resource?.kind==='container'&&n.type==='resource'){button('日志',()=>openView('openLogs',n));if(rebuilding)tools.lastElementChild.dataset.focus='openLogs';button('终端',()=>terminal(n,nav.shell||snapshot.defaultShell||''),n.status!=='running'||!current(identity())||snapshot.terminal?.status==='pending');}
     else if(n.resource&&n.type==='resource'){button('详情',()=>openView('openResource',n),!enabled||frozen);}
     button('更多',()=>openMenu(nodeInCache(nav.selected),tools.lastElementChild),!enabled||frozen);}
     for(const b of tools.children)b.disabled=!enabled||frozen||(b.textContent==='终端'&&(n.status!=='running'||!current(identity())||snapshot.terminal?.status==='pending'))||(b.textContent==='复制路径'&&!snapshot.engine?.dockerRootDir);
@@ -87,8 +89,8 @@ export function installBrowserPage(releaseIncumbent){
     else if(n.resource){
       add('查看详情',()=>openView(n.resource.kind==='container'?'openContainer':'openResource',n));add('读取资源关系',()=>load(null,n.resource));
       if(n.resource.kind==='container'){
-        add('查看日志',()=>openView('openLogs',n));add('打开终端',()=>terminal(n,nav.shell||'/bin/sh'),!writable||n.status!=='running'||snapshot.terminal?.status==='pending','容器未运行或终端请求尚未完成');add('终端选项',()=>shell(n),!writable||n.status!=='running');items.push({separator:true});
-        for(const action of ['start','stop','restart','pause','unpause','remove'])if(available(action,n.status))add(operationNames[action],()=>operate(action,n,target),!writable,'连接待刷新或请求处理中',action==='remove');
+        add('查看日志',()=>openView('openLogs',n));add('打开终端',()=>terminal(n,nav.shell||snapshot.defaultShell||''),!writable||n.status!=='running'||snapshot.terminal?.status==='pending','容器未运行或终端请求尚未完成');add('终端选项',()=>shell(n),!writable||n.status!=='running');items.push({separator:true});
+        for(const action of ['start','stop','restart','pause','unpause','remove'])if(available(action,n.status)&&!(snapshot.engine?.os==='windows'&&['pause','unpause'].includes(action)))add(operationNames[action],()=>operate(action,n,target),!writable,'连接待刷新或请求处理中',action==='remove');
       }else if(!n.system){items.push({separator:true});add('删除'+({image:'镜像',network:'网络',volume:'卷'}[n.resource.kind]||'资源'),()=>remove(n,target),!writable||!n.canDelete,!n.canDelete?'请展开并完整读取引用；有引用的资源不能删除':'连接待刷新',true);}
       items.push({separator:true});add('复制'+(n.resource.kind==='volume'?'名称':'完整 ID'),()=>copy(n.resource.id));
     }
@@ -102,7 +104,7 @@ export function installBrowserPage(releaseIncumbent){
   async function remove(n,target){const object=await send({action:'browser.object',resource:n.resource,scopeEpoch:target.scopeEpoch});if(!object||!current(target))return;formTarget={...target,resource:n.resource,observationRevision:n.revision};const request={action:'resource.operate',operation:'remove',resource:n.resource,...target,observationRevision:n.revision,requestId:crypto.randomUUID(),intentSequence:snapshot.nextIntent};
     menu.form({title:'确认删除'+({image:'镜像',network:'网络',volume:'卷'}[n.resource.kind]),text:`${n.label}\n${n.resource.id}\n${snapshot.engine?.name||'Engine'}${object.aliases?.length?'\n受影响标签：\n'+object.aliases.join('\n')+(object.aliasesTruncated?'\n标签过多，共 '+object.aliasesTotal+' 个，请在详情核对。':''):''}`,impact:n.resource.kind==='volume'?'将永久删除卷中的数据。删除前重新检查全部容器引用，包括停止容器；Docker 卷没有唯一 ID，无法完全消除外部同名重建的并发风险。':n.resource.kind==='image'?'按完整镜像 ID 删除对象，影响其全部标签和摘要引用。Docker 可能因多标签或引用保护而拒绝；不会强制删除或逐个解除标签。':'仅删除无连接端点的自定义网络，不使用强制删除。',submit:'删除',danger:true,onSubmit:()=>submit(request)});menu.valid(current(formTarget)&&object.revision===n.revision);
   }
-  function shell(n){formTarget=identity();menu.form({title:'容器终端',text:n.label,input:true,label:'容器 Shell',value:nav.shell||'/bin/sh',submit:'打开终端',onSubmit:value=>{nav.shell=value;void remember();void terminal(n,value);}});}
+  function shell(n){formTarget=identity();menu.form({title:'容器终端',text:n.label,input:true,label:'容器 Shell',value:nav.shell||snapshot.defaultShell||'',submit:'打开终端',onSubmit:value=>{nav.shell=value;void remember();void terminal(n,value);}});}
   async function terminal(n,shell){const target=identity();if(!current(target)||snapshot.terminal?.status==='pending')return;await send({action:'openTerminal',id:n.resource.id,...target,shell,requestId:crypto.randomUUID()});renderSelection();}
   function pull(prefill=''){const target=identity();formTarget=target;menu.form({title:'拉取公开镜像',text:'使用当前服务器的 Docker Engine。未填写标签时使用并展示 :latest。',input:true,label:'镜像引用',value:prefill,submit:'检查引用',onSubmit:value=>{
     const tail=value.trim().split('/').at(-1);const reference=value.includes('@')||tail?.includes(':')?value.trim():value.trim()+':latest';
@@ -117,7 +119,6 @@ export function installBrowserPage(releaseIncumbent){
   function control(id,type,handler){$(id).addEventListener(type,e=>{if(!active)return;e.stopImmediatePropagation();handler(e);},true);}
   control('refresh','click',()=>void send({action:'refresh'}));control('cancel','click',()=>void send({action:'cancel'}));
   control('browser-more','click',e=>openMenu({key:'engine',type:'engine',label:'Docker Engine'},e.target));
-  control('endpoint-form','submit',e=>{e.preventDefault();void send({action:'setEndpoint',endpoint:$('socket').value.trim()});});
   function filter(){if(composing)return;const query=$('query').value;
     if(query&&!searchBefore)searchBefore={expandedKeys:[...(nav.expandedKeys||[])],selected:nav.selected,offset:nav.offset,scrollTop:$('tree-viewport').scrollTop};
     if(!query&&searchBefore){Object.assign(nav,searchBefore);restoreScroll=searchBefore.scrollTop;searchBefore=null;}else{nav.offset=0;$('tree-viewport').scrollTop=0;}
@@ -134,7 +135,7 @@ export function installBrowserPage(releaseIncumbent){
   const lifecycle=(name,handler)=>addEventListener('sodeck:'+name,e=>{if(!active)return;e.stopImmediatePropagation();Promise.resolve(handler(e.detail)).catch(error=>message(error.message));});
   addEventListener('sodeck:mount',e=>{if(e.detail.data.kind!=='browser'){if(active){clearTimeout(timer);menu.close(false);}active=false;$('browser-more').hidden=true;document.body.classList.remove('browser-page');return;}e.stopImmediatePropagation();releaseIncumbent();epoch++;active=true;enabled=false;frozen=!!e.detail.readOnly;visible=e.detail.visible!==false;snapshot=e.detail.data;navTail=Promise.resolve();navSequence=navPainted=0;nav={schemaVersion:2,expandedKeys:['engine','category:container'],status:'all',health:'all',group:true,offset:0,...snapshot.navigation};if(/^[a-f0-9]{64}$/i.test(nav.selected||''))nav.selected='container:'+nav.selected;selectedNode=null;formTarget=null;searchBefore=null;delete $('browser-selection').dataset.key;menu.close(false);tree.positions.clear();document.body.classList.add('browser-page');
     for(const id of ['container','logs','resource'])$(id).hidden=true;$('browser').hidden=false;$('browser-more').hidden=false;
-    $('query').value=nav.query||'';$('status-filter').value=nav.status||'all';$('health-filter').value=nav.health||'all';$('group').checked=nav.group!==false;$('reveal-condition').hidden=!nav.revealTarget;theme(e.detail.tokens);render();$('tree-viewport').scrollTop=nav.scrollTop||0;sodeck.mounted();
+    connection.reset();$('query').value=nav.query||'';$('status-filter').value=nav.status||'all';$('health-filter').value=nav.health||'all';$('group').checked=nav.group!==false;$('reveal-condition').hidden=!nav.revealTarget;theme(e.detail.tokens);render();$('tree-viewport').scrollTop=nav.scrollTop||0;sodeck.mounted();
   });
   lifecycle('surfaceReady',async()=>{enabled=true;frozen=false;await send({action:'resumeInput'});await send({action:'browser.visibility',visible});await remember();void poll();});
   lifecycle('visibilityChanged',async e=>{visible=e.visible!==false;if(enabled&&!frozen)await send({action:'browser.visibility',visible});if(visible)void poll();});

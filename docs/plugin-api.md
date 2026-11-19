@@ -255,6 +255,8 @@ loginShell 缺省目录策略在创建时读取设置，允许 auto/manual/off�
 
 可选能力 `session.exec.v1`。系统识别、命令文本、指标和调度由插件负责；核心提供当前认证会话上的非交互任务，不暴露凭据或传输类型。
 
+结构化程序的跨平台启动见下述 `session.program.v1`；原 command 文本接口仍按原样执行。
+
 | 方法 | 参数及结果 |
 | --- | --- |
 | `session.state` | `{viewId}` → `{context,state,closing,capabilities}`；断线/关闭冻结仍可查询，在线 capabilities 包含 `exec` |
@@ -270,6 +272,29 @@ Context 使用完整 `workspaceId/serverId/connectionId/generation`。command �
 completed 表示收到远端退出状态，非零退出码仍可能 completed。EOF 缺少退出状态为 failed/missingExitStatus，超时为 timedOut，取消为 cancelled。取消尽力终止并关闭自身通道，额外等待最多 1 秒；remoteExitConfirmed 仅表示收到了远端退出确认，不保证已经脱离的子进程结束。
 
 方法错误沿用 JSON-RPC error，`error.data.code` 区分 invalidParams/staleContext/workspaceClosing/resourceBusy/operationConflict/operationExpired/taskExpired/invalidOffset/unsupported。任务错误位于 poll.error。SDK `call_detailed` 保留 code/message/data，原 `call` 的字符串错误接口不变。使用前检查能力，旧插件继续使用原有 API。
+
+### session.program.v1（核心 1.8.0）
+
+新增可选能力，用于当前会话的环境探测和程序参数编码。核心负责平台启动、字节与退出状态；软件发现、身份检查内容及业务解释由插件负责。依赖此能力的插件初始化检查，旧核心明确提示升级；原 exec、stream、terminal 与 API 主版本保持兼容。
+
+| 方法 | 参数及回执 |
+| --- | --- |
+| session.environment.start | `{viewId,expectedContext,operationId,sequence,timeoutMs,keys?}` → `{taskId,state}`；复用 exec 任务、水位、额度、取消和回收 |
+| session.program.prepare | `{viewId,expectedContext,environment,mode,program}` → `{command,length,mode,programOutput}`；仅编码并核对当前在线归属，不执行远端程序 |
+
+探测 keys 最多 8 个合法环境变量名，每名最多 128 ASCII 字节。只读取指定变量，不导出整个环境或执行用户 Profile；输出上限 16 KiB。最多依次尝试固定 Windows/POSIX 探测，共享 1–30 秒期限；缺少退出状态、超限、取消或异常信号直接失败。成功通过 exec.poll 取得 UTF-8 JSON `{environment,values}`。environment 为 `{kind:"posix"}` 或 `{kind:"windows",launcher,exitMode}`；launcher 是探测到的 PowerShell 路径，exitMode 为 native/powershell。Windows 当前需要可执行的 powershell.exe，支持 cmd 或 PowerShell 默认会话 shell。
+
+Windows 探测用固定非零退出码识别外层 shell 的退出传播方式，成功任务可能 exitCode 为 37 或 1。**环境探测以 state=completed、remoteExitConfirmed=true 及完整 JSON 判断成功，不能要求 exitCode=0。** 失败方案的输出不进入下一方案或成功结果。环境只适用于本次 Context；重连后重新探测，不从客户端系统推断。
+
+mode 为 nonInteractive/terminal。program 是 `{file,argv,removeEnv?,checks?}`：file 为程序名称或远端绝对路径，1–4096 UTF-8 字节、无控制字符；argv 最多 128 项，各项最多 4096 字节、无 NUL；removeEnv 最多 8 个合法变量名；checks 最多 2 项 `{argv,expectedStdout}`，每项 argv 同样最多 128 项，expectedStdout 最多 1024 字节、无控制字符。file 与全部主程序/检查参数合计最多 16 KiB。拒绝未知字段及错误类型；生成命令最多 16 KiB，Windows 另限 7900 UTF-16 单元，为 SSH 的外层 cmd 包装保留空间。超限为 commandTooLong，只可在尚未执行时缩小批次。
+
+检查与主程序使用同一个已定位可执行文件，先清除指定环境变量。检查必须退出 0 且 stdout 精确等于 expectedStdout，允许一个末尾 LF/CRLF；检查输出有界，失败不运行主程序。此检查不提供与远端对象变更之间的原子事务。Windows 用原生进程标准流传输字节和退出码，POSIX 用正确引用的 sh/exec；终端模式继承 PTY。
+
+nonInteractive 回执含 programOutput="startup-v1"；将 command 和 programOutput 一起固定到原 exec.start 或 stream.open/lookup 票据。terminal 的 programOutput 为 null，只将 command 用于原 terminal.launch.v1 指定命令模式。SDK [program.rs](../crates/plugin-client/src/program.rs)提供 prepare、apply 和 terminal_command，不实现另一套任务或 shell 编码。
+
+startup-v1 只消费 stderr 的第一份 `SDP1 <JSON字节长度>\n<JSON>` 前导（JSON ≤1 KiB），v=1、started 布尔值；失败附 checkFailure（1 起始 index/message）或 error.message。前导前 stdout 暂存最多 min(任务输出预算,64 KiB)；后续所有主程序字节，包括相同前缀，按原样保留。exec.poll/stream.status 增加 programStarted、checkFailure、programError。明确 started=false 是未启动失败；缺失/损坏前导、传输失败或退出未确认不能认定业务成功。错误码包含 invalidProgramStartup、missingProgramStartup、unexpectedProgramOutput、programCheckFailed、programStartFailed 和 outputLimit；stream 等待前导最多 30 秒。原未启用协议的任务保持原始字节语义。
+
+实现：[remote_program](../src-tauri/src/remote_program/)、[session_exec.rs](../src-tauri/src/session_exec.rs)、[session_stream.rs](../src-tauri/src/session_stream.rs)。
 
 ### session.target.v1（核心 1.5.0）
 

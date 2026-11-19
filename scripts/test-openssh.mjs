@@ -67,13 +67,13 @@ try {
     const env={ ...process.env, SODECK_TEST_SSH_PORT: String(port), SODECK_TEST_SSH_USER: username, SODECK_TEST_SSH_KEY: path.join(directory, "user"),SODECK_TEST_MCP_PORTS:JSON.stringify(mcpPorts) };
     if(flags.mcp){env.SODECK_TEST_MCP_PLUGIN=testPluginDirectory('mcp');env.SODECK_TEST_MCP_OUTPUT=path.resolve('artifacts/mcp');}
     if(network) env.SODECK_TEST_CURL=await testCurl();
-    for(const plugin of [terminal?'terminal':null,files?'files':null,network?'network-proxy':null,status?'system-status':null].filter(Boolean)){
+    for(const plugin of [terminal||flags.docker?'terminal':null,files?'files':null,network?'network-proxy':null,status?'system-status':null,flags.docker?'docker':null].filter(Boolean)){
       env[`SODECK_TEST_${(plugin==='network-proxy'?'NETWORK':plugin.toUpperCase().replaceAll('-','_'))}_PLUGIN`]=testPluginDirectory(plugin);
     }
     if(files){const root=env.SODECK_TEST_FILES_PLUGIN;const manifest=JSON.parse(fs.readFileSync(path.join(root,'plugin.json'),'utf8'));const test=spawnSync(process.execPath,['scripts/test-files-process.mjs'],{stdio:'inherit',windowsHide:true,env:{...env,SODECK_TEST_FILES_EXECUTABLE:path.join(root,manifest.entry)}});if(test.status!==0)throw new Error('File process regressions failed');}
     if(network){const root=env.SODECK_TEST_NETWORK_PLUGIN;const manifest=JSON.parse(fs.readFileSync(path.join(root,'plugin.json'),'utf8'));const test=spawnSync(process.execPath,['scripts/test-network-process.mjs'],{stdio:'inherit',windowsHide:true,env:{...env,SODECK_TEST_NETWORK_EXECUTABLE:path.join(root,manifest.entry)}});if(test.status!==0)throw new Error('Network process regressions failed');}
       const result = uiOnly ? 0 : await new Promise((resolve, reject) => {
-    const test = spawn("cargo", ["test", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--locked", "--test", "connections", flags.mcp?'openssh_mcp_plugin':status?'openssh_system_status_plugin':network?'network_proxy_plugin':files?'openssh_files_plugin':terminal?'openssh_terminal_plugin':'openssh_interop', "--", "--ignored", "--exact", "--nocapture"], {
+    const test = spawn("cargo", ["test", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--locked", "--test", "connections", flags.docker?'openssh_docker_plugin':flags.mcp?'openssh_mcp_plugin':status?'openssh_system_status_plugin':network?'network_proxy_plugin':files?'openssh_files_plugin':terminal?'openssh_terminal_plugin':'openssh_interop', "--", "--ignored", "--exact", "--nocapture"], {
       windowsHide: true, stdio: "inherit", env,
     }); test.on("error", reject); test.on("exit", resolve);
   });

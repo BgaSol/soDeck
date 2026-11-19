@@ -1,3 +1,18 @@
+# 0.6.0
+
+- Windows 远端通过当前 SSH 账号的原生 Docker CLI 访问本机命名管道；自动识别当前 Context/环境覆盖，手动设置端点及远端 CLI 路径。旧端点配置迁移为手动方式并保留备份。
+- 固定不可变端点/Engine 目标；列表、维护、日志、拉取和容器终端统一提交程序与参数，平台 shell 编码由核心提供。Engine 切换后要求重新识别，未知操作不自动重发。
+- 区分 Client 和 Engine 系统，保留实际 Docker Root；Windows Engine 默认 cmd.exe，保护系统网络并隐藏暂停/恢复。通用资源删除与容器身份分开，慢速索引读完后再安排自动刷新。
+- 需要核心 1.8.0 的 session.program.v1；旧核心明确提示升级。无新增生产依赖。
+
+状态：待本次源码与五平台独立打包/实际包验收后发行，并按用户要求标为 GitHub Latest。包来源、原始 run、Release 和永久报告在交付后补齐。
+
+本机通过 17 项 Docker 单元测试、POSIX/Linux、Windows/Linux、Windows/Windows 的实际插件进程模拟回归，以及完整界面/连接表单回归。进程测试包含发现期间新开详情导致连接提交失败并保留旧配置，防止候选替换在途目标。
+
+真实回环 OpenSSH/Docker Desktop 4.96.3（原生 Windows amd64 CLI 29.9.2，WSL2 Linux amd64 Engine 29.9.2，desktop-linux 的 npipe）完整流程通过：四分类、详情/指标、中文历史日志、真实 PTY、关闭来源后终端独立运行、容器维护、卷/网络删除、多标签镜像拒绝、公开镜像拉取与断线日志保留。Linux 隔离 Engine 24.0.9/OpenSSH 的同一流程通过，自定义 Root 和挂载卷保持。
+
+Windows Server Engine、ARM64 Docker 远端及全部版本/rootless/生产环境矩阵尚未真实验收；对应边界与剩余要求见[功能](../../docs/features/docker.md)和[待验收计划](../../docs/plans/docker-windows.md)。netem、正式旧版升级和新增 IME/DPI/读屏专项未执行。
+
 # 0.5.4
 
 - 资源树区分主动操作和后台/滚动刷新；资源菜单复用锚点定位和统一关闭。日志详情所有关闭入口衔接实际宽度，复制提供文字确认；状态文字不再反复淡化。

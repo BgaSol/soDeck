@@ -29,6 +29,8 @@ struct Open {
     retention: String,
     #[serde(default)]
     timeout_ms: Option<u64>,
+    #[serde(default)]
+    program_output: Option<String>,
 }
 struct Stream {
     owner: Owner,
@@ -132,6 +134,10 @@ impl AppCore {
                 || request.command.len() > 16 * 1024
                 || request.command.contains('\0')
                 || !matches!(request.retention.as_str(), "fixed" | "rolling")
+                || request
+                    .program_output
+                    .as_deref()
+                    .is_some_and(|s| s != "startup-v1")
                 || !(1024..=64 * 1024 * 1024).contains(&request.max_output_bytes)
                 || request
                     .timeout_ms
@@ -457,21 +463,29 @@ async fn run(core: Weak<AppCore>, s: Arc<Stream>, session: Arc<crate::connection
     let result: Result<(), String> = tokio::select! {biased;_=s.cancel.cancelled()=>Err("cancelled".into()),_=parent.cancelled()=>Err("sessionLost".into()),_=deadline=>Err("deadlineExceeded".into()),r=async{
         let opening=async{channel=Some(session.open_channel().await?);s.status.lock().unwrap()["execSent"]=json!(true);let c=channel.as_ref().unwrap();c.exec(true,s.request.command.as_str()).await.map_err(|e|e.to_string())?;c.eof().await.map_err(|e|e.to_string())?;Ok::<_,String>(())};
         tokio::time::timeout(Duration::from_secs(30),opening).await.map_err(|_|"打开流式命令超时")??;
-        s.status.lock().unwrap()["state"]=json!("running");s.changed.notify_waiters();
+        let mut decoder=crate::remote_program::Decoder::new(s.request.program_output.is_some(),s.request.max_output_bytes);
+        let startup_deadline=tokio::time::Instant::now()+Duration::from_secs(30);
+        if decoder.ready(){s.status.lock().unwrap()["state"]=json!("running");s.changed.notify_waiters();}
         let mut sequence=0u64;
-        while let Some(message)=channel.as_mut().unwrap().wait().await {
+        loop {
+            let message=if decoder.ready(){channel.as_mut().unwrap().wait().await}else{
+                tokio::time::timeout_at(startup_deadline,channel.as_mut().unwrap().wait()).await.map_err(|_|"deadlineExceeded:程序启动超时")?
+            };
+            let Some(message)=message else{break};
             let source=if matches!(&message,russh::ChannelMsg::ExtendedData{..}){"stderr"}else{"stdout"};
             match message {
                 russh::ChannelMsg::Data{data}|russh::ChannelMsg::ExtendedData{data,ext:1}=>{
                     if let Some(c)=core.upgrade(){c.record_business(&s.owner,0,data.len() as u64)}
-                    for bytes in data.chunks(8192){sequence+=1;let mut envelope=serde_json::to_vec(&json!({"v":1,"sequence":sequence.to_string(),"source":source,"receivedAt":crate::core::now(),"dataBase64":STANDARD.encode(bytes)})).unwrap();envelope.push(b'\n');let output=s.clone();tauri::async_runtime::spawn_blocking(move||output.capture.lock().unwrap().append(&envelope)).await.map_err(|e|e.to_string())??;s.changed.notify_waiters();}
+                    let chunks=decoder.push(source=="stderr",&data)?;
+                    {let mut status=s.status.lock().unwrap();status.as_object_mut().unwrap().extend(decoder.metadata().as_object().unwrap().clone());if decoder.ready(){status["state"]=json!("running");}}
+                    for (stderr,data) in chunks{for bytes in data.chunks(8192){sequence+=1;let mut envelope=serde_json::to_vec(&json!({"v":1,"sequence":sequence.to_string(),"source":if stderr{"stderr"}else{"stdout"},"receivedAt":crate::core::now(),"dataBase64":STANDARD.encode(bytes)})).unwrap();envelope.push(b'\n');let output=s.clone();tauri::async_runtime::spawn_blocking(move||output.capture.lock().unwrap().append(&envelope)).await.map_err(|e|e.to_string())??;s.changed.notify_waiters();}}
                 },
                 russh::ChannelMsg::Failure=>return Err("远端拒绝执行命令".into()),
                 russh::ChannelMsg::ExitStatus{exit_status}=>{let mut state=s.status.lock().unwrap();state["exitCode"]=json!(exit_status);state["remoteExitConfirmed"]=json!(true);},
                 russh::ChannelMsg::ExitSignal{signal_name,..}=>{let mut state=s.status.lock().unwrap();state["exitSignal"]=json!(format!("{signal_name:?}"));state["remoteExitConfirmed"]=json!(true);},_=>{}
             }
         }
-        if s.status.lock().unwrap()["remoteExitConfirmed"]!=true{return Err("missingExitStatus".into())}Ok(())
+        if s.status.lock().unwrap()["remoteExitConfirmed"]!=true{return Err("missingExitStatus".into())}decoder.finish()?;Ok(())
     }=>r};
     if let Some(channel) = channel {
         let _ = tokio::time::timeout(Duration::from_secs(1), async {
@@ -499,6 +513,11 @@ async fn run(core: Weak<AppCore>, s: Arc<Stream>, session: Arc<crate::connection
             "deadlineExceeded" => "deadlineExceeded",
             "missingExitStatus" => "missingExitStatus",
             "outputLimit" => "outputLimit",
+            "programCheckFailed" => "programCheckFailed",
+            "programStartFailed" => "programStartFailed",
+            "invalidProgramStartup" => "invalidProgramStartup",
+            "missingProgramStartup" => "missingProgramStartup",
+            "unexpectedProgramOutput" => "unexpectedProgramOutput",
             _ => "commandFailed",
         };
         state["error"] = json!({"code":code,"message":e})

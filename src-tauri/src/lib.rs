@@ -16,6 +16,7 @@ mod platform;
 pub mod plugin_icons;
 mod plugins;
 pub mod remote_files;
+mod remote_program;
 mod resource_owner;
 mod resource_tasks;
 pub mod servers;

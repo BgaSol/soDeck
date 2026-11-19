@@ -94,6 +94,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --lib -
 | `npm run system-status:test` | 独立测试目录、真实 OpenSSH 采集/隐藏/暂停/关闭和三主题侧栏 |
 | `npm run system-status:ui:test` | 固定数据 UI、概览用量条、CPU/内存趋势切换与重挂载、三主题 160/200/240/280/320/400/480px；`SODECK_TEST_SYSTEM_STATUS_PLUGIN` 可指向实际包 |
 | `npm run docker:test` | 本机原生插件、真实核心与隔离 Linux Docker Engine/OpenSSH；验证单容器操作、日志、资源、断线保留及删容器保留卷 |
+| `npm run docker:windows:test` | Windows 本机 OpenSSH 与 Docker Desktop Linux Engine，验证原生 CLI/npipe、完整容器/资源/日志/PTY/拉取流程；使用独立标记测试资源并清理 |
 | `npm run docker:process:test` | 实际插件进程与假核心；验证查询复用、跨页搜索、操作去重、丢失回执、失败/中断状态、关闭与资源释放 |
 | `npm run docker:ui:test` | 固定数据 UI、维护/环境变量、日志持续接收与固定阅读、搜索/筛选/详情、缩略拖动取消、候选原捕获恢复、三主题与 200/320/400/900px 布局 |
 
@@ -128,6 +129,8 @@ macOS 用系统 clang、AppKit/LaunchServices、Apple Events 和 ad hoc 签名�
 ### 自动目录集成回归
 
 Linux 安装 Bash、Zsh 和 Python 3 后运行 `python3 scripts/test-terminal-shell.py`，以真实 PTY 验证随终端发行的启动脚本、用户配置顺序、字符串/数组提示符钩子、退出状态、特殊字符、嵌套 shell、Ctrl-C 与临时文件清理。Check 的终端业务任务执行此入口；Python/Zsh 是测试工具，不加入产品包。`npm run communication:test` 在 Linux 使用默认自动集成，不配置 hostname 或注入提示符钩子；Windows 保留 PowerShell 手动 OSC 7 兼容回归。
+
+docker:windows:test 先运行 test:prepare -- docker；需要本机 Docker Desktop 已启动，docker.exe/ssh-keygen/Cargo 在 PATH，Windows OpenSSH sshd 可用。测试只启动临时回环服务与独立密钥，不修改系统 SSH 配置；创建唯一名称/标签的容器、卷、网络与派生镜像，结束仅清理这些资源。它不等于 Windows Server Engine 或 ARM64 远端验收。docker:process:test 与实际插件包回归另覆盖模拟 POSIX/Linux、Windows/Linux、Windows/Windows 三种组合，模拟不计为真实 Engine 验收。
 
 ## 打包
 
