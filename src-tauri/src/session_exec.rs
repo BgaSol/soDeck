@@ -143,7 +143,7 @@ impl AppCore {
                     sequence: r.sequence,
                     command: crate::remote_program::probe(&r.keys, true),
                     timeout_ms: r.timeout_ms,
-                    max_output_bytes: 16 * 1024,
+                    max_output_bytes: crate::remote_program::ENVIRONMENT_OUTPUT_BUDGET,
                     program_output: None,
                     environment_keys: Some(r.keys),
                 }
@@ -425,12 +425,16 @@ async fn run(
                 if let Some(keys) = &task.request.environment_keys {
                     if let Some(code) = exit_code {
                         if probe_bytes.1.is_empty() {
-                            if let Ok(value) = crate::remote_program::parse_environment(&probe_bytes.0, keys, code) {
-                                let mut out = task.result.lock().unwrap();
-                                out.stdout = serde_json::to_vec(&value).unwrap();
-                                out.exit_code = exit_code;
-                                out.confirmed = true;
-                                return Ok(());
+                            match crate::remote_program::parse_environment(&probe_bytes.0, keys, code) {
+                                Ok(value) => {
+                                    let mut out = task.result.lock().unwrap();
+                                    out.stdout = serde_json::to_vec(&value).unwrap();
+                                    out.exit_code = exit_code;
+                                    out.confirmed = true;
+                                    return Ok(());
+                                }
+                                Err(error) if error.starts_with("outputLimit:") => return Err(error),
+                                Err(_) => {},
                             }
                         }
                     }

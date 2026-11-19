@@ -273,7 +273,7 @@ completed 表示收到远端退出状态，非零退出码仍可能 completed。
 
 方法错误沿用 JSON-RPC error，`error.data.code` 区分 invalidParams/staleContext/workspaceClosing/resourceBusy/operationConflict/operationExpired/taskExpired/invalidOffset/unsupported。任务错误位于 poll.error。SDK `call_detailed` 保留 code/message/data，原 `call` 的字符串错误接口不变。使用前检查能力，旧插件继续使用原有 API。
 
-### session.program.v1（核心 1.8.0）
+### session.program.v1（核心 1.8.1）
 
 新增可选能力，用于当前会话的环境探测和程序参数编码。核心负责平台启动、字节与退出状态；软件发现、身份检查内容及业务解释由插件负责。依赖此能力的插件初始化检查，旧核心明确提示升级；原 exec、stream、terminal 与 API 主版本保持兼容。
 
@@ -282,7 +282,7 @@ completed 表示收到远端退出状态，非零退出码仍可能 completed。
 | session.environment.start | `{viewId,expectedContext,operationId,sequence,timeoutMs,keys?}` → `{taskId,state}`；复用 exec 任务、水位、额度、取消和回收 |
 | session.program.prepare | `{viewId,expectedContext,environment,mode,program}` → `{command,length,mode,programOutput}`；仅编码并核对当前在线归属，不执行远端程序 |
 
-探测 keys 最多 8 个合法环境变量名，每名最多 128 ASCII 字节。只读取指定变量，不导出整个环境或执行用户 Profile；输出上限 16 KiB。最多依次尝试固定 Windows/POSIX 探测，共享 1–30 秒期限；缺少退出状态、超限、取消或异常信号直接失败。成功通过 exec.poll 取得 UTF-8 JSON `{environment,values}`。environment 为 `{kind:"posix"}` 或 `{kind:"windows",launcher,exitMode}`；launcher 是探测到的 PowerShell 路径，exitMode 为 native/powershell。Windows 当前需要可执行的 powershell.exe，支持 cmd 或 PowerShell 默认会话 shell。
+探测 keys 最多 8 个合法环境变量名，每名最多 128 ASCII 字节。只读取指定变量，不导出整个环境或执行用户 Profile；每次探测的两路原始输出合计与最终 UTF-8 JSON 结果分别受同一 16 KiB 上限约束，包含 JSON 转义后的字节。最多依次尝试固定 Windows/POSIX 探测，共享 1–30 秒期限；缺少退出状态、超限、取消或异常信号直接失败，不尝试下一方案。成功通过 exec.poll 取得 UTF-8 JSON `{environment,values}`。environment 为 `{kind:"posix"}` 或 `{kind:"windows",launcher,exitMode}`；launcher 是探测到的 PowerShell 路径，exitMode 为 native/powershell。Windows 当前需要可执行的 powershell.exe，支持 cmd 或 PowerShell 默认会话 shell。
 
 Windows 探测用固定非零退出码识别外层 shell 的退出传播方式，成功任务可能 exitCode 为 37 或 1。**环境探测以 state=completed、remoteExitConfirmed=true 及完整 JSON 判断成功，不能要求 exitCode=0。** 失败方案的输出不进入下一方案或成功结果。环境只适用于本次 Context；重连后重新探测，不从客户端系统推断。
 

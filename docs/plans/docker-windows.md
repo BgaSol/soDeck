@@ -1,6 +1,6 @@
 # Docker Windows 远端剩余验收
 
-状态：2026-11-19，实现已进入核心 1.8.0 / Docker 0.6.0；本次源码、真实 Docker Desktop/Linux 流程与独立五平台发行正在验收。正式行为、边界和契约已迁入 [Docker 功能](../features/docker.md)、[架构](../architecture.md)和[程序 API](../plugin-api.md#sessionprogramv1核心-180)。本文只保留尚未完成的约定验收，不代表这些远端组合已经通过。
+状态：2026-11-19，实现已进入核心 1.8.1 / Docker 0.6.0；本次源码、真实 Docker Desktop/Linux 流程与独立五平台发行正在验收。正式行为、边界和契约已迁入 [Docker 功能](../features/docker.md)、[架构](../architecture.md)和[程序 API](../plugin-api.md#sessionprogramv1核心-181)。本文只保留尚未完成的约定验收，不代表这些远端组合已经通过。
 
 ## 尚未完成的真实远端范围
 
@@ -21,7 +21,7 @@ ARM64 远端只在 Docker 原生发行物可用且真实测试后记为已验；
 
 先完成本次 Windows Desktop 和隔离 Linux Engine 完整流程，再跑相关格式/类型、工程脚本、核心/插件测试与本机正式构建。源码 Check、核心与 Docker 独立 package/verify 按[发布流程](../distribution.md)保留五平台原生产物和实际包启动/退出。
 
-来源提交、原始运行、实际通过/失败与跳过范围迁入[核心 1.8.0](../releases/v1.8.0.md)及[Docker CHANGELOG](../../plugins/docker/CHANGELOG.md)，附件报告/摘要保存为永久发行证据。本轮完成后删除本节；真实 Windows Engine/远端范围完成后删除对应要求，不另建完成计划归档。
+来源提交、原始运行、实际通过/失败与跳过范围迁入[核心 1.8.1](../releases/v1.8.1.md)及[Docker CHANGELOG](../../plugins/docker/CHANGELOG.md)，附件报告/摘要保存为永久发行证据。本轮完成后删除本节；真实 Windows Engine/远端范围完成后删除对应要求，不另建完成计划归档。
 
 资源树设备复核与日志工作台其他专项仍由[资源树计划](docker-expansion.md)和[日志计划](docker-log-viewer.md)维护，本主题不接管它们。
 

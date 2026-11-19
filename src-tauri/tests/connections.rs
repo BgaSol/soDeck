@@ -33,6 +33,8 @@ struct Ssh {
     live: Arc<AtomicUsize>,
     hosts: Arc<Mutex<Vec<String>>>,
     routes: Arc<Mutex<HashMap<String, SocketAddr>>>,
+    environment_response: Arc<Mutex<Option<Vec<u8>>>>,
+    environment_probes: Arc<AtomicUsize>,
 }
 impl server::Handler for Ssh {
     type Error = russh::Error;
@@ -133,6 +135,15 @@ impl server::Handler for Ssh {
         session: &mut Session,
     ) -> Result<(), Self::Error> {
         session.channel_success(id)?;
+        let response = self.environment_response.lock().unwrap().clone();
+        if let Some(response) = response {
+            self.environment_probes.fetch_add(1, Ordering::Relaxed);
+            session.data(id, response)?;
+            session.exit_status_request(id, 37)?;
+            session.eof(id)?;
+            session.close(id)?;
+            return Ok(());
+        }
         if command == b"status-test:hang" {
             return Ok(());
         }

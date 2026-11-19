@@ -5,6 +5,8 @@ use crate::{session_exec::Error, workspaces::Context, AppCore};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+pub(crate) const ENVIRONMENT_OUTPUT_BUDGET: usize = 16 * 1024;
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) enum Environment {
@@ -216,7 +218,11 @@ pub(crate) fn parse_environment(
     if lines.next().is_some() {
         return Err("invalidEnvironment".into());
     }
-    Ok(json!({"environment":environment,"values":values}))
+    let result = json!({"environment":environment,"values":values});
+    if serde_json::to_vec(&result).unwrap().len() > ENVIRONMENT_OUTPUT_BUDGET {
+        return Err("outputLimit:环境探测结果输出超限".into());
+    }
+    Ok(result)
 }
 pub(crate) fn startup(started: bool, index: usize) -> Vec<u8> {
     let payload = if started {
@@ -354,6 +360,29 @@ impl Decoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn environment_json_escaping_obeys_the_output_budget() {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let keys = vec!["DOCKER_HOST".into()];
+        let budget = ENVIRONMENT_OUTPUT_BUDGET;
+        let overhead = serde_json::to_vec(&json!({
+            "environment":{"kind":"posix"},"values":{"DOCKER_HOST":""}
+        }))
+        .unwrap()
+        .len();
+        let mut value = "\u{1}".repeat((budget - overhead) / 6);
+        value.push_str(&"x".repeat((budget - overhead) % 6));
+        let probe = |value: &str| format!("SODECK_ENV_1\nposix\n{}\n", STANDARD.encode(value));
+        let bytes = probe(&value);
+        assert!(bytes.len() < budget);
+        let result = parse_environment(bytes.as_bytes(), &keys, 0).unwrap();
+        assert_eq!(serde_json::to_vec(&result).unwrap().len(), budget);
+        value.push('x');
+        let bytes = probe(&value);
+        assert!(bytes.len() < budget);
+        assert!(matches!(parse_environment(bytes.as_bytes(), &keys, 0),
+            Err(error) if error.starts_with("outputLimit:")));
+    }
     #[test]
     fn negotiated_frame_does_not_consume_program_text() {
         let frame = startup(true, 0);

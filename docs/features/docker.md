@@ -67,7 +67,7 @@ Docker Root 位于 Engine 下、四类资源之前，不被搜索和容器筛选
 
 ## Docker 连接与操作语义
 
-Docker 0.6.0 需要核心 1.8.0 的 session.program.v1。远端执行环境与 Engine 系统分别识别：Windows OpenSSH 用原生 Docker CLI 访问当前账号的本机命名管道，Desktop 的 WSL2 Linux Engine 使用 Linux 容器规则；POSIX 会话访问 Unix socket。显示实际 Client/Server 系统、版本、架构和 Docker Root，保留 Windows 盘符路径，不换算 WSL 虚拟磁盘。Windows Engine 已实现对应程序默认值和系统网络保护，暂停/恢复不提供；真实兼容验收范围见 [CHANGELOG](../../plugins/docker/CHANGELOG.md)与[待验收范围](../plans/docker-windows.md)。
+Docker 0.6.0 需要核心 1.8.1 的 session.program.v1。远端执行环境与 Engine 系统分别识别：Windows OpenSSH 用原生 Docker CLI 访问当前账号的本机命名管道，Desktop 的 WSL2 Linux Engine 使用 Linux 容器规则；POSIX 会话访问 Unix socket。显示实际 Client/Server 系统、版本、架构和 Docker Root，保留 Windows 盘符路径，不换算 WSL 虚拟磁盘。Windows Engine 已实现对应程序默认值和系统网络保护，暂停/恢复不提供；真实兼容验收范围见 [CHANGELOG](../../plugins/docker/CHANGELOG.md)与[待验收范围](../plans/docker-windows.md)。
 
 新服务器默认“自动识别”：DOCKER_CONTEXT 优先于 DOCKER_HOST，未覆盖时读取当前 Context 的 Docker endpoint。一次识别共享 30 秒期限，只读取发现所需环境变量。仅接受远端绝对 Unix socket 或远端本机 npipe（如 `npipe:////./pipe/dockerDesktopLinuxEngine`）；不自动回退其他端点、开放 TCP、进入 WSL 或提权。Docker Desktop 必须已启动，当前 SSH 账号必须能访问 CLI 和 Engine。
 
