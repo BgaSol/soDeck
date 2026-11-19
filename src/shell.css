@@ -305,14 +305,6 @@
     background: transparent;
     color: var(--muted);
   }
-  .settings-dialog {
-    width: 940px;
-    height: 620px;
-    max-width: 96%;
-    max-height: 100%;
-    display: flex;
-    flex-direction: column;
-  }
   .wide-dialog {
     width: 1000px;
     height: 630px;
@@ -324,53 +316,6 @@
   .layer-content {
     min-height: 0;
     flex: 1;
-  }
-  .settings-content {
-    display: flex;
-    overflow: hidden;
-  }
-  .settings-nav {
-    width: 160px;
-    flex-shrink: 0;
-    min-height: 0;
-    overflow-y: auto;
-    background: var(--subtle);
-    border-right: var(--sd-stroke-structure) solid var(--border);
-    padding: 20px 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-  }
-  .nav-label {
-    color: var(--muted);
-    font-size: 10px;
-    padding: 0 12px 9px;
-  }
-  .nav-item {
-    justify-content: flex-start;
-    border: 0;
-    background: transparent;
-    padding: 9px 12px;
-    font-size: 12px;
-  }
-  .nav-item.active {
-    background: var(--accent-bg);
-    color: var(--text);
-  }
-  .nav-bottom {
-    margin-top: auto;
-    font-size: 11px;
-    color: var(--muted);
-    padding: 12px;
-  }
-  .nav-bottom span {
-    float: right;
-  }
-  .settings-content > section {
-    padding: 24px;
-    flex: 1;
-    min-width: 0;
-    overflow: auto;
   }
   .section-heading {
     display: flex;
@@ -920,12 +865,6 @@
     color: var(--error);
   }
   @media (max-width: 880px) {
-    .settings-nav {
-      width: 132px;
-    }
-    .settings-content > section {
-      padding: 18px;
-    }
     .plugin-layout {
       grid-template-columns: 1fr;
     }
@@ -1007,7 +946,7 @@
   #catalog-tab[aria-selected="true"] { background: var(--sd-server-selected); color: var(--text); box-shadow: none; }
   .topbar { border-bottom: 0; }
   .topbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: var(--sd-stroke-structure); background: var(--border); pointer-events: none; }
-  .settings-nav, .catalog-dialog-heading { background: var(--sd-navigation); }
+  .catalog-dialog-heading { background: var(--sd-navigation); }
   .endpoint-symbol { background: var(--sd-symbol); color: var(--text); }
   .catalog-row.selected .endpoint-symbol { background: var(--sd-symbol-selected); }
   .badge.running, .badge.success { background: var(--sd-success-bg); }
