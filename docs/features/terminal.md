@@ -2,7 +2,7 @@
 
 终端插件复用当前服务器会话，通过 PTY 打开登录 shell 或创建参数指定的交互命令。中央“＋”触发插件声明的新建行为；侧边工具栏不提供另一套终端定位入口。
 
-本轮命令接入尚未发行，见[未发行记录](../../plugins/terminal/CHANGELOG.md)。
+命令阅读随终端 0.10.0 独立发行；来源、五平台与专项验证范围见[终端变更记录](../../plugins/terminal/CHANGELOG.md)。
 
 ## 创建、输入与结束
 
@@ -19,7 +19,7 @@
 
 ## 目录识别与文件跟随
 
-登录 shell 的目录集成可选自动、手动或关闭。自动模式支持 Bash/Zsh，按用户配置顺序接入 OSC 7 上报，使用本次终端的临时脚本，不持久修改远端 shell 配置；无法自动集成时保留终端并说明限制。指定命令第一版关闭目录脚本注入。
+登录 shell 的目录集成可选自动、手动或关闭。自动模式支持 Linux/macOS 的 Bash/Zsh，按用户配置顺序接入目录上报，使用本次终端的临时脚本，不持久修改远端 shell 配置；无法自动集成时保留终端并说明限制。指定命令关闭目录脚本注入。命令阅读与目录上报分别开关，PowerShell 命令阅读不宣称自动目录跟随。
 
 只有有效的主机/路径及当前会话身份才能更新目录。主机身份未知、路径无效、旧代次或命令终端不能提供可信目录时，不猜测路径。手动集成可使用符合协议的 OSC 7；不同 shell/远端系统需各自验证。
 
@@ -37,6 +37,28 @@
 
 常驻彩色预览支持点击、拖动和键盘浏览；正常宽度为 96 px，窄页缩为 40 px。阅读框使用透明底、细轮廓和窄位置标记，搜索控件保持居中；独立发行记录见[终端变更记录](../../plugins/terminal/CHANGELOG.md)。
 
+## 命令阅读与标记
+
+阅读工具行提供“上一处／下一处”“添加标记”和“阅读选项”，导航只移动当前保留历史的位置，不发送输入、修改草稿或重新执行命令。正在长输出中时，“上一处”先回到本条命令起点，再次操作才到更前一处；两端不循环。同一行的多类标记合为一个导航位置。
+
+| 标记 | 含义与操作 |
+| --- | --- |
+| 命令标记 | shell 确认开始执行后，左侧显示状态图标和淡分隔线；可确认的退出结果独立显示，未确认不推断成功或失败 |
+| 阅读标记 | 点击“添加标记”标记当前可见正文首行，也可用右键菜单标记该行；再次添加同位置书签可移除，不删除输出 |
+| 输入位置 | 在当前终端的“阅读选项”中主动开启回车辅助后，记录真实回车对应位置；默认关闭，只有中性刻度，不代表执行命令 |
+
+命令标题只从 shell 边界内已显示的文字获取，不保存按键文本、不补显密码或无回显输入。多行输入和软换行按一次提交处理；过长、无法确认或没有显示的输入不提供标题。执行中的长命令可吸顶；已确认的命令滚出视口后，在顶部保留单行标题并可“回到起点”。悬停或主动定位时用细竖线提示显示区间，后台异步输出可能混入，该区间不代表进程级来源证明。搜索打开时吸顶避让；文字选区、复制和 ANSI 颜色不含阅读图标或分隔线。
+
+自动增强按实际能力提供。只有起点就保留导航，缺少标题不显示吸顶，缺少结束结果保持未知。Bash 4+/Zsh 使用现有启动集成；远端默认 shell 为 Windows PowerShell 5.1 或 PowerShell 7 时，在当前交互进程内包装 PSReadLine 和 prompt，不改永久 profile 或 Enter 绑定。CMD 保留原 shell，不因系统安装了 PowerShell 而替换。指定命令、其他 shell、hook 冲突或未集成环境仍可手动标记。
+
+回车辅助只标记位置，不记录输入文字。多行续输、Python REPL 和密码提示也可能留下输入位置；粘贴文本的换行、IME 候选确认、失败发送不创建标记。已知备用屏幕接管时暂停自动标记、覆盖层、手动添加和历史导航；返回普通屏幕后继续。不能保证识别所有普通屏幕交互程序。输入刻度可以从该行右键菜单移除，或从阅读选项清除全部输入刻度；关闭辅助只停止后续新增。
+
+右侧预览左缘刻度用于跳到附近标记，密集时聚合；预览正文仍按原有滚动/搜索规则工作。标记和执行状态只属于本 PTY；断线、退出页仍可浏览和手动标记，新建或重开不继承。嵌套 SSH/su/tmux 不承诺内层自动识别，外层标题只表示外层执行。识别中断后保留有效起点，不用普通输出猜测边界；后续从新可靠位置继续。
+
+终端设置可选择“自动／仅手动标记／关闭”、命令吸顶和命令行淡底；默认自动、吸顶开启、淡底关闭。切换模式不改变目录上报或已有搜索，关闭期间不补猜历史。回车辅助只按当前终端启用并随移窗保存，新终端默认关闭。工具行支持键盘焦点，窄页以有名称的图标收起文字，不抢占 shell 常用组合键。
+
+阅读状态与显示快照在同一水位保存，沿用现有核心历史恢复；不新增核心 API 或永久档案。仅改变书签、没有新输出时，移窗也会提交检查点。淘汰或删除的起点退出导航，不漂到新文字；清空历史清除对应标记。旧检查点没有阅读记录时从接续后开始记录，不扫描 `$`/`>` 补造命令。恢复/容量失败保留实时终端并说明阅读状态未完整保存，不通过重跑补偿。
+
 ## 恢复与维护约束
 
 核心保存原始输出临时日志、分片显示检查点和小 UI 状态；插件解释文字、颜色和搜索结果。正常输出 ACK 不等待全量快照，移窗恢复查询、有效命中、选择、阅读位置与底部跟随。
@@ -46,14 +68,17 @@
 - 写盘或额度失败明确报告恢复状态，实时输出可以继续；真正的恢复缺口不得用重新运行命令弥补。
 - UI 元数据最多 8 KiB，与输出水位分离。关闭释放临时资源，启动只清理可确定属于已退出进程的恢复目录。
 - 当前固定 xterm 6.0.0 与 SerializeAddon 0.14.0，对环形行观察和冻结快照使用受控内部适配；升级必须运行历史回归。
+- 阅读状态作为版本化、分片隐藏控制帧附在插件显示检查点中，最多 16 MiB JSON，且与正文快照合用原 128 MiB/1 GiB 配额；核心不解释。只在恢复 snapshot 阶段接受，实时 PTY 输出不能加载阅读状态。标题最多 4096 UTF-16 单元，过长时保留无标题标记。
 
 完整历史恢复需要核心 0.22.1 的 `terminal.history.v1`；当前终端遇到缺少能力的核心会提示升级。核心 API 主版本保持 1，创建参数和恢复接口见[插件 API](../plugin-api.md)。字体配置见[设置](settings.md)。
 
 ## 实现与回归入口
 
 - 插件：[创建参数](../../plugins/terminal/src/creation.rs)、[目录集成](../../plugins/terminal/src/integration.rs)、[输入](../../plugins/terminal/ui-src/input.js)、[历史](../../plugins/terminal/ui-src/history.js)、[Worker](../../plugins/terminal/ui-src/history-worker.js)、[搜索](../../plugins/terminal/ui-src/search.js)、[快照](../../plugins/terminal/ui-src/snapshot.js)。
+- 阅读：[共享缓冲区观察](../../plugins/terminal/ui-src/buffer-state.js)、[协议与检查点](../../plugins/terminal/ui-src/reading/protocol.js)、[标记模型](../../plugins/terminal/ui-src/reading/model.js)、[界面编排](../../plugins/terminal/ui-src/reading/view.js)、[PowerShell hook](../../plugins/terminal/shell/powershell.ps1)。目录与阅读共用带终端 token 的 OSC 通道，分别解释事件，未知类型不互相覆盖。
 - 核心：[terminal.rs](../../src-tauri/src/terminal.rs)、[streams.rs](../../src-tauri/src/streams.rs)、[journal.rs](../../src-tauri/src/streams/journal.rs)。
 - 回归：[创建](../../plugins/terminal/tests/creation.rs)、[输入](../../scripts/test-terminal-input.mjs)、[历史](../../scripts/test-terminal-history.mjs)、[搜索 UI](../../scripts/test-terminal-search-ui.mjs)、[真实 shell](../../scripts/test-terminal-shell.py)、[真实 PTY](../../scripts/test-terminal-ui.mjs)。
+- 阅读回归：[协议/模型](../../scripts/terminal-reading.test.mjs)、[真实 xterm UI](../../scripts/test-terminal-reading-ui.mjs)、[PowerShell 5.1/7 hook](../../scripts/test-terminal-powershell.mjs)、[Windows OpenSSH/PSReadLine PTY](../../scripts/test-terminal-powershell-pty.mjs)；界面回归包含在 `npm run terminal:history:test`，Windows 独立插件打包运行 hook 回归。真实 PSReadLine 系统按键与 hook 测试范围分开记录。
 - 五平台基本实际包与深度搜索性能是不同验证范围。超宽行、多终端、完整进程内存、原生 Worker/IME/DPI 专项及未补齐交互由临时计划跟进，当前不承诺全部性能目标通过；发行证据见插件 CHANGELOG。
 
 ## 操作反馈

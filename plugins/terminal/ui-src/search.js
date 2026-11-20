@@ -2,7 +2,7 @@ import {createHistory,rowText,textColumns} from './history.js';
 import {createMinimap} from './minimap.js';
 import {fold,originalOffset} from './history-worker.js';
 
-export function createSearch(terminal,host,save,state){
+export function createSearch(terminal,host,save,state,buffers,reading){
   const panel=document.createElement('div');panel.className='terminal-search';panel.hidden=true;panel.setAttribute('role','search');
   const input=document.createElement('input');input.type='search';input.placeholder='搜索当前终端历史';input.setAttribute('aria-label','搜索当前终端历史');input.maxLength=1024;input.spellcheck=false;
   const button=(label,path)=>{const b=document.createElement('button');b.type='button';b.className='sd-control search-button';b.setAttribute('aria-label',label);b.title=label;b.innerHTML=`<svg viewBox="0 0 20 20" aria-hidden="true"><path d="${path}"/></svg>`;return b;};
@@ -18,7 +18,7 @@ export function createSearch(terminal,host,save,state){
   let timer,paintFrame,saveTimer,lagTimer,pendingJump,prepared,displayed,mapRequest,result,resolution;
   const staging=document.createElement('canvas');
   const allowed=()=>!disposed&&state().ready&&state().visible&&!state().frozen;
-  const history=createHistory(terminal,receive),minimap=createMinimap(terminal,host,row=>near(row,0,true),allowed,schedulePaint);
+  const history=createHistory(terminal,receive,buffers),minimap=createMinimap(terminal,host,row=>near(row,0,true),allowed,schedulePaint,reading);
   function geometry(){
     const screen=terminal.element?.querySelector('.xterm-screen');if(!screen)return;
     const a=host.getBoundingClientRect(),b=screen.getBoundingClientRect(),h=history.state();

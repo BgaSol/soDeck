@@ -5,6 +5,7 @@ export function parseIntegration(text,token){
   const activity=parts[2];
   if(activity==='busy')return {state:'unknown',path:null,activity:'busy',reasonCode:'busy'};
   if(activity==='unavailable')return {state:'unknown',path:null,activity:'unavailable',reasonCode:parts[3]||'integration-failed'};
+  if(activity!=='ready')return null;
   if(activity!=='ready'||parts.length!==5)return {state:'unknown',path:null,reasonCode:'invalid-report'};
   const decode=value=>{if(!value||value.length>8192||!/^([0-9a-f]{2})+$/.test(value))throw Error();const path=new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from(value.match(/../g),s=>parseInt(s,16)));if(!path.startsWith('/')||/[\u0000-\u001f\u007f]/.test(path))throw Error();return path;};
   try{return {state:'known',path:decode(parts[3]),pathStyle:'posix',filesystemView:'shell-reported',witness:{path:decode(parts[4]),value:token},method:'automatic-shell',activity:'ready'};}
@@ -23,7 +24,7 @@ export function createLocation(terminal){
   let client,mount,host='',kind='',frameOffset=0,report,latest,ready=false,busy=false,disposed=false,timer,epoch=0,integration={},observed=false,confirmed=false,handshake;
   const valid=()=>!disposed&&ready&&client?.available&&JSON.stringify(mount.context)===JSON.stringify(mount.data.openedContext);
   const handler=terminal.parser.registerOscHandler(7,text=>{if(kind==='data'&&integration.mode==='manual')report=parseOsc7(text,host)||{state:'unknown',path:null,reasonCode:'invalid-report'};return true;});
-  const automatic=terminal.parser.registerOscHandler(633,text=>{if(kind==='data'&&integration.mode==='auto'){const parsed=parseIntegration(text,integration.token);if(parsed){observed=true;if(parsed.state==='known')confirmed=true;if(parsed.activity==='unavailable')confirmed=false;clearTimeout(handshake);report=parsed;}}return true;});
+  const automatic=terminal.parser.registerOscHandler(633,text=>{if(kind==='data'&&integration.mode==='auto'){const parsed=parseIntegration(text,integration.token);if(parsed){observed=true;if(parsed.state==='known')confirmed=true;if(parsed.activity==='unavailable')confirmed=false;clearTimeout(handshake);report=parsed;return true;}}return false;});
   function observation(value){return {...value,terminalId:mount.data.streamId,title:mount.data.title,shell:integration.shell,outputOffset:String(frameOffset),observedAt:Date.now()};}
   async function publish(){
     if(!valid()||busy||!latest)return;busy=true;const ticket=epoch,target=latest;

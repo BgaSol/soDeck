@@ -99,7 +99,10 @@ for shell, array in [("/bin/bash", False), ("/bin/bash", True), ("/bin/zsh", Fal
             assert witness.read_text() == TOKEN
             trace = (home / "trace").read_text().splitlines()
             assert trace == (["profile", "rc"] if shell.endswith("bash") else [".zshenv", ".zprofile", ".zshrc", ".zlogin"]), trace
-            assert b"USER:1" in session.command("false"), "prompt hook lost exit status"
+            false_output = session.command("false")
+            assert b"USER:1" in false_output, "prompt hook lost exit status"
+            assert b"reading;1;start;" in false_output, "missing command start"
+            assert any(v.startswith(b"reading;1;end;") and v.endswith(b";1") for v in REPORT.findall(false_output)), "lost nonzero result"
             target = home / "目录 with % # ' quotes"
             target.mkdir()
             assert path_of(session.command("cd " + shlex.quote(str(target))))[0] == str(target)
