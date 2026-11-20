@@ -178,7 +178,7 @@ try{
     }
     assert.equal((await tool('sodeck_task_input',second)).error,false);
     const result=await until(async()=>(await tool('sodeck_task_get',{taskId:started.taskId})).value,v=>v.done);
-    assert.equal(result.native.exitCode,0);assert.equal(result.evidence.complete,true);assert.equal(result.resourceReleased,true);
+    assert(!('input' in result.native));assert.equal(result.native.exitCode,0);assert.equal(result.evidence.complete,true);assert.equal(result.resourceReleased,true);
     if(mode==='pty'){assert.equal(typeof result.output.terminal,'string');assert(!('stdout' in result.output));const full=(await tool('sodeck_task_get',{taskId:started.taskId,outputMode:'full'})).value;assert(full.output.chunks.every(c=>c.v===2&&c.source==='terminal'));}
     assert.equal((await tool('sodeck_task_input',first)).value.error.code,'inputExpired');
     assert.equal((await tool('sodeck_task_input',second)).error,false,'latest input remains recoverable after done');

@@ -65,7 +65,7 @@ pub fn mcp_targets(discovery: &crate::targets::Discovery) -> Value {
 }
 fn native_facts(native: &Value, history: bool) -> Value {
     let mut value = meaningful_native(native);
-    for key in ["workerFinished", "streamId", "id", "error"] {
+    for key in ["workerFinished", "streamId", "id", "error", "input"] {
         value.as_object_mut().unwrap().remove(key);
     }
     if native.get("error").is_some_and(|e| !e.is_null()) {

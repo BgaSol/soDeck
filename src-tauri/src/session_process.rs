@@ -266,30 +266,6 @@ impl AppCore {
         if matches!(method, "session.process.start" | "session.process.lookup") {
             let request: ProcessStart =
                 serde_json::from_value(p.clone()).map_err(|e| format!("invalidParams:{e}"))?;
-            if method.ends_with("lookup") {
-                let ui = self.ui_state();
-                let view = ui
-                    .resource_view(&request.view_id)
-                    .map_err(|e| format!("staleContext:{e}"))?;
-                if view.plugin_id != plugin || view.plugin_instance_id != instance {
-                    return Err("staleContext:票据不属于此实例".into());
-                }
-                let found = self
-                    .command_processes
-                    .0
-                    .lock()
-                    .unwrap()
-                    .original(plugin, instance, &request);
-                return match found {
-                    Some((id, r)) => {
-                        if r.request != request {
-                            return Err("operationConflict:同一启动票据参数不同".into());
-                        }
-                        Ok(json!({"known":true,"processId":id,"status":status(&r)}))
-                    }
-                    None => Ok(json!({"known":false})),
-                };
-            }
             let sequence = request
                 .sequence
                 .parse::<u64>()
@@ -312,6 +288,31 @@ impl AppCore {
                 || request.io.terminal() && request.program_output.is_some()
             {
                 return Err("invalidParams:进程启动参数超出范围".into());
+            }
+            if method.ends_with("lookup") {
+                let ui = self.ui_state();
+                let view = ui
+                    .resource_view(&request.view_id)
+                    .map_err(|e| format!("staleContext:{e}"))?;
+                if view.plugin_id != plugin || view.plugin_instance_id != instance {
+                    return Err("staleContext:票据不属于此实例".into());
+                }
+                drop(ui);
+                let found = self
+                    .command_processes
+                    .0
+                    .lock()
+                    .unwrap()
+                    .original(plugin, instance, &request);
+                return match found {
+                    Some((id, r)) => {
+                        if r.request != request {
+                            return Err("operationConflict:同一启动票据参数不同".into());
+                        }
+                        Ok(json!({"known":true,"processId":id,"status":status(&r)}))
+                    }
+                    None => Ok(json!({"known":false})),
+                };
             }
             let found = self
                 .command_processes
