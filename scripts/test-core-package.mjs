@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { validateCoreArtifacts, coreNames } from "./core-artifacts.mjs";
+import { validateCoreArtifacts, coreNames, cleanupWindowsUninstaller } from "./core-artifacts.mjs";
 import { verifyBinary } from "./verify-binary.mjs";
 
 const [input, target, commit] = process.argv.slice(2);
@@ -58,8 +58,7 @@ try {
       assert.equal(registration(hive), null, `${mode} uninstall left installation registration`);
       assert(!fs.existsSync(path.join(install, "sodeck.exe")), `${mode} uninstall left the application`);
       // NSIS cannot remove its own executable when run in place with _?=.
-      fs.rmSync(path.join(install, "uninstall.exe"), { force: true });
-      fs.rmdirSync(install);
+      cleanupWindowsUninstaller(install);
       report.windowsInstallModes.push({ mode, hive, install, passed: true });
     }
   } else if (process.platform === "linux") {
