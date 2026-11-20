@@ -27,9 +27,9 @@ async fn interaction_send(client:&reqwest::Client,url:&str,token:&str,id:&Value,
 }
 async fn interactive_remote_checks(_f:&Fixture,client:&reqwest::Client,url:&str,token:&str,target:&Value) {
     let command=if cfg!(windows) {
-        "powershell.exe -NoLogo -NoProfile -Command \"[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); $r=[IO.StreamReader]::new([Console]::OpenStandardInput(),[Text.Encoding]::UTF8); [Console]::Write('first?'); $a=$r.ReadLine(); [Console]::Write('second?'); $b=$r.ReadLine(); [Console]::Write(('length:'+$a.Length+';answer:'+$b)); $tail=$r.ReadToEnd(); [Console]::Write(('tail:'+$tail)); exit 7\""
+        format!("\"{}\" windows_mcp_input_program --exact --ignored --nocapture",std::env::current_exe().unwrap().to_str().unwrap().replace('\\',"/"))
     } else {
-        "printf 'first?'; IFS= read -r a; printf 'second?'; IFS= read -r b; printf 'length:%s;answer:%s' \"${#a}\" \"$b\"; cat; printf 'tail-done'; exit 7"
+        "printf 'first?'; IFS= read -r a; printf 'second?'; IFS= read -r b; printf 'length:%s;answer:%s' \"${#a}\" \"$b\"; cat; printf 'tail-done'; exit 7".to_owned()
     };
     let started=tool(client,url,token,"sodeck_exec_start",json!({"targetId":target,"requestId":"real-pipe","mode":"pipe","command":command,"waitMs":0})).await;
     let id=&started["taskId"];
@@ -115,6 +115,10 @@ async fn interactive_remote_checks(_f:&Fixture,client:&reqwest::Client,url:&str,
         use std::os::unix::fs::MetadataExt;
         assert_eq!(std::fs::metadata(marker).unwrap().uid(),0);
         let tasks=tool(client,url,token,"sodeck_tasks_list",json!({"targetId":target,"requestId":"real-sudo"})).await;assert_eq!(tasks["tasks"].as_array().unwrap().len(),1);
+        let plan=_f.core.ui_close_prepare("main",vec![context.workspace_id.clone()],None).unwrap();
+        _f.core.ui_close_finish(plan["token"].as_str().unwrap(),serde_json::from_value(plan["views"].clone()).unwrap(),"discard").unwrap();
+        let end=std::time::Instant::now()+Duration::from_secs(10);
+        loop {let r=tool(client,url,token,"sodeck_targets_list",json!({"targetId":target})).await;if r["resolution"]=="none"{break;}assert!(std::time::Instant::now()<end);tokio::time::sleep(Duration::from_millis(25)).await;}
     }
 }
 
@@ -232,4 +236,19 @@ async fn openssh_mcp_plugin(){
     }
     let plan=f.core.ui_close_prepare("main",contexts.iter().map(|c|c.workspace_id.clone()).collect(),None).unwrap();let closing=tool(&client,url,&token,"sodeck_targets_list",json!({"query":"187"})).await;assert_eq!(closing["targets"][0]["availability"],"closing");f.core.ui_close_finish(plan["token"].as_str().unwrap(),serde_json::from_value(plan["views"].clone()).unwrap(),"discard").unwrap();
     f.core.unload("sodeck.mcp").unwrap();assert!(client.post(url).send().await.is_err());f.core.shutdown().unwrap();
+}
+
+#[cfg(windows)]
+#[test]
+#[ignore = "native byte-stream program invoked only by the isolated Windows OpenSSH MCP test"]
+fn windows_mcp_input_program() {
+    use std::io::{BufRead,Read,Write};
+    let mut input=std::io::BufReader::new(std::io::stdin());
+    print!("first?");std::io::stdout().flush().unwrap();
+    let mut first=String::new();input.read_line(&mut first).unwrap();
+    print!("second?");std::io::stdout().flush().unwrap();
+    let mut second=String::new();input.read_line(&mut second).unwrap();
+    print!("length:{};answer:{}",first.trim_end().len(),second.trim_end());std::io::stdout().flush().unwrap();
+    let mut tail=String::new();input.read_to_string(&mut tail).unwrap();print!("{tail}");
+    std::io::stdout().flush().unwrap();std::process::exit(7);
 }
