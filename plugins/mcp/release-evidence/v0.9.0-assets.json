@@ -1,0 +1,925 @@
+{
+  "date": "2026-11-21",
+  "component": "mcp",
+  "version": "0.9.0",
+  "sourceCommit": "1585da7a80cb15aa92af79cc0f1f981ffac96ed3",
+  "originalPackageRun": {
+    "id": "44780746278",
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/44780746278",
+    "path": ".github/workflows/plugin.yml",
+    "sourceCommit": "1585da7a80cb15aa92af79cc0f1f981ffac96ed3",
+    "attempt": 1,
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "conclusion": "success",
+        "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780746278/job/136442466233",
+        "id": 136442466233,
+        "name": "select",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780746278/job/136442668090",
+        "id": 136442668090,
+        "name": "windows-aarch64",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780746278/job/136442668186",
+        "id": 136442668186,
+        "name": "macos-aarch64",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780746278/job/136442668220",
+        "id": 136442668220,
+        "name": "linux-aarch64",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780746278/job/136442668289",
+        "id": 136442668289,
+        "name": "linux-x86_64",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780746278/job/136442668422",
+        "id": 136442668422,
+        "name": "windows-x86_64",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780746278/job/136446748552",
+        "id": 136446748552,
+        "name": "verify-windows-aarch64",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780746278/job/136446748553",
+        "id": 136446748553,
+        "name": "verify-macos-aarch64",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780746278/job/136446748585",
+        "id": 136446748585,
+        "name": "verify-windows-x86_64",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780746278/job/136446748727",
+        "id": 136446748727,
+        "name": "verify-linux-aarch64",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780746278/job/136446748776",
+        "id": 136446748776,
+        "name": "verify-linux-x86_64",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780746278/job/136447498349",
+        "id": 136447498349,
+        "name": "release",
+        "status": "completed"
+      }
+    ]
+  },
+  "checks": {
+    "pullRequest": {
+      "url": "https://github.com/BgaSol/soDeck/pull/16",
+      "sourceCommit": "01edd92c31e592a6113209e503fe7e510bcbd429",
+      "sameTreeAsPackageSource": true,
+      "run": "https://github.com/BgaSol/soDeck/actions/runs/44778270686",
+      "jobs": [
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44778270686/job/136434144963",
+          "id": 136434144963,
+          "name": "select",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44778270686/job/136434292949",
+          "id": 136434292949,
+          "name": "integration-network-linux-x86_64",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44778270686/job/136434293033",
+          "id": 136434293033,
+          "name": "integration-business-linux-x86_64",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44778270686/job/136434293041",
+          "id": 136434293041,
+          "name": "checks",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44778270686/job/136434293056",
+          "id": 136434293056,
+          "name": "desktop",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44778270686/job/136434293070",
+          "id": 136434293070,
+          "name": "native-windows-aarch64",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44778270686/job/136434293085",
+          "id": 136434293085,
+          "name": "browser",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44778270686/job/136434293103",
+          "id": 136434293103,
+          "name": "integration-network-linux-aarch64",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44778270686/job/136434293109",
+          "id": 136434293109,
+          "name": "native-linux-x86_64",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44778270686/job/136434293135",
+          "id": 136434293135,
+          "name": "native-windows-x86_64",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44778270686/job/136434293200",
+          "id": 136434293200,
+          "name": "native-macos-aarch64",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44778270686/job/136434293238",
+          "id": 136434293238,
+          "name": "native-linux-aarch64",
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44778270686/job/136434296350",
+          "id": 136434296350,
+          "name": "netem",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44778270686/job/136441790400",
+          "id": 136441790400,
+          "name": "format",
+          "status": "completed"
+        }
+      ]
+    },
+    "packageSourceMain": {
+      "id": "44780663580",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580",
+      "conclusion": "cancelled",
+      "jobs": [
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136442175128",
+          "id": 136442175128,
+          "name": "select",
+          "run_attempt": 1,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136442351127",
+          "id": 136442351127,
+          "name": "browser",
+          "run_attempt": 1,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136442351236",
+          "id": 136442351236,
+          "name": "checks",
+          "run_attempt": 1,
+          "status": "completed"
+        },
+        {
+          "conclusion": "failure",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136442351313",
+          "id": 136442351313,
+          "name": "native-windows-x86_64",
+          "run_attempt": 1,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136442351319",
+          "id": 136442351319,
+          "name": "native-linux-aarch64",
+          "run_attempt": 1,
+          "status": "completed"
+        },
+        {
+          "conclusion": "cancelled",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136442351320",
+          "id": 136442351320,
+          "name": "native-macos-aarch64",
+          "run_attempt": 1,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136442351321",
+          "id": 136442351321,
+          "name": "desktop",
+          "run_attempt": 1,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136442351374",
+          "id": 136442351374,
+          "name": "native-linux-x86_64",
+          "run_attempt": 1,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136442351450",
+          "id": 136442351450,
+          "name": "native-windows-aarch64",
+          "run_attempt": 1,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136442351475",
+          "id": 136442351475,
+          "name": "integration-network-linux-aarch64",
+          "run_attempt": 1,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136442351693",
+          "id": 136442351693,
+          "name": "integration-network-linux-x86_64",
+          "run_attempt": 1,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136442351998",
+          "id": 136442351998,
+          "name": "integration-business-linux-x86_64",
+          "run_attempt": 1,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136442353589",
+          "id": 136442353589,
+          "name": "netem",
+          "run_attempt": 1,
+          "status": "completed"
+        },
+        {
+          "conclusion": "failure",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136450954101",
+          "id": 136450954101,
+          "name": "format",
+          "run_attempt": 1,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136451124725",
+          "id": 136451124725,
+          "name": "native-windows-x86_64",
+          "run_attempt": 2,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136451126524",
+          "id": 136451126524,
+          "name": "integration-network-linux-aarch64",
+          "run_attempt": 2,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136451127054",
+          "id": 136451127054,
+          "name": "checks",
+          "run_attempt": 2,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136451127860",
+          "id": 136451127860,
+          "name": "native-windows-aarch64",
+          "run_attempt": 2,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136451128741",
+          "id": 136451128741,
+          "name": "browser",
+          "run_attempt": 2,
+          "status": "completed"
+        },
+        {
+          "conclusion": "cancelled",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136451175556",
+          "id": 136451175556,
+          "name": "native-macos-aarch64",
+          "run_attempt": 2,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136451176766",
+          "id": 136451176766,
+          "name": "integration-network-linux-x86_64",
+          "run_attempt": 2,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136451181821",
+          "id": 136451181821,
+          "name": "integration-business-linux-x86_64",
+          "run_attempt": 2,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136451182468",
+          "id": 136451182468,
+          "name": "netem",
+          "run_attempt": 2,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136451191805",
+          "id": 136451191805,
+          "name": "select",
+          "run_attempt": 2,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136451194195",
+          "id": 136451194195,
+          "name": "desktop",
+          "run_attempt": 2,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136451212051",
+          "id": 136451212051,
+          "name": "native-linux-aarch64",
+          "run_attempt": 2,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136451220981",
+          "id": 136451220981,
+          "name": "native-linux-x86_64",
+          "run_attempt": 2,
+          "status": "completed"
+        },
+        {
+          "conclusion": "failure",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136457981236",
+          "id": 136457981236,
+          "name": "format",
+          "run_attempt": 2,
+          "status": "completed"
+        },
+        {
+          "conclusion": "cancelled",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136459291100",
+          "id": 136459291100,
+          "name": "native-macos-aarch64",
+          "run_attempt": 3,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136459291170",
+          "id": 136459291170,
+          "name": "select",
+          "run_attempt": 3,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136459291998",
+          "id": 136459291998,
+          "name": "netem",
+          "run_attempt": 3,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136459292580",
+          "id": 136459292580,
+          "name": "native-linux-aarch64",
+          "run_attempt": 3,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136459292640",
+          "id": 136459292640,
+          "name": "checks",
+          "run_attempt": 3,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136459292647",
+          "id": 136459292647,
+          "name": "integration-network-linux-x86_64",
+          "run_attempt": 3,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136459292667",
+          "id": 136459292667,
+          "name": "browser",
+          "run_attempt": 3,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136459293013",
+          "id": 136459293013,
+          "name": "native-windows-x86_64",
+          "run_attempt": 3,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136459346364",
+          "id": 136459346364,
+          "name": "integration-network-linux-aarch64",
+          "run_attempt": 3,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136459346904",
+          "id": 136459346904,
+          "name": "desktop",
+          "run_attempt": 3,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136459358322",
+          "id": 136459358322,
+          "name": "native-linux-x86_64",
+          "run_attempt": 3,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136459367498",
+          "id": 136459367498,
+          "name": "integration-business-linux-x86_64",
+          "run_attempt": 3,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136459378304",
+          "id": 136459378304,
+          "name": "native-windows-aarch64",
+          "run_attempt": 3,
+          "status": "completed"
+        },
+        {
+          "conclusion": "failure",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44780663580/job/136461049621",
+          "id": 136461049621,
+          "name": "format",
+          "run_attempt": 3,
+          "status": "completed"
+        }
+      ],
+      "history": [
+        "Attempt 1: Windows scripts font asset git hash-object exceeded its 10-second timeout; all core tests succeeded.",
+        "Windows x64 native core, scripts and MCP passed in attempt 2.",
+        "macOS source job cancelled during main attempts; fixed exact v1.11.0 native-core repeated four platforms; macOS queued supplement was cancelled. Same-tree PR Check supplies successful macOS source validation."
+      ]
+    },
+    "nativeTag": {
+      "id": "44786440625",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/44786440625",
+      "headSha": "1585da7a80cb15aa92af79cc0f1f981ffac96ed3",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "scope": "Supplemental repeated native-core: four platforms passed; queued macOS cancelled because identical-tree PR already supplied five-platform native source coverage. Not counted as a five-platform pass.",
+      "jobs": [
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44786440625/job/136462442746",
+          "id": 136462442746,
+          "name": "select",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44786440625/job/136462588342",
+          "id": 136462588342,
+          "name": "checks",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44786440625/job/136462588495",
+          "id": 136462588495,
+          "name": "native-windows-aarch64",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44786440625/job/136462588496",
+          "id": 136462588496,
+          "name": "native-linux-x86_64",
+          "status": "completed"
+        },
+        {
+          "conclusion": "cancelled",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44786440625/job/136462588502",
+          "id": 136462588502,
+          "name": "native-macos-aarch64",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44786440625/job/136462588513",
+          "id": 136462588513,
+          "name": "native-windows-x86_64",
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44786440625/job/136462588566",
+          "id": 136462588566,
+          "name": "native-linux-aarch64",
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44786440625/job/136462590258",
+          "id": 136462590258,
+          "name": "desktop",
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44786440625/job/136462590655",
+          "id": 136462590655,
+          "name": "integration-${{ matrix.name }}",
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44786440625/job/136462591052",
+          "id": 136462591052,
+          "name": "netem",
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44786440625/job/136462591820",
+          "id": 136462591820,
+          "name": "browser",
+          "status": "completed"
+        },
+        {
+          "conclusion": "failure",
+          "html_url": "https://github.com/BgaSol/soDeck/actions/runs/44786440625/job/136468551007",
+          "id": 136468551007,
+          "name": "format",
+          "status": "completed"
+        }
+      ]
+    }
+  },
+  "nativeReports": [
+    {
+      "id": "sodeck.mcp",
+      "version": "0.9.0",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "1585da7a80cb15aa92af79cc0f1f981ffac96ed3",
+      "sha256": "7353da5d4a5dfa424d088cc3ab386d6b4610b569082cdf2e94504deaa81054de",
+      "runId": "44780746278",
+      "toolCommit": "1585da7a80cb15aa92af79cc0f1f981ffac96ed3",
+      "passed": true,
+      "pluginIcons": [
+        "bot"
+      ],
+      "mcpHttp": true,
+      "mcpQueries": true,
+      "mcpConnections": true,
+      "calls": [
+        "settings.get",
+        "session.target.describe"
+      ]
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.9.0",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "1585da7a80cb15aa92af79cc0f1f981ffac96ed3",
+      "sha256": "e1e5af39dcbfa0df381086ca6f1ff24013294f364d8c2638703d0876b76cff67",
+      "runId": "44780746278",
+      "toolCommit": "1585da7a80cb15aa92af79cc0f1f981ffac96ed3",
+      "passed": true,
+      "pluginIcons": [
+        "bot"
+      ],
+      "mcpHttp": true,
+      "mcpQueries": true,
+      "mcpConnections": true,
+      "calls": [
+        "settings.get",
+        "session.target.describe"
+      ]
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.9.0",
+      "target": "aarch64-apple-darwin",
+      "commit": "1585da7a80cb15aa92af79cc0f1f981ffac96ed3",
+      "sha256": "e21dae5f27e4af85fa2ca6864499e8abd8d2b61e6d18e3dd043cb0439a9926f3",
+      "runId": "44780746278",
+      "toolCommit": "1585da7a80cb15aa92af79cc0f1f981ffac96ed3",
+      "passed": true,
+      "pluginIcons": [
+        "bot"
+      ],
+      "mcpHttp": true,
+      "mcpQueries": true,
+      "mcpConnections": true,
+      "calls": [
+        "settings.get",
+        "session.target.describe"
+      ]
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.9.0",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "1585da7a80cb15aa92af79cc0f1f981ffac96ed3",
+      "sha256": "addc60027c01a47760dbafb1e57041e7ea4eb57c01895ae5d27cc87e9ebe29dd",
+      "runId": "44780746278",
+      "toolCommit": "1585da7a80cb15aa92af79cc0f1f981ffac96ed3",
+      "passed": true,
+      "pluginIcons": [
+        "bot"
+      ],
+      "mcpHttp": true,
+      "mcpQueries": true,
+      "mcpConnections": true,
+      "calls": [
+        "settings.get",
+        "session.target.describe"
+      ]
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.9.0",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "1585da7a80cb15aa92af79cc0f1f981ffac96ed3",
+      "sha256": "a4e928051ab031c0f682b98061635de8cfe959e72fe87a2d91fbd028e9794f6d",
+      "runId": "44780746278",
+      "toolCommit": "1585da7a80cb15aa92af79cc0f1f981ffac96ed3",
+      "passed": true,
+      "pluginIcons": [
+        "bot"
+      ],
+      "mcpHttp": true,
+      "mcpQueries": true,
+      "mcpConnections": true,
+      "calls": [
+        "settings.get",
+        "session.target.describe"
+      ]
+    }
+  ],
+  "release": {
+    "id": 452980072,
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.9.0",
+    "tag": "plugin-mcp-v0.9.0",
+    "publishedAt": "2026-11-20T17:57:47Z",
+    "latest": true,
+    "assets": [
+      {
+        "id": 772789468,
+        "name": "plugin-update.json",
+        "size": 3685,
+        "digest": "sha256:e38d760c46383d42bafebd72d726647450c66aea2e03338e677c777405da88db",
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.9.0/plugin-update.json"
+      },
+      {
+        "id": 772679888,
+        "name": "sodeck-mcp_0.9.0_aarch64-apple-darwin.tar.gz",
+        "size": 2080785,
+        "digest": "sha256:e21dae5f27e4af85fa2ca6864499e8abd8d2b61e6d18e3dd043cb0439a9926f3",
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.9.0/sodeck-mcp_0.9.0_aarch64-apple-darwin.tar.gz"
+      },
+      {
+        "id": 772679761,
+        "name": "sodeck-mcp_0.9.0_aarch64-pc-windows-msvc.zip",
+        "size": 2148380,
+        "digest": "sha256:addc60027c01a47760dbafb1e57041e7ea4eb57c01895ae5d27cc87e9ebe29dd",
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.9.0/sodeck-mcp_0.9.0_aarch64-pc-windows-msvc.zip"
+      },
+      {
+        "id": 772679823,
+        "name": "sodeck-mcp_0.9.0_aarch64-unknown-linux-gnu.tar.gz",
+        "size": 2111726,
+        "digest": "sha256:7353da5d4a5dfa424d088cc3ab386d6b4610b569082cdf2e94504deaa81054de",
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.9.0/sodeck-mcp_0.9.0_aarch64-unknown-linux-gnu.tar.gz"
+      },
+      {
+        "id": 772679689,
+        "name": "sodeck-mcp_0.9.0_x86_64-pc-windows-msvc.zip",
+        "size": 2279657,
+        "digest": "sha256:a4e928051ab031c0f682b98061635de8cfe959e72fe87a2d91fbd028e9794f6d",
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.9.0/sodeck-mcp_0.9.0_x86_64-pc-windows-msvc.zip"
+      },
+      {
+        "id": 772679797,
+        "name": "sodeck-mcp_0.9.0_x86_64-unknown-linux-gnu.tar.gz",
+        "size": 2258001,
+        "digest": "sha256:e1e5af39dcbfa0df381086ca6f1ff24013294f364d8c2638703d0876b76cff67",
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.9.0/sodeck-mcp_0.9.0_x86_64-unknown-linux-gnu.tar.gz"
+      }
+    ]
+  },
+  "manifest": {
+    "id": "sodeck.mcp",
+    "version": "0.9.0",
+    "apiVersion": "1",
+    "notes": "# Agent MCP 0.9.0\n\n- 新增 sodeck_file_upload：使用 SoDeck 主机绝对路径上传单个普通文件，默认拒绝覆盖，显式覆盖完整传输后原子提交；保留本地来源，不自动建目录、执行或添加可执行位。\n- 上传/下载共用文件任务、查询、取消和持久化收尾，新增第十二个工具与 upload 筛选。进度、提交事实、本地记录和清理分别报告，未知提交不自动重发。\n- 侧栏文件收据显示来源、目标、覆盖策略与进度，上传不读取命令输出或保存正文副本；落地元数据 schema 3。Token、端口及原 exec/download API 沿用，无新增生产依赖。\n\n要求核心 1.11.0 的 files.copy.v1 和已有 MCP 能力；先更新核心与插件，再重启 SoDeck。来源 [1585da7](https://github.com/BgaSol/soDeck/commit/1585da7a80cb15aa92af79cc0f1f981ffac96ed3)；原始独立五平台打包/验收 [44780746278](https://github.com/BgaSol/soDeck/actions/runs/44780746278)，首次通过。五份原生归档的架构、摘要、初始化、十二工具、进程/打开恢复、挂载/销毁/退出均通过，保留同一份程序字节，按用户要求设为仓库 Latest。\n\n[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/44780663580)与[相同源码 PR Check](https://github.com/BgaSol/soDeck/actions/runs/44778270686)保留源码/业务验证及Windows 字体 git 超时补测通过；main 的 macOS 被取消；固定标签重复补测四平台通过，macOS 排队取消，其源码依据同树 PR Check，实际归档另有五平台原生验收。Windows 原始候选归档与同源核心夹具的三服务器 SSH、空/二进制、冲突、覆盖、请求恢复和 1 GiB 逐字节比对通过，1 GiB 约 12 秒，核心峰值工作集没有增长。Linux 真实业务和 1 GiB 流程通过；另验证未知、取消、记录失败与上传侧栏反馈。\n\n不包含目录、批量、断点续传和执行文件；本机路径属于 SoDeck 所在机器。原子替换不等于外部进程文件锁。未执行五平台已安装核心/MCP SSH 组合、实际旧版升级、netem、认证 Codex CLI 或物理 IME/DPI/读屏专项。完整契约、来源与永久附件证据见[CHANGELOG](https://github.com/BgaSol/soDeck/blob/main/plugins/mcp/CHANGELOG.md)。\n",
+    "platforms": {
+      "aarch64-apple-darwin": {
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.9.0/sodeck-mcp_0.9.0_aarch64-apple-darwin.tar.gz",
+        "sha256": "e21dae5f27e4af85fa2ca6864499e8abd8d2b61e6d18e3dd043cb0439a9926f3"
+      },
+      "aarch64-pc-windows-msvc": {
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.9.0/sodeck-mcp_0.9.0_aarch64-pc-windows-msvc.zip",
+        "sha256": "addc60027c01a47760dbafb1e57041e7ea4eb57c01895ae5d27cc87e9ebe29dd"
+      },
+      "aarch64-unknown-linux-gnu": {
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.9.0/sodeck-mcp_0.9.0_aarch64-unknown-linux-gnu.tar.gz",
+        "sha256": "7353da5d4a5dfa424d088cc3ab386d6b4610b569082cdf2e94504deaa81054de"
+      },
+      "x86_64-pc-windows-msvc": {
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.9.0/sodeck-mcp_0.9.0_x86_64-pc-windows-msvc.zip",
+        "sha256": "a4e928051ab031c0f682b98061635de8cfe959e72fe87a2d91fbd028e9794f6d"
+      },
+      "x86_64-unknown-linux-gnu": {
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.9.0/sodeck-mcp_0.9.0_x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "e1e5af39dcbfa0df381086ca6f1ff24013294f364d8c2638703d0876b76cff67"
+      }
+    }
+  },
+  "anonymousDownloads": [
+    {
+      "name": "plugin-update.json",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.9.0/plugin-update.json",
+      "size": 3685,
+      "sha256": "e38d760c46383d42bafebd72d726647450c66aea2e03338e677c777405da88db"
+    },
+    {
+      "name": "sodeck-mcp_0.9.0_aarch64-apple-darwin.tar.gz",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.9.0/sodeck-mcp_0.9.0_aarch64-apple-darwin.tar.gz",
+      "size": 2080785,
+      "sha256": "e21dae5f27e4af85fa2ca6864499e8abd8d2b61e6d18e3dd043cb0439a9926f3"
+    },
+    {
+      "name": "sodeck-mcp_0.9.0_aarch64-pc-windows-msvc.zip",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.9.0/sodeck-mcp_0.9.0_aarch64-pc-windows-msvc.zip",
+      "size": 2148380,
+      "sha256": "addc60027c01a47760dbafb1e57041e7ea4eb57c01895ae5d27cc87e9ebe29dd"
+    },
+    {
+      "name": "sodeck-mcp_0.9.0_aarch64-unknown-linux-gnu.tar.gz",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.9.0/sodeck-mcp_0.9.0_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 2111726,
+      "sha256": "7353da5d4a5dfa424d088cc3ab386d6b4610b569082cdf2e94504deaa81054de"
+    },
+    {
+      "name": "sodeck-mcp_0.9.0_x86_64-pc-windows-msvc.zip",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.9.0/sodeck-mcp_0.9.0_x86_64-pc-windows-msvc.zip",
+      "size": 2279657,
+      "sha256": "a4e928051ab031c0f682b98061635de8cfe959e72fe87a2d91fbd028e9794f6d"
+    },
+    {
+      "name": "sodeck-mcp_0.9.0_x86_64-unknown-linux-gnu.tar.gz",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.9.0/sodeck-mcp_0.9.0_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 2258001,
+      "sha256": "e1e5af39dcbfa0df381086ca6f1ff24013294f364d8c2638703d0876b76cff67"
+    }
+  ],
+  "realSsh": {
+    "windows": {
+      "originalMcpArchiveRun": "44780746278",
+      "core": "Same-source core test fixture, not installed core package",
+      "tests": 2,
+      "passed": true,
+      "largeFile": {
+        "bytes": 1073741824,
+        "elapsedMs": 11993,
+        "corePeakBefore": 29745152,
+        "corePeakAfter": 29745152
+      },
+      "coverage": [
+        "empty",
+        "binary",
+        "new destination",
+        "default conflict",
+        "atomic overwrite",
+        "same request after source deletion",
+        "1 GiB streaming and byte-for-byte comparison"
+      ]
+    },
+    "linux": {
+      "run": "44780663580",
+      "passed": true,
+      "largeFile": {
+        "bytes": 1073741824,
+        "elapsedMs": 18215,
+        "corePeakBefore": 127655936,
+        "corePeakAfter": 127655936
+      }
+    },
+    "local": {
+      "scriptsPassed": 195,
+      "mcpUnitPassed": 24,
+      "coreSuitePassed": true,
+      "filePluginOpenSshPassed": true,
+      "filePluginUiPassed": true,
+      "mcpUiPassed": true,
+      "msiAndNsisBuildPassed": true
+    }
+  },
+  "notRun": [
+    "Five-platform installed core/MCP real SSH combination",
+    "Actual previous-version installed upgrade",
+    "netem",
+    "New authenticated Codex CLI call",
+    "New physical IME/DPI/screen-reader checks"
+  ],
+  "history": [
+    "Both original package workflows completed on attempt 1; program archives, installers and signature bytes retained.",
+    "Only draft notes and update-manifest notes changed before publication.",
+    "A metadata-only draft update temporarily reset core draft tag; restored v1.11.0 on the original release ID and original source without changing program/signature assets."
+  ]
+}

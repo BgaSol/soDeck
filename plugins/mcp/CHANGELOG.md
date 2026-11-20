@@ -9,7 +9,7 @@
 
 待来源 Check 和五平台独立原生包验收完成后，发布同一草稿为 Latest；本节届时补齐来源、原始 run、Release、实际验证与跳过范围。
 
-# 0.9.0（待发行）
+# 0.9.0（2026-11-21）
 
 - 新增 sodeck_file_upload：从 SoDeck 主机稳定普通文件上传到远端完整路径，默认不覆盖，显式覆盖完整传输后原子提交；不自动建目录、改权限或执行文件。
 - 上传与下载共用文件任务收集器、接纳序号、查询、取消和持久化收尾。工具增至十二个，tasks_list 支持 upload；不依赖文件插件。
@@ -18,7 +18,11 @@
 
 要求核心 1.11.0 的 files.copy.v1 及原有能力，缺失明确提示升级；先更新核心与插件，再重启 SoDeck。范围、并发写入限制和恢复见[功能说明](../../docs/features/mcp.md#上传文件)，字段见[MCP API](../../docs/mcp-api.md#单文件上传090)。
 
-待本次五平台原生归档与实际包验收、来源 Check 完成后，直接发布原草稿并设为 Latest。包来源、原始 run、Release、真实验证与跳过范围在此补齐。
+发行：[Agent MCP 0.9.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.9.0)，按本次要求设为仓库 Latest。包来源 [1585da7a80cb15aa92af79cc0f1f981ffac96ed3](https://github.com/BgaSol/soDeck/commit/1585da7a80cb15aa92af79cc0f1f981ffac96ed3)；[原始独立五平台打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/44780746278)首次通过。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 的原生归档均核对架构、摘要和资源，并验证实际包初始化、十二工具、上传/任务/输入/回包恢复与打开控制进程回归、挂载、销毁和退出。五份程序归档沿用原字节，草稿阶段仅同步说明和更新清单 notes；六个公开附件匿名下载大小、SHA-256 和五平台更新清单匹配。报告、来源及全部摘要见[永久发行证据](release-evidence/v0.9.0-assets.json)。
+
+[相同 Git tree 的 PR Check](https://github.com/BgaSol/soDeck/actions/runs/44778270686)全部选中测试通过，包含五平台源码及真实业务。main 来源 Check 的 Windows 字体 git 超时补测通过，macOS 被取消；固定标签重复专项四平台通过，macOS 排队后取消，不把这些取消记作通过。完整检查历史与共同源码依据见[核心发行记录](../../docs/releases/v1.11.0.md)。
+
+本机 MCP 24 项单元、195 项工程脚本、进程/连接、侧栏三主题/窄栏/上传状态回归通过。下载本次 Windows x64 原始归档与同源核心夹具、三服务器 SSH 联调：空/二进制、新建/冲突/覆盖、删源后的原请求恢复和 1 GiB 上传逐字节回读通过；1 GiB 约 12 秒，核心峰值工作集前后均为 29,745,152 字节。Linux main 真实业务与大文件流程通过。未知提交、取消、记录失败分别保留真实结果。未执行五平台已安装核心/MCP 的真实 SSH 组合、实际旧版升级、netem、新的已认证 Codex CLI 或物理 IME/DPI/读屏专项。
 
 # 0.8.0
 
