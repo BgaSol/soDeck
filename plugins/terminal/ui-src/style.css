@@ -44,6 +44,8 @@
     box-sizing: border-box; border: 2px solid transparent; border-inline-width: 4px;
     background-clip: padding-box !important; border-radius: 10px;
   }
+  /* xterm 6 has no visibility option. Preserve its 14px fit/scroll geometry. */
+  #terminal[data-scroll-rail="minimap"] .xterm-scrollable-element > .scrollbar.vertical { visibility: hidden !important; pointer-events: none; }
   .terminal-menu { position: fixed; z-index: 10; width: min(240px, calc(100vw - 8px)); }
   .terminal-reading-toolbar { flex: none; display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--terminal-background,var(--panel)); }
   .reading-directory { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }

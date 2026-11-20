@@ -163,7 +163,7 @@ export function createSearch(terminal,host,save,state,buffers,reading){
     clearTimeout(timer);timer=undefined;clearTimeout(saveTimer);saveTimer=undefined;clearTimeout(lagTimer);lagTimer=undefined;cancelAnimationFrame(paintFrame);paintFrame=undefined;
     visibleId++;mapId++;mapRequest=undefined;prepared=displayed=undefined;requestId++;pendingJump=undefined;minimap.pause();
   }
-  function resume(){if(!allowed())return;invalidate();if(open&&input.value!==query&&!composing)execute();else{queryRevision++;status();result=mapRequest=undefined;sendQuery();schedulePaint();}}
+  function resume(){if(!allowed())return;minimap.resume();invalidate();if(open&&input.value!==query&&!composing)execute();else{queryRevision++;status();result=mapRequest=undefined;sendQuery();schedulePaint();}}
   function watchResolution(){resolution?.removeEventListener('change',resolutionChanged);resolution=matchMedia(`(resolution: ${devicePixelRatio||1}dppx)`);resolution.addEventListener('change',resolutionChanged);}
   function resolutionChanged(){watchResolution();if(allowed()){invalidate();schedulePaint();}}
   watchResolution();const resize=new ResizeObserver(schedulePaint);resize.observe(host);

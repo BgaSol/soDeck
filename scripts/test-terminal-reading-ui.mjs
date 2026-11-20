@@ -42,6 +42,17 @@ try{
   await child().evaluate(()=>window.testTerminal.scrollToLine(20));
   await frame.locator('.terminal-command-sticky:not([hidden])').waitFor();assert.equal(await frame.locator('.reading-command-title').textContent(),'cat app.log');
   await frame.getByRole('button',{name:'回到起点',exact:true}).click();assert.equal(await child().evaluate(()=>window.testTerminal.buffer.active.viewportY),0);
+  const railMode=mode=>child().waitForFunction(mode=>document.querySelector('#terminal').dataset.scrollRail===mode,mode);
+  const nativeRail=frame.locator('.xterm-scrollable-element>.scrollbar.vertical');
+  await railMode('minimap');assert.equal(await nativeRail.evaluate(el=>getComputedStyle(el).visibility),'hidden');
+  const dimensions=await child().evaluate(()=>[testTerminal.cols,testTerminal.rows,document.querySelector('.xterm-screen').clientWidth]);
+  const thumb=frame.getByRole('slider',{name:'终端历史阅读位置'});await thumb.focus();await thumb.press('Home');await thumb.press('PageDown');assert((await child().evaluate(()=>testTerminal.buffer.active.viewportY))>0);
+  await frame.locator('.xterm-screen').hover();await page.mouse.wheel(0,300);await child().waitForFunction(()=>testTerminal.buffer.active.viewportY>testTerminal.rows);
+  await page.emulateMedia({forcedColors:'active'});await railMode('native');assert.equal(await nativeRail.evaluate(el=>getComputedStyle(el).visibility),'visible');assert.deepEqual(await child().evaluate(()=>[testTerminal.cols,testTerminal.rows,document.querySelector('.xterm-screen').clientWidth]),dimensions,'Visibility does not change terminal columns or screen geometry');
+  await page.emulateMedia({forcedColors:'none'});await railMode('minimap');
+  await frame.locator('.terminal-minimap').evaluate(el=>el.style.display='none');await railMode('native');await frame.locator('.terminal-minimap').evaluate(el=>el.style.display='');await railMode('minimap');
+  assert.equal(await page.evaluate(()=>window.flush()),undefined);await railMode('native');await page.evaluate(()=>window.lifecycle('transferCancelled'));await railMode('minimap');
+  await child().evaluate(()=>testTerminal.scrollToLine(0));
   await frame.locator('.reading-marker').first().waitFor();
   const markerStyle=await frame.locator('.reading-marker').first().evaluate(element=>{const style=getComputedStyle(element),svg=getComputedStyle(element.querySelector('svg'));return {border:style.borderTopWidth,background:style.backgroundColor,fill:svg.fill};});
   assert.equal(markerStyle.border,'0px','Reading markers must not inherit native button chrome');assert.equal(markerStyle.background,'rgba(0, 0, 0, 0)');assert.equal(markerStyle.fill,'none');
@@ -72,6 +83,7 @@ try{
   await page.evaluate(()=>window.failWrite=true);await page.keyboard.press('Enter');await frame.locator('#status').filter({hasText:'fixture input rejected'}).waitFor();assert.equal(await child().evaluate(()=>window.testReading.state().entries.filter(e=>e.kind==='input').length),inputCount);
   await contextMenu();assert.equal(await frame.getByRole('menuitemcheckbox',{name:/回车辅助标记/}).getAttribute('aria-checked'),'true');await frame.getByRole('menuitem',{name:'清除输入标记',exact:true}).click();assert.equal(await child().evaluate(()=>window.testReading.state().entries.filter(e=>e.kind==='input').length),0);await frame.locator('#status').evaluate(element=>element.hidden=true);
   for(const theme of ['light','dark','dopamine']){await page.evaluate(theme=>window.theme(theme),theme);for(const width of [1000,320]){await page.setViewportSize({width,height:650});await child().evaluate(()=>window.testTerminal.scrollToLine(20));await page.waitForTimeout(80);assert(await child().evaluate(()=>document.documentElement.scrollWidth<=innerWidth));fs.mkdirSync('artifacts/terminal-reading',{recursive:true});await page.screenshot({path:`artifacts/terminal-reading/${theme}-${width}.png`});}}
+  await railMode('minimap');assert.equal(await nativeRail.evaluate(el=>getComputedStyle(el).visibility),'hidden','Compact 40px minimap remains the narrow terminal scroll control');
   await page.setViewportSize({width:1000,height:650});await page.evaluate(()=>window.theme('light'));await emit('\x1b[3J\x1b[2J\x1b[H');
   await emit(osc('prompt',4)+'$ '+osc('input',4)+'pwd\r\n'+osc('start',4)+'/var/log/edge-api\r\n'+osc('end',4,'0')+osc('prompt',5)+'$ '+osc('input',5)+'cat missing.log\r\n'+osc('start',5)+'cat: missing.log: No such file or directory\r\n'+osc('end',5,'1')+osc('prompt',6)+'$ '+osc('input',6));
   await frame.locator('.reading-result.is-error').waitFor();assert.equal(await frame.locator('.reading-result.is-error').textContent(),'退出 1');await page.screenshot({path:'artifacts/terminal-reading/short-and-error.png'});
