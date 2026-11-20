@@ -30,6 +30,7 @@ struct Ssh {
     input_channels: HashSet<ChannelId>,
     input_bytes: Arc<Mutex<Vec<Vec<u8>>>>,
     executions: Arc<Mutex<Vec<Vec<u8>>>>,
+    launch_gate: Arc<tokio::sync::Notify>,
     shells: Arc<AtomicUsize>,
     sizes: Arc<Mutex<Vec<(u32, u32)>>>,
     auth: Arc<AtomicUsize>,
@@ -166,7 +167,7 @@ impl server::Handler for Ssh {
             return Ok(());
         }
         if command == b"status-test:delayed-start" {
-            tokio::time::sleep(Duration::from_millis(300)).await;
+            self.launch_gate.notified().await;
         }
         session.channel_success(id)?;
         self.executions.lock().unwrap().push(command.to_vec());

@@ -150,6 +150,7 @@ async fn process_requires_server_acceptance_and_rejection_keeps_shared_session()
     let deadline=std::time::Instant::now()+Duration::from_secs(5);
     loop {let status=invoke("session.process.status",json!({"processId":id}));if status["launchQueued"]==true {assert_eq!(status["launchAccepted"],false);assert_eq!(status["input"]["available"],false);break;}assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(5)).await;}
     let before=invoke("session.process.input",json!({"processId":id,"inputSequence":"1","action":"write","dataBase64":"eA=="}));assert_eq!(before["rpcError"]["data"]["code"],"inputNotReady");
+    ssh.state.launch_gate.notify_one();
     loop {let status=invoke("session.process.status",json!({"processId":id}));if status["launchAccepted"]==true {assert_eq!(status["input"]["nextInputSequence"],"1");break;}assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(5)).await;}
     invoke("session.process.cancel",json!({"processId":id}));loop {if invoke("session.process.status",json!({"processId":id}))["workerFinished"]==true{break;}assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(5)).await;}
     invoke("session.process.release",json!({"processId":id}));
