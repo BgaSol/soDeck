@@ -100,7 +100,7 @@ pub fn failure(code: &str, message: impl Into<String>) -> Value {
 pub fn text<'a>(p: &'a Value, key: &str, max: usize) -> Result<&'a str, Value> {
     p[key]
         .as_str()
-        .filter(|s| !s.is_empty() && s.len() <= max)
+        .filter(|s| !s.is_empty() && s.len() <= max && !s.contains('\0'))
         .ok_or_else(|| failure("invalidParams", format!("{key} 缺失或超限")))
 }
 pub struct StartRequest {
