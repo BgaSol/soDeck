@@ -1,5 +1,6 @@
 @layer components {
-  .settings-page { flex: 1; min-width: 0; min-height: 0; width: 100%; max-width: 680px; padding-right: 8px; overflow-y: auto; scroll-padding-block: 12px 132px; }
+  .settings-page { flex: 1; min-width: 0; min-height: 0; width: 100%; padding: 0 28px; overflow-y: auto; scroll-padding-block: 12px 132px; }
+  .settings-page > * { max-width: 680px; }
   .settings-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; }
   .settings-title .hint { font-size: 11px; }
   .component-settings-form { min-width: 0; }
@@ -31,6 +32,7 @@
   .settings-feedback { font-size: 12px; min-height: 24px; line-height: 1.6; overflow-wrap: anywhere; }
   .settings-save-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-top: 8px; }
   .settings-save-bar > :last-child { margin-left: auto; }
+  @media (max-width: 640px) { .settings-page { padding: 0 12px; } }
   @media (max-height: 600px) {
     .settings-page > .section-heading { align-items: flex-start; gap: 12px; margin-bottom: 18px; }
     .setting-row { padding: 12px 0; }

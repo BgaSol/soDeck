@@ -49,6 +49,13 @@ try{
   }
   await page.goto(url);await page.waitForFunction(()=>window.ready);await section().getByLabel('字号',{exact:true}).waitFor();
   await page.waitForFunction(()=>document.querySelector('[data-font-status]')?.textContent.includes('字体已加载'));
+  await page.setViewportSize({width:1600,height:480});
+  const wide=await section().evaluate(el=>{const pane=el.getBoundingClientRect(),content=el.parentElement.getBoundingClientRect(),form=el.querySelector('form').getBoundingClientRect(),commit=el.querySelector('.settings-commit').getBoundingClientRect();return {rightGap:content.right-pane.right,formWidth:form.width,commitBottomGap:pane.bottom-commit.bottom,scrollable:el.scrollHeight>el.clientHeight,overflow:el.scrollWidth>el.clientWidth};});
+  fs.mkdirSync('artifacts/settings-ui',{recursive:true});await page.screenshot({path:'artifacts/settings-ui/terminal-wide.png'});
+  assert(wide.rightGap<=1&&wide.formWidth<=680&&Math.abs(wide.commitBottomGap)<=1&&wide.scrollable&&!wide.overflow,`Wide settings keep the scrollbar at the page edge, the form constrained and the footer flush with the scrollport: ${JSON.stringify(wide)}`);
+  await page.mouse.move(1500,200);await page.mouse.wheel(0,400);await page.waitForFunction(()=>document.querySelector('#component-settings-page').scrollTop>0);
+  await section().evaluate(el=>el.scrollTop=0);
+  await page.setViewportSize({width:1000,height:760});
   assert.equal((await call('snapshot')).plugins.filter(p=>p.pid!==null).length,0);
   assert.equal(await page.locator('.console-settings-nav [data-action="component-settings"]').count(),5);
   assert.equal(await section().getByLabel('字号',{exact:true}).inputValue(),'14');
@@ -82,7 +89,7 @@ try{
   await choose('网络隧道');await section().getByLabel('本机端口').selectOption('1');await section().getByLabel('固定端口').fill('0');
   await save();assert.equal((await call('settings_page',{pluginId:'sodeck.network-proxy',pageId:'defaults'})).values.fixedPort,1080);
   await section().getByLabel('固定端口').fill('2080');await save();await page.waitForFunction(()=>document.querySelector('.settings-feedback')?.textContent.includes('已保存，用于新建规则'));
-  for(const theme of ['light','dark','dopamine'])for(const [width,height,scale]of [[1000,760,1],[720,480,1],[900,600,1.25],[1080,720,1.5]]){
+  for(const theme of ['light','dark','dopamine'])for(const [width,height,scale]of [[1600,480,1],[1000,760,1],[720,480,1],[600,480,1],[900,600,1.25],[1080,720,1.5]]){
     // Browser zoom reduces the CSS viewport; root CSS zoom incorrectly scales 100dvh twice.
     await page.setViewportSize({width:Math.round(width/scale),height:Math.round(height/scale)});await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;},theme);
     await choose('网络隧道');
@@ -101,7 +108,7 @@ try{
   }
   await page.setViewportSize({width:1100,height:720});await page.evaluate(()=>document.documentElement.style.zoom='1');await choose('Docker');
   await section().locator('.settings-fields').waitFor();
-  const compact=await section().evaluate(el=>{const fields=el.querySelector('.settings-fields').getBoundingClientRect(),commit=el.querySelector('.settings-commit').getBoundingClientRect(),pane=el.getBoundingClientRect();return {gap:commit.top-fields.bottom,free:pane.bottom-commit.bottom,width:pane.width};});
+  const compact=await section().evaluate(el=>{const fields=el.querySelector('.settings-fields').getBoundingClientRect(),commit=el.querySelector('.settings-commit').getBoundingClientRect(),pane=el.getBoundingClientRect();return {gap:commit.top-fields.bottom,free:pane.bottom-commit.bottom,width:fields.width};});
   assert(compact.gap<=24&&compact.free>100&&compact.width<=680,JSON.stringify(compact));
   assert.equal(await page.locator('#layer-content .console-settings-nav').count(),0,'Settings navigation belongs to the shell sidebar');
   await section().getByRole('switch').focus();await page.keyboard.press('Space');assert.equal(await section().getByRole('switch').isChecked(),false);
@@ -119,7 +126,7 @@ try{
   await page.locator('.console-settings-nav [aria-current="page"]').filter({hasText:'终端'}).waitFor();await page.evaluate(()=>Promise.all(document.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
   fs.mkdirSync('artifacts/settings-ui',{recursive:true});await page.screenshot({path:'artifacts/settings-ui/terminal.png'});
   assert(fontRequests.some(r=>r.relative.includes('jetbrains'))&&fontRequests.some(r=>r.relative.includes('source-code'))&&fontRequests.some(r=>r.relative.includes('ibm-plex')));
-  assert.deepEqual(errors,[]);console.log('Settings UI passed: merged shell navigation, 5 disabled-plugin pages, real offline fonts, drafts/close/reopen, conflict, missing local font, port validation, compact Docker form, keyboard switch, forced colors and 12 responsive/theme layouts');
+  assert.deepEqual(errors,[]);console.log('Settings UI passed: full-width scrolling with constrained forms, merged shell navigation, 5 disabled-plugin pages, real offline fonts, drafts/close/reopen, conflict, missing local font, port validation, compact Docker form, keyboard switch, forced colors and 18 responsive/theme layouts');
 }finally{
   await browser.close();await vite.close();child.stdin.end();await new Promise(resolve=>child.once('exit',resolve));
   if(path.dirname(path.resolve(root))!==path.resolve(os.tmpdir())||!path.basename(root).startsWith('sodeck-settings-ui-'))throw new Error('Unexpected cleanup path');

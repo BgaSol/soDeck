@@ -29,7 +29,7 @@
   #server-catalog { flex: 1; min-height: 0; overflow: hidden; }
   .console-page { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   .console-page > .layer-content { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px; }
-  .console-page > .settings-content { display: flex; flex-direction: column; padding: 28px; overflow: hidden; }
+  .console-page > .settings-content { display: flex; flex-direction: column; padding: 28px 0; overflow: hidden; }
   .console-page > .plugins-content, .console-page > .updates-content { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
   .shell-status { display: flex; align-items: center; gap: 9px; padding: 0 10px; min-height: var(--sd-shell-bottom); height: var(--sd-shell-bottom); background: var(--status-bg); font-size: 11px; }
   .shell-status .sd-status-action { min-height: 24px; font-size: 11px; padding: 2px 4px; }
@@ -49,6 +49,7 @@
     .console-settings-item { min-height: 30px; padding: 5px 8px; }
     #return-workbench { margin-top: 0; margin-left: 8px; }
     .console-page > .layer-content { padding: 12px; }
+    .console-page > .settings-content { padding: 12px 0; }
     .console-page > .plugins-content, .console-page > .updates-content { padding: 0; }
     .shell-status { gap: 5px; }
   }
