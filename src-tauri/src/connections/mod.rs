@@ -786,6 +786,10 @@ async fn run(a: Arc<Attempt>, profile: Profile, keys: Arc<host_keys::HostKeys>) 
                 .set_scope_status(&context, Some(false), None, Instant::now());
         }
     }
+    let core = a.core.upgrade();
+    let mut registry = core
+        .as_ref()
+        .map(|core| core.connections.registry.lock().unwrap());
     let view = {
         let mut s = a.state.lock().unwrap();
         s.reply = None;
@@ -806,19 +810,18 @@ async fn run(a: Arc<Attempt>, profile: Profile, keys: Arc<host_keys::HostKeys>) 
         });
         s.view.clone()
     };
-    if let Some(core) = a.core.upgrade() {
-        {
-            let mut registry = core.connections.registry.lock().unwrap();
-            registry.freeze(&view);
-            a.done.cancel();
-        }
+    if let Some(registry) = &mut registry {
+        registry.freeze(&view);
+    }
+    a.done.cancel();
+    drop(registry);
+    if let Some(core) = core {
         core.notify_connection_change(&view.server_id);
         if view.context.is_some() {
             core.workspace_changed();
         }
         core.log(None,if view.state=="failed"{"warn"}else{"info"},if connected{"远程会话已结束"}else{"连接尝试已结束"},Some(serde_json::json!({"serverId":view.server_id,"attemptId":view.attempt_id,"code":view.error.as_ref().map(|e|&e.code),"stage":view.stage})));
     }
-    a.done.cancel();
     a.changed();
 }
 

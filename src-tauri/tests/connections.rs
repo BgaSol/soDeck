@@ -989,32 +989,34 @@ async fn cancelled_handshake_and_profile_edit_release_the_real_socket() {
         listener.local_addr().unwrap().port(),
         json!([]),
     );
-    let v = f.core.start_connection("main", &id).unwrap();
-    let (mut socket, _) = tokio::time::timeout(Duration::from_secs(3), listener.accept())
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        f.core.start_connection("main", &id).unwrap().attempt_id,
-        v.attempt_id
-    );
-    f.core.cancel_connection("main", &v.attempt_id).unwrap();
-    let mut bytes = vec![];
-    tokio::time::timeout(Duration::from_secs(3), socket.read_to_end(&mut bytes))
-        .await
-        .unwrap()
-        .unwrap();
-    until(|| f.core.connection_views()[0].state == "cancelled").await;
-    assert_eq!(
-        f.core.connection_views()[0].error.as_ref().unwrap().code,
-        "cancelled"
-    );
-    assert!(f
-        .core
-        .workspace_projection("main")
-        .unwrap()
-        .workspaces
-        .is_empty());
+    for _ in 0..8 {
+        let v = f.core.start_connection("main", &id).unwrap();
+        let (mut socket, _) = tokio::time::timeout(Duration::from_secs(3), listener.accept())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            f.core.start_connection("main", &id).unwrap().attempt_id,
+            v.attempt_id
+        );
+        f.core.cancel_connection("main", &v.attempt_id).unwrap();
+        let mut bytes = vec![];
+        tokio::time::timeout(Duration::from_secs(3), socket.read_to_end(&mut bytes))
+            .await
+            .unwrap()
+            .unwrap();
+        until(|| f.core.connection_views()[0].state == "cancelled").await;
+        assert_eq!(
+            f.core.connection_views()[0].error.as_ref().unwrap().code,
+            "cancelled"
+        );
+        assert!(f
+            .core
+            .workspace_projection("main")
+            .unwrap()
+            .workspaces
+            .is_empty());
+    }
     f.core.start_connection("main", &id).unwrap();
     let (mut socket, _) = tokio::time::timeout(Duration::from_secs(3), listener.accept())
         .await
