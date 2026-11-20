@@ -121,8 +121,16 @@ try {
   if(communication){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-component-communication.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('Component communication failed');}
   }
 } finally {
-  for(const child of extraDaemons){if(child.exitCode===null){const ended=new Promise(r=>child.once("exit",r));child.kill();await ended;}}
-  if (daemon && daemon.exitCode === null) { const exited = new Promise(resolve => daemon.once("exit", resolve)); daemon.kill(); await exited; }
-  if (path.dirname(path.resolve(directory)) !== path.resolve(os.tmpdir()) || !path.basename(directory).startsWith("sodeck-openssh-")) throw new Error("Unexpected test cleanup path");
-  fs.rmSync(directory, { recursive: true, force: true });
+  const stopped = await Promise.allSettled([...extraDaemons, daemon].map(stopDaemon));
+  try {
+    if (sudoAccount) {
+      privileged(['rm', '-f', '--', sudoers]);
+      privileged(['userdel', sudoUser]);
+    }
+  } finally {
+    if (path.dirname(path.resolve(directory)) !== path.resolve(os.tmpdir()) || !path.basename(directory).startsWith("sodeck-openssh-")) throw new Error("Unexpected test cleanup path");
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+  const failed = stopped.find(result => result.status === 'rejected');
+  if (failed) throw failed.reason;
 }
