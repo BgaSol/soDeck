@@ -4,7 +4,15 @@
 - 所有环境提供手动阅读书签，未集成环境可主动开启只记录位置的回车辅助；CMD 保持原 shell，备用屏幕暂停标记。Bash 4+/Zsh 与 Windows PowerShell 5.1/7 按实际 hook 能力增强，缺失结果不推断成功。
 - 阅读模型与搜索共用缓冲区观察，状态随既有显示检查点恢复；未回显输入不进入标题，实时输出不能加载检查点中的阅读状态。未新增生产依赖或核心 API。
 
-当前行为与限制见[终端功能](../../docs/features/terminal.md)。五平台独立发行与本次包来源、验证范围在候选验收后补齐；未完成设备/极端负载专项保留在[终端历史计划](../../docs/plans/terminal-history.md)，不以浏览器或包生命周期冒充实际系统交互验证。
+包来源：[4b0d36f33269c62d670e4bc7bbf23acdb35e5e94](https://github.com/BgaSol/soDeck/commit/4b0d36f33269c62d670e4bc7bbf23acdb35e5e94)；[同一来源完整 Check](https://github.com/BgaSol/soDeck/actions/runs/44787161252)；[原始五平台独立打包及包内验收](https://github.com/BgaSol/soDeck/actions/runs/44787220969)。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 原生构建、架构、资源、包内进程挂载/释放与退出均通过。macOS 首次未获得 hosted runner，仅重跑该平台及下游验收/汇总，四个平台原包保留；Check 首次额外覆盖的 Docker UI 超时，只重跑失败业务及汇总后通过。
+
+[五平台原生远程组合](https://github.com/BgaSol/soDeck/actions/runs/44791902385)固定核心 1.10.0、终端 0.10.0 本次原包与文件 0.11.4，通过原生 WebView/Channel、PTY、文件读写下载、移窗、重开和退出；本轮未选择网络插件。Linux 两平台首次移回主窗口时目标就绪超时，仅重跑失败 Linux 验收和汇总后通过，其他三平台结果与全部输入保留。
+
+本机格式/类型、198 项工程脚本、核心测试和前端生产构建通过。终端输入、完整历史/搜索/快照及新增阅读回归覆盖真实 xterm 标题/吸顶/定位、手动标记、回车辅助发送失败、无回显输入、备用屏幕、三主题、320px、10 万行淘汰、清历史和重挂载；Windows OpenSSH 实际 PTY/移窗与重开、Linux 容器 Bash 标量/数组及 Zsh 的真实 PTY 通过。Windows PowerShell 5.1.26100.9818 与 PowerShell 7.6.9 另通过真实 hook 和隔离 OpenSSH/PSReadLine 回车、成功/未知结果及绝对程序路径专项。
+
+发行：[terminal 0.10.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.10.0)，按用户要求设为仓库 Latest。直接发布原始 run 的五份程序附件，不重建或改写程序包；草稿更新清单只同步 notes，说明与 Release 一致。六个正式附件均匿名下载验证大小与 SHA-256，来源、原生报告、原始包/验证运行及公开下载结果见[永久发行证据](release-evidence/v0.10.0-assets.json)。此前未发布的候选已取消/丢弃，不计为本次包来源。
+
+真实系统 IME、DPI、多显示器、读屏、触控板、Windows ARM64 远端 PowerShell、极端负载/高密度命令和正式旧版在线升级专项未执行，不计为通过；netem 未运行。当前行为和回落见[终端功能](../../docs/features/terminal.md)，剩余专项保留在[终端历史计划](../../docs/plans/terminal-history.md)。插件升级在重启后生效，不要求同步升级核心。
 
 # 0.9.3
 
