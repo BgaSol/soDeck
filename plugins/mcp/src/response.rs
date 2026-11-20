@@ -63,8 +63,15 @@ pub fn mcp_targets(discovery: &crate::targets::Discovery) -> Value {
         "targets":discovery.targets.iter().map(|t|target_row(t,discovery.detail,discovery.with_query)).collect::<Vec<_>>(),
         "unresolved":discovery.unresolved.iter().map(|t|target_row(t,discovery.detail,discovery.with_query)).collect::<Vec<_>>()})
 }
+fn copy_summary(value: &mut Value) {
+    if let Some(transfer) = value["transfer"].as_object_mut() {
+        transfer.remove("sourceVersion");
+        transfer.remove("temporaryPath");
+    }
+}
 fn native_facts(native: &Value, history: bool) -> Value {
     let mut value = meaningful_native(native);
+    copy_summary(&mut value);
     for key in ["workerFinished", "streamId", "id", "error", "input"] {
         value.as_object_mut().unwrap().remove(key);
     }
@@ -147,6 +154,23 @@ fn output(page: &Page) -> Value {
     value
 }
 fn file(task: &Task, r: &Record) -> Value {
+    if task.kind() == Kind::Upload {
+        let input = task.start_input();
+        let commit = r.native["transfer"]["commitState"]
+            .as_str()
+            .unwrap_or_else(|| {
+                if r.native["admission"] == "unknown" || r.native["state"] == "unavailable" {
+                    "unknown"
+                } else if r.native["admission"] == "rejected"
+                    || ["failed", "cancelled"].contains(&r.native["state"].as_str().unwrap_or(""))
+                {
+                    "notCommitted"
+                } else {
+                    "pending"
+                }
+            });
+        return json!({"remotePath":input["remotePath"],"localPath":input["localPath"],"overwrite":input["overwrite"],"commitState":commit});
+    }
     json!({"remotePath":task.start_input()["remotePath"],"localPath":if r.phase==Phase::Done && matches!(r.saved,Saved::Complete) {json!(r.path)} else {Value::Null}})
 }
 fn mcp_facts(c: &CapturedTask, detail: bool, body: bool) -> Value {
@@ -159,7 +183,7 @@ fn mcp_facts(c: &CapturedTask, detail: bool, body: bool) -> Value {
     if detail {
         value["context"] = json!(task.target.context);
     }
-    if task.kind() == Kind::Download {
+    if task.kind() != Kind::Exec {
         value["file"] = file(task, r);
     } else if !body {
         value["outputInfo"] = json!({"savedBytes":r.committed.to_string()});
@@ -208,7 +232,7 @@ pub fn mcp_cancel(c: &CapturedTask) -> Value {
 }
 pub fn ui_task(read: &TaskRead) -> Value {
     let mut value = diagnostic(&read.captured.task, &read.captured.record);
-    if read.captured.task.kind() == Kind::Download {
+    if read.captured.task.kind() != Kind::Exec {
         value["file"] = file(&read.captured.task, &read.captured.record);
     }
     value["outputInfo"] = json!({"savedBytes":if read.captured.task.kind()==Kind::Exec {json!(read.captured.record.committed.to_string())} else {Value::Null}});
@@ -220,10 +244,14 @@ pub fn ui_task(read: &TaskRead) -> Value {
 pub fn ui_row(c: &CapturedTask) -> Value {
     let mut value = identity(&c.task, &c.record);
     let mut native = meaningful_native(&c.record.native);
+    copy_summary(&mut native);
     if native.get("error").is_some() {
         native["error"] = brief_error(&native["error"]);
     }
     value["native"] = native;
+    if c.task.kind() != Kind::Exec {
+        value["file"] = file(&c.task, &c.record);
+    }
     let mut saved = evidence(&c.record, false);
     saved["error"] = brief_error(&c.record.error);
     value["evidence"] = saved;
@@ -251,7 +279,7 @@ pub fn ui_read_error(failure: TaskFailure) -> Value {
     }
     error
 }
-pub fn mcp_download_start(task: &Task) -> Value {
+pub fn mcp_file_start(task: &Task) -> Value {
     json!({"runId":task.run,"taskId":task.id,"kind":task.kind().name()})
 }
 
@@ -379,11 +407,13 @@ mod tests {
             order: 1,
             admission_sequence: 1,
             target: captured().task.target.clone(),
-            spec: crate::task::TaskSpec::Download(crate::task::DownloadSpec {
+            spec: crate::task::TaskSpec {
                 target_id: "target".into(),
                 request_id: "download".into(),
-                remote_path: "/data/中文".into(),
-            }),
+                operation: crate::task::TaskOperation::File(crate::task::FileSpec::Download {
+                    remote_path: "/data/中文".into(),
+                }),
+            },
             root: std::path::PathBuf::new(),
         }));
         let mut c = CapturedTask::new(task);

@@ -63,6 +63,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "session.process.v1",
                 "files.pluginData.v1",
                 "files.operations.v2",
+                "files.copy.v1",
                 "ui.background.v1",
                 "settings.v1",
             ] {

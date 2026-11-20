@@ -23,11 +23,11 @@ fn decode(chunk: &Value, terminal: bool) -> Result<Vec<u8>, String> {
     unbase64(chunk["dataBase64"].as_str().ok_or("输出编码缺失")?)
 }
 
-/// Disk schema v2 is independent of the MCP and sidebar presentation contracts.
+/// Disk schema v3 is independent of the MCP and sidebar presentation contracts.
 pub fn task_metadata(task: &Task, r: &Record) -> Value {
     let target = r.target.as_ref().map(|t| json!({"name":t.name,"protocol":t.protocol,"endpoint":t.endpoint,"username":t.username}));
     let mut value = json!({
-        "schemaVersion":2,"taskId":task.id,"runId":task.run,"kind":task.kind().name(),
+        "schemaVersion":3,"taskId":task.id,"runId":task.run,"kind":task.kind().name(),
         "targetId":task.target.id,"requestId":task.start_input()["requestId"],"target":target,
         "done":r.phase==Phase::Done,"phase":match r.phase {Phase::Collecting=>"collecting",Phase::Finalizing=>"finalizing",Phase::Done=>"done"},
         "revision":r.revision.to_string(),"cancelRequested":r.cancel_requested,"resourceReleased":r.released,
@@ -244,10 +244,10 @@ mod tests {
     use super::*;
     use serde_json::json;
     #[test]
-    fn metadata_v2_owns_its_schema_and_serializes_the_given_record() {
+    fn metadata_v3_owns_its_schema_and_serializes_the_given_record() {
         let task = crate::task::fixture(PathBuf::from("evidence-root"));
         let initial = task_metadata(&task, &task.snapshot());
-        assert_eq!(initial["schemaVersion"], 2);
+        assert_eq!(initial["schemaVersion"], 3);
         assert!(initial["target"].is_null());
         assert!(initial["finishedAt"].is_null());
         assert!(initial["evidence"]["path"].is_null());

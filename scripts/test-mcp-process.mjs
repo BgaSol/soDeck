@@ -14,7 +14,7 @@ assert.equal(manifest.name,'Agent MCP');assert.equal(manifest.ui.views[0].title,
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-mcp-process-'));
 const socket=net.createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r));
 const contexts=Object.fromEntries(['a','b','c'].map(view=>[view,{workspaceId:view,serverId:'server-'+view,connectionId:'connection-'+view,generation:1}]));
-const capabilities=['session.target.v2','session.process.v1','files.pluginData.v1','files.operations.v2','ui.background.v1','settings.v1','servers.read.v1','connections.v1'];
+const capabilities=['session.target.v2','session.process.v1','files.pluginData.v1','files.operations.v2','files.copy.v1','ui.background.v1','settings.v1','servers.read.v1','connections.v1'];
 const descriptions=Object.fromEntries(Object.keys(contexts).map(view=>[view,{name:view,protocol:'ssh',host:view==='a'?'10.0.0.187':view==='b'?'10.0.1.187':'db187.example.com',port:22,username:'ops'}]));
 const targetFaults=new Map(),targetStates=new Map(),targetCalls=[],targetGates=[];let gateTargets=false;
 function targetReply(view){const state=targetStates.get(view)??'connected',target=descriptions[view];return {context:contexts[view],state,closing:false,capabilities:state==='connected'?['exec','files']:[],targetSource:state==='connected'?'current':'lastConnected',target:{...target,endpoint:`${target.host.includes(':')?'['+target.host+']':target.host}:${target.port}`}};}
@@ -76,12 +76,20 @@ peer=pluginPeer(path.join(root,manifest.entry),(method,p)=>{
   if(method==='files.operations'){
     if(p.action==='start'){
       if(p.operation.source.path==='/missing')throw Object.assign(new Error('missing'),{code:-32000});
+      if(p.operation.source.side==='localPath') {
+        requests.push(p);assert.equal(p.operation.destination.side,'remote');assert.equal(p.operation.metadataPolicy,'contentOnly');
+        const id='upload-'+(++number);files.set(id,p);if(p.operation.destination.path==='/lost-upload')throw Object.assign(new Error('lost upload receipt'),{code:-32003});return {id,state:'running'};
+      }
       assert.equal(p.operation.destination.side,'pluginData');assert.equal(p.operation.destinationGuard.kind,'absent');
       const id='download-'+(++number);const output=path.join(directory,...p.operation.destination.relative);fs.writeFileSync(output,bytes);files.set(id,p);if(p.operation.source.path==='/cleanup-failure')failedBatches.add(p.batchId);return {id,state:'running'};
     }
-    if(p.action==='poll')return {id:p.operationId,state:'completed',result:{size:String(bytes.length)}};
+    if(p.action==='lookup') {const found=[...files].find(([,v])=>v.requestId===p.requestId);if(found)return {id:found[0],state:'running'};throw new Error('not found');}
+    if(p.action==='poll') {const request=files.get(p.operationId);if(request.operation.destination.path==='/upload-unknown')return {id:p.operationId,state:'unknown',transfer:{commitState:'unknown',commitAttempted:true,temporaryPath:'/tmp/unresolved'},error:{code:'unknown',message:'lost commit ack'}};
+      if(request.operation.destination.path==='/upload-cancel')return {id:p.operationId,state:request.cancelled?'cancelled':'running',transfer:{commitState:request.cancelled?'notCommitted':'pending',commitAttempted:false}};
+      if(request.operation.destination.path==='/upload-record-fail'){const location=path.join(directory,'evidence',path.basename(directory));const taskDirectory=fs.readdirSync(path.join(directory,'evidence')).flatMap(run=>{const root=path.join(directory,'evidence',run);return fs.readdirSync(root).filter(task=>task===request.batchId).map(task=>path.join(root,task));})[0];fs.mkdirSync(path.join(taskDirectory,'metadata.tmp'),{recursive:true});}
+      if(request.operation.source.side==='localPath')return {id:p.operationId,state:'completed',received:'3',total:'3',transfer:{commitState:'committed',commitAttempted:true,sourceVersion:'source-1'},result:{size:'3'}};return {id:p.operationId,state:'completed',result:{size:String(bytes.length)}};}
     if(p.action==='release'){const request=files.get(p.operationId);files.delete(p.operationId);if(request.operation.source.path==='/cleanup-failure')throw new Error('release failed');return {};}
-    if(p.action==='cancel')return {};
+    if(p.action==='cancel'){files.get(p.operationId).cancelled=true;return {};}
   }
   throw new Error('Unexpected RPC: '+method);
 });
@@ -145,7 +153,7 @@ try{
   for(const [viewId,context]of Object.entries(contexts))assert.equal((await peer.request('ui.createView',{viewId,viewType:'status',context})).metadata.title,'Agent MCP');
   await until(async()=>(await peer.request('ui.getView',{viewId:'a'})).data,s=>s.service==='ready');
   const initialized=await call('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'sodeck-test',version:'1'}});assert(initialized.capabilities.tools);
-  const list=await call('tools/list',{});assert.equal(list.tools.length,11);assert.equal(list.tools.find(t=>t.name==='sodeck_exec_start').annotations.readOnlyHint,false);
+  const list=await call('tools/list',{});assert.equal(list.tools.length,12);assert.equal(list.tools.find(t=>t.name==='sodeck_exec_start').annotations.readOnlyHint,false);
   assert(list.tools.find(t=>t.name==='sodeck_targets_list').inputSchema.properties.query);
   await discoveryChecks();
   const targets=(await tool('sodeck_targets_list')).value.targets;assert.equal(targets.length,3);
@@ -289,10 +297,30 @@ try{
   const download=(await tool('sodeck_file_download',{targetId:target,requestId:'download',remotePath:'/tmp/consul.tar.gz'})).value;done=await until(async()=>(await tool('sodeck_task_get',{taskId:download.taskId})).value,s=>s.done);assert.equal(done.evidence.complete,true);assert.deepEqual(fs.readFileSync(done.file.localPath),bytes);assert.equal(files.size,0);assert.equal(batches.size,0);
   assert.equal(done.file.remotePath,'/tmp/consul.tar.gz');assert(!('output' in done));
   const downloadedDetail=(await tool('sodeck_task_get',{taskId:download.taskId,detail:true,outputMode:'none'})).value;
-  const savedMetadata=JSON.parse(fs.readFileSync(path.join(downloadedDetail.directory,'metadata.json'),'utf8'));assert.equal(savedMetadata.target.username,'ops');assert.equal(savedMetadata.schemaVersion,2);assert.deepEqual(savedMetadata.input,downloadedDetail.input);assert.deepEqual(savedMetadata.context,contexts.a);assert.equal(savedMetadata.evidence.path,done.file.localPath);
+  const savedMetadata=JSON.parse(fs.readFileSync(path.join(downloadedDetail.directory,'metadata.json'),'utf8'));assert.equal(savedMetadata.target.username,'ops');assert.equal(savedMetadata.schemaVersion,3);assert.deepEqual(savedMetadata.input,downloadedDetail.input);assert.deepEqual(savedMetadata.context,contexts.a);assert.equal(savedMetadata.evidence.path,done.file.localPath);
+  for(const remotePath of ['/uploaded','/lost-upload']) {
+    const params={targetId:target,requestId:'upload'+remotePath,localPath:path.join(directory,'generated.bin'),remotePath};
+    const upload=(await tool('sodeck_file_upload',params)).value;
+    const uploaded=await until(async()=>(await tool('sodeck_task_get',{taskId:upload.taskId,detail:true,outputMode:'full'})).value,s=>s.done);
+    assert.equal(uploaded.kind,'upload');assert.equal(uploaded.file.commitState,'committed');assert.equal(uploaded.file.localPath,params.localPath);assert.equal(uploaded.native.received,'3');assert(!('output'in uploaded));assert.equal(uploaded.evidence.complete,true);
+    assert.equal((await tool('sodeck_file_upload',{...params,overwrite:false})).value.taskId,upload.taskId);
+    assert.equal((await tool('sodeck_file_upload',{...params,overwrite:true})).value.error.code,'requestConflict');
+    assert.equal(requests.filter(v=>v.operation?.destination.path===remotePath).length,1,'lost receipt never repeats upload');
+    assert.equal((await tool('sodeck_tasks_list',{kind:'upload',requestId:params.requestId})).value.tasks[0].taskId,upload.taskId);
+    assert.equal(fs.existsSync(path.join(uploaded.directory,'upload.bin')),false);assert.equal(fs.existsSync(path.join(uploaded.directory,'download.bin')),false);
+    assert.equal((await tool('sodeck_task_input',{taskId:upload.taskId,sequence:'1',action:'write',text:'x'})).value.error.code,'unsupported');
+  }
   for(const command of ['malformed','output limit']){const task=(await tool('sodeck_exec_start',{...input,requestId:command,command})).value;const result=await until(async()=>(await tool('sodeck_task_get',{taskId:task.taskId})).value,s=>s.done);assert.equal(result.evidence.complete,false);assert.equal(result.resourceReleased,true);}
   const missing=(await tool('sodeck_file_download',{targetId:target,requestId:'missing',remotePath:'/missing'})).value;done=await until(async()=>(await tool('sodeck_task_get',{taskId:missing.taskId})).value,s=>s.done);assert.equal(done.native.admission,'rejected');assert.equal(done.file.localPath,null);assert.equal(batches.size,0,'known rejection ends the batch');
   const cleanup=(await tool('sodeck_file_download',{targetId:target,requestId:'cleanup',remotePath:'/cleanup-failure'})).value;const cleaned=await until(async()=>(await tool('sodeck_task_get',{taskId:cleanup.taskId})).value,s=>s.done);assert.equal(cleaned.evidence.complete,true);assert.equal(cleaned.resourceReleased,false);assert.equal(cleaned.cleanupError.detailsAvailable,true);assert(!('details' in cleaned.cleanupError));const cleanupDetail=(await tool('sodeck_task_get',{taskId:cleanup.taskId,detail:true,outputMode:'none'})).value;assert.deepEqual(cleanupDetail.cleanupError.details.map(e=>e.step),['release','batch.end']);
+  for(const destination of ['/upload-unknown','/upload-cancel','/upload-record-fail']) {
+    const params={targetId:target,requestId:destination,localPath:path.join(directory,'source'),remotePath:destination};const uploaded=(await tool('sodeck_file_upload',params)).value;
+    if(destination==='/upload-cancel'){await until(async()=>[...files.values()].some(p=>p.operation.destination.path===destination),Boolean);await tool('sodeck_task_cancel',{taskId:uploaded.taskId});}
+    const result=await until(async()=>(await tool('sodeck_task_get',{taskId:uploaded.taskId,detail:true})).value,s=>s.done);
+    assert.equal(result.file.commitState,destination==='/upload-unknown'?'unknown':destination==='/upload-cancel'?'notCommitted':'committed');
+    assert.equal(result.evidence.complete,false);assert.equal((await tool('sodeck_file_upload',params)).value.taskId,uploaded.taskId);
+    if(destination==='/upload-record-fail'){assert.equal(result.resourceReleased,false);assert.equal(result.evidence.state,'failed');fs.rmdirSync(path.join(result.directory,'metadata.tmp'));}
+  }
   const failing=(await tool('sodeck_exec_start',{...input,requestId:'final-save-fail',command:'final-save-fail',waitMs:0})).value;await until(async()=>typeof releaseGate==='function',Boolean);
   const finalizing=(await tool('sodeck_task_get',{taskId:failing.taskId,detail:true,outputMode:'none'})).value;assert.equal(finalizing.phase,'finalizing');assert.equal(finalizing.done,false);assert.equal(finalizing.evidence.complete,false);
   assert.equal((await tool('sodeck_task_cancel',{taskId:failing.taskId})).value.cancelRequested,false);
@@ -321,5 +349,5 @@ try{
   for(const viewId of Object.keys(contexts))await peer.request('ui.disposeView',{viewId,context:contexts[viewId]});
   await peer.close();peer=null;await assert.rejects(fetch(`http://127.0.0.1:${port}/mcp`));
   if(process.env.SODECK_TEST_MCP_REPORT)fs.writeFileSync(process.env.SODECK_TEST_MCP_REPORT,JSON.stringify({version:manifest.version,fixture:'representative lscpu output and controlled core v2 facts, not a live server',stdout:bytes.toString(),samples,shortRuns,targetSamples},null,2)+'\n');
-  console.log('MCP: eleven tools, scopes, stable finalization, text/none, keyset paging, wait timeout/wake/disconnect quotas, unknown admission, cleanup failures and exit passed');
+  console.log('MCP: twelve tools, upload recovery, scopes, stable finalization, text/none, keyset paging, wait timeout/wake/disconnect quotas, unknown admission, cleanup failures and exit passed');
 }finally{if(peer)await peer.kill();assert.equal(path.dirname(directory),os.tmpdir());fs.rmSync(directory,{recursive:true,force:true});}

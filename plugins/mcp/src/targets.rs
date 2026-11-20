@@ -31,6 +31,12 @@ impl Context {
             && self.generation > 0
     }
 }
+#[derive(Clone, Copy)]
+pub enum AdmissionDomain {
+    Exec,
+    Files,
+}
+
 #[derive(Default)]
 pub struct Admission {
     pub sequence: u64,
@@ -59,10 +65,9 @@ impl Target {
         }
     }
     pub fn admission(&self, kind: Kind) -> &Mutex<Admission> {
-        if kind == Kind::Exec {
-            &self.exec
-        } else {
-            &self.file
+        match kind.domain() {
+            AdmissionDomain::Exec => &self.exec,
+            AdmissionDomain::Files => &self.file,
         }
     }
     pub fn release_admission(&self, kind: Kind) {

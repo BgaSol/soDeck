@@ -129,6 +129,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
         pluginNames.forEach(name => integration.add(name));
         continue;
       }
+      if(file==='src-tauri/src/local_files.rs' || file.startsWith('src-tauri/src/remote_files/operations')) {core();ui();integration.add('files');integration.add('mcp');continue;}
       const service = file.match(/^src-tauri\/(src|tests)\/(network|terminal|remote_files|desktop_files)(\/|\.|_)/);
       if (service) {
         core(); ui();

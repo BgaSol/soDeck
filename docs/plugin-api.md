@@ -525,6 +525,18 @@ UI v1 的 `mount.capabilities.clipboard === 1` 表示宿主提供原生文本剪
 
 UI 可调用 `sodeck.request('data',{op:"pluginData",action:"reveal",relative:[目录分量]})` 打开自己已存在的数据子目录；relative 最多 32 个，可为空以打开根目录，不能传任意本地路径。核心验证当前激活 Surface、普通目录与实际根范围，然后使用既有系统目录打开适配。initialize.dataDirectory 在 Unix 由核心创建为 0700，在 Windows 沿用用户应用数据目录的系统 ACL；不提供跨插件沙箱隔离。
 
+### files.copy.v1（核心 1.11.0）
+
+在 files.operations.v2 的 copyFile 上增加以下能力，不新增 RPC 或授权体系：
+
+- source 可为 `{side:"localPath",path}`，只读、仅允许复制到 remote；不能用于目标、inspect/list 或其他操作。核心固定打开的普通文件、解析父目录和版本，提交前复核。原 side=local 的 inputId 约束与 side=pluginData 的独占目标语义保持。
+- destinationGuard 可用 `{kind:"capture"}`，只允许远端目标；开始准备时不存在则固定 absent，已有普通文件则固定 match(stamp)，提交前复核。不会在提交前重新捕获以掩盖变化。既有 absent/match 不变。
+- metadataPolicy 可为 contentOnly，不传播来源时间和权限；新建远端普通文件请求 0600，覆盖使用目标可表达的普通权限。缺省继续已有属性保留策略。最终链接/非普通目标、guard 冲突或原子替换缺失明确失败。
+- 复制 poll/lookup/终态在原 state/result/error 外增加 transfer，含 commitState（pending/committed/notCommitted/unknown）、commitAttempted、准备后的 sourceVersion，以及未知提交的 temporaryPath；received/total 保留到终态。新字段为真实复制快照，不以错误文案或字节百分比推断。
+- 最终目标提交 ACK 之后的 stat/cleanup 错误为附属警告，committed 不回退；未确认的提交只发一次并保留临时路径。取消不 drop 已发出的提交等待。能力仅证明核心实现契约，不证明远端支持某个提交原语。
+
+本机路径由核心适配，不经过系统文件选择器；插件仍按可信扩展使用。现有原生输入复制同样使用固定本地读取句柄。不会修改已有普通文件 API 的权限边界或要求文件插件同时发行。
+
 ## 文件和监听结果确认（核心 0.23.0 起）
 
 新增能力 `files.operations.v2`、`files.editor.v1`、`net.listenerLifecycle.v1`，核心 API 主版本保持 1。当前文件/网络插件初始化检查对应新能力；缺失时明确要求升级核心，不使用旧接口代替。旧插件仍可使用旧能力，其自身的业务决策不在新协议保证内。

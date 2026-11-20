@@ -1,6 +1,6 @@
 const $ = id => document.getElementById(id);
 const labels = {opening:'正在启动',running:'执行中',committing:'正在提交',completed:'已结束',cancelled:'已取消',failed:'执行失败',unavailable:'结果不可用',unknown:'结果未知',rejected:'未接纳',pending:'等待接纳'};
-export const input = task => task.input?.command ?? task.input?.remotePath ?? (task.inputPreview != null ? task.inputPreview + (task.inputTruncated ? '…' : '') : task.requestId);
+export const input = task => task.kind==='upload' && task.input ? task.input.localPath+' → '+task.input.remotePath : task.input?.command ?? task.input?.remotePath ?? (task.inputPreview != null ? task.inputPreview + (task.inputTruncated ? '…' : '') : task.requestId);
 export const time = value => value ? new Date(value).toLocaleTimeString('zh-CN',{hour12:false}) : '时间未提供';
 export function duration(task, now = Date.now()) {
   if (!task.createdAt) return '用时未提供';
@@ -15,7 +15,8 @@ export function facts(task) {
   else if (task.cancelRequested && !task.done) label = '已请求取消';
   if (native.exitCode != null) label += ' · 退出码 '+native.exitCode;
   if (native.exitSignal) label += ' · 退出信号 '+native.exitSignal;
-  const saved = task.kind === 'download' ? '文件已保存' : '完整输出已保存';
+  if(task.kind==='upload') { const commit=task.file?.commitState || task.native?.transfer?.commitState; label=commit==='committed'?'已上传':commit==='unknown'?'结果待核对':commit==='notCommitted'?'未提交':native.state==='committing'?'正在提交':'上传中'; }
+  const saved = task.kind === 'download' ? '文件已保存' : task.kind==='upload'?'上传记录已保存':'完整输出已保存';
   const evidence = task.evidence?.complete ? saved : task.evidence?.state === 'failed' || task.evidence?.error ? '证据保存失败' : task.done ? '证据不完整' : '正在保存';
   return {label,problem,evidence,cancellable:!task.done && task.phase!=='finalizing' && !task.cancelRequested};
 }
@@ -25,7 +26,7 @@ export function chain(task) {
   const admission = state==='unknown'?'远端接纳结果未知':native.launchQueued===true?'启动请求已排队，等待远端确认':native.execSent===true?'已请求启动，等待远端确认':'远端接纳待确认';
   return [
     '请求已记录 · '+time(task.createdAt),
-    started ? task.kind==='download'?'远程文件传输已接纳':'远端执行已启动' : admission,
+    started ? ['download','upload'].includes(task.kind)?'文件传输已接纳':'远端执行已启动' : admission,
     task.cancelRequested && !task.done ? '已请求取消，等待实际结果' : task.phase==='finalizing' ? '正在保存最终结果与清理' : facts(task).evidence
   ];
 }
@@ -51,7 +52,7 @@ function steps(el, task) {
 export function createRow(task, select, cancel) {
   const li=node('li','record'), outgoing=node('div','message outgoing'), sent=node('div','bubble'), kind=node('span','kind'), command=node('code','command'), date=node('time','meta');
   sent.append(kind,command);outgoing.append(sent,date);
-  const incoming=node('div','message incoming'), reply=node('div','bubble'), result=node('p','result'), excerpt=node('p','preview'), process=node('ol','steps'), actions=node('div','actions'), button=node('button','text-button',task.kind==='download'?'查看文件信息':'查看输出'), stop=node('button','text-button cancel','请求取消'), meta=node('span','meta');
+  const incoming=node('div','message incoming'), reply=node('div','bubble'), result=node('p','result'), excerpt=node('p','preview'), process=node('ol','steps'), actions=node('div','actions'), button=node('button','text-button',task.kind!=='exec'?'查看文件信息':'查看输出'), stop=node('button','text-button cancel','请求取消'), meta=node('span','meta');
   button.type=stop.type='button';button.setAttribute('aria-controls','detail');button.onclick=()=>select(task.taskId,button);stop.onclick=()=>cancel(task.taskId,stop);
   actions.append(button,stop);reply.append(result,excerpt,process,actions);incoming.append(reply,meta);li.append(outgoing,incoming);li.dataset.taskId=task.taskId;
   return {li,kind,command,date,result,excerpt,process,button,stop,meta};
@@ -59,32 +60,32 @@ export function createRow(task, select, cancel) {
 export function updateRow(row, task, cached) {
   const value=facts(task);
   row.li.classList.toggle('problem',value.problem);
-  setText(row.kind,task.kind==='download'?'下载文件':'执行命令');setText(row.command,input(task));setText(row.date,time(task.createdAt));
+  setText(row.kind,({download:'下载文件',upload:'上传文件',exec:'执行命令'})[task.kind] || '操作');setText(row.command,input(task));setText(row.date,time(task.createdAt));
   if(task.createdAt)row.date.dateTime=new Date(task.createdAt).toISOString();
   setText(row.result,value.label);setText(row.meta,duration(task)+' · '+value.evidence);
-  setText(row.excerpt,task.kind==='download'?(task.inputPreview?.split(/[\\/]/).pop() || '下载远程文件'):cached?.text || '输出预览尚未读取');
+  setText(row.excerpt,task.kind!=='exec'?(task.inputPreview?.split(/[\\/]/).pop() || '下载远程文件'):cached?.text || '输出预览尚未读取');
   row.process.hidden=Boolean(task.done);if(!task.done)steps(row.process,task);
   row.stop.hidden=!value.cancellable;row.stop.setAttribute('aria-label','请求取消 '+task.requestId);
   const name=input(task).replace(/\s+/g,' ').trim(), short=Array.from(name).slice(0,120).join('');
-  row.button.setAttribute('aria-label','查看'+(task.kind==='exec'?'命令':'下载')+'详情 '+task.requestId+' · '+(task.target?.name || task.target?.endpoint || '服务器信息待确认')+' · '+value.label+' · '+short+(name.length>short.length?'…':''));
+  row.button.setAttribute('aria-label','查看'+(task.kind==='exec'?'命令':task.kind==='upload'?'上传':'下载')+'详情 '+task.requestId+' · '+(task.target?.name || task.target?.endpoint || '服务器信息待确认')+' · '+value.label+' · '+short+(name.length>short.length?'…':''));
 }
 export function paintDetail(task) {
-  const value=facts(task), download=task.kind==='download', target=task.target;
-  setText($('detail-title'),download?'文件详情':'命令详情');setText($('detail-command'),task.input?input(task):'正在读取完整详情…');
+  const value=facts(task), fileTask=task.kind!=='exec', upload=task.kind==='upload', target=task.target;
+  setText($('detail-title'),fileTask?'文件详情':'命令详情');setText($('detail-command'),task.input?input(task):'正在读取完整详情…');
   setText($('detail-state'),value.label);$('detail-state').dataset.problem=String(value.problem);setText($('detail-time'),duration(task));
-  $('command-info').hidden=download;$('file-receipt').hidden=!download;$('detail-output-section').hidden=download;
+  $('command-info').hidden=fileTask;$('file-receipt').hidden=!fileTask;$('detail-output-section').hidden=fileTask;
   setText($('detail-evidence'),value.evidence);$('detail-cancel').hidden=!value.cancellable;$('detail-cancel').setAttribute('aria-label','请求取消 '+task.requestId);
-  $('detail-evidence').hidden=download;
+  $('detail-evidence').hidden=fileTask;
   setText($('detail-server'),target?(target.name || target.endpoint)+' · '+target.endpoint+' · '+(target.username || '账号未提供'):'服务器信息不可用');
   setText($('detail-created'),'提交于 '+time(task.createdAt));setText($('detail-request'),task.requestId);setText($('detail-id'),task.taskId);setText($('detail-path'),task.evidence?.path || task.directory || '尚未提供');
   const errors=[task.native?.error,task.evidence?.error,task.cleanupError].filter(Boolean).map(e=>e.message || String(e));setText($('detail-error'),errors.join('\n'));$('detail-error').hidden=!errors.length;steps($('detail-chain'),task);
-  if(download) {
+  if(fileTask) {
     const remote=task.file?.remotePath ?? task.input?.remotePath ?? '';
     const delivered=Boolean(task.done && task.evidence?.complete && task.file?.localPath);
-    const bytes=task.native?.result?.size;
+    const bytes=task.native?.result?.size ?? (task.native?.received!=null ? task.native.received+(task.native.total!=null?' / '+task.native.total:'') : null);
     setText($('file-name'),remote.split(/[\\/]/).pop() || '远程文件');
-    setText($('file-summary'),(delivered?'文件已保存':value.label+' · '+value.evidence)+(bytes!=null?' · '+bytes+' 字节':'')+' · '+duration(task));
-    setText($('file-remote'),remote || '尚未提供');setText($('file-path-label'),delivered?'保存位置':'证据或残留位置');setText($('file-local'),delivered?task.file.localPath:task.evidence?.path || task.directory || '尚未交付完整文件');
+    setText($('file-summary'),(upload?value.label+' · '+value.evidence+' · '+(task.input?.overwrite?'允许覆盖':'禁止覆盖'):delivered?'文件已保存':value.label+' · '+value.evidence)+(bytes!=null?' · '+bytes+' 字节':'')+' · '+duration(task));
+    setText($('file-remote'),remote || '尚未提供');setText($('file-path-label'),upload?'本地来源':delivered?'保存位置':'证据或残留位置');setText($('file-local'),upload?(task.file?.localPath || task.input?.localPath || '尚未提供'):delivered?task.file.localPath:task.evidence?.path || task.directory || '尚未交付完整文件');
     $('detail-state').hidden=true;$('detail-time').hidden=true;
   } else { $('detail-state').hidden=false;$('detail-time').hidden=false; }
 }

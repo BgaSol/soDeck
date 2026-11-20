@@ -12,6 +12,7 @@ use tokio_util::sync::CancellationToken;
 pub enum Kind {
     Exec,
     Download,
+    Upload,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExecMode {
@@ -30,50 +31,56 @@ impl ExecMode {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExecSpec {
-    pub target_id: String,
-    pub request_id: String,
     pub command: String,
     pub mode: ExecMode,
     pub timeout_seconds: Option<u64>,
     pub terminal_size: Option<(u32, u32)>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DownloadSpec {
-    pub target_id: String,
-    pub request_id: String,
-    pub remote_path: String,
+pub enum FileSpec {
+    Download {
+        remote_path: String,
+    },
+    Upload {
+        local_path: String,
+        remote_path: String,
+        overwrite: bool,
+    },
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum TaskSpec {
+pub enum TaskOperation {
     Exec(ExecSpec),
-    Download(DownloadSpec),
+    File(FileSpec),
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TaskSpec {
+    pub target_id: String,
+    pub request_id: String,
+    pub operation: TaskOperation,
 }
 impl TaskSpec {
     pub fn terminal(&self) -> bool {
-        matches!(self,TaskSpec::Exec(spec) if spec.mode==ExecMode::Pty)
+        matches!(&self.operation,TaskOperation::Exec(s) if s.mode==ExecMode::Pty)
     }
     pub fn kind(&self) -> Kind {
-        match self {
-            Self::Exec(_) => Kind::Exec,
-            Self::Download(_) => Kind::Download,
+        match &self.operation {
+            TaskOperation::Exec(_) => Kind::Exec,
+            TaskOperation::File(FileSpec::Download { .. }) => Kind::Download,
+            TaskOperation::File(FileSpec::Upload { .. }) => Kind::Upload,
         }
     }
     pub fn target_id(&self) -> &str {
-        match self {
-            Self::Exec(s) => &s.target_id,
-            Self::Download(s) => &s.target_id,
-        }
+        &self.target_id
     }
     pub fn request_id(&self) -> &str {
-        match self {
-            Self::Exec(s) => &s.request_id,
-            Self::Download(s) => &s.request_id,
-        }
+        &self.request_id
     }
     pub fn json(&self) -> Value {
-        match self {
-            Self::Exec(s) => {
-                let mut v = json!({"targetId":s.target_id,"requestId":s.request_id,"command":s.command,"timeoutSeconds":s.timeout_seconds});
+        let mut v = json!({"targetId":self.target_id,"requestId":self.request_id});
+        match &self.operation {
+            TaskOperation::Exec(s) => {
+                v["command"] = json!(s.command);
+                v["timeoutSeconds"] = json!(s.timeout_seconds);
                 if s.mode != ExecMode::Batch {
                     v["mode"] = json!(s.mode.name());
                 }
@@ -81,12 +88,21 @@ impl TaskSpec {
                     v["cols"] = json!(cols);
                     v["rows"] = json!(rows);
                 }
-                v
             }
-            Self::Download(s) => {
-                json!({"targetId":s.target_id,"requestId":s.request_id,"remotePath":s.remote_path})
+            TaskOperation::File(FileSpec::Download { remote_path }) => {
+                v["remotePath"] = json!(remote_path);
+            }
+            TaskOperation::File(FileSpec::Upload {
+                local_path,
+                remote_path,
+                overwrite,
+            }) => {
+                v["remotePath"] = json!(remote_path);
+                v["localPath"] = json!(local_path);
+                v["overwrite"] = json!(overwrite);
             }
         }
+        v
     }
 }
 pub fn now() -> u64 {
@@ -113,14 +129,16 @@ pub fn fixture(root: PathBuf) -> Arc<Task> {
                 generation: 1,
             },
         )),
-        spec: TaskSpec::Exec(ExecSpec {
+        spec: TaskSpec {
             target_id: "target".into(),
             request_id: "request".into(),
-            command: "中文\ncommand".into(),
-            mode: ExecMode::Batch,
-            timeout_seconds: Some(300),
-            terminal_size: None,
-        }),
+            operation: TaskOperation::Exec(ExecSpec {
+                command: "中文\ncommand".into(),
+                mode: ExecMode::Batch,
+                timeout_seconds: Some(300),
+                terminal_size: None,
+            }),
+        },
         root,
     }))
 }
@@ -159,7 +177,7 @@ mod tests {
     fn input_control_keeps_only_latest_receipt_and_one_uncertain_attempt() {
         use crate::input::{Dispatch, NormalizedInput};
         let mut task = fixture(PathBuf::new());
-        if let TaskSpec::Exec(spec) = &mut Arc::get_mut(&mut task).unwrap().spec {
+        if let TaskOperation::Exec(spec) = &mut Arc::get_mut(&mut task).unwrap().spec.operation {
             spec.mode = ExecMode::Pipe;
             spec.timeout_seconds = None;
         }
@@ -254,10 +272,17 @@ mod tests {
     }
 }
 impl Kind {
+    pub fn domain(self) -> crate::targets::AdmissionDomain {
+        match self {
+            Self::Exec => crate::targets::AdmissionDomain::Exec,
+            Self::Download | Self::Upload => crate::targets::AdmissionDomain::Files,
+        }
+    }
     pub fn name(self) -> &'static str {
         match self {
             Self::Exec => "exec",
             Self::Download => "download",
+            Self::Upload => "upload",
         }
     }
 }
@@ -357,6 +382,8 @@ pub fn meaningful_native(native: &Value) -> Value {
         "outputComplete",
         "received",
         "total",
+        "transfer",
+        "result",
         "streamId",
         "id",
         "error",
@@ -431,6 +458,22 @@ impl Task {
         self.changes.subscribe()
     }
     pub fn observe(&self, native: Value, committed: Option<u64>) {
+        if self.kind() != Kind::Exec {
+            self.update(|r| {
+                let previous = &r.native;
+                let mut next = native;
+                if ["committed", "notCommitted"]
+                    .contains(&previous["transfer"]["commitState"].as_str().unwrap_or(""))
+                {
+                    next["transfer"] = previous["transfer"].clone();
+                }
+                let changed = meaningful_native(previous) != meaningful_native(&next);
+                r.native = next;
+                r.observed = now();
+                changed
+            });
+            return;
+        }
         self.update(|r| {
             let mut native = native;
             let old_sequence = r.native["input"]["last"]["sequence"]
@@ -524,7 +567,7 @@ impl Task {
         let control = r
             .control
             .as_ref()
-            .ok_or_else(|| crate::tasks::failure("unsupported", "下载任务不支持输入"))?;
+            .ok_or_else(|| crate::tasks::failure("unsupported", "文件任务不支持输入"))?;
         if let Some((last, original)) = &control.last_accepted {
             if sequence == *last {
                 return if original == &operation {
@@ -554,9 +597,9 @@ impl Task {
                 }));
             }
         }
-        let spec = match &self.spec {
-            TaskSpec::Exec(s) => s,
-            TaskSpec::Download(_) => unreachable!(),
+        let spec = match &self.spec.operation {
+            TaskOperation::Exec(s) => s,
+            TaskOperation::File(_) => unreachable!(),
         };
         if spec.mode == ExecMode::Batch
             || matches!(operation, NormalizedInput::Eof) && spec.mode != ExecMode::Pipe
@@ -668,7 +711,7 @@ impl Task {
             .is_some_and(|a| a.rpc_in_flight)
     }
     pub fn interaction(&self, r: &Record) -> Option<Value> {
-        let TaskSpec::Exec(spec) = &self.spec else {
+        let TaskOperation::Exec(spec) = &self.spec.operation else {
             return None;
         };
         if spec.mode == ExecMode::Batch {
@@ -714,10 +757,10 @@ impl Task {
         });
     }
     pub fn finalizing(&self, complete: bool, error: Value) {
-        let path = self.directory.join(if self.kind() == Kind::Exec {
-            "output.jsonl"
-        } else {
-            "download.bin"
+        let path = self.directory.join(match self.kind() {
+            Kind::Exec => "output.jsonl",
+            Kind::Download => "download.bin",
+            Kind::Upload => "metadata.json",
         });
         let path = path.exists().then_some(path);
         self.update(|r| {

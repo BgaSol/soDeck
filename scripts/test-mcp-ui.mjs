@@ -221,6 +221,11 @@ try {
   data.runId='run-b';await frame.locator('#refresh').click();await frame.locator('#detail').waitFor({state:'hidden'});
   data.tasks=[];await frame.locator('#refresh').click();await frame.locator('#empty').waitFor();
   await capture({path:'artifacts/mcp-ui/empty.png',fullPage:true});
+  const upload={...structuredClone(originalTasks[1]),taskId:'upload',kind:'upload',revision:'1',targetId:data.targetId,runId:data.runId,requestId:'upload-file',input:{localPath:'C:/work/脚本.bin',remotePath:'/tmp/脚本.bin',overwrite:true},native:{state:'committing',received:'100',total:'100',transfer:{commitState:'pending'}},file:{localPath:'C:/work/脚本.bin',remotePath:'/tmp/脚本.bin',overwrite:true,commitState:'pending'},done:false};
+  data.tasks=[upload];await frame.locator('#refresh').click();await choose('查看上传详情 upload-file');await frame.locator('#file-summary').filter({hasText:'正在提交'}).waitFor();assert(await frame.locator('#detail-output-section').isHidden());assert.equal(await frame.locator('#file-local').textContent(),upload.input.localPath);
+  const uploadReads=taskReads.length;await page.waitForTimeout(1700);assert(taskReads.slice(uploadReads).every(p=>p.outputMode==='none'),'uploads never read command output');
+  upload.done=true;upload.native.state='completed';upload.native.transfer.commitState='committed';upload.file.commitState='committed';upload.evidence={state:'failed',complete:false,error:{message:'record disk failed'}};upload.revision='2';await frame.locator('#refresh').click();await frame.locator('#file-summary').filter({hasText:'已上传'}).waitFor();assert((await frame.locator('#file-summary').textContent()).includes('证据保存失败'));await capture({path:'artifacts/mcp-ui/upload-committed-record-failed.png',fullPage:true});
+  upload.native.state='unknown';upload.native.transfer.commitState='unknown';upload.file.commitState='unknown';upload.revision='3';await frame.locator('#refresh').click();await frame.locator('#file-summary').filter({hasText:'结果待核对'}).waitFor();
   await message('unmount');const unmounted=snapshots;await page.waitForTimeout(1700);assert.equal(snapshots,unmounted);
   assert.equal(await page.locator('#terminal').inputValue(),'primary workspace draft');
   assert(!actions.some(p=>p?.viewType));assert.deepEqual(errors,[]);
