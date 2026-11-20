@@ -1,5 +1,5 @@
 //! Docker log capture metadata. Output lives in the core, never in this process.
-use crate::{commands, runtime};
+use crate::{cli, commands, connection::Snapshot, runtime};
 use serde_json::{json, Value};
 use sodeck_plugin_client::Client;
 use std::{
@@ -19,9 +19,7 @@ struct Resource {
 }
 struct Capture {
     generation: u64,
-    context: Value,
-    endpoint: String,
-    engine: String,
+    target: Snapshot,
     container: String,
     resources: Vec<Resource>,
     navigation: Value,
@@ -32,6 +30,7 @@ enum Job {
     Start {
         view: String,
         target: Value,
+        binding: Snapshot,
         input: Value,
     },
     Stop(String),
@@ -68,8 +67,9 @@ impl Logs {
                     Ok(Job::Start {
                         view,
                         target,
+                        binding,
                         input,
-                    }) => logs.start(&client, &view, target, input),
+                    }) => logs.start(&client, &view, target, binding, input),
                     Ok(Job::Stop(view)) => logs.stop(&client, &view, false),
                     Ok(Job::Dispose(view)) => {
                         logs.stop(&client, &view, true);
@@ -109,12 +109,14 @@ impl Logs {
                 if self.pending.lock().unwrap().contains(view) {
                     return Err("日志请求已在队列中，请等待回执".into());
                 }
+                let binding = runtime::bound_target(&self.app, view, &target)?;
                 self.pending.lock().unwrap().insert(view.into());
                 if self
                     .sender
                     .try_send(Job::Start {
                         view: view.into(),
                         target,
+                        binding,
                         input: input.clone(),
                     })
                     .is_err()
@@ -169,7 +171,7 @@ impl Logs {
             return Ok(json!({"generation":0,"resources":[],"loading":pending,"nextIntent":next}));
         };
         Ok(
-            json!({"generation":c.generation,"context":c.context,"loading":pending || c.loading,"nextIntent":next,"error":c.error,"navigation":c.navigation,"resources":c.resources.iter().map(|r|json!({"id":r.id,"start":r.start,"end":r.end,"tail":r.tail,"status":r.status})).collect::<Vec<_>>()}),
+            json!({"generation":c.generation,"context":c.target.context,"loading":pending || c.loading,"nextIntent":next,"error":c.error,"navigation":c.navigation,"resources":c.resources.iter().map(|r|json!({"id":r.id,"start":r.start,"end":r.end,"tail":r.tail,"status":r.status})).collect::<Vec<_>>()}),
         )
     }
     fn stop(&self, client: &Client, view: &str, release: bool) {
@@ -203,7 +205,7 @@ impl Logs {
             );
         }
     }
-    fn start(&self, client: &Client, view: &str, target: Value, input: Value) {
+    fn start(&self, client: &Client, view: &str, target: Value, binding: Snapshot, input: Value) {
         if !self.app.lock().unwrap().views.contains_key(view) {
             return;
         }
@@ -232,9 +234,7 @@ impl Logs {
         self.stop(client, view, true);
         let mut c = Capture {
             generation: old + 1,
-            context: target["context"].clone(),
-            endpoint: target["endpoint"].as_str().unwrap_or("").into(),
-            engine: target["engine"]["id"].as_str().unwrap_or("").into(),
+            target: binding,
             container: target["containerId"].as_str().unwrap_or("").into(),
             resources: vec![],
             navigation: json!({}),
@@ -263,16 +263,22 @@ impl Logs {
             if input["live"] == true && target["status"] != "running" && input["complete"] != true {
                 start = 0;
             }
-            commands::endpoint(&c.endpoint)?;
+
             commands::id(&c.container)?;
-            if c.engine.is_empty() {
-                return Err("请先刷新Docker身份".into());
-            }
             if input["live"] == true && target["status"] == "running" {
-                c.resources
-                    .push(open(client, view, &c, end, None, false, 32 * 1024 * 1024)?);
+                c.resources.push(open(
+                    &self.app,
+                    client,
+                    view,
+                    &c,
+                    end,
+                    None,
+                    false,
+                    32 * 1024 * 1024,
+                )?);
             }
             c.resources.push(open(
+                &self.app,
                 client,
                 view,
                 &c,
@@ -319,9 +325,7 @@ impl Logs {
             }
             Capture {
                 generation: c.generation,
-                context: c.context.clone(),
-                endpoint: c.endpoint.clone(),
-                engine: c.engine.clone(),
+                target: c.target.clone(),
                 container: c.container.clone(),
                 resources: vec![],
                 navigation: Value::Null,
@@ -329,7 +333,7 @@ impl Logs {
                 loading: false,
             }
         };
-        let expected = json!({"context":target.context,"endpoint":target.endpoint,"engine":{"id":target.engine},"containerId":target.container});
+        let expected = json!({"context":target.target.context,"endpoint":target.target.endpoint.uri(),"engine":{"id":target.target.engine_id},"containerId":target.container});
         if let Err(error) = runtime::log_target(&self.app, client, view, &expected) {
             if let Some(c) = self.views.lock().unwrap().get_mut(view) {
                 c.error = Some(error);
@@ -337,6 +341,7 @@ impl Logs {
             return;
         }
         let result = open(
+            &self.app,
             client,
             view,
             &target,
@@ -434,6 +439,7 @@ impl Logs {
     }
 }
 fn open(
+    app: &runtime::Shared,
     client: &Client,
     view: &str,
     c: &Capture,
@@ -458,36 +464,25 @@ fn open(
         args.extend(["--tail".into(), "2001".into()]);
     }
     args.push(c.container.clone());
-    let check = commands::docker(&c.endpoint, &["info", "--format", "{{.ID}}"]);
-    let command = commands::docker(
-        &c.endpoint,
+    let prepared = cli::prepare(
+        client,
+        view,
+        &c.target,
         &args.iter().map(String::as_str).collect::<Vec<_>>(),
-    );
-    let inspect = commands::docker(
-        &c.endpoint,
-        &["container", "inspect", "--format", "{{.Id}}", &c.container],
-    );
-    let command=format!("actual=$({check}) || exit; [ \"$actual\" = {} ] || {{ printf '%s\\n' 'Docker Engine changed; logs not started' >&2; exit 1; }}; actual=$({inspect}) || exit; [ \"$actual\" = {} ] || exit 1; exec {command}",commands::quote(&c.engine),commands::quote(&c.container));
-    static SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-    let sequence = SEQUENCE
-        .try_update(
-            std::sync::atomic::Ordering::Relaxed,
-            std::sync::atomic::Ordering::Relaxed,
-            |n| n.checked_add(1),
-        )
-        .map_err(|_| "流式命令序号已耗尽")?;
-    let params = json!({"viewId":view,"expectedContext":c.context,"sequence":sequence.to_string(),"operationId":format!("logs-{}-{}",c.generation,sequence),"command":command,"maxOutputBytes":budget,"retention":if end.is_some(){"fixed"}else{"rolling"}});
-    let mut response = None;
-    for _ in 0..3 {
-        match client.call_detailed("session.stream.open", params.clone()) {
-            Ok(r) => {
-                response = Some(r);
-                break;
-            }
-            Err(e) if e.code == -32003 => continue,
-            Err(e) => return Err(e.message),
-        }
-    }
+        Some(&c.container),
+        false,
+    )
+    .map_err(|e| e.message)?;
+    let (params, response) = runtime::open_stream(
+        app,
+        client,
+        view,
+        &c.target,
+        "logs",
+        prepared,
+        budget,
+        end.is_some(),
+    )?;
     let id = response
         .as_ref()
         .map(|r| r["streamId"].as_str().ok_or("核心没有返回日志资源"))

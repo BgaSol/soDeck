@@ -120,7 +120,91 @@ impl AppCore {
             .ui_plugin_call(view, "ui.createView", Value::Null)
             .map(|_| ());
         *creation = Some(result.clone());
+        drop(creation);
+        self.notify_connection_change(&view.context.server_id);
         result
+    }
+    pub(crate) fn validate_background_view(
+        &self,
+        plugin: &str,
+        instance: &str,
+        view_type: &str,
+    ) -> Result<(), String> {
+        self.ui_state()
+            .definitions
+            .get(&format!("{plugin}:{view_type}"))
+            .filter(|d| {
+                d.available
+                    && d.plugin_instance_id == instance
+                    && d.definition.background_on_workspace
+                    && d.ui_api_version == "2"
+            })
+            .map(|_| ())
+            .ok_or("UI v2 后台视图声明不存在".into())
+    }
+    pub(crate) fn background_creation(
+        &self,
+        plugin: &str,
+        instance: &str,
+        view_type: &str,
+        context: &Context,
+    ) -> Result<Value, String> {
+        let view = {
+            let state = self.workbench_state();
+            if let Err(error) = state.workspaces.validate_identity(context) {
+                return Ok(json!({"state":"stale","viewId":null,"error":error}));
+            }
+            let key = format!("{plugin}:{view_type}");
+            let definition = state
+                .ui
+                .definitions
+                .get(&key)
+                .filter(|d| {
+                    d.available
+                        && d.plugin_instance_id == instance
+                        && d.definition.background_on_workspace
+                        && d.ui_api_version == "2"
+                })
+                .ok_or("后台视图声明不存在")?;
+            state
+                .ui
+                .workspaces
+                .get(&context.workspace_id)
+                .and_then(|w| {
+                    w.views.iter().find(|v| {
+                        v.definition_key == definition.key
+                            && v.plugin_instance_id == instance
+                            && v.context == *context
+                    })
+                })
+                .cloned()
+        };
+        let Some(view) = view else {
+            return Ok(json!({"state":"waiting","viewId":null}));
+        };
+        let value = match view.creation.try_lock() {
+            Ok(c) => match &*c {
+                None => json!({"state":"waiting"}),
+                Some(Ok(())) => json!({"state":"created"}),
+                Some(Err(error)) => json!({"state":"failed","error":error}),
+            },
+            Err(std::sync::TryLockError::WouldBlock) => json!({"state":"running"}),
+            Err(std::sync::TryLockError::Poisoned(_)) => return Err("后台创建状态损坏".into()),
+        };
+        let state = self.workbench_state();
+        let current = state.ui.resource_view(&view.id).ok();
+        if state.workspaces.validate_identity(context).is_err()
+            || !current.is_some_and(|v| {
+                v.context == *context
+                    && v.plugin_instance_id == instance
+                    && std::sync::Arc::ptr_eq(&v.creation, &view.creation)
+            })
+        {
+            return Ok(json!({"state":"stale","viewId":null}));
+        }
+        let mut value = value;
+        value["viewId"] = json!(view.id);
+        Ok(value)
     }
     pub(crate) fn ui_plugin_call_observed(
         &self,

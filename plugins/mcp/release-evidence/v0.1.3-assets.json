@@ -1,0 +1,354 @@
+{
+  "date": "2026-11-18",
+  "component": "mcp",
+  "version": "0.1.3",
+  "sourceCommit": "27f9491f303f8676debb59137d0a3263ce50cb39",
+  "originalRunId": "44240103234",
+  "originalRunUrl": "https://github.com/BgaSol/soDeck/actions/runs/44240103234",
+  "releaseId": 449541422,
+  "releaseUrl": "https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.1.3",
+  "tag": "plugin-mcp-v0.1.3",
+  "draft": false,
+  "repositoryLatest": true,
+  "reports": [
+    {
+      "id": "sodeck.mcp",
+      "version": "0.1.3",
+      "target": "aarch64-apple-darwin",
+      "commit": "27f9491f303f8676debb59137d0a3263ce50cb39",
+      "sha256": "6ca851bb4529d06348300f82abcf615232a165d8aac1647d7d71ef1454f464fd",
+      "runId": "44240103234",
+      "toolCommit": "27f9491f303f8676debb59137d0a3263ce50cb39",
+      "passed": true,
+      "mcpHttp": true,
+      "calls": [
+        "settings.get",
+        "session.state",
+        "session.state"
+      ]
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.1.3",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "27f9491f303f8676debb59137d0a3263ce50cb39",
+      "sha256": "b6d02dc5608c9f6794060804b8c0d7f5d357df0784ca64dc282351ea55340515",
+      "runId": "44240103234",
+      "toolCommit": "27f9491f303f8676debb59137d0a3263ce50cb39",
+      "passed": true,
+      "mcpHttp": true,
+      "calls": [
+        "settings.get",
+        "session.state",
+        "session.state"
+      ]
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.1.3",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "27f9491f303f8676debb59137d0a3263ce50cb39",
+      "sha256": "3ad715743f159c706d7d99b21fc68586e6470d6c549af10c858f88cbdcede965",
+      "runId": "44240103234",
+      "toolCommit": "27f9491f303f8676debb59137d0a3263ce50cb39",
+      "passed": true,
+      "mcpHttp": true,
+      "calls": [
+        "settings.get",
+        "session.state",
+        "session.state"
+      ]
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.1.3",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "27f9491f303f8676debb59137d0a3263ce50cb39",
+      "sha256": "0c49bf41245441c2cc850cce3c659e56f6d47ed44498b5f17db88e756487d976",
+      "runId": "44240103234",
+      "toolCommit": "27f9491f303f8676debb59137d0a3263ce50cb39",
+      "passed": true,
+      "mcpHttp": true,
+      "calls": [
+        "settings.get",
+        "session.state",
+        "session.state"
+      ]
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.1.3",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "27f9491f303f8676debb59137d0a3263ce50cb39",
+      "sha256": "a3cad118228253b051d782819c75e3aa48da3f96068fc7eb07eccac37e83d385",
+      "runId": "44240103234",
+      "toolCommit": "27f9491f303f8676debb59137d0a3263ce50cb39",
+      "passed": true,
+      "mcpHttp": true,
+      "calls": [
+        "settings.get",
+        "session.state",
+        "session.state"
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "id": 761984446,
+      "name": "plugin-update.json",
+      "size": 2760,
+      "sha256": "e38825d73734ce7efae3a58a227a386f4c886c3753a2820d80aae3bbfeefb20c",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.1.3/plugin-update.json",
+      "publicDownloadVerified": true
+    },
+    {
+      "id": 761969342,
+      "name": "sodeck-mcp_0.1.3_aarch64-apple-darwin.tar.gz",
+      "size": 1782084,
+      "sha256": "6ca851bb4529d06348300f82abcf615232a165d8aac1647d7d71ef1454f464fd",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.1.3/sodeck-mcp_0.1.3_aarch64-apple-darwin.tar.gz",
+      "publicDownloadVerified": true
+    },
+    {
+      "id": 761969255,
+      "name": "sodeck-mcp_0.1.3_aarch64-pc-windows-msvc.zip",
+      "size": 1808984,
+      "sha256": "b6d02dc5608c9f6794060804b8c0d7f5d357df0784ca64dc282351ea55340515",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.1.3/sodeck-mcp_0.1.3_aarch64-pc-windows-msvc.zip",
+      "publicDownloadVerified": true
+    },
+    {
+      "id": 761969309,
+      "name": "sodeck-mcp_0.1.3_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 1804508,
+      "sha256": "3ad715743f159c706d7d99b21fc68586e6470d6c549af10c858f88cbdcede965",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.1.3/sodeck-mcp_0.1.3_aarch64-unknown-linux-gnu.tar.gz",
+      "publicDownloadVerified": true
+    },
+    {
+      "id": 761969228,
+      "name": "sodeck-mcp_0.1.3_x86_64-pc-windows-msvc.zip",
+      "size": 1954539,
+      "sha256": "0c49bf41245441c2cc850cce3c659e56f6d47ed44498b5f17db88e756487d976",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.1.3/sodeck-mcp_0.1.3_x86_64-pc-windows-msvc.zip",
+      "publicDownloadVerified": true
+    },
+    {
+      "id": 761969277,
+      "name": "sodeck-mcp_0.1.3_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 1929520,
+      "sha256": "a3cad118228253b051d782819c75e3aa48da3f96068fc7eb07eccac37e83d385",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.1.3/sodeck-mcp_0.1.3_x86_64-unknown-linux-gnu.tar.gz",
+      "publicDownloadVerified": true
+    }
+  ],
+  "manifest": {
+    "id": "sodeck.mcp",
+    "version": "0.1.3",
+    "apiVersion": "1",
+    "notes": "机器人接口侧栏现在能直接看清智能体正在操作的服务器、实际命令、用时和最新输出。下方操作列表可展开完整命令、原服务器、退出结果、分页输出和本地证据；刷新保留当前详情、键盘焦点和阅读位置。\n\n- 进行中的操作优先显示；正在查看的历史记录即使超出最近 50 条，也保留到收起详情。\n- 最新输出按有界尾页读取，历史输出按页查看；长脚本、窄侧栏和矮窗口可操作。\n- 接入配置收进设置；取消只请求取消，界面继续等待远端实际结果。\n- 原插件 ID、端口、接入密钥和客户端配置沿用；最低核心版本仍为 1.5.0，机器人图标需要核心 1.5.1。\n\n包来源：[27f9491](https://github.com/BgaSol/soDeck/commit/27f9491f303f8676debb59137d0a3263ce50cb39)。源码检查：[Check](https://github.com/BgaSol/soDeck/actions/runs/44240065627)。五平台原生打包与实际包验收：[原始 Package plugin](https://github.com/BgaSol/soDeck/actions/runs/44240103234)。\n\n本次验证覆盖五平台原生源码检查、包内程序启动/挂载/退出和 MCP HTTP 发现，以及 Linux 三服务器调查、进程故障注入和三主题侧栏回归。\n\n未执行旧版升级、五平台实际包 SSH 组合、新的实际 Codex CLI 调用、netem 或额外原生 IME/DPI/读屏专项。\n",
+    "platforms": {
+      "aarch64-apple-darwin": {
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.1.3/sodeck-mcp_0.1.3_aarch64-apple-darwin.tar.gz",
+        "sha256": "6ca851bb4529d06348300f82abcf615232a165d8aac1647d7d71ef1454f464fd"
+      },
+      "aarch64-pc-windows-msvc": {
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.1.3/sodeck-mcp_0.1.3_aarch64-pc-windows-msvc.zip",
+        "sha256": "b6d02dc5608c9f6794060804b8c0d7f5d357df0784ca64dc282351ea55340515"
+      },
+      "aarch64-unknown-linux-gnu": {
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.1.3/sodeck-mcp_0.1.3_aarch64-unknown-linux-gnu.tar.gz",
+        "sha256": "3ad715743f159c706d7d99b21fc68586e6470d6c549af10c858f88cbdcede965"
+      },
+      "x86_64-pc-windows-msvc": {
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.1.3/sodeck-mcp_0.1.3_x86_64-pc-windows-msvc.zip",
+        "sha256": "0c49bf41245441c2cc850cce3c659e56f6d47ed44498b5f17db88e756487d976"
+      },
+      "x86_64-unknown-linux-gnu": {
+        "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.1.3/sodeck-mcp_0.1.3_x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "a3cad118228253b051d782819c75e3aa48da3f96068fc7eb07eccac37e83d385"
+      }
+    }
+  },
+  "sourceCheck": {
+    "runId": "44240065627",
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/44240065627",
+    "sourceCommit": "27f9491f303f8676debb59137d0a3263ce50cb39",
+    "attempt": 1,
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "select",
+        "conclusion": "success"
+      },
+      {
+        "name": "integration-business-linux-x86_64",
+        "conclusion": "success"
+      },
+      {
+        "name": "checks",
+        "conclusion": "success"
+      },
+      {
+        "name": "native-windows-x86_64",
+        "conclusion": "success"
+      },
+      {
+        "name": "native-macos-aarch64",
+        "conclusion": "success"
+      },
+      {
+        "name": "native-linux-aarch64",
+        "conclusion": "success"
+      },
+      {
+        "name": "native-linux-x86_64",
+        "conclusion": "success"
+      },
+      {
+        "name": "native-windows-aarch64",
+        "conclusion": "success"
+      },
+      {
+        "name": "desktop",
+        "conclusion": "skipped"
+      },
+      {
+        "name": "browser",
+        "conclusion": "skipped"
+      },
+      {
+        "name": "netem",
+        "conclusion": "skipped"
+      },
+      {
+        "name": "format",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "packageJobs": [
+    {
+      "name": "select",
+      "conclusion": "success"
+    },
+    {
+      "name": "macos-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "linux-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "linux-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-linux-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-linux-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-windows-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-macos-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-windows-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "release",
+      "conclusion": "success"
+    }
+  ],
+  "validation": {
+    "local": "Windows x86_64 format/type checks, unit tests, 187 script tests, production frontend build, real-process fault injection, three-server SSH integration, three-theme sidebar UI, independent plugin build and actual archive startup/mount/dispose/exit.",
+    "source": "Selected source Check passed on exact package commit: five native core/MCP source suites and Linux three-server MCP investigation/process/UI integration. Unselected desktop/browser/netem jobs were skipped, not treated as passes.",
+    "nativePackages": "Five native targets: original archives, native binary architectures, packaged process startup/mount/dispose/exit, authenticated MCP HTTP discovery and lifecycle/resource cleanup.",
+    "publicDownloads": "Six published attachments downloaded anonymously; byte count and SHA-256 matched Release metadata and original native reports. Release body matched update manifest notes. Five original package asset IDs and hashes preserved.",
+    "skipped": [
+      "Published old-to-new upgrade",
+      "Five-platform actual-package SSH combination",
+      "New live Codex CLI tool-call acceptance",
+      "netem",
+      "Additional native IME/DPI/screen-reader device checks"
+    ]
+  },
+  "packagedUiChecks": [
+    {
+      "target": "aarch64-apple-darwin",
+      "sha256": "6ca851bb4529d06348300f82abcf615232a165d8aac1647d7d71ef1454f464fd",
+      "name": "机器人接口",
+      "monitor": true,
+      "operationList": true,
+      "inlineDetail": true,
+      "outputPaging": true,
+      "nativeArchitecture": true
+    },
+    {
+      "target": "aarch64-pc-windows-msvc",
+      "sha256": "b6d02dc5608c9f6794060804b8c0d7f5d357df0784ca64dc282351ea55340515",
+      "name": "机器人接口",
+      "monitor": true,
+      "operationList": true,
+      "inlineDetail": true,
+      "outputPaging": true,
+      "nativeArchitecture": true
+    },
+    {
+      "target": "aarch64-unknown-linux-gnu",
+      "sha256": "3ad715743f159c706d7d99b21fc68586e6470d6c549af10c858f88cbdcede965",
+      "name": "机器人接口",
+      "monitor": true,
+      "operationList": true,
+      "inlineDetail": true,
+      "outputPaging": true,
+      "nativeArchitecture": true
+    },
+    {
+      "target": "x86_64-pc-windows-msvc",
+      "sha256": "0c49bf41245441c2cc850cce3c659e56f6d47ed44498b5f17db88e756487d976",
+      "name": "机器人接口",
+      "monitor": true,
+      "operationList": true,
+      "inlineDetail": true,
+      "outputPaging": true,
+      "nativeArchitecture": true
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "sha256": "a3cad118228253b051d782819c75e3aa48da3f96068fc7eb07eccac37e83d385",
+      "name": "机器人接口",
+      "monitor": true,
+      "operationList": true,
+      "inlineDetail": true,
+      "outputPaging": true,
+      "nativeArchitecture": true
+    }
+  ],
+  "publicVerification": {
+    "checkedAt": "2026-11-18T05:02:57.894Z",
+    "publishedAt": "2026-11-18T05:02:39Z",
+    "anonymousDownloads": 6,
+    "allAssetBytesMatch": true,
+    "releaseAndManifestNotesMatch": true,
+    "versionTagMatchesSource": true,
+    "latest": "plugin-mcp-v0.1.3"
+  }
+}

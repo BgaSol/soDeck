@@ -63,10 +63,10 @@ impl Kind {
         match self {
             Self::Container => commands::SUMMARY,
             Self::Image => {
-                r#"{"id":{{json .Id}},"tags":{{json .RepoTags}},"digests":{{json .RepoDigests}},"created":{{json .Created}},"size":{{json .Size}}}"#
+                r#"{"id":{{json .Id}},"tags":{{json (index . "RepoTags")}},"digests":{{json (index . "RepoDigests")}},"created":{{json (index . "Created")}},"size":{{json (index . "Size")}}}"#
             }
             Self::Network => {
-                r#"{"id":{{json .Id}},"name":{{json .Name}},"driver":{{json .Driver}},"scope":{{json .Scope}},"created":{{json .Created}}}"#
+                r#"{"id":{{json .Id}},"name":{{json .Name}},"driver":{{json (index . "Driver")}},"scope":{{json (index . "Scope")}},"created":{{json (index . "Created")}}}"#
             }
             Self::Volume => {
                 r#"{"id":{{json .Name}},"name":{{json .Name}},"driver":{{json .Driver}},"scope":{{json .Scope}},"created":{{json .CreatedAt}},"observation":{"Name":{{json .Name}},"Driver":{{json .Driver}},"Scope":{{json .Scope}},"CreatedAt":{{json .CreatedAt}},"Options":{{json .Options}},"Labels":{{json .Labels}}}}"#
@@ -100,7 +100,9 @@ impl ResourceRef {
 pub fn root(value: &Value) -> Value {
     value
         .as_str()
-        .filter(|s| s.starts_with('/') && s.len() <= 4096 && !s.chars().any(char::is_control))
+        .filter(|s| {
+            crate::connection::absolute(s) && s.len() <= 4096 && !s.chars().any(char::is_control)
+        })
         .map_or(Value::Null, |s| json!(s))
 }
 pub fn normalize(kind: Kind, mut row: Value) -> Result<Value, String> {
@@ -207,7 +209,9 @@ pub fn verify_delete(
             if current["Id"] != target.id {
                 return Err("网络身份已改变".into());
             }
-            if ["bridge", "host", "none"].contains(&current["Name"].as_str().unwrap_or("")) {
+            if ["bridge", "host", "none", "nat", "Default Switch"]
+                .contains(&current["Name"].as_str().unwrap_or(""))
+            {
                 return Err("系统网络不能删除".into());
             }
             if current["Containers"]

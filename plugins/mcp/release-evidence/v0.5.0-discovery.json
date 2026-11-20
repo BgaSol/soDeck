@@ -1,0 +1,991 @@
+{
+  "scope": "precommit local programs; same three real isolated OpenSSH sessions for response comparison; controlled core v1/v2 fixtures for boundary tests; not live production server 187 or token usage",
+  "actual": {
+    "baseline": {
+      "bytes": 1336,
+      "elapsedMs": 125,
+      "result": {
+        "content": [
+          {
+            "text": "{\"runId\":\"1795019622755-8bf082975f42b1b7\",\"targets\":[{\"capabilities\":[\"exec\",\"files\"],\"closing\":false,\"context\":{\"connectionId\":\"1795019622305-43740-2\",\"generation\":1,\"serverId\":\"1795019622305-43740-1\",\"workspaceId\":\"1795019622305-43740-9\"},\"state\":\"connected\",\"target\":{\"endpoint\":\"127.0.0.1:53865\",\"name\":\"187\",\"protocol\":\"ssh\",\"username\":\"bgaso\"},\"targetId\":\"1795019622755-8bf082975f42b1b7-target-2\"},{\"capabilities\":[\"exec\",\"files\"],\"closing\":false,\"context\":{\"connectionId\":\"1795019622305-43740-22\",\"generation\":1,\"serverId\":\"1795019622305-43740-21\",\"workspaceId\":\"1795019622305-43740-29\"},\"state\":\"connected\",\"target\":{\"endpoint\":\"127.0.0.1:53870\",\"name\":\"127.0.0.1\",\"protocol\":\"ssh\",\"username\":\"bgaso\"},\"targetId\":\"1795019622755-8bf082975f42b1b7-target-1\"},{\"capabilities\":[\"exec\",\"files\"],\"closing\":false,\"context\":{\"connectionId\":\"1795019622305-43740-12\",\"generation\":1,\"serverId\":\"1795019622305-43740-11\",\"workspaceId\":\"1795019622305-43740-19\"},\"state\":\"connected\",\"target\":{\"endpoint\":\"127.0.0.1:53868\",\"name\":\"127.0.0.1\",\"protocol\":\"ssh\",\"username\":\"bgaso\"},\"targetId\":\"1795019622755-8bf082975f42b1b7-target-3\"}]}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      },
+      "version": "0.4.0"
+    },
+    "bytes": 594,
+    "elapsedMs": 139,
+    "query": "187",
+    "result": {
+      "content": [
+        {
+          "text": "{\"registryChanged\":false,\"resolution\":\"unique\",\"runId\":\"1795019624975-d1a90f6c6f804163\",\"targets\":[{\"availability\":\"ready\",\"capabilities\":[\"exec\",\"files\"],\"matchedBy\":[\"nameExact\"],\"serverId\":\"1795019622305-43740-1\",\"target\":{\"endpoint\":\"127.0.0.1:53865\",\"host\":\"127.0.0.1\",\"name\":\"187\",\"port\":53865,\"protocol\":\"ssh\",\"username\":\"bgaso\"},\"targetId\":\"1795019624975-d1a90f6c6f804163-target-2\",\"targetSource\":\"current\",\"workspaceId\":\"1795019622305-43740-9\"}],\"unresolved\":[]}",
+          "type": "text"
+        }
+      ],
+      "isError": false
+    },
+    "scope": "actual core and plugin with three isolated OpenSSH sessions, not production 187",
+    "version": "0.5.0"
+  },
+  "controlledBaseline": {
+    "version": "0.4.0",
+    "scope": "actual 0.4.0 plugin process with controlled v1 core contract; not live server",
+    "connected": {
+      "bytes": 476,
+      "value": {
+        "runId": "1795017379190-451075f1c5aad1f4",
+        "targets": [
+          {
+            "capabilities": [
+              "exec",
+              "files"
+            ],
+            "closing": false,
+            "context": {
+              "connectionId": "connection",
+              "generation": 1,
+              "serverId": "server",
+              "workspaceId": "view"
+            },
+            "state": "connected",
+            "target": {
+              "endpoint": "10.0.0.187:22",
+              "name": "production",
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "targetId": "1795017379190-451075f1c5aad1f4-target-1"
+          }
+        ]
+      }
+    },
+    "disconnected": {
+      "bytes": 367,
+      "value": {
+        "runId": "1795017379190-451075f1c5aad1f4",
+        "targets": [
+          {
+            "capabilities": [],
+            "closing": false,
+            "context": {
+              "connectionId": "connection",
+              "generation": 1,
+              "serverId": "server",
+              "workspaceId": "view"
+            },
+            "state": "disconnected",
+            "target": null,
+            "targetId": "1795017379190-451075f1c5aad1f4-target-1"
+          }
+        ]
+      }
+    },
+    "invalidMount": {
+      "bytes": 382,
+      "value": {
+        "runId": "1795017379190-451075f1c5aad1f4",
+        "targets": [
+          {
+            "context": {
+              "connectionId": "connection",
+              "generation": 1,
+              "serverId": "server",
+              "workspaceId": "view"
+            },
+            "error": {
+              "code": "staleContext",
+              "message": "目标已关闭"
+            },
+            "state": "unavailable",
+            "targetId": "1795017379190-451075f1c5aad1f4-target-1"
+          }
+        ]
+      }
+    }
+  },
+  "process": {
+    "version": "0.5.0",
+    "samples": [
+      {
+        "args": {},
+        "bytes": 1216,
+        "elapsedMs": 1.4271999999999991,
+        "resolution": "ambiguous",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-1",
+            "target": {
+              "endpoint": "10.0.0.187:22",
+              "host": "10.0.0.187",
+              "name": "a",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          },
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-2",
+            "target": {
+              "endpoint": "10.0.1.187:22",
+              "host": "10.0.1.187",
+              "name": "b",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          },
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-3",
+            "target": {
+              "endpoint": "db187.example.com:22",
+              "host": "db187.example.com",
+              "name": "c",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {
+          "query": "10.0.0.187"
+        },
+        "bytes": 553,
+        "elapsedMs": 1.0417000000000058,
+        "resolution": "unique",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-1",
+            "target": {
+              "endpoint": "10.0.0.187:22",
+              "host": "10.0.0.187",
+              "name": "a",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current",
+            "matchedBy": [
+              "hostExact"
+            ]
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {
+          "query": "187"
+        },
+        "bytes": 932,
+        "elapsedMs": 1.184899999999999,
+        "resolution": "ambiguous",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-1",
+            "target": {
+              "endpoint": "10.0.0.187:22",
+              "host": "10.0.0.187",
+              "name": "a",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current",
+            "matchedBy": [
+              "ipv4LastOctet"
+            ]
+          },
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-2",
+            "target": {
+              "endpoint": "10.0.1.187:22",
+              "host": "10.0.1.187",
+              "name": "b",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current",
+            "matchedBy": [
+              "ipv4LastOctet"
+            ]
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {
+          "query": "187"
+        },
+        "bytes": 927,
+        "elapsedMs": 1.0751999999999953,
+        "resolution": "ambiguous",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-1",
+            "target": {
+              "endpoint": "10.0.0.187:22",
+              "host": "10.0.0.187",
+              "name": "a",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current",
+            "matchedBy": [
+              "ipv4LastOctet"
+            ]
+          },
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-2",
+            "target": {
+              "endpoint": "10.0.1.187:22",
+              "host": "10.0.1.187",
+              "name": "b",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "disconnected",
+            "targetSource": "lastConnected",
+            "matchedBy": [
+              "ipv4LastOctet"
+            ]
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {
+          "query": "187"
+        },
+        "bytes": 928,
+        "elapsedMs": 1.088799999999992,
+        "resolution": "ambiguous",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-1",
+            "target": {
+              "endpoint": "10.0.0.187:22",
+              "host": "10.0.0.187",
+              "name": "a",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current",
+            "matchedBy": [
+              "ipv4LastOctet"
+            ]
+          },
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-2",
+            "target": {
+              "endpoint": "10.0.1.19:22",
+              "host": "10.0.1.19",
+              "name": "187",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current",
+            "matchedBy": [
+              "nameExact"
+            ]
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {
+          "query": "187",
+          "match": "contains"
+        },
+        "bytes": 1321,
+        "elapsedMs": 1.3948000000000036,
+        "resolution": "ambiguous",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-1",
+            "target": {
+              "endpoint": "10.0.0.187:22",
+              "host": "10.0.0.187",
+              "name": "a",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current",
+            "matchedBy": [
+              "ipv4LastOctet"
+            ]
+          },
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-2",
+            "target": {
+              "endpoint": "10.0.1.187:22",
+              "host": "10.0.1.187",
+              "name": "b",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current",
+            "matchedBy": [
+              "ipv4LastOctet"
+            ]
+          },
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-3",
+            "target": {
+              "endpoint": "db187.example.com:22",
+              "host": "db187.example.com",
+              "name": "c",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current",
+            "matchedBy": [
+              "hostnameContains"
+            ]
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {
+          "query": "0187"
+        },
+        "bytes": 184,
+        "elapsedMs": 0.9843999999999937,
+        "resolution": "none",
+        "registryChanged": false,
+        "targets": [],
+        "unresolved": []
+      },
+      {
+        "args": {
+          "targetId": "1795019644632-8410e168f239d0c3-target-1",
+          "detail": true
+        },
+        "bytes": 678,
+        "elapsedMs": 0.950099999999992,
+        "resolution": "unique",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-1",
+            "target": {
+              "endpoint": "10.0.0.187:22",
+              "host": "10.0.0.187",
+              "name": "a",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {
+          "targetId": "missing"
+        },
+        "bytes": 184,
+        "elapsedMs": 0.6470999999999947,
+        "resolution": "none",
+        "registryChanged": false,
+        "targets": [],
+        "unresolved": []
+      },
+      {
+        "args": {
+          "targetId": "1795019644632-8410e168f239d0c3-target-1",
+          "query": "187"
+        },
+        "bytes": 150,
+        "elapsedMs": 0.5591000000000008,
+        "error": {
+          "code": "invalidParams",
+          "message": "目标查询参数组合或身份无效"
+        }
+      },
+      {
+        "args": {
+          "targetId": "1795019644632-8410e168f239d0c3-target-1"
+        },
+        "bytes": 523,
+        "elapsedMs": 0.7331000000000074,
+        "resolution": "unique",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-1",
+            "target": {
+              "endpoint": "10.0.0.187:22",
+              "host": "10.0.0.187",
+              "name": "a",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {
+          "query": "187"
+        },
+        "bytes": 1374,
+        "elapsedMs": 1.0908000000000015,
+        "resolution": "incomplete",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-1",
+            "target": {
+              "endpoint": "10.0.0.187:22",
+              "host": "10.0.0.187",
+              "name": "a",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current",
+            "matchedBy": [
+              "ipv4LastOctet"
+            ]
+          }
+        ],
+        "unresolved": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-2",
+            "errorCode": -32000
+          }
+        ]
+      },
+      {
+        "args": {
+          "targetId": "1795019644632-8410e168f239d0c3-target-2"
+        },
+        "bytes": 999,
+        "elapsedMs": 0.8087000000000018,
+        "resolution": "unique",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-2",
+            "target": null,
+            "availability": "unavailable",
+            "targetSource": "unknown",
+            "errorCode": -32000
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {
+          "targetId": "1795019644632-8410e168f239d0c3-target-2",
+          "detail": true
+        },
+        "bytes": 1217,
+        "elapsedMs": 0.6778000000000048,
+        "resolution": "unique",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-2",
+            "target": null,
+            "availability": "unavailable",
+            "targetSource": "unknown",
+            "errorCode": -32000
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {
+          "query": "187"
+        },
+        "bytes": 876,
+        "elapsedMs": 0.6884000000000015,
+        "resolution": "incomplete",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-1",
+            "target": {
+              "endpoint": "10.0.0.187:22",
+              "host": "10.0.0.187",
+              "name": "a",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current",
+            "matchedBy": [
+              "ipv4LastOctet"
+            ]
+          }
+        ],
+        "unresolved": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-2",
+            "errorCode": "invalidTarget"
+          }
+        ]
+      },
+      {
+        "args": {
+          "query": "187"
+        },
+        "bytes": 1147,
+        "elapsedMs": 0.6763000000000119,
+        "resolution": "incomplete",
+        "registryChanged": false,
+        "targets": [],
+        "unresolved": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-1",
+            "errorCode": -32003
+          },
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-2",
+            "errorCode": "notObserved"
+          },
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-3",
+            "errorCode": "notObserved"
+          }
+        ]
+      },
+      {
+        "args": {
+          "targetId": "1795019644632-8410e168f239d0c3-target-2"
+        },
+        "bytes": 523,
+        "elapsedMs": 0.6888000000000005,
+        "resolution": "unique",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-2",
+            "target": {
+              "endpoint": "10.0.1.187:22",
+              "host": "10.0.1.187",
+              "name": "b",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {
+          "serverId": "server-a"
+        },
+        "bytes": 864,
+        "elapsedMs": 0.6701999999999941,
+        "resolution": "ambiguous",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-1",
+            "target": {
+              "endpoint": "10.0.0.187:22",
+              "host": "10.0.0.187",
+              "name": "a",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          },
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-4",
+            "target": {
+              "endpoint": "10.0.1.187:22",
+              "host": "10.0.1.187",
+              "name": "b",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {
+          "serverId": "server-a",
+          "workspaceId": "a"
+        },
+        "bytes": 523,
+        "elapsedMs": 0.6101000000000028,
+        "resolution": "unique",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-1",
+            "target": {
+              "endpoint": "10.0.0.187:22",
+              "host": "10.0.0.187",
+              "name": "a",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {
+          "serverId": "server-a"
+        },
+        "bytes": 523,
+        "elapsedMs": 33.56100000000001,
+        "resolution": "unique",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-1",
+            "target": {
+              "endpoint": "10.0.0.187:22",
+              "host": "10.0.0.187",
+              "name": "a",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {
+          "serverId": "server-a"
+        },
+        "bytes": 526,
+        "elapsedMs": 47.98480000000001,
+        "resolution": "incomplete",
+        "registryChanged": true,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-1",
+            "target": {
+              "endpoint": "10.0.0.187:22",
+              "host": "10.0.0.187",
+              "name": "a",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {
+          "targetId": "1795019644632-8410e168f239d0c3-target-1"
+        },
+        "bytes": 146,
+        "elapsedMs": 2.687000000000012,
+        "error": {
+          "code": "resourceBusy",
+          "message": "目标采集已满，请稍后查询"
+        }
+      },
+      {
+        "args": {
+          "targetId": "1795019644632-8410e168f239d0c3-target-1"
+        },
+        "bytes": 523,
+        "elapsedMs": 1.3100000000000023,
+        "resolution": "unique",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-1",
+            "target": {
+              "endpoint": "10.0.0.187:22",
+              "host": "10.0.0.187",
+              "name": "a",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {},
+        "bytes": 244,
+        "elapsedMs": 4.856000000000023,
+        "error": {
+          "code": "resourceLimit",
+          "message": "MCP result exceeds 256 KiB; narrow the identity filters, disable detail or inspect one targetId",
+          "operation": "sodeck_targets_list"
+        }
+      },
+      {
+        "args": {
+          "workspaceId": "limit-0"
+        },
+        "bytes": 6152,
+        "elapsedMs": 0.7815999999999974,
+        "resolution": "unique",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-8",
+            "target": {
+              "endpoint": "limit-0.example.com:22",
+              "host": "limit-0.example.com",
+              "name": "\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {},
+        "bytes": 1216,
+        "elapsedMs": 0.6588999999999885,
+        "resolution": "ambiguous",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-1",
+            "target": {
+              "endpoint": "10.0.0.187:22",
+              "host": "10.0.0.187",
+              "name": "a",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          },
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-3",
+            "target": {
+              "endpoint": "db187.example.com:22",
+              "host": "db187.example.com",
+              "name": "c",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          },
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-5",
+            "target": {
+              "endpoint": "10.0.1.187:22",
+              "host": "10.0.1.187",
+              "name": "b",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {},
+        "bytes": 1216,
+        "elapsedMs": 0.6063000000000045,
+        "resolution": "ambiguous",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-1",
+            "target": {
+              "endpoint": "10.0.0.187:22",
+              "host": "10.0.0.187",
+              "name": "a",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          },
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-3",
+            "target": {
+              "endpoint": "db187.example.com:22",
+              "host": "db187.example.com",
+              "name": "c",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          },
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-5",
+            "target": {
+              "endpoint": "10.0.1.187:22",
+              "host": "10.0.1.187",
+              "name": "b",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {},
+        "bytes": 1216,
+        "elapsedMs": 1.4863000000004831,
+        "resolution": "ambiguous",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-1",
+            "target": {
+              "endpoint": "10.0.0.187:22",
+              "host": "10.0.0.187",
+              "name": "a",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          },
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-3",
+            "target": {
+              "endpoint": "db187.example.com:22",
+              "host": "db187.example.com",
+              "name": "c",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          },
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-5",
+            "target": {
+              "endpoint": "10.0.1.187:22",
+              "host": "10.0.1.187",
+              "name": "b",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {
+          "workspaceId": "a"
+        },
+        "bytes": 525,
+        "elapsedMs": 1.5041999999994005,
+        "resolution": "unique",
+        "registryChanged": false,
+        "targets": [
+          {
+            "targetId": "1795019644632-8410e168f239d0c3-target-194",
+            "target": {
+              "endpoint": "10.0.0.187:22",
+              "host": "10.0.0.187",
+              "name": "a",
+              "port": 22,
+              "protocol": "ssh",
+              "username": "ops"
+            },
+            "availability": "ready",
+            "targetSource": "current"
+          }
+        ],
+        "unresolved": []
+      },
+      {
+        "args": {
+          "targetId": "1795019644632-8410e168f239d0c3-target-1"
+        },
+        "bytes": 184,
+        "elapsedMs": 1.212999999999738,
+        "resolution": "none",
+        "registryChanged": false,
+        "targets": [],
+        "unresolved": []
+      }
+    ]
+  }
+}

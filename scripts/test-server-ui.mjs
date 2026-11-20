@@ -161,6 +161,8 @@ try {
   await dialogs().locator('[data-step="1"]').selectOption(proxy);
   await action("add-socks").click(); await dialogs().locator('[data-step="2"]').selectOption(proxy);
   assert((await dialogs().locator(".route-preview").innerText()).includes("公网入口 的回环地址"));
+  assert.equal(await dialogs().locator('.route-editor-step .route-symbol svg').count(),3);
+  assert.equal(await dialogs().locator('.route-preview .route-symbol svg').count(),5);
   await dialogs().locator('[data-server-action="step-up"][data-index="2"]').click();
   await field("password").fill("ui-session-secret"); await field("remember").uncheck(); await save(); await expectDialogs(0);
   catalog = await read(); const target = catalog.servers.find(s => s.name === "生产数据库").id;
@@ -210,6 +212,58 @@ try {
     assert(guideOffset<=1,`${theme} live theme switch keeps guides aligned: ${guideOffset}px`);
     await page.screenshot({path:`artifacts/connection-tree/${theme}.png`});
   }
+  const routePreview = work().locator('.catalog-detail .route-preview');
+  assert.equal(await routePreview.locator('.route-symbol svg').count(),5,'Origin and every SSH/SOCKS5/target node use icons');
+  assert((await routePreview.locator('.route-symbol').allTextContents()).every(text=>!text.trim()),'Route circles contain no step numbers');
+  const routeView={attemptId:'route-progress',serverId:target,windowId:'main',state:'connecting',stage:'dns',nodeIndex:0,nodeCount:4,endpoint:'db.internal:22',question:null,context:null,error:null,sentBytes:'0',receivedBytes:'0'};
+  const showRoute=async patch=>page.evaluate(view=>window.manager.setConnections([view]),{...routeView,...patch});
+  for(const [patch,flow,complete] of [
+    [{stage:'dns'},0,0], [{stage:'sshTunnel'},1,1], [{stage:'socks5',nodeIndex:1},2,2],
+    [{stage:'authentication',nodeIndex:3},3,3],
+  ]){
+    await showRoute(patch);
+    assert.equal(await routePreview.locator('.route-edge-flow').count(),1);
+    assert.equal(await routePreview.locator('.route-edge').nth(flow).evaluate(el=>el.classList.contains('route-edge-flow')),true,'Flow follows the actual incoming or forwarded connection segment');
+    assert.equal(await routePreview.locator('.route-edge-complete').count(),complete);
+  }
+  await showRoute({stage:'credentials',nodeIndex:3,question:{kind:'credentials',id:'route-question'}});
+  assert.equal(await routePreview.locator('.route-edge-flow,.route-edge-complete').count(),0,'Credentials are collected before network connection; later nodes do not imply prior progress');
+  assert.match(await routePreview.locator('.route-waiting').innerText(),/等待确认/);
+  await showRoute({stage:'sshHandshake',nodeIndex:3,question:{kind:'hostKey',id:'route-question'}});
+  assert.equal(await routePreview.locator('.route-edge-flow').count(),0,'Host confirmation pauses flow');
+  assert.equal(await routePreview.locator('.route-edge-complete').count(),3);
+  await showRoute({state:'failed',stage:'socks5',nodeIndex:1,error:{stage:'socks5',message:'代理连接失败',code:'timeout'}});
+  assert.equal(await routePreview.locator('.route-edge-flow').count(),0);
+  assert.equal(await routePreview.locator('.route-edge-complete').count(),2);
+  assert.match(await routePreview.locator('.route-failed').innerText(),/SOCKS5.*连接失败/s);
+  await showRoute({state:'connected',nodeIndex:3,stage:'connected'});
+  assert.equal(await routePreview.locator('.route-edge-flow').count(),4);
+  const packet=routePreview.locator('.route-edge-flow > span').first();
+  await packet.evaluate(el=>window.routeAnimation=el.getAnimations()[0]);
+  await showRoute({state:'connected',nodeIndex:3,stage:'connected'});
+  assert(await packet.evaluate(el=>el.getAnimations()[0]===window.routeAnimation),'Repeated snapshots preserve the running line animation');
+  await routePreview.evaluate(el=>el.style.marginTop='1000px');
+  await page.waitForFunction(()=>document.querySelector('#test-workspace').classList.contains('route-motion-paused'));
+  assert.equal(await packet.evaluate(el=>getComputedStyle(el).animationPlayState),'paused');
+  await routePreview.evaluate(el=>el.style.removeProperty('margin-top'));
+  await page.waitForFunction(()=>!document.querySelector('#test-workspace').classList.contains('route-motion-paused'));
+  await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
+  assert.equal(await packet.evaluate(el=>getComputedStyle(el).animationPlayState),'paused');
+  await page.evaluate(()=>{delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));});
+  await page.emulateMedia({reducedMotion:'reduce'});
+  assert.equal(await packet.evaluate(el=>getComputedStyle(el).animationName),'none');
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  fs.mkdirSync('artifacts/connection-route',{recursive:true});
+  for(const theme of ['light','dark','dopamine']){
+    await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+    await work().locator('.detail-route').screenshot({path:`artifacts/connection-route/${theme}.png`});
+  }
+  await showRoute({state:'connected',nodeCount:2});
+  assert.equal(await routePreview.locator('.route-edge-flow').count(),0,'Changed route lengths do not reuse old connection progress');
+  await showRoute({state:'cancelled'});
+  assert.equal(await routePreview.locator('.route-edge-flow').count(),0);
+  await page.evaluate(()=>window.manager.setConnections([]));
+  checks.push('图标访问路径、真实阶段方向、凭据/指纹暂停、失败定位、后台/屏外/减少动态及快照连续性');
   await search.fill('公网');
   assert.equal(await work().locator('.connection-node:not(.path-node)').count(),1,'Searching a route node retains its matching target');
   await action('clear-tags',work()).click();assert.equal(await search.inputValue(),'公网','All clears labels without clearing search');

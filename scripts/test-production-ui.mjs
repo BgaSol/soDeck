@@ -31,7 +31,11 @@ fs.copyFileSync(`src-tauri/target/debug/workspace-ui-fixture${suffix}`,path.join
 if(process.platform!=='win32')fs.chmodSync(path.join(uiFixture,`workspace-ui-fixture${suffix}`),0o755);
 fs.cpSync('scripts/fixtures/workspace-ui/ui',path.join(uiFixture,'ui'),{recursive:true});
 const uiMetadata=JSON.parse(fs.readFileSync('scripts/fixtures/workspace-ui/manifest.json','utf8'));
+uiMetadata.icon='custom';uiMetadata.icons={custom:'assets/shape.svg'};
+fs.mkdirSync(path.join(uiFixture,'assets'));fs.writeFileSync(path.join(uiFixture,'assets/shape.svg'),'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>');
+for(const view of uiMetadata.ui.views)view.icon='custom';
 uiMetadata.settings={apiVersion:'1',schemaVersion:1,pages:[{id:'display',title:'显示偏好验收',viewTypes:['files'],groups:[{id:'text',title:'文字',fields:[{key:'caption',type:'string',title:'输入连续性',default:'',maxLength:128,apply:'live'},{key:'fontSize',type:'number',title:'名称字号',default:12,min:11,max:18,step:1,unit:'px',apply:'live'}]}]}]};
+uiMetadata.settings.pages[0].icon='custom';
 for(let index=0;index<20;index++)uiMetadata.ui.views.push({id:`extra${index}`,title:`扩展测试组件 ${index}`,icon:'plug',container:'sidebar',instancePolicy:'perWorkspace',defaultSide:'left'});
 fs.writeFileSync(path.join(uiFixture,'plugin.json'),JSON.stringify({...uiMetadata,target,entry:`workspace-ui-fixture${suffix}`}));
 fs.copyFileSync(`src-tauri/target/debug/plugin-fixture${suffix}`, path.join(fixture, `plugin-fixture${suffix}`));
@@ -116,7 +120,7 @@ const page = await browser.newPage({ viewport: { width: 1100, height: 720 } });
 const finishTrace = await recordTrace(page.context(), 'production');
 await page.route('**/__plugin__/**',route=>{
   const relative=decodeURIComponent(new URL(route.request().url()).pathname).split('/').slice(3).join('/');
-  const file=path.join(uiFixture,relative),types={'.html':'text/html','.js':'text/javascript','.css':'text/css'};
+  const file=path.join(uiFixture,relative.startsWith('icons/')?'assets/shape.svg':relative),types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml'};
   return route.fulfill({contentType:types[path.extname(file)]||'application/octet-stream',body:fs.readFileSync(file)});
 });
 const errors = [], checks = [];
@@ -310,7 +314,7 @@ try {
       assert.equal(navigationLayout.border,'1px');assert.equal(navigationLayout.currentShadow,'none');
       assert.equal(navigationLayout.normalWeight,'500');assert.equal(navigationLayout.currentWeight,'600');
       assert(navigationLayout.normalContrast>=4.5&&navigationLayout.currentContrast>=4.5,`${theme}/${width} navigation text contrast`);
-      assert(navigationLayout.maintenanceGap>=24&&navigationLayout.navBottom-navigationLayout.settingsBottom<=60,`${theme}/${width} maintenance entries stay at the bottom`);
+      assert(navigationLayout.maintenanceGap>=12&&navigationLayout.maintenanceGap<=24,`${theme}/${width} settings follows status in the navigation`);
       await current.hover();await current.evaluate(async node=>{await Promise.allSettled(node.getAnimations({subtree:true}).map(animation=>animation.finished));});
       assert.equal(await current.evaluate(el=>getComputedStyle(el).backgroundColor),navigationLayout.currentBackground,'Hover retains the current page selection');
       await page.mouse.move(width-5,45);
@@ -389,7 +393,7 @@ try {
   await page.setViewportSize({ width: 1100, height: 720 });
   await page.evaluate(()=>{
     window.navigationAnimate=Element.prototype.animate;window.navigationMotion=[];
-    Element.prototype.animate=function(...args){if(this.matches('#console-page,#layer-content,.settings-main'))navigationMotion.push(this.id||this.className);return navigationAnimate.apply(this,args);};
+    Element.prototype.animate=function(...args){if(this.matches('#console-page,#layer-content'))navigationMotion.push(this.id||this.className);return navigationAnimate.apply(this,args);};
   });
   try{
     await page.locator('#settings-button').click();
@@ -397,7 +401,7 @@ try {
     assert.deepEqual(await page.evaluate(()=>navigationMotion),['console-page'],'One management navigation animates exactly one owned container');
   }finally{await page.evaluate(()=>{Element.prototype.animate=navigationAnimate;delete window.navigationAnimate;delete window.navigationMotion;});}
   assert.equal(await page.locator('#settings-nav-appearance').getAttribute('aria-current'), 'page', 'Settings initially opens preferences');
-  assert.equal(await page.locator('.console-nav [aria-current=page]').getAttribute('data-console-page'),'settings');
+  assert.equal(await page.locator('[data-console-page=settings]').getAttribute('aria-expanded'),'true');
   const appearanceNav = page.locator('[data-action="section"][data-id="appearance"]');
   await appearanceNav.focus(); await page.keyboard.press('Enter');
   assert.equal(await appearanceNav.evaluate(el => el === document.activeElement), true, 'Changed settings pages retain navigation focus');
@@ -481,7 +485,7 @@ try {
   await page.locator('#settings-button').click();
   assert.equal(await page.locator('#settings-nav-about').getAttribute('aria-current'),'page','Plugin management preserves the last preference section');
   await page.locator('[data-console-page="plugins"]').click();
-  assert.equal(await page.locator('.settings-main').getAttribute('data-page'),'plugins:sodeck.terminal','Returning to plugins retains the selected details');
+  assert.equal(await page.locator('#layer-content').getAttribute('data-page'),'plugins:sodeck.terminal','Returning to plugins retains the selected details');
   await page.locator('[data-action="back-plugins"]').click();
   assert.equal(await page.locator('#plugins-official').getAttribute('aria-pressed'),'true','Back returns to the same plugin list');
   assert.equal(await terminal.locator('[data-action="select-plugin"]').evaluate(el=>el===document.activeElement),true,'Back restores focus to the plugin');
@@ -493,10 +497,10 @@ try {
     await page.locator('[data-console-page="plugins"]').click();
     for (const [width,height] of [[1100,720],[720,480]]) {
       await page.setViewportSize({width,height});
-      assert.equal(await page.locator('.settings-page').evaluate(el=>el.scrollWidth>el.clientWidth+1),false,`${theme}/${width} official plugins fit`);
+      assert.equal(await page.locator('.maintenance-page').evaluate(el=>el.scrollWidth>el.clientWidth+1),false,`${theme}/${width} official plugins fit`);
       await page.locator('[data-official-plugin="sodeck.system-status"] button').scrollIntoViewIfNeeded();
       assert(await page.locator('[data-official-plugin="sodeck.system-status"] button').isEnabled());
-      await page.locator('.settings-page').evaluate(el=>el.scrollTo(0,0));
+      await page.locator('.maintenance-page').evaluate(el=>el.scrollTo(0,0));
       const firstAction = await terminal.locator('button').boundingBox(), pendingBar = await page.locator('.maintenance-pending').boundingBox();
       assert(firstAction.y + firstAction.height <= pendingBar.y, `${theme}/${width} first plugin action is visible without scrolling`);
       await page.screenshot({path:`artifacts/production-ui/plugins-official-${theme}-${width}.png`});
@@ -612,7 +616,7 @@ try {
     await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
     await page.waitForTimeout(160); // Let the existing 100 ms control background transition finish.
     await page.evaluate(()=>document.querySelector('#network-add').scrollIntoView({block:'center'}));
-    assert.equal(await page.locator('.settings-page').evaluate(el=>el.scrollWidth>el.clientWidth+1),false,`${theme}/${width} network settings fit`);
+    assert.equal(await page.locator('.maintenance-page').evaluate(el=>el.scrollWidth>el.clientWidth+1),false,`${theme}/${width} network settings fit`);
     const networkContrasts=await page.locator('.network-intro,.network-custom > label:not(.network-toggle),.network-builtin small,.update-network .primary:not(:disabled),.update-network .text-button:not(:disabled)').evaluateAll(nodes=>{
       const luminance=color=>{const c=color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};
       return nodes.map(node=>{let surface=node;while(surface.parentElement&&Number(getComputedStyle(surface).backgroundColor.match(/[\d.]+/g)?.[3]??1)===0)surface=surface.parentElement;const a=luminance(getComputedStyle(node).color),b=luminance(getComputedStyle(surface).backgroundColor);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);});
@@ -622,7 +626,7 @@ try {
   }
   await page.setViewportSize({width:1100,height:720});
   await page.locator('#update-network-summary').click();
-  await page.locator('.settings-page').evaluate(el=>el.scrollTo(0,0));
+  await page.locator('.maintenance-page').evaluate(el=>el.scrollTo(0,0));
   checks.push('Update network: editable drafts survive refresh and retain focus, invalid URL and revision conflict preserve input, custom ordering/toggles, normalized save, single-endpoint API/blob/manifest/package diagnostics, three themes and small window');
   // Real core close coordinator, two hidden host draft types and a partial save failure.
   await page.locator('#update-network-summary').click();
@@ -650,7 +654,7 @@ try {
   assert.deepEqual((await call('snapshot')).plugins.find(p=>p.manifest.id==='test.update-one').manifest.updateSource,sourceBefore);
   await page.locator('[data-decision="cancel"]').click();await page.locator('.component-close-dialog').waitFor({state:'detached'});
   await page.locator('[data-console-page="plugins"]').click();
-  assert.equal(await page.locator('.settings-main').getAttribute('data-page'),'plugins:test.update-one','Returning after close cancellation retains the plugin target');
+  assert.equal(await page.locator('#layer-content').getAttribute('data-page'),'plugins:test.update-one','Returning after close cancellation retains the plugin target');
   await page.locator('details[data-persist="source-test.update-one"] summary').click();
   assert.equal(await page.locator('#update-repository').inputValue(),'test/close-draft');
   await page.locator('[data-action="save-update-source"]').click();
@@ -694,7 +698,7 @@ try {
   await page.waitForFunction(()=>window.openedUpdateLinks?.length===1);
   assert.deepEqual(await page.evaluate(()=>window.openedUpdateLinks),['https://github.com/BgaSol/soDeck/releases']);
   assert.equal(page.url(),updatePageUrl,'Release-note links leave the workbench in place');
-  await page.locator('.settings-page').evaluate(el=>el.scrollTo(0,0));
+  await page.locator('.maintenance-page').evaluate(el=>el.scrollTo(0,0));
   await page.screenshot({path:'artifacts/production-ui/updates-available.png'});
   await page.locator('#automatic-updates').uncheck();
   await page.waitForFunction(()=>!document.querySelector('#automatic-updates').checked);
@@ -734,10 +738,11 @@ try {
     await page.locator('#settings-button').click();await page.locator('[data-action="section"][data-id="appearance"]').click();
     await page.locator(`[data-action="theme"][data-id="${theme}"]`).click();
     await page.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);
-    const navigationContrasts=await page.locator('.settings-nav').evaluate(nav=>{
+    await page.locator('.console-nav').evaluate(async nav=>{await Promise.allSettled(nav.getAnimations({subtree:true}).map(animation=>animation.finished));});
+    const navigationContrasts=await page.locator('.console-settings-nav').evaluate(nav=>{
       const luminance=color=>{const c=color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};
-      const background=luminance(getComputedStyle(nav).backgroundColor);
-      return [...nav.querySelectorAll('.nav-label,.nav-bottom,.settings-nav-hint')].map(node=>{const foreground=luminance(getComputedStyle(node).color);return {text:node.textContent,ratio:(Math.max(foreground,background)+.05)/(Math.min(foreground,background)+.05)};});
+      const background=luminance(getComputedStyle(nav.closest('.console-nav')).backgroundColor);
+      return [...nav.querySelectorAll('button')].map(node=>{const style=getComputedStyle(node),foreground=luminance(style.color),surface=style.backgroundColor==='rgba(0, 0, 0, 0)'?background:luminance(style.backgroundColor);return {text:node.textContent,ratio:(Math.max(foreground,surface)+.05)/(Math.min(foreground,surface)+.05)};});
     });
     assert(navigationContrasts.length>=1&&navigationContrasts.every(item=>item.ratio>=4.5),`${theme} navigation small text contrast: ${JSON.stringify(navigationContrasts)}`);
     await page.locator('[data-console-page="updates"]').click();
@@ -745,8 +750,8 @@ try {
       await firstUpdate.locator('.update-release-notes summary').click();
     for(const [width,height] of [[1100,720],[880,576],[734,480],[720,480]]) {
       await page.setViewportSize({width,height});
-      await page.locator('.settings-page').evaluate(el=>el.scrollTo(0,0));
-      assert.equal(await page.locator('.settings-page').evaluate(el=>el.scrollWidth>el.clientWidth+1),false,`${theme}/${width} settings overflow`);
+      await page.locator('.maintenance-page').evaluate(el=>el.scrollTo(0,0));
+      assert.equal(await page.locator('.maintenance-page').evaluate(el=>el.scrollWidth>el.clientWidth+1),false,`${theme}/${width} settings overflow`);
       assert.equal(await notes.getByRole('heading',{name:'更新测试',level:1}).count(),1);
       assert(await notes.locator('pre').evaluate(el=>el.scrollWidth>el.clientWidth),'Long code scrolls within the notes');
       assert(await notes.locator('h1').evaluate(el=>parseFloat(getComputedStyle(el).fontSize)>parseFloat(getComputedStyle(el.parentElement).fontSize)),'Markdown titles retain hierarchy');
@@ -769,6 +774,8 @@ try {
   const board=page.locator(`.server-workbench[data-id="${workspace.context.workspaceId}"]`);
   await page.locator(`.server-tab-select[data-id="${workspace.context.workspaceId}"]`).click();
   await board.waitFor();
+  await board.locator('.tool-entry .plugin-icon[data-ready="true"]').first().waitFor();
+  await board.locator('.component-tab .plugin-icon[data-ready="true"]').first().waitFor();
   await checkTitlebarPosition('single');
   await checkTitlebar();
   for(const theme of ['light','dark','dopamine'])for(const [width,height]of [[1100,720],[720,480]]){
@@ -795,7 +802,8 @@ try {
   }
   checks.push('Bundled workspace menus: fixed placement, no short-menu scrollbars, vertical-only long lists, search and Escape across all three themes at 1100×720 and 720×480');
   await page.setViewportSize({width:1100,height:720});await page.locator('#settings-button').click();
-  await page.locator('#settings-button').click();await page.locator('.settings-nav').getByRole('button',{name:'显示偏好验收',exact:true}).click();const preference=page.locator('#component-settings-page').getByLabel('名称字号');await preference.fill('17');
+  await page.locator('#settings-button').click();await page.locator('.console-settings-nav').getByRole('button',{name:'显示偏好验收',exact:true}).click();const preference=page.locator('#component-settings-page').getByLabel('名称字号');await preference.fill('17');
+  await page.locator('.console-settings-nav .plugin-icon[data-ready="true"]').first().waitFor();
   const caption=page.getByLabel('输入连续性',{exact:true});
   await caption.focus();
   await page.evaluate(()=>{
@@ -839,9 +847,9 @@ try {
     await page.locator(destination==='appearance'?'#settings-nav-appearance':`[data-console-page="${destination}"]`).click();
     assert.equal(await page.locator('.console-nav [aria-current="page"]').count(),1,'Only the current management page is selected');
 
-    await page.locator('#settings-button').click();await page.locator('.settings-nav').getByRole('button',{name:'显示偏好验收',exact:true}).click();
+    await page.locator('#settings-button').click();await page.locator('.console-settings-nav').getByRole('button',{name:'显示偏好验收',exact:true}).click();
     assert.equal(await preference.inputValue(),'17','Returning to component preferences preserves their values');
-    assert.equal(await page.locator('.settings-nav [aria-current="page"]').count(),1);
+    assert.equal(await page.locator('.console-settings-nav [aria-current="page"]').count(),1);
   }
   await page.locator('#return-workbench').click();await page.locator('#catalog-tab').click();checks.push('Bundled component settings: existing navigation, core save, global refresh preserves input DOM, returning from the workbench keeps drafts');
   await page.locator('#shell-status [data-action="status"]').click();
@@ -972,7 +980,7 @@ try {
   await page.locator('.message-row').filter({hasText:'test.messages'}).first().click();
   await page.locator('.message-detail [data-action="locate-plugin"]').click();
   assert.equal(await page.locator('.console-nav [aria-current="page"]').getAttribute('data-console-page'),'plugins','View plugin opens plugin management');
-  assert.equal(await page.locator('.settings-main').getAttribute('data-page'),'plugins:test.messages','View plugin locates the exact source plugin');
+  assert.equal(await page.locator('#layer-content').getAttribute('data-page'),'plugins:test.messages','View plugin locates the exact source plugin');
   await page.locator('#messages-button').click();
   assert.match(await page.locator('.message-row.selected').textContent(),/test.messages/,'Returning to messages preserves selection');
   await page.keyboard.press('Escape');

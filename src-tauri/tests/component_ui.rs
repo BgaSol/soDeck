@@ -776,7 +776,7 @@ fn command_limits_survive_invalidation_until_actual_worker_exit() {
     let next = f
         .core
         .workspace_state()
-        .reconnect(&w.context, "second".into(), "second".into())
+        .reconnect(&w.context, "second".into(), "second".into(), None)
         .unwrap();
     f.core.workspace_changed();
     let mut p = p;
@@ -1316,7 +1316,7 @@ fn accepted_behavior_follows_workspace_ownership_and_disconnect_fences_new_creat
     let next = f
         .core
         .workspace_state()
-        .reconnect(&w.context, "next".into(), "next".into())
+        .reconnect(&w.context, "next".into(), "next".into(), None)
         .unwrap();
     f.core.workspace_changed();
     assert!(f.core.ui_action_status("moved", &query).is_err());
@@ -2745,7 +2745,7 @@ fn generation_change_fences_a_prepared_transfer_and_cancel_preserves_source() {
     f.core.workspace_state().disconnected(&w.context).unwrap();
     f.core
         .workspace_state()
-        .reconnect(&w.context, "next".into(), "next".into())
+        .reconnect(&w.context, "next".into(), "next".into(), None)
         .unwrap();
     assert!(f.core.commit_workbench_move(&m).is_err());
     f.core.cancel_workbench_move(&m);

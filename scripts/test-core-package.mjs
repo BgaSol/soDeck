@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { validateCoreArtifacts, coreNames } from "./core-artifacts.mjs";
+import { validateCoreArtifacts, coreNames, cleanupWindowsUninstaller } from "./core-artifacts.mjs";
 import { verifyBinary } from "./verify-binary.mjs";
 
 const [input, target, commit] = process.argv.slice(2);
@@ -29,11 +29,38 @@ try {
     run(process.execPath, ["scripts/smoke.mjs", ...launch], env);
   }
   if (process.platform === "win32") {
-    run(bundle, ["/S"]);
-    const install = path.join(process.env.ProgramW6432 ?? process.env.ProgramFiles, "SoDeck");
-    const registration = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "(Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SoDeck').InstallLocation"], { encoding: "utf8", windowsHide: true });
-    assert.equal(registration.status, 0); assert.equal(registration.stdout.trim().replaceAll('"', ''), install);
-    smoke(path.join(install, "sodeck.exe"));
+    const modes = [
+      { mode: "CurrentUser", hive: "HKCU", install: path.join(process.env.LOCALAPPDATA, "Programs", "SoDeck") },
+      { mode: "AllUsers", hive: "HKLM", install: path.join(process.env.ProgramW6432 ?? process.env.ProgramFiles, "SoDeck") },
+    ];
+    function registration(hive) {
+      const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `$key = '${hive}:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SoDeck'; if (Test-Path -LiteralPath $key) { Get-ItemProperty -LiteralPath $key -ErrorAction Stop | ConvertTo-Json -Compress }`], { encoding: "utf8", windowsHide: true });
+      assert.equal(result.status, 0, result.stderr);
+      return result.stdout.trim() ? JSON.parse(result.stdout) : null;
+    }
+    for (const { hive, install } of modes) {
+      assert.equal(registration(hive), null, "Use a clean Windows runner without an existing SoDeck installation");
+      assert(!fs.existsSync(install), `Existing installation directory: ${install}`);
+    }
+    report.windowsInstallModes = [];
+    for (const { mode, hive, install } of modes) {
+      run(bundle, ["/S", `/${mode}`]);
+      try {
+        const entry = registration(hive);
+        assert(entry, `Missing ${mode} installation registration`);
+        assert.equal(entry.InstallLocation.replaceAll('"', ''), install);
+        assert.equal(entry[mode], "1", `Missing ${mode} installation marker`);
+        assert.equal(registration(hive === "HKCU" ? "HKLM" : "HKCU"), null);
+        smoke(path.join(install, "sodeck.exe"));
+      } finally {
+        run(path.join(install, "uninstall.exe"), ["/S", `/${mode}`, `_?=${install}`]);
+      }
+      assert.equal(registration(hive), null, `${mode} uninstall left installation registration`);
+      assert(!fs.existsSync(path.join(install, "sodeck.exe")), `${mode} uninstall left the application`);
+      // NSIS cannot remove its own executable when run in place with _?=.
+      cleanupWindowsUninstaller(install);
+      report.windowsInstallModes.push({ mode, hive, install, passed: true });
+    }
   } else if (process.platform === "linux") {
     run("dpkg-deb", ["-x", file(names.deb[0]), directory]);
     smoke(path.join(directory, "usr/bin/sodeck"));
@@ -49,6 +76,7 @@ try {
   }
   validateCoreArtifacts(input, metadata, commit);
   report.passed = true;
+  report.pluginIconsNative = true;
 } catch (error) { report.error = String(error.stack ?? error); throw error; }
 finally {
   fs.mkdirSync("artifacts/verification", { recursive: true });

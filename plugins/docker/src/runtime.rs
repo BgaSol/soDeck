@@ -1,6 +1,7 @@
 use crate::{
     browser::{self, BrowserState, Work},
-    commands,
+    cli, commands,
+    connection::{self, Config, EngineOs, Snapshot, Target},
     resources::{self, Kind, ResourceRef},
 };
 use serde_json::{json, Value};
@@ -15,7 +16,11 @@ use std::{
 pub type Shared = Arc<Mutex<App>>;
 pub struct App {
     pub views: BTreeMap<String, View>,
-    pub endpoints: BTreeMap<String, String>,
+    pub configs: BTreeMap<String, Config>,
+    bindings: BTreeMap<String, Snapshot>,
+    binding_revision: u64,
+    pub exec_dispatch: Arc<Mutex<()>>,
+    pub stream_dispatch: Arc<Mutex<()>>,
     pub directory: PathBuf,
     pub refresh_seconds: u64,
     pub show_log_minimap: bool,
@@ -36,6 +41,8 @@ pub struct View {
     pub container: String,
     pub expected_engine: String,
     pub endpoint: String,
+    pub target: Option<Snapshot>,
+    connection_test: Value,
     pub revision: u64,
     pub data: Value,
     pub navigation: Value,
@@ -62,6 +69,10 @@ struct Job {
     container: String,
     engine: String,
     action: String,
+    target: Option<Snapshot>,
+    config: Config,
+    terminal_input: Value,
+    deadline: Option<Instant>,
 }
 struct Exec {
     bytes: Vec<u8>,
@@ -117,24 +128,14 @@ fn now() -> u64 {
 }
 impl App {
     pub fn new(directory: PathBuf) -> Result<Self, String> {
-        let path = directory.join("endpoints.json");
-        let endpoints = if path.exists() {
-            if std::fs::metadata(&path).map_err(|e| e.to_string())?.len() > 64 * 1024 {
-                return Err("Docker 连接配置过大".into());
-            }
-            let values: BTreeMap<String, String> =
-                serde_json::from_slice(&std::fs::read(path).map_err(|e| e.to_string())?)
-                    .map_err(|_| "Docker 连接配置损坏，请检查 endpoints.json")?;
-            for value in values.values() {
-                commands::endpoint(value)?;
-            }
-            values
-        } else {
-            BTreeMap::new()
-        };
+        let configs = connection::load(&directory)?;
         Ok(Self {
             views: BTreeMap::new(),
-            endpoints,
+            configs,
+            bindings: BTreeMap::new(),
+            binding_revision: 0,
+            exec_dispatch: Arc::new(Mutex::new(())),
+            stream_dispatch: Arc::new(Mutex::new(())),
             directory,
             refresh_seconds: 5,
             show_log_minimap: true,
@@ -143,6 +144,7 @@ impl App {
         })
     }
     pub fn create(&mut self, p: &Value) -> Result<(), String> {
+        self.prune_bindings();
         let id = p["viewId"]
             .as_str()
             .filter(|s| !s.is_empty() && s.len() <= 128)
@@ -187,17 +189,24 @@ impl App {
         if kind != "browser" && kind != "resource" {
             commands::id(&container)?;
         }
-        let mut endpoint = self
-            .endpoints
-            .get(context["serverId"].as_str().unwrap())
-            .cloned()
-            .unwrap_or("unix:///var/run/docker.sock".into());
-        if kind == "resource" {
-            endpoint = resource["endpoint"]
+        let target = self.bindings.get(&context.to_string()).cloned();
+        let endpoint = target
+            .as_ref()
+            .map(|t| t.endpoint.uri())
+            .unwrap_or_else(|| resource["endpoint"].as_str().unwrap_or("").into());
+        if !endpoint.is_empty() {
+            connection::Endpoint::parse(&endpoint)?;
+        }
+        if let Some(t) = &target {
+            if resource["engineId"]
                 .as_str()
-                .ok_or("缺少资源连接端点")?
-                .into();
-            commands::endpoint(&endpoint)?;
+                .is_some_and(|id| id != t.engine_id)
+                || resource["endpoint"]
+                    .as_str()
+                    .is_some_and(|e| e != t.endpoint.uri())
+            {
+                return Err("原资源连接身份已改变，请从列表重新打开".into());
+            }
         }
         let view = View {
             browser: if kind == "browser" {
@@ -215,8 +224,18 @@ impl App {
             kind: kind.into(),
             context,
             container,
-            expected_engine: resource["engineId"].as_str().unwrap_or("").into(),
+            expected_engine: resource["engineId"]
+                .as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| {
+                    target
+                        .as_ref()
+                        .map(|t| t.engine_id.clone())
+                        .unwrap_or_default()
+                }),
             endpoint,
+            target,
+            connection_test: Value::Null,
             revision: 1,
             data: json!({"state":"loading","error":null,"engine":null,"rows":[],"sections":{},"stats":null,"operation":null}),
             navigation: if kind == "browser" {
@@ -236,6 +255,19 @@ impl App {
         self.views.insert(id.into(), view);
         self.enqueue(id, "refresh")
     }
+    pub fn prune_bindings(&mut self) {
+        self.bindings
+            .retain(|_, t| self.views.values().any(|v| v.context == t.context));
+    }
+    fn version_target(&mut self, target: Snapshot) -> Result<Snapshot, String> {
+        self.binding_revision = self
+            .binding_revision
+            .checked_add(1)
+            .ok_or("Docker 连接版本已耗尽")?;
+        let mut target = (*target).clone();
+        target.revision = self.binding_revision;
+        Ok(Arc::new(target))
+    }
     pub fn snapshot(&self, id: &str) -> Result<Value, String> {
         let v = self.views.get(id).ok_or("视图已关闭")?;
         let mut data = json!({"terminal":v.terminal_receipt,"kind":v.kind,"context":v.context,"containerId":v.container,"endpoint":v.endpoint,"revision":v.revision.to_string(),
@@ -244,6 +276,12 @@ impl App {
             "health":v.data["health"],"observedAt":v.data["observedAt"],"partial":v.data["partial"],"operation":v.data["operation"],
             "tty":v.data["tty"],"stats":v.data["stats"],"count":v.data["rows"].as_array().map_or(0,Vec::len),
             "sections":v.data["sections"].as_object().map(|m|m.keys().collect::<Vec<_>>()),"showLogMinimap":self.show_log_minimap});
+        data["connection"] = json!({"config":self.configs.get(v.context["serverId"].as_str().unwrap()).cloned().unwrap_or_default(),"target":v.target.as_ref().map(|t|t.info()),"test":v.connection_test});
+        data["defaultShell"] = v
+            .target
+            .as_ref()
+            .and_then(|t| t.os.shell())
+            .map_or(Value::Null, |s| json!(s));
         data["scopeEpoch"] = json!(v.epoch.to_string());
         data["resource"] = json!(v.resource);
         data["pull"] = v.pull.clone();
@@ -290,7 +328,7 @@ impl App {
         v.cancelled = false;
         v.revision += 1;
         v.due = Instant::now()
-            + Duration::from_secs(if v.terminal_ticket.is_some() {
+            + Duration::from_secs(if v.terminal_receipt["status"] == "pending" {
                 1
             } else {
                 self.refresh_seconds
@@ -311,12 +349,18 @@ impl App {
                 .into(),
             engine: if let Some(target) = target {
                 target["engineId"].as_str().unwrap().into()
-            } else if v.kind == "browser" {
-                String::new()
             } else {
                 v.expected_engine.clone()
             },
             action: action.into(),
+            target: v.target.clone(),
+            config: self
+                .configs
+                .get(v.context["serverId"].as_str().unwrap())
+                .cloned()
+                .unwrap_or_default(),
+            terminal_input: v.terminal_input.clone(),
+            deadline: None,
         });
         Ok(())
     }
@@ -372,6 +416,28 @@ impl App {
         }
         Ok(())
     }
+    fn check_connection_change(&self, id: &str) -> Result<(), String> {
+        let view = self.views.get(id).ok_or("视图已关闭")?;
+        if self.jobs.len() >= 16
+            || self.views.iter().any(|(other_id, other)| {
+                other.context["serverId"] == view.context["serverId"]
+                    && (other.frozen
+                        || (other_id != id && other.busy)
+                        || other.kind != "browser"
+                        || other.terminal_receipt["status"] == "pending"
+                        || matches!(other.pull["state"].as_str(), Some("opening" | "running"))
+                        || other
+                            .browser
+                            .as_ref()
+                            .is_some_and(|b| b.indexes.values().any(|i| i.phase == "loading")))
+            })
+        {
+            return Err(
+                "请先关闭该服务器的资源详情和日志页，并等待请求、终端和镜像拉取结束".into(),
+            );
+        }
+        Ok(())
+    }
     pub fn record_intent(&mut self, id: &str, d: &Value, input: Value) -> Result<bool, String> {
         let request = d["requestId"]
             .as_str()
@@ -422,6 +488,14 @@ impl App {
             container: String::new(),
             engine: v.expected_engine.clone(),
             action: "browser.read".into(),
+            target: v.target.clone(),
+            config: self
+                .configs
+                .get(v.context["serverId"].as_str().unwrap())
+                .cloned()
+                .unwrap_or_default(),
+            terminal_input: Value::Null,
+            deadline: None,
         });
         Ok(())
     }
@@ -603,11 +677,7 @@ impl App {
             return Err("请等待当前维护请求完成".into());
         }
         self.record_intent(id, d, d.clone())?;
-        self.enqueue_target(
-            id,
-            "resource.remove",
-            Some(&json!({"id":resource.id,"engineId":d["engineId"]})),
-        )?;
+        self.enqueue(id, "resource.remove")?;
         let job = self.jobs.back_mut().unwrap();
         job.resource = Some(resource.clone());
         job.observation = observation;
@@ -698,7 +768,15 @@ impl App {
                 .as_str()
                 .filter(|s| !s.is_empty() && s.len() <= 128)
                 .ok_or("请求 ID 无效")?;
-            let shell = d["shell"].as_str().unwrap_or("/bin/sh");
+            let shell = d["shell"]
+                .as_str()
+                .or_else(|| {
+                    self.views
+                        .get(id)
+                        .and_then(|v| v.target.as_ref())
+                        .and_then(|t| t.os.shell())
+                })
+                .ok_or("未知 Engine 系统，请指定容器程序")?;
             let mut input = self.target_input(id, d)?;
             input["requestId"] = json!(request);
             input["shell"] = json!(shell);
@@ -709,28 +787,20 @@ impl App {
                 }
                 return self.snapshot(id);
             }
-            if v.terminal_ticket.is_some() {
+            if v.terminal_receipt["status"] == "pending" {
                 return Err("已有终端请求待确认，请等待原请求结果".into());
             }
             let target = self.target(id, &input)?;
             if target["status"] != "running" {
                 return Err("请先刷新并选择运行中的容器".into());
             }
-            let command = commands::terminal_launch(
-                &v.endpoint,
-                input["engineId"].as_str().unwrap(),
+            cli::terminal_args(
+                v.target.as_ref().ok_or("Docker 连接尚未识别")?,
                 input["id"].as_str().unwrap(),
                 shell,
             )?;
-            let ticket = sodeck_plugin_client::commands::Ticket::new(
-                v.context.clone(),
-                id,
-                request,
-                "terminal.open.v1",
-                json!({"version":1,"title":format!("{} · 容器",commands::text(target["name"].as_str().unwrap_or("Docker"),100)),"launch":{"kind":"command","command":command},"directoryIntegration":"off"}),
-            );
             let v = self.views.get_mut(id).unwrap();
-            v.terminal_ticket = Some(ticket);
+            v.terminal_input = input.clone();
             v.terminal_receipt = json!({"status":"pending","containerId":input["id"],"name":target["name"],"message":"检查容器并请求终端页面"});
             if let Err(error) = self.enqueue_target(id, "terminal", Some(&input)) {
                 self.views.get_mut(id).unwrap().clear_terminal();
@@ -762,52 +832,37 @@ impl App {
             v.revision += 1;
         } else if action == "resumeInput" {
             self.views.get_mut(id).ok_or("视图已关闭")?.frozen = false;
-        } else if action == "setEndpoint" {
-            let value = d["endpoint"].as_str().ok_or("缺少 socket")?;
-            commands::endpoint(value)?;
-            let server = self.views.get(id).ok_or("视图已关闭")?.context["serverId"]
-                .as_str()
-                .unwrap()
-                .to_string();
-            if self.views.values().any(|v| {
-                v.context["serverId"] == server
-                    && (v.busy
-                        || v.kind != "browser"
-                        || matches!(v.pull["state"].as_str(), Some("opening" | "running")))
-            }) {
-                return Err(
-                    "请先关闭该服务器的资源详情和日志页，并等待当前请求及镜像拉取结束".into(),
-                );
+        } else if matches!(
+            action,
+            "setEndpoint" | "connection.test" | "connection.save" | "connection.identify"
+        ) {
+            let v = self.views.get(id).ok_or("视图已关闭")?;
+            if v.kind != "browser" {
+                return Err("请从 Docker 资源树调整连接".into());
             }
-            let mut endpoints = self.endpoints.clone();
-            endpoints.insert(server.clone(), value.into());
-            let bytes = serde_json::to_vec(&endpoints).unwrap();
-            if bytes.len() > 64 * 1024 {
-                return Err("连接配置已达上限".into());
-            }
-            std::fs::create_dir_all(&self.directory).map_err(|e| e.to_string())?;
-            let temp = self.directory.join("endpoints.tmp");
-            std::fs::write(&temp, bytes)
-                .and_then(|_| std::fs::rename(&temp, self.directory.join("endpoints.json")))
-                .map_err(|e| e.to_string())?;
-            self.endpoints = endpoints;
-            for v in self
-                .views
-                .values_mut()
-                .filter(|v| v.context["serverId"] == server)
-            {
-                v.endpoint = value.into();
-                v.epoch += 1;
-                if let Some(b) = &mut v.browser {
-                    *b = BrowserState::default();
+            let config = if action == "setEndpoint" {
+                Config {
+                    mode: connection::Mode::Manual,
+                    endpoint: Some(d["endpoint"].as_str().ok_or("缺少端点")?.into()),
+                    cli_path: None,
                 }
-                v.navigation = browser::navigation(&json!({}), &Value::Null)?;
-                v.clear_terminal();
-                v.expected_engine.clear();
-                v.data = json!({"rows":[],"state":"loading"});
-                v.revision += 1;
+            } else if action == "connection.identify" {
+                self.configs
+                    .get(v.context["serverId"].as_str().unwrap())
+                    .cloned()
+                    .unwrap_or_default()
+            } else {
+                serde_json::from_value(d["config"].clone()).map_err(|_| "连接配置格式无效")?
+            };
+            config.validate()?;
+            if action != "connection.test" {
+                self.check_connection_change(id)?;
             }
-            self.enqueue(id, "refresh")?;
+            self.enqueue(id, action)?;
+            let job = self.jobs.back_mut().unwrap();
+            job.config = config;
+            self.views.get_mut(id).unwrap().connection_test =
+                json!({"state":"checking","config":job.config});
         } else if action == "operate" {
             let request = d["requestId"]
                 .as_str()
@@ -873,6 +928,10 @@ fn alive(app: &Shared, job: &Job, client: &Client) -> bool {
             v.context == job.context
                 && v.epoch == job.epoch
                 && v.endpoint == job.endpoint
+                && job
+                    .target
+                    .as_ref()
+                    .is_none_or(|t| v.target.as_ref().is_some_and(|current| current.same(t)))
                 && !v.cancelled
         })
 }
@@ -883,7 +942,27 @@ fn execute(
     args: &[&str],
     budget: usize,
 ) -> Result<Exec, String> {
-    let params = {
+    let target = job.target.as_ref().ok_or("Docker 连接尚未识别")?;
+    let container =
+        if !job.container.is_empty() && !matches!(args.first(), Some(&"info") | Some(&"version")) {
+            Some(job.container.as_str())
+        } else {
+            None
+        };
+    let prepared =
+        cli::prepare(client, &job.view, target, args, container, false).map_err(|e| e.message)?;
+    execute_prepared(app, job, client, prepared, budget)
+}
+fn execute_prepared(
+    app: &Shared,
+    job: &Job,
+    client: &Client,
+    prepared: sodeck_plugin_client::program::PreparedProgram,
+    budget: usize,
+) -> Result<Exec, String> {
+    let dispatch = app.lock().unwrap().exec_dispatch.clone();
+    let dispatch_guard = dispatch.lock().unwrap();
+    let mut params = {
         let mut a = app.lock().unwrap();
         if a.views.values().map(View::cache_bytes).sum::<usize>() + budget * 2 > 16 * 1024 * 1024 {
             return Err("Docker 缓存与临时输出超过 16 MiB，请关闭其它页面".into());
@@ -892,19 +971,20 @@ fn execute(
         if v.context != job.context
             || v.epoch != job.epoch
             || v.endpoint != job.endpoint
+            || job
+                .target
+                .as_ref()
+                .is_some_and(|t| !v.target.as_ref().is_some_and(|current| current.same(t)))
             || v.frozen
             || v.cancelled
         {
             return Err("请求已取消或上下文已改变".into());
         }
         v.sequence += 1;
-        let command = commands::docker(&job.endpoint, args);
-        if command.len() > 16 * 1024 {
-            return Err("Docker 命令超过 16 KiB".into());
-        }
         json!({"viewId":job.view,"expectedContext":job.context,"operationId":format!("docker-{}-{}",job.view,v.sequence),"sequence":v.sequence.to_string(),
-            "command":command,"timeoutMs":30000,"maxOutputBytes":budget})
+            "timeoutMs":remaining(job)?,"maxOutputBytes":budget})
     };
+    prepared.apply(&mut params)?;
     let mut task = None;
     for _ in 0..3 {
         match client.call_detailed("session.exec.start", params.clone()) {
@@ -916,13 +996,25 @@ fn execute(
             Err(error) => return Err(error.message),
         }
     }
+    drop(dispatch_guard);
     let task = task.ok_or("命令启动回执未确认；结果可能未知，请刷新，禁止自动重发")?;
+    wait_exec(app, job, client, &task, budget)
+}
+fn wait_exec(
+    app: &Shared,
+    job: &Job,
+    client: &Client,
+    task: &str,
+    budget: usize,
+) -> Result<Exec, String> {
     let result = (|| {
         let mut stdout = vec![];
         let mut stderr = vec![];
         let mut a = "0".to_string();
         let mut b = "0".to_string();
-        let end = Instant::now() + Duration::from_secs(35);
+        let end = job
+            .deadline
+            .unwrap_or_else(|| Instant::now() + Duration::from_secs(35));
         loop {
             if !alive(app, job, client) || Instant::now() > end {
                 return Err("本地等待已取消或超时；已发送操作的结果未确认".into());
@@ -969,7 +1061,196 @@ fn execute(
     let _ = client.call("session.exec.release", json!({"taskId":task}));
     result
 }
+fn remaining(job: &Job) -> Result<u64, String> {
+    let ms = job.deadline.map_or(30000, |end| {
+        end.saturating_duration_since(Instant::now())
+            .as_millis()
+            .min(30000) as u64
+    });
+    if ms < 1000 {
+        Err("Docker 连接识别超过 30 秒，请检查远端程序与 Engine".into())
+    } else {
+        Ok(ms)
+    }
+}
+fn discover_target(app: &Shared, job: &Job, client: &Client) -> Result<Snapshot, String> {
+    let state = client.call("session.state", json!({"viewId":job.view}))?;
+    if state["state"] != "connected" || state["context"] != job.context || state["closing"] == true
+    {
+        return Err("服务器已断开或连接代次改变，请重新连接并刷新".into());
+    }
+    let mut probe = job.clone();
+    probe.deadline = Some(Instant::now() + Duration::from_secs(30));
+    let dispatch = app.lock().unwrap().exec_dispatch.clone();
+    let guard = dispatch.lock().unwrap();
+    let (operation, sequence) = {
+        let mut a = app.lock().unwrap();
+        let v = a.views.get_mut(&job.view).ok_or("页面已关闭")?;
+        if v.context != job.context || v.epoch != job.epoch || v.cancelled || v.frozen {
+            return Err("连接请求已失效".into());
+        }
+        v.sequence += 1;
+        (
+            format!("environment-{}-{}", job.view, v.sequence),
+            v.sequence,
+        )
+    };
+    let reply = sodeck_plugin_client::program::environment_start(
+        client,
+        &job.view,
+        &job.context,
+        &operation,
+        sequence,
+        remaining(&probe)?,
+        &["DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG"],
+    )
+    .map_err(|e| e.message)?;
+    drop(guard);
+    let environment_result = wait_exec(
+        app,
+        &probe,
+        client,
+        reply["taskId"].as_str().ok_or("核心未返回探测任务")?,
+        16 * 1024,
+    )?;
+    if environment_result.response["state"] != "completed"
+        || environment_result.response["remoteExitConfirmed"] != true
+    {
+        return Err(format!(
+            "环境识别失败：{}",
+            environment_result.response["error"]["message"]
+                .as_str()
+                .unwrap_or("无法确认远端执行环境")
+        ));
+    }
+    let env = commands::object(&environment_result.bytes)?;
+    let environment = &env["environment"];
+    let cli = job.config.cli_path.clone().unwrap_or_else(|| {
+        if environment["kind"] == "windows" {
+            "docker.exe".into()
+        } else {
+            "docker".into()
+        }
+    });
+    if let Some(path) = &job.config.cli_path {
+        let windows = environment["kind"] == "windows";
+        if windows == path.starts_with('/') {
+            return Err("Docker CLI 路径与远端执行环境不兼容".into());
+        }
+    }
+    let (endpoint, source, version, info) = connection::discover(
+        &job.config,
+        environment,
+        &env["values"],
+        |endpoint, args| {
+            let prepared = cli::raw(
+                client,
+                &job.view,
+                &job.context,
+                environment,
+                &cli,
+                endpoint,
+                args,
+                vec![],
+                false,
+            )
+            .map_err(|e| e.message)?;
+            checked(execute_prepared(app, &probe, client, prepared, 256 * 1024)?)
+        },
+    )?;
+    let os = EngineOs::parse(version["Server"]["Os"].as_str().unwrap_or(""));
+    Ok(Arc::new(Target {
+        context: job.context.clone(),
+        revision: 0,
+        environment: environment.clone(),
+        cli,
+        endpoint,
+        engine_id: info["ID"].as_str().unwrap().into(),
+        os,
+        source,
+    }))
+}
+fn connection_request(app: &Shared, job: &Job, client: &Client) {
+    let result = discover_target(app, job, client);
+    let mut a = app.lock().unwrap();
+    if !a
+        .views
+        .get(&job.view)
+        .is_some_and(|v| v.context == job.context && v.epoch == job.epoch)
+    {
+        return;
+    }
+    if a.views[&job.view].cancelled {
+        let v = a.views.get_mut(&job.view).unwrap();
+        v.busy = false;
+        v.connection_test =
+            json!({"state":"failed","config":job.config,"message":"连接测试已取消，原配置保留"});
+        v.revision += 1;
+        return;
+    }
+    let test = job.action == "connection.test";
+    let result = result.and_then(|target| {
+        if !test {
+            a.check_connection_change(&job.view)?;
+            let target = a.version_target(target)?;
+            let server = job.context["serverId"].as_str().unwrap();
+            let mut configs = a.configs.clone();
+            configs.insert(server.into(), job.config.clone());
+            if job.action != "connection.identify" {
+                connection::save(&a.directory, &configs)?;
+                a.configs = configs;
+            }
+            a.bindings.retain(|_, t| t.context["serverId"] != server);
+            a.bindings.insert(job.context.to_string(), target.clone());
+            for v in a
+                .views
+                .values_mut()
+                .filter(|v| v.context["serverId"] == server)
+            {
+                v.epoch += 1;
+                v.target = if v.context == job.context {
+                    Some(target.clone())
+                } else {
+                    None
+                };
+                v.endpoint = v
+                    .target
+                    .as_ref()
+                    .map(|t| t.endpoint.uri())
+                    .unwrap_or_default();
+                v.expected_engine = v
+                    .target
+                    .as_ref()
+                    .map(|t| t.engine_id.clone())
+                    .unwrap_or_default();
+                v.clear_terminal();
+                v.browser = Some(BrowserState::default());
+                v.navigation = browser::navigation(&json!({}), &Value::Null)?;
+                v.data = json!({"state":"loading","rows":[]});
+                v.busy = false;
+                v.revision += 1;
+            }
+            a.enqueue(&job.view, "refresh")?;
+            return Ok(target);
+        }
+        Ok(target)
+    });
+    let v = a.views.get_mut(&job.view).unwrap();
+    if test || result.is_err() {
+        v.busy = false;
+    }
+    v.connection_test = match result {
+        Ok(target) => json!({"state":"succeeded","config":job.config,"target":target.info()}),
+        Err(error) => {
+            json!({"state":"failed","config":job.config,"message":commands::text(&error,2048)})
+        }
+    };
+    v.revision += 1;
+}
 fn checked(result: Exec) -> Result<Vec<u8>, String> {
+    if let Some(message) = cli::startup_error(&result.response) {
+        return Err(message);
+    }
     if result.response["state"] != "completed"
         || result.response["outputLimitExceeded"] == true
         || result.response["remoteExitConfirmed"] != true
@@ -1010,6 +1291,14 @@ pub fn log_target(
             container: v.container.clone(),
             engine: v.expected_engine.clone(),
             action: "logs".into(),
+            target: v.target.clone(),
+            config: a
+                .configs
+                .get(v.context["serverId"].as_str().unwrap())
+                .cloned()
+                .unwrap_or_default(),
+            terminal_input: Value::Null,
+            deadline: None,
         }
     };
     let info: Value = serde_json::from_slice(&checked(execute(
@@ -1032,6 +1321,58 @@ pub fn log_target(
     target["status"] = container["State"]["Status"].clone();
     Ok(target)
 }
+pub fn bound_target(app: &Shared, view: &str, expected: &Value) -> Result<Snapshot, String> {
+    let a = app.lock().unwrap();
+    let v = a.views.get(view).ok_or("页面已关闭")?;
+    let target = v.target.as_ref().ok_or("请先识别 Docker 连接")?;
+    if v.context != expected["context"]
+        || v.endpoint != expected["endpoint"]
+        || json!(target.engine_id) != expected["engine"]["id"]
+        || v.data["state"] != "ready"
+        || v.frozen
+        || v.cancelled
+    {
+        return Err("Docker 连接身份已改变或状态待刷新".into());
+    }
+    Ok(target.clone())
+}
+pub fn open_stream(
+    app: &Shared,
+    client: &Client,
+    view: &str,
+    target: &Snapshot,
+    prefix: &str,
+    prepared: sodeck_plugin_client::program::PreparedProgram,
+    budget: usize,
+    fixed: bool,
+) -> Result<(Value, Option<Value>), String> {
+    let dispatch = app.lock().unwrap().stream_dispatch.clone();
+    let _guard = dispatch.lock().unwrap();
+    let mut params = {
+        let mut a = app.lock().unwrap();
+        let v = a.views.get_mut(view).ok_or("页面已关闭")?;
+        if !v
+            .target
+            .as_ref()
+            .is_some_and(|current| current.same(target))
+            || v.frozen
+            || v.cancelled
+        {
+            return Err("流式请求已取消或目标改变".into());
+        }
+        v.sequence_for_stream();
+        json!({"viewId":view,"expectedContext":target.context,"sequence":v.command_sequence().to_string(),"operationId":format!("{prefix}-{}-{}",v.epoch,v.command_sequence()),"maxOutputBytes":budget,"retention":if fixed{"fixed"}else{"rolling"}})
+    };
+    prepared.apply(&mut params)?;
+    for _ in 0..3 {
+        match client.call_detailed("session.stream.open", params.clone()) {
+            Ok(r) => return Ok((params, Some(r))),
+            Err(e) if e.code == -32003 => {}
+            Err(e) => return Err(e.message),
+        }
+    }
+    Ok((params, None))
+}
 fn inspect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
     let out = checked(execute(
         app,
@@ -1053,9 +1394,12 @@ fn inspect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
     Ok(v)
 }
 fn terminal_request(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
-    let ticket = job.terminal.as_ref().ok_or("终端票据已失效")?;
-    if job.action == "terminal" {
-        ticket.resolve(client).map_err(|e| e.message)?;
+    let ticket = if let Some(ticket) = &job.terminal {
+        ticket.clone()
+    } else {
+        if job.action != "terminal" {
+            return Err("终端票据已失效".into());
+        }
         let info = commands::object(&checked(execute(
             app,
             job,
@@ -1070,6 +1414,40 @@ fn terminal_request(app: &Shared, job: &Job, client: &Client) -> Result<Value, S
         if container["State"]["Running"] != true || container["State"]["Paused"] == true {
             return Err("容器当前不能接受交互终端，请刷新状态".into());
         }
+        let target = job.target.as_ref().ok_or("Docker 连接尚未识别")?;
+        let args = cli::terminal_args(
+            target,
+            &job.container,
+            job.terminal_input["shell"].as_str().ok_or("缺少容器程序")?,
+        )?;
+        let prepared = cli::prepare(
+            client,
+            &job.view,
+            target,
+            &args.iter().map(String::as_str).collect::<Vec<_>>(),
+            Some(&job.container),
+            true,
+        )
+        .map_err(|e| e.message)?;
+        let ticket = sodeck_plugin_client::commands::Ticket::new(
+            job.context.clone(),
+            &job.view,
+            job.terminal_input["requestId"]
+                .as_str()
+                .ok_or("缺少终端请求 ID")?,
+            "terminal.open.v1",
+            json!({"version":1,"title":format!("{} · 容器",commands::text(container["Name"].as_str().unwrap_or("Docker").trim_start_matches('/'),100)),"launch":{"kind":"command","command":prepared.terminal_command()?},"directoryIntegration":"off"}),
+        );
+        let mut a = app.lock().unwrap();
+        let v = a.views.get_mut(&job.view).ok_or("页面已关闭")?;
+        if v.context != job.context || v.epoch != job.epoch || v.cancelled || v.frozen {
+            return Err("终端请求已取消或连接改变".into());
+        }
+        v.terminal_ticket = Some(ticket.clone());
+        ticket
+    };
+    if job.action == "terminal" {
+        ticket.resolve(client).map_err(|e| e.message)?;
     }
     let reply = if job.action == "terminal" {
         ticket.submit(client)
@@ -1106,9 +1484,6 @@ fn collect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
         &["version", "--format", "{{json .}}"],
         256 * 1024,
     )?)?)?;
-    if version["Server"]["Os"] != "linux" {
-        return Err("第一版仅支持远端 Linux Docker Engine".into());
-    }
     let info = commands::object(&checked(execute(
         app,
         job,
@@ -1120,11 +1495,18 @@ fn collect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
         .as_str()
         .filter(|s| !s.is_empty() && s.len() <= 512 && !s.chars().any(char::is_control))
         .ok_or("Engine ID 不可用")?;
+    if job
+        .target
+        .as_ref()
+        .is_some_and(|t| t.os != EngineOs::parse(version["Server"]["Os"].as_str().unwrap_or("")))
+    {
+        return Err("Engine 系统已改变，请重新识别连接".into());
+    }
     if !job.engine.is_empty() && job.engine != engine_id {
         return Err("Engine 已改变，原容器页面失效，请从列表重新打开".into());
     }
     let engine = json!({"id":engine_id,"name":commands::text(info["Name"].as_str().unwrap_or("Docker"),256),"version":commands::text(version["Server"]["Version"].as_str().unwrap_or(""),64),
-        "os":"linux","arch":commands::text(version["Server"]["Arch"].as_str().unwrap_or(""),64),"containers":info["Containers"].as_u64(),"images":info["Images"].as_u64(),"systemTime":commands::text(info["SystemTime"].as_str().unwrap_or(""),128),"dockerRootDir":resources::root(&info["DockerRootDir"])});
+        "os":version["Server"]["Os"],"clientOs":version["Client"]["Os"],"clientVersion":version["Client"]["Version"],"defaultShell":job.target.as_ref().and_then(|t|t.os.shell()),"arch":commands::text(version["Server"]["Arch"].as_str().unwrap_or(""),64),"containers":info["Containers"].as_u64(),"images":info["Images"].as_u64(),"systemTime":commands::text(info["SystemTime"].as_str().unwrap_or(""),128),"dockerRootDir":resources::root(&info["DockerRootDir"])});
     let kind = app
         .lock()
         .unwrap()
@@ -1209,6 +1591,14 @@ fn collect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
         }
     } else if job.action != "refresh" {
         data["stats"] = json!({"unavailable":"容器操作后，请重新读取资源快照"});
+        if job
+            .target
+            .as_ref()
+            .is_some_and(|t| t.os == EngineOs::Windows)
+            && matches!(job.action.as_str(), "pause" | "unpause")
+        {
+            return Err("Windows Engine 不支持暂停与恢复容器".into());
+        }
         let args = commands::action(&job.action, &container)?;
         if let Some(args) = args {
             {
@@ -1226,11 +1616,10 @@ fn collect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
                 &args.iter().map(String::as_str).collect::<Vec<_>>(),
                 256 * 1024,
             )?;
-            let known =
-                r.response["remoteExitConfirmed"] == true && r.response["state"] == "completed";
-            let success = known && r.response["exitCode"] == 0;
-            data["operation"] = json!({"action":job.action,"state":if !known{"unknown"}else if success{"succeeded"}else{"failed"},
-                "message":if !known{"结果未确认，请刷新状态，操作不会自动重发".into()}else if success{"命令成功，正在确认当前状态".into()}else{commands::text(&String::from_utf8_lossy(&r.stderr),2048)},"finishedAt":now()});
+            let (state, message) = cli::outcome(&r.response, &r.stderr);
+            let success = state == "succeeded";
+            data["operation"] =
+                json!({"action":job.action,"state":state,"message":message,"finishedAt":now()});
             if success {
                 match inspect(app, job, client) {
                     Ok(after) => {
@@ -1309,24 +1698,37 @@ fn batch(
     loop {
         let mut args = vec![kind.name(), "inspect", "--format", format];
         args.extend(ids[offset..end].iter().map(String::as_str));
-        if commands::docker(&job.endpoint, &args).len() <= 16 * 1024 {
-            let out = read(app, job, client, &args, 1024 * 1024)?;
-            let rows = commands::lines(&out)?;
-            let seen = rows
-                .iter()
-                .filter_map(|r| r["id"].as_str())
-                .collect::<std::collections::BTreeSet<_>>();
-            if seen.len() != end - offset
-                || ids[offset..end]
+        let prepared = cli::prepare(
+            client,
+            &job.view,
+            job.target.as_ref().ok_or("Docker 连接尚未识别")?,
+            &args,
+            None,
+            false,
+        );
+        match prepared {
+            Ok(prepared) => {
+                let out = checked(execute_prepared(app, job, client, prepared, 1024 * 1024)?)?;
+                let rows = commands::lines(&out)?;
+                let seen = rows
                     .iter()
-                    .any(|id| !seen.contains(id.as_str()))
-            {
-                return Err("批量摘要缺失或身份不符，读取不完整".into());
+                    .filter_map(|r| r["id"].as_str())
+                    .collect::<std::collections::BTreeSet<_>>();
+                if seen.len() != end - offset
+                    || ids[offset..end]
+                        .iter()
+                        .any(|id| !seen.contains(id.as_str()))
+                {
+                    return Err("批量摘要缺失或身份不符，读取不完整".into());
+                }
+                return Ok((rows, end));
             }
-            return Ok((rows, end));
-        }
-        if end <= offset + 1 {
-            return Err("命令参数超过 16 KiB".into());
+            Err(error) if error.data["code"] == "commandTooLong" => {
+                if end <= offset + 1 {
+                    return Err(error.message);
+                }
+            }
+            Err(error) => return Err(error.message),
         }
         end -= 1;
     }
@@ -1672,11 +2074,9 @@ fn resource_remove(app: &Shared, job: &Job, client: &Client) -> Result<DeleteRes
         &args.iter().map(String::as_str).collect::<Vec<_>>(),
         256 * 1024,
     )?;
-    let known =
-        output.response["state"] == "completed" && output.response["remoteExitConfirmed"] == true;
-    let success = known && output.response["exitCode"] == 0;
+    let (state, message) = cli::outcome(&output.response, &output.stderr);
     Ok(DeleteResult::Done(
-        json!({"state":"ready","operation":{"action":"resource.remove","resource":resource,"state":if !known{"unknown"}else if success{"succeeded"}else{"failed"},"message":if !known{"结果未确认，请刷新；不会自动重发".into()}else if success{"删除命令成功".into()}else{commands::text(&String::from_utf8_lossy(&output.stderr),2048)},"finishedAt":now()}}),
+        json!({"state":"ready","operation":{"action":"resource.remove","resource":resource,"state":state,"message":message,"finishedAt":now()}}),
     ))
 }
 pub fn start(app: Shared, client: Client) {
@@ -1692,7 +2092,7 @@ pub fn start(app: Shared, client: Client) {
                             && v.browser.as_ref().is_some_and(|b| {
                                 b.visible && !b.indexes.values().any(|i| i.phase == "loading")
                             })
-                            && v.terminal_ticket.is_none()
+                            && v.terminal_receipt["status"] != "pending"
                             && !v.busy
                             && !v.frozen
                             && !v.paused
@@ -1707,7 +2107,7 @@ pub fn start(app: Shared, client: Client) {
                     .views
                     .iter()
                     .filter(|(_, v)| {
-                        v.terminal_ticket.is_some()
+                        v.terminal_receipt["status"] == "pending"
                             && !v.busy
                             && !v.frozen
                             && v.due <= Instant::now()
@@ -1720,7 +2120,73 @@ pub fn start(app: Shared, client: Client) {
                 let index = a.jobs.iter().position(|j| j.browser.is_none()).unwrap_or(0);
                 a.jobs.remove(index)
             };
-            if let Some(job) = job {
+            if let Some(mut job) = job {
+                if job.action.starts_with("connection.") || job.action == "setEndpoint" {
+                    connection_request(&app, &job, &client);
+                    continue;
+                }
+                if job.target.is_none() {
+                    match discover_target(&app, &job, &client) {
+                        Ok(target) => {
+                            let mut a = app.lock().unwrap();
+                            let target = match a.version_target(target) {
+                                Ok(target) => target,
+                                Err(error) => {
+                                    if let Some(v) = a.views.get_mut(&job.view) {
+                                        v.busy = false;
+                                        v.data["error"] = json!(error);
+                                        v.data["state"] = json!("stale");
+                                    }
+                                    continue;
+                                }
+                            };
+                            let valid = a.views.get(&job.view).is_some_and(|v| {
+                                v.context == job.context && v.epoch == job.epoch && !v.cancelled
+                            });
+                            if !valid {
+                                continue;
+                            }
+                            if (!job.engine.is_empty() && job.engine != target.engine_id)
+                                || (!job.endpoint.is_empty()
+                                    && job.endpoint != target.endpoint.uri())
+                            {
+                                let v = a.views.get_mut(&job.view).unwrap();
+                                v.busy = false;
+                                v.data["state"] = json!("stale");
+                                v.data["error"] = json!("原资源连接身份已改变，请从资源树重新打开");
+                                continue;
+                            }
+                            a.bindings.insert(job.context.to_string(), target.clone());
+                            for v in a.views.values_mut().filter(|v| {
+                                v.context == job.context
+                                    && v.target.is_none()
+                                    && (v.expected_engine.is_empty()
+                                        || v.expected_engine == target.engine_id)
+                            }) {
+                                v.target = Some(target.clone());
+                                v.endpoint = target.endpoint.uri();
+                                v.expected_engine = target.engine_id.clone();
+                            }
+                            job.endpoint = target.endpoint.uri();
+                            job.engine = target.engine_id.clone();
+                            job.target = Some(target);
+                        }
+                        Err(error) => {
+                            let mut a = app.lock().unwrap();
+                            if let Some(v) = a
+                                .views
+                                .get_mut(&job.view)
+                                .filter(|v| v.epoch == job.epoch && v.context == job.context)
+                            {
+                                v.busy = false;
+                                v.data["state"] = json!("stale");
+                                v.data["error"] = json!(commands::text(&error, 2048));
+                                v.revision += 1;
+                            }
+                            continue;
+                        }
+                    }
+                }
                 if let Some(work) = &job.browser {
                     let result = browser_read(&app, &job, &client);
                     let mut a = app.lock().unwrap();
@@ -1746,6 +2212,19 @@ pub fn start(app: Shared, client: Client) {
                             _ => {}
                         }
                         a.repage(&job.view);
+                    }
+                    let interval = a.refresh_seconds;
+                    if let Some(v) = a
+                        .views
+                        .get_mut(&job.view)
+                        .filter(|v| v.context == job.context && v.epoch == job.epoch)
+                    {
+                        if v.browser
+                            .as_ref()
+                            .is_some_and(|b| !b.indexes.values().any(|i| i.phase == "loading"))
+                        {
+                            v.due = Instant::now() + Duration::from_secs(interval);
+                        }
                     }
                     continue;
                 }
@@ -1787,7 +2266,7 @@ pub fn start(app: Shared, client: Client) {
                     collect(&app, &job, &client)
                 };
                 if let Ok(data) = &mut result {
-                    if !data["operation"].is_null() {
+                    if !data["operation"].is_null() && !job.container.is_empty() {
                         data["operation"]["containerId"] = json!(job.container);
                         data["operation"]["name"] = if data["name"].is_null() {
                             app.lock()
@@ -1801,11 +2280,9 @@ pub fn start(app: Shared, client: Client) {
                         };
                     }
                     let a = app.lock().unwrap();
-                    if let Some(v) = a
-                        .views
-                        .get(&job.view)
-                        .filter(|v| v.kind == "browser" && !job.container.is_empty())
-                    {
+                    if let Some(v) = a.views.get(&job.view).filter(|v| {
+                        v.kind == "browser" && (!job.container.is_empty() || job.resource.is_some())
+                    }) {
                         let mut rows = v.container_rows().to_vec();
                         if data["state"] == "gone" {
                             rows.retain(|row| row["id"] != job.container);
@@ -1832,8 +2309,8 @@ pub fn start(app: Shared, client: Client) {
                         }
                     };
                     let state = operation["state"].as_str().unwrap_or("unknown");
-                    let fields = json!({"viewId":job.view,"serverId":job.context["serverId"],"containerId":job.container,"engineId":job.engine,"action":job.action,"result":state});
-                    let _ = client.call("logging.write", json!({"level":if ["failed","unknown"].contains(&state){"warn"}else{"info"},"message":"Docker 容器操作完成","fields":fields}));
+                    let fields = json!({"viewId":job.view,"serverId":job.context["serverId"],"containerId":job.container,"resource":job.resource,"engineId":job.engine,"action":job.action,"result":state});
+                    let _ = client.call("logging.write", json!({"level":if ["failed","unknown"].contains(&state){"warn"}else{"info"},"message":"Docker 资源操作完成","fields":fields}));
                     if ["failed", "unknown"].contains(&state) {
                         let _ = client.call("messages.publish", json!({"title":"Docker 资源操作未完成","body":format!("{} · {}：请在 Docker 侧栏或详情查看结果并刷新状态",commands::operation_name(&job.action),job.container.get(..12).unwrap_or(&job.container)),"level":"warning","notify":false}));
                     }
@@ -1884,14 +2361,6 @@ pub fn start(app: Shared, client: Client) {
                                     data["stats"] = v.data["stats"].clone();
                                 }
                                 if let Some(engine) = data["engine"]["id"].as_str() {
-                                    if v.kind == "browser"
-                                        && !v.expected_engine.is_empty()
-                                        && v.expected_engine != engine
-                                    {
-                                        v.epoch += 1;
-                                        v.browser = Some(BrowserState::default());
-                                        v.navigation=browser::navigation(&json!({"query":v.navigation["query"],"status":v.navigation["status"],"health":v.navigation["health"],"group":v.navigation["group"]}),&Value::Null).unwrap();
-                                    }
                                     v.expected_engine = engine.into();
                                 }
                                 if let Some(b) = &mut v.browser {
@@ -1927,7 +2396,7 @@ pub fn start(app: Shared, client: Client) {
                                         "failed"
                                     };
                                     let name = v.data["operation"]["name"].clone();
-                                    v.data["operation"] = json!({"action":job.action,"containerId":job.container,"name":name,"state":state,"message":commands::text(&error,2048),"finishedAt":now()});
+                                    v.data["operation"] = json!({"action":job.action,"containerId":job.container,"resource":job.resource,"name":name,"state":state,"message":commands::text(&error,2048),"finishedAt":now()});
                                 }
                                 v.data["error"] = json!(commands::text(&error, 2048));
                                 v.data["state"] = json!("stale");

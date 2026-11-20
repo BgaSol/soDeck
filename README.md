@@ -18,7 +18,7 @@
 | 网络隧道 | 按服务器管理 TCP 转发和 SOCKS5 代理 |
 | 系统状态 | 查看设备信息和运行指标，默认右侧展开，隐藏面板继续采集 |
 | Docker | 查看 Linux Docker Engine 容器、日志与资源快照，执行单容器维护 |
-| AI 排障接入 | 让本机 Codex 等 MCP 客户端复用服务器会话，执行调查命令并保存证据 |
+| Agent MCP | 让本机 Codex 等 MCP 客户端发现并连接保存的服务器，执行调查命令并保存证据 |
 
 ## 下载与使用
 
@@ -26,7 +26,7 @@
 
 | 系统 | 架构 | 安装包 |
 | --- | --- | --- |
-| Windows | x86_64、ARM64 | EXE（系统安装，需要管理员确认） |
+| Windows | x86_64、ARM64 | EXE（[安装范围说明](docs/distribution.md#windows-安装范围与图标)） |
 | Linux | x86_64、ARM64 | DEB、AppImage |
 | macOS | Apple Silicon ARM64 | DMG |
 

@@ -417,7 +417,7 @@ impl AppCore {
                 for view in &views {
                     self.terminals.cancel(|o| o.view == view.id);
                     self.executions.cancel(|o| o.view == view.id);
-                    self.command_streams.cancel(|o| o.view == view.id);
+                    self.command_processes.cancel(|o| o.view == view.id);
                     self.content_exports.cancel(|o| o.view == view.id);
                     self.network.cancel(|o| o.view == view.id);
                     self.files.cancel(|o| o.view == view.id);
@@ -486,7 +486,7 @@ impl AppCore {
                     }
                     self.terminals.cancel(|o| o.view == view.id);
                     self.executions.cancel(|o| o.view == view.id);
-                    self.command_streams.cancel(|o| o.view == view.id);
+                    self.command_processes.cancel(|o| o.view == view.id);
                     self.content_exports.cancel(|o| o.view == view.id);
                     self.network.cancel(|o| o.view == view.id);
                     self.files.cancel(|o| o.view == view.id);

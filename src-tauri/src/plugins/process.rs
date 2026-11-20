@@ -60,7 +60,7 @@ pub(crate) fn supervise(
         "jsonrpc":"2.0", "id":"initialize", "method":"initialize", "params":{
             "coreApiVersion":API_VERSION, "coreVersion":core.version(), "dataDirectory":path,
             "settings":core.settings_index(id),
-              "capabilities":["commands.v1","logging.write","messages.publish","ui.v1","ui.workbench.v2","ui.actions.v1","ui.openView.v1","rpc.concurrent","terminal.v1","terminal.launch.v1","terminal.history.v1","viewData.v1","files.v1","files.directoryCursors.v1","files.operations.v1","files.operations.v2","files.editor.v1","files.localInputs.v1","net.tcp.v1","net.listenerLifecycle.v1","ui.dialog.v1","settings.v1","ui.background.v1","session.exec.v1","session.stream.v1","session.target.v1","session.stream.process.v1","files.pluginData.v1","content.export.v1","sharedState.v1","files.location.v1"]
+              "capabilities":["commands.v1","logging.write","messages.publish","ui.v1","ui.workbench.v2","ui.actions.v1","ui.openView.v1","rpc.concurrent","terminal.v1","terminal.launch.v1","terminal.history.v1","viewData.v1","files.v1","files.directoryCursors.v1","files.operations.v1","files.operations.v2","files.editor.v1","files.localInputs.v1","net.tcp.v1","net.listenerLifecycle.v1","ui.dialog.v1","settings.v1","ui.background.v1","session.exec.v1","session.stream.v1","session.program.v1","session.target.v1","session.target.v2","servers.read.v1","connections.v1","session.stream.process.v1","session.process.v1","files.pluginData.v1","content.export.v1","sharedState.v1","files.location.v1"]
         }
     }))).err();
     let mut ready = Some(ready);
@@ -85,6 +85,7 @@ pub(crate) fn supervise(
             stop_waiters.push(waiter);
             if stop_deadline.is_none() {
                 stop_deadline = Some(Instant::now() + Duration::from_secs(3));
+                core.stop_connection_requests(id, instance_id);
                 core.workbench_state()
                     .commands
                     .stop_instance(id, instance_id);
@@ -181,6 +182,8 @@ pub(crate) fn supervise(
         // Allow the pipe readers to deliver final diagnostics after process exit.
         let drain_complete = exited_at.is_none_or(|at| at.elapsed() >= Duration::from_millis(150));
         if (failure.is_some() || exited.is_some() || expired) && drain_complete {
+            instance.update(&core, |v| v.status = PluginStatus::Stopping);
+            core.stop_connection_requests(id, instance_id);
             core.workbench_state()
                 .commands
                 .stop_instance(id, instance_id);
@@ -190,7 +193,7 @@ pub(crate) fn supervise(
                 .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
             core.files
                 .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
-            core.command_streams
+            core.command_processes
                 .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
             core.content_exports
                 .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
@@ -252,7 +255,7 @@ pub(crate) fn supervise(
                     .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
                 core.files
                     .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
-                core.command_streams
+                core.command_processes
                     .cancel(|owner| owner.plugin == id && owner.instance == instance_id);
                 core.content_exports
                     .cancel(|owner| owner.plugin == id && owner.instance == instance_id);

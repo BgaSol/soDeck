@@ -3,6 +3,13 @@
 #[ignore = "requires isolated Docker Engine/OpenSSH; npm run docker:test"]
 async fn openssh_docker_plugin() {
     let f = Fixture::new();
+    let load = |name: &str| {
+        let path = std::env::var(format!("SODECK_TEST_{name}_PLUGIN")).unwrap();
+        f.core.load(std::path::Path::new(&path)).unwrap_or_else(|error| {
+            panic!("{name} initialization: {error}; state: {:?}; logs: {:?}",
+                f.core.snapshot(), f.core.logs(&Default::default()))
+        });
+    };
     let port = std::env::var("SODECK_TEST_SSH_PORT")
         .unwrap()
         .parse()
@@ -13,11 +20,7 @@ async fn openssh_docker_plugin() {
     draft["authentication"] = json!({"type":"privateKey","privateKeyPath":std::env::var("SODECK_TEST_SSH_KEY").unwrap(),"secret":{"action":"clear"}});
     f.change(json!({"op":"saveServer","draft":draft}));
     let context = connected(&f, &server).await.context.unwrap();
-    f.core
-        .load(std::path::Path::new(
-            &std::env::var("SODECK_TEST_DOCKER_PLUGIN").unwrap(),
-        ))
-        .unwrap();
+    load("DOCKER");
     let opened = f
         .core
         .ui_action(
@@ -47,7 +50,8 @@ async fn openssh_docker_plugin() {
     }
     let browser = idle(&f, token).await;
     assert_eq!(browser["state"], "ready", "{browser}");
-    assert_eq!(browser["engine"]["dockerRootDir"],"/var/lib/sodeck-test-docker");
+    assert_eq!(browser["engine"]["dockerRootDir"],std::env::var("SODECK_TEST_DOCKER_ROOT").unwrap_or_else(|_|"/var/lib/sodeck-test-docker".into()));
+    if std::env::var("SODECK_TEST_DOCKER_WINDOWS").is_ok(){assert_eq!(browser["engine"]["clientOs"],"windows");assert_eq!(browser["engine"]["os"],"linux");assert!(browser["endpoint"].as_str().unwrap().starts_with("npipe:"));}
     event(token,json!({"action":"pauseRefresh","paused":true}));
     let list = event(token, json!({"action":"list","status":"all"}));
     let id = std::env::var("SODECK_TEST_DOCKER_CONTAINER").unwrap();
@@ -60,7 +64,7 @@ async fn openssh_docker_plugin() {
         "{list}; {browser}"
     );
     assert!(
-        list["rows"][0]["health"].is_null(),
+        list["rows"].as_array().unwrap().iter().find(|row|row["id"]==id).unwrap()["health"].is_null(),
         "containers without HEALTHCHECK must remain visible"
     );
     async fn loaded(f:&Fixture,token:&str,kind:&str)->Value {
@@ -80,7 +84,7 @@ async fn openssh_docker_plugin() {
     let detail = mounted["surfaceId"].as_str().unwrap();
     f.core.ui_surface_ready("main", detail).unwrap();
     assert_eq!(idle(&f, detail).await["status"], "running");
-    f.core.load(std::path::Path::new(&std::env::var("SODECK_TEST_TERMINAL_PLUGIN").unwrap())).unwrap();
+    load("TERMINAL");
     event(token,json!({"action":"openTerminal","requestId":"docker-terminal","shell":"/bin/sh","id":id,"engineId":browser["engine"]["id"],"endpoint":browser["endpoint"],"expectedContext":browser["context"]}));
     let deadline=std::time::Instant::now()+Duration::from_secs(40);
     let receipt=loop {

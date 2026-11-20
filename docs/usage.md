@@ -4,7 +4,7 @@
 
 ## 安装与首次连接
 
-1. 从 [GitHub Releases](https://github.com/BgaSol/soDeck/releases) 下载对应系统和架构的核心包。支持 Windows x86_64/ARM64、Linux x86_64/ARM64、macOS Apple Silicon ARM64。
+1. 从 [GitHub Releases](https://github.com/BgaSol/soDeck/releases) 下载对应系统和架构的核心包。支持 Windows x86_64/ARM64、Linux x86_64/ARM64、macOS Apple Silicon ARM64。Windows 首次安装可选择仅当前用户或所有用户，权限与切换范围的说明见[Windows 安装范围](distribution.md#windows-安装范围与图标)。
 2. 点击顶部 SoDeck → 插件，选择官方插件或添加本地目录。安装需要的终端、文件、网络隧道、系统状态或 Docker，启用后重启。
 3. 在管理台的服务器连接页新增 SSH 资料，填写主机、端口、用户名和密码/私钥；需要跳板时按顺序选择已有 SSH/SOCKS5 资料。
 4. 连接服务器，核对主机指纹并补填必要凭据。成功后进入工作区，用中央“＋”新建终端，用两侧工具入口打开文件等插件。
@@ -23,7 +23,7 @@
 | TCP 转发、SOCKS5、实际入口与流量 | [网络隧道](features/network-proxy.md) |
 | CPU、内存、容量、网络和磁盘指标 | [系统状态](features/system-status.md) |
 | 查看容器、日志和执行单项操作 | [Docker](features/docker.md) |
-| 让本机 Codex 查询服务器、采集日志并补充调查 | [AI 排障接入](features/mcp.md) |
+| 让本机 Codex 发现并连接保存的服务器、采集日志并补充调查 | [Agent MCP](features/mcp.md) |
 | 安装、启停或移除插件 | [插件管理](features/plugins.md) |
 | 更新核心/插件、管理下载备用地址 | [在线更新](features/updates.md) |
 | 外观、字体、组件偏好及系统打开 | [设置](features/settings.md) |

@@ -24,22 +24,23 @@ await page.route(url+'fonts/**',async route=>{
   try{const resource=await call('settings_resource',{pluginId:plugin,definitionToken:token,relative});await route.fulfill({body:Buffer.from(resource.bytes),contentType:resource.mime});}
   catch(e){await route.fulfill({status:404,body:String(e)});}
 });
-const harness=`<!doctype html><html lang="zh-CN" data-theme="dopamine"><head><meta charset="utf-8"></head><body><div class="modal-backdrop"><section class="layer settings-dialog"><header class="layer-heading"><h2>设置</h2><button id="close">×</button></header><div id="body" class="layer-content settings-content"></div></section></div><script type="module">
-import '/style.css';import {updateDOM} from '/dom-update.ts';import {ComponentSettings} from '/settings.ts';
+const harness=`<!doctype html><html lang="zh-CN" data-theme="dopamine"><head><meta charset="utf-8"></head><body><div id="app"></div><script type="module">
+import '/style.css';import {Shell} from '/shell.ts';import {settings,settingsNavigation} from '/views.ts';import {ComponentSettings} from '/settings.ts';
 window.__TAURI_INTERNALS__={invoke:window.settingsInvoke,convertFileSrc:p=>new URL('/fonts/'+p,location.href).href};
-const body=document.querySelector('#body');let hidden=false;const app=window.settingsApp=new ComponentSettings(render);
-function render(){if(hidden)return;if(!body.querySelector('#component-settings-page'))body.innerHTML='<aside class="settings-nav"></aside><section class="settings-page" id="component-settings-page"></section>';updateDOM(body.querySelector('.settings-nav'),'<div class="nav-label">偏好设置</div><button class="nav-item">外观</button>'+app.navigation()+'<div class="nav-label settings-management-label">应用管理</div><button class="nav-item">插件管理</button><button class="nav-item">软件更新</button><button class="nav-item">应用与数据</button>');const host=body.querySelector('#component-settings-page');if(host.dataset.entity!==app.selected){host.replaceChildren();host.dataset.entity=app.selected;}app.mount(host,true);}
+const shell=window.settingsShell=new Shell(document.querySelector('#app'),true),snapshot=await settingsInvoke('snapshot'),body=document.querySelector('#layer-content');const app=window.settingsApp=new ComponentSettings(render);
+function render(){const visible=shell.route.kind==='console'&&shell.route.page==='settings';shell.updateSettingsNavigation(settingsNavigation(visible?'components':null,app.navigation(visible)));if(!visible){app.mount(null,false);return;}if(body.dataset.entity!==app.selected){app.mount(null,false);body.innerHTML=settings(snapshot,'components');body.dataset.entity=app.selected;}app.mount(body.querySelector('#component-settings-page'),true);}
+shell.onPage=page=>{body.className='layer-content '+page+'-content';render();};
 
 document.addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b)return;if(b.dataset.action==='component-settings')app.select(b.dataset.id);else void app.action(b.dataset.action);});
-document.querySelector('#close').onclick=()=>{hidden=true;app.mount(null,false);body.replaceChildren();};window.reopen=()=>{hidden=false;render();};
-await app.catalog();app.select(app.entries[0].pluginId+'/'+app.entries[0].pageId);window.ready=true;
+window.reopen=()=>shell.navigate('settings');
+await app.catalog();app.select(app.entries[0].pluginId+'/'+app.entries[0].pageId);shell.navigate('settings');window.ready=true;
 </script></body></html>`;
 await page.route(url,route=>route.fulfill({body:harness,contentType:'text/html'}));
 const section=()=>page.locator('#component-settings-page');
-const choose=title=>page.locator('.settings-nav').getByRole('button',{name:title,exact:true}).click();
+const choose=title=>page.locator('.console-settings-nav').getByRole('button',{name:title,exact:true}).click();
 const save=()=>section().getByRole('button',{name:'保存',exact:true}).click();
 try{
-  for(const plugin of ['terminal','files','network-proxy']){
+  for(const plugin of ['terminal','files','network-proxy','docker']){
     const metadata=fileEditorSettings(JSON.parse(fs.readFileSync(`plugins/${plugin}/release.json`,'utf8'))),directory=path.join(root,metadata.id);fs.mkdirSync(path.join(directory,'ui'),{recursive:true});
     fs.writeFileSync(path.join(directory,'entry'),'never executed');fs.writeFileSync(path.join(directory,'ui/index.html'),'never mounted');
     packageSettingsAssets(metadata,directory);
@@ -48,8 +49,15 @@ try{
   }
   await page.goto(url);await page.waitForFunction(()=>window.ready);await section().getByLabel('字号',{exact:true}).waitFor();
   await page.waitForFunction(()=>document.querySelector('[data-font-status]')?.textContent.includes('字体已加载'));
+  await page.setViewportSize({width:1600,height:480});
+  const wide=await section().evaluate(el=>{const pane=el.getBoundingClientRect(),content=el.parentElement.getBoundingClientRect(),form=el.querySelector('form').getBoundingClientRect(),commit=el.querySelector('.settings-commit').getBoundingClientRect();return {rightGap:content.right-pane.right,formWidth:form.width,commitBottomGap:pane.bottom-commit.bottom,scrollable:el.scrollHeight>el.clientHeight,overflow:el.scrollWidth>el.clientWidth};});
+  fs.mkdirSync('artifacts/settings-ui',{recursive:true});await page.screenshot({path:'artifacts/settings-ui/terminal-wide.png'});
+  assert(wide.rightGap<=1&&wide.formWidth<=680&&Math.abs(wide.commitBottomGap)<=1&&wide.scrollable&&!wide.overflow,`Wide settings keep the scrollbar at the page edge, the form constrained and the footer flush with the scrollport: ${JSON.stringify(wide)}`);
+  await page.mouse.move(1500,200);await page.mouse.wheel(0,400);await page.waitForFunction(()=>document.querySelector('#component-settings-page').scrollTop>0);
+  await section().evaluate(el=>el.scrollTop=0);
+  await page.setViewportSize({width:1000,height:760});
   assert.equal((await call('snapshot')).plugins.filter(p=>p.pid!==null).length,0);
-  assert.equal(await page.locator('.settings-nav [data-action="component-settings"]').count(),4);
+  assert.equal(await page.locator('.console-settings-nav [data-action="component-settings"]').count(),5);
   assert.equal(await section().getByLabel('字号',{exact:true}).inputValue(),'14');
   const input=section().getByLabel('字号',{exact:true});await input.fill('18');
   assert.equal(await section().locator('[data-font-sample]').evaluate(el=>getComputedStyle(el).fontSize),'18px');
@@ -57,7 +65,7 @@ try{
   assert.equal(await section().locator('[data-font-sample]').evaluate(el=>getComputedStyle(el).lineHeight),'28.8px');
   await input.evaluate(el=>window.preservedInput=el);await page.evaluate(()=>window.settingsApp.catalog());assert(await input.evaluate(el=>el===window.preservedInput));
   await choose('文件列表');await section().getByLabel('名称字号').waitFor();await choose('终端 ●');
-  assert.equal(await input.inputValue(),'18');await page.locator('#close').click();await page.evaluate(()=>window.reopen());assert.equal(await input.inputValue(),'18');
+  assert.equal(await input.inputValue(),'18');await page.locator('[data-console-page="logs"]').click();await page.evaluate(()=>window.reopen());assert.equal(await input.inputValue(),'18');
   await section().getByRole('button',{name:'保存',exact:true}).focus();await page.keyboard.press('Enter');await page.waitForFunction(()=>document.querySelector('.settings-feedback')?.textContent.includes('已保存'));
   assert.equal(await section().locator('.settings-feedback').evaluate(el=>el===document.activeElement),true,'Saving moves focus to the result when the save button becomes disabled');
   const saved=await call('settings_page',{pluginId:'sodeck.terminal',pageId:'appearance'});assert.equal(saved.values.fontSize,18);
@@ -81,25 +89,44 @@ try{
   await choose('网络隧道');await section().getByLabel('本机端口').selectOption('1');await section().getByLabel('固定端口').fill('0');
   await save();assert.equal((await call('settings_page',{pluginId:'sodeck.network-proxy',pageId:'defaults'})).values.fixedPort,1080);
   await section().getByLabel('固定端口').fill('2080');await save();await page.waitForFunction(()=>document.querySelector('.settings-feedback')?.textContent.includes('已保存，用于新建规则'));
-  for(const theme of ['light','dark','dopamine'])for(const [width,height,scale]of [[1000,760,1],[720,480,1],[900,600,1.25],[1080,720,1.5]]){
-    await page.setViewportSize({width,height});await page.evaluate(({theme,scale})=>{document.documentElement.dataset.theme=theme;document.documentElement.style.zoom=String(scale);},{theme,scale});
+  for(const theme of ['light','dark','dopamine'])for(const [width,height,scale]of [[1600,480,1],[1000,760,1],[720,480,1],[600,480,1],[900,600,1.25],[1080,720,1.5]]){
+    // Browser zoom reduces the CSS viewport; root CSS zoom incorrectly scales 100dvh twice.
+    await page.setViewportSize({width:Math.round(width/scale),height:Math.round(height/scale)});await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;},theme);
     await choose('网络隧道');
     assert.equal(await page.locator('.settings-content').evaluate(el=>el.scrollTop),0,'Focusing the last navigation item must scroll only the navigation');
     assert(await section().locator('.section-heading').evaluate(el=>el.getBoundingClientRect().top>=document.querySelector('.settings-content').getBoundingClientRect().top),'The settings title must remain inside the content area');
-    const overflow=await page.locator('.settings-dialog').evaluate(el=>({width:el.scrollWidth,client:el.clientWidth}));assert(overflow.width<=overflow.client+2,JSON.stringify({theme,width,height,scale,overflow}));
-    await section().locator('.settings-fields').evaluate(el=>el.scrollTop=0);
+    const overflow=await page.locator('#management-console').evaluate(el=>({width:el.scrollWidth,client:el.clientWidth}));assert(overflow.width<=overflow.client+2,JSON.stringify({theme,width,height,scale,overflow}));
+    await section().evaluate(el=>el.scrollTop=0);
     assert(await section().getByRole('button',{name:'保存',exact:true}).evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&r.right<=innerWidth;}),`Save stays visible at ${theme}/${width}/${scale}`);
     if(width===720&&scale===1){
-      await choose('终端 ●');await section().locator('.settings-fields').evaluate(el=>el.scrollTop=0);
-      const visible=await section().getByLabel('字号',{exact:true}).evaluate(el=>{const r=el.getBoundingClientRect(),pane=document.querySelector('.settings-fields').getBoundingClientRect();return {visible:r.top>=pane.top&&r.bottom<=pane.bottom,available:pane.height};});
-      assert(visible.visible,`Font and font size controls must both fit without scrolling: ${JSON.stringify({theme,...visible})}`);
+      await choose('终端 ●');await section().getByLabel('字号',{exact:true}).focus();
+      const visible=await section().getByLabel('字号',{exact:true}).evaluate(el=>{const r=el.getBoundingClientRect(),pane=document.querySelector('#component-settings-page').getBoundingClientRect(),commit=document.querySelector('.settings-commit').getBoundingClientRect();return {visible:r.top>=pane.top&&r.bottom<=commit.top,available:pane.height};});
+      assert(visible.visible,`Focused fields remain above the commit area: ${JSON.stringify({theme,...visible})}`);
+      await page.evaluate(()=>Promise.all(document.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
       fs.mkdirSync('artifacts/settings-ui',{recursive:true});await page.screenshot({path:`artifacts/settings-ui/terminal-${theme}-720.png`});
     }
   }
+  await page.setViewportSize({width:1100,height:720});await page.evaluate(()=>document.documentElement.style.zoom='1');await choose('Docker');
+  await section().locator('.settings-fields').waitFor();
+  const compact=await section().evaluate(el=>{const fields=el.querySelector('.settings-fields').getBoundingClientRect(),commit=el.querySelector('.settings-commit').getBoundingClientRect(),pane=el.getBoundingClientRect();return {gap:commit.top-fields.bottom,free:pane.bottom-commit.bottom,width:fields.width};});
+  assert(compact.gap<=24&&compact.free>100&&compact.width<=680,JSON.stringify(compact));
+  assert.equal(await page.locator('#layer-content .console-settings-nav').count(),0,'Settings navigation belongs to the shell sidebar');
+  await section().getByRole('switch').focus();await page.keyboard.press('Space');assert.equal(await section().getByRole('switch').isChecked(),false);
+  await save();await page.waitForFunction(()=>document.querySelector('.settings-feedback')?.textContent.includes('已保存'));
+  await page.emulateMedia({forcedColors:'active'});assert.equal(await section().getByRole('switch').evaluate(el=>getComputedStyle(el).opacity),'1');await page.emulateMedia({forcedColors:'none'});
+  for(const theme of ['light','dark','dopamine'])for(const width of [1100,720]){
+    await page.setViewportSize({width,height:width===720?480:720});await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;},theme);
+    await choose('Docker');await page.locator('.console-settings-nav [aria-current="page"]').filter({hasText:'Docker'}).waitFor();
+    await page.evaluate(()=>Promise.all(document.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
+    const geometry=await section().evaluate(el=>{const save=el.querySelector('#settings-save').getBoundingClientRect(),pane=el.getBoundingClientRect();return {overflow:el.scrollWidth>el.clientWidth+2,saveVisible:save.top>=pane.top&&save.bottom<=pane.bottom};});
+    assert(!geometry.overflow&&geometry.saveVisible,JSON.stringify({theme,width,...geometry}));
+    await page.screenshot({path:`artifacts/settings-ui/docker-${theme}-${width}.png`});
+  }
   await page.setViewportSize({width:1000,height:760});await page.evaluate(()=>document.documentElement.style.zoom='1');await choose('终端 ●');
+  await page.locator('.console-settings-nav [aria-current="page"]').filter({hasText:'终端'}).waitFor();await page.evaluate(()=>Promise.all(document.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
   fs.mkdirSync('artifacts/settings-ui',{recursive:true});await page.screenshot({path:'artifacts/settings-ui/terminal.png'});
   assert(fontRequests.some(r=>r.relative.includes('jetbrains'))&&fontRequests.some(r=>r.relative.includes('source-code'))&&fontRequests.some(r=>r.relative.includes('ibm-plex')));
-  assert.deepEqual(errors,[]);console.log('Settings UI passed: 4 disabled-plugin pages, real offline fonts, drafts/close/reopen, conflict, missing local font, port validation, 12 responsive/theme layouts');
+  assert.deepEqual(errors,[]);console.log('Settings UI passed: full-width scrolling with constrained forms, merged shell navigation, 5 disabled-plugin pages, real offline fonts, drafts/close/reopen, conflict, missing local font, port validation, compact Docker form, keyboard switch, forced colors and 18 responsive/theme layouts');
 }finally{
   await browser.close();await vite.close();child.stdin.end();await new Promise(resolve=>child.once('exit',resolve));
   if(path.dirname(path.resolve(root))!==path.resolve(os.tmpdir())||!path.basename(root).startsWith('sodeck-settings-ui-'))throw new Error('Unexpected cleanup path');

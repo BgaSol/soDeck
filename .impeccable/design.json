@@ -1711,16 +1711,18 @@
       "name": "管理台导航项",
       "kind": "nav",
       "refersTo": "navigation-console-selected-light",
-      "description": "当前核心功能导航，不是工作台插件入口。",
-      "html": "<nav class=\"ds-console-nav\" aria-label=\"管理台\"><button type=\"button\" aria-current=\"page\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"7\" rx=\"2\"/><rect x=\"3\" y=\"14\" width=\"18\" height=\"7\" rx=\"2\"/><path d=\"M7 6.5h.01M7 17.5h.01M12 6.5h5M12 17.5h5\"/></svg><span>服务器连接</span></button><button type=\"button\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 3v5m8-5v5M6 8h12v3a6 6 0 0 1-12 0zm6 9v4\"/></svg><span>插件</span></button></nav>",
-      "css": ".ds-console-nav { --console-selected: var(--sd-server-selected, #d4e2ff); display: flex; flex-direction: column; gap: 3px; padding: 12px 8px; width: 148px; box-sizing: border-box; background: var(--panel, #ffffff); border-right: 1px solid color-mix(in srgb, var(--border, #dfe1e5) 30%, transparent); } :root[data-theme=\"dark\"] .ds-console-nav { --console-selected: var(--accent-bg, #253554); } .ds-console-nav button { font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", sans-serif; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; justify-content: flex-start; gap: 7px; min-height: 36px; border: 0; padding: 7px 10px; border-radius: 6px; color: var(--muted, #6c707e); background: transparent; white-space: nowrap; cursor: pointer; transition: background-color 100ms ease-out; } .ds-console-nav button:hover { background: var(--hover, #ebecf0); color: var(--text, #27282e); } .ds-console-nav button[aria-current=\"page\"] { background: var(--console-selected); color: var(--text, #27282e); font-weight: 600; box-shadow: none; } .ds-console-nav button:focus-visible { outline: 2px solid var(--accent, #3574f0); outline-offset: -2px; } .ds-console-nav svg { width: 16px; height: 16px; flex-shrink: 0; stroke-width: 1.75; } @media (prefers-reduced-motion: reduce) { .ds-console-nav button { transition: none; } }",
+      "description": "核心管理导航与设置子项共用一列；父项表示展开，叶项表示当前页面。",
+      "html": "<nav class=\"ds-console-nav\" aria-label=\"管理台\"><button type=\"button\" ><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"7\" rx=\"2\"/><rect x=\"3\" y=\"14\" width=\"18\" height=\"7\" rx=\"2\"/><path d=\"M7 6.5h.01M7 17.5h.01M12 6.5h5M12 17.5h5\"/></svg><span>服务器连接</span></button><button type=\"button\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 3v5m8-5v5M6 8h12v3a6 6 0 0 1-12 0zm6 9v4\"/></svg><span>插件</span></button><button type=\"button\" aria-expanded=\"true\" aria-controls=\"ds-settings-nav\"><span>设置</span></button><ul id=\"ds-settings-nav\" class=\"ds-settings-nav\" aria-label=\"设置分类\"><li><button type=\"button\" aria-current=\"page\"><span>外观</span></button></li><li><button type=\"button\"><span>终端</span></button></li><li><button type=\"button\"><span>应用与数据</span></button></li></ul></nav>",
+      "css": ".ds-console-nav { --console-selected: var(--sd-server-selected, #d4e2ff); display: flex; flex-direction: column; gap: 3px; padding: 12px 8px; width: 192px; box-sizing: border-box; background: var(--panel, #ffffff); border-right: 1px solid color-mix(in srgb, var(--border, #dfe1e5) 30%, transparent); } :root[data-theme=\"dark\"] .ds-console-nav { --console-selected: var(--accent-bg, #253554); } .ds-console-nav button { font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", sans-serif; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; justify-content: flex-start; gap: 7px; min-height: 36px; border: 0; padding: 7px 10px; border-radius: 6px; color: var(--muted, #6c707e); background: transparent; white-space: nowrap; cursor: pointer; transition: background-color 100ms ease-out; } .ds-console-nav button:hover, .ds-console-nav > button[aria-expanded=\"true\"] { background: var(--hover, #ebecf0); color: var(--text, #27282e); } .ds-console-nav button[aria-current=\"page\"] { background: var(--console-selected); color: var(--text, #27282e); font-weight: 600; box-shadow: none; } .ds-console-nav button:focus-visible { outline: 2px solid var(--accent, #3574f0); outline-offset: -2px; } .ds-console-nav svg { width: 16px; height: 16px; flex-shrink: 0; stroke-width: 1.75; } @media (prefers-reduced-motion: reduce) { .ds-console-nav button { transition: none; } } .ds-settings-nav { list-style: none; margin: 0; padding: 4px 0 8px 22px; display: flex; flex-direction: column; gap: 2px; } .ds-settings-nav button { width: 100%; min-height: 31px; padding: 6px 9px; font-size: 12px; border-radius: 5px; } @media (max-width: 900px) { .ds-console-nav { width: 176px; } }",
       "sources": [
         {
           "path": "src/console.css",
           "selectors": [
             ".console-nav",
             ".console-nav button",
-            ".console-nav button[aria-current=\"page\"]"
+            ".console-nav button[aria-current=\"page\"]",
+            ".console-settings-nav",
+            ".console-settings-item"
           ]
         },
         {
@@ -1728,6 +1730,18 @@
           "symbols": [
             "consolePages",
             "Shell.paint"
+          ]
+        },
+        {
+          "path": "src/views.ts",
+          "symbols": [
+            "settingsNavigation"
+          ]
+        },
+        {
+          "path": "src/settings.ts",
+          "symbols": [
+            "ComponentSettings.navigation"
           ]
         }
       ]
