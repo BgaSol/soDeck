@@ -37,7 +37,7 @@ cancel 与 ready 发布决定先后：取消先胜后不再发布 ready，核心
 
 | 打开/资料错误 | 含义 |
 | --- | --- |
-| profileChanged | 选择后的资料已变化；重查资料，用新 requestId |
+| profileChanged | 选择后的端点、账号、路线或认证配置已变化；重查资料，用新 requestId |
 | existingSessionMismatch | 在用会话地址、账号或路线与保存资料不同；用户处理原会话 |
 | serverNotFound / catalogUnavailable / catalogChanged | 资料删除、目录故障或分页时变动；恢复或重新发现 |
 | connectionRequestNotFound | 原打开身份不属于本次运行；不可借新身份重放未知命令 |

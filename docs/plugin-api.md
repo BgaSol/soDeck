@@ -311,7 +311,7 @@ startup-v1 只消费 stderr 的第一份 `SDP1 <JSON字节长度>\n<JSON>` 前�
 
 servers.list 仅列 SSH 目标，保留目录顺序；显式构造 serverId/profileToken/name/protocol/host/port/endpoint/username/connection/context。detail 增加 tagIds、按实际路径展开的非敏感 route；不输出认证值、私钥路径或整份目录。current 是完整 Context 下的 session.target.v2 事实，观察失败为 {error:{code,message}}。connection 为当前尝试/保留工作区事实，含 state/endpoint/context/matchesSavedTarget/error；路线身份无法确认时 matchesSavedTarget=null。当前会话与保存资料分别表达，不相互覆盖。核心不解释 MCP 名称/IP query。
 
-catalogRevision 为十进制字符串；游标绑定目录 revision/serverId/limit 与原顺序位置。目录变动返回 catalogChanged，错范围返回 invalidCursor；游标不冻结实时连接状态。读取目录损坏返回 catalogUnavailable，不伪装 serverNotFound。profileToken 复用已有 Profile.identity，不包含认证秘密，不持久化新版本字段；新 open 检查 expectedProfileToken，相同请求重试优先恢复原记录。
+catalogRevision 为十进制字符串；游标绑定目录 revision/serverId/limit 与原顺序位置。目录变动返回 catalogChanged，错范围返回 invalidCursor；游标不冻结实时连接状态。读取目录损坏返回 catalogUnavailable，不伪装 serverNotFound。profileToken 复用已有 Profile.identity，随端点、账号、路线及认证配置变化；名称、标签和密码值不改变令牌，不包含认证秘密，不持久化新版本字段；新 open 检查 expectedProfileToken，相同请求重试优先恢复原记录。
 
 receipt 是 tagged union：attached 带 attemptId，accepted 带原 Context，failed 带 error，cancelled 无附加字段。view 仅 attached 提供原尝试投影，current 仅 accepted 提供原 Context 的当前会话事实。终态 receipt 固定，当前观察可变；旧请求不绑定相同 serverId 的新尝试。key=(真实 pluginId,instanceId,requestId)，同一 key 不同输入为 requestConflict。每实例最多 4096 条记录，不逐出；实例停止后清除自身记录并拒绝迟到接纳。实际新 Attempt 继续最多 32 个，历史 current 索引最多 64，清理历史不删除原回执。
 

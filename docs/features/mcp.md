@@ -41,7 +41,7 @@ Token 首次启动时生成并保存在插件数据目录的 `access-token` 文�
 
 0.6.0 起，名称/IP 选择默认使用 servers_list；未打开、断开的资料都参与匹配。query=187 匹配完整名称“187”和 IPv4 尾段 187，不把 2187 或域名中的数字当 IP 尾段。exact 为默认，contains 仅扩大名称和 DNS 文字匹配。ambiguous 必须明确选择端点/账号；列表分页不会把完整匹配数压缩成当前页数量，目录变化时从第一页重查。targets_list 继续用于检查已登记目标，保持原完整性契约。
 
-选定资料后，若已有 target 的 availability=ready、具备所需能力，且 connection.matchesSavedTarget=true，可直接执行。否则用 serverId、profileToken 和固定 requestId 打开。保存资料变化返回 profileChanged；在用会话的端点、账号或路线与资料不同返回 existingSessionMismatch，需由用户处理原会话，外部打开不会自动断开它。修改本机密码或私钥配置不使同一在用远端会话失效。
+选定资料后，若已有 target 的 availability=ready、具备所需能力，且 connection.matchesSavedTarget=true，可直接执行。否则用 serverId、profileToken 和固定 requestId 打开。连接选择配置变化返回 profileChanged；在用会话的端点、账号或路线与资料不同返回 existingSessionMismatch，需由用户处理原会话，外部打开不会自动断开它。修改本机密码或私钥配置不使同一在用远端会话失效。
 
 open 默认等候最多 1000 毫秒。ready 返回原 targetId，可直接执行；pending 用 get 等待；needsUser 立即交接到 SoDeck 原有主机指纹或凭据提示，客户端不代替用户应答。后台目标创建成功并核对完整 Context 后才返回 ready，SSH 已接纳而目标未登记时保持 preparingTarget。打开不切换焦点、打开终端或运行命令。
 

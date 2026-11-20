@@ -9,7 +9,9 @@
 
 本机类型/格式、21 项插件单元、190 项工程脚本、完整核心套件、实际插件进程、三主题侧栏/窄屏/焦点、真实三服务器 OpenSSH 的新打开流程及原任务流程通过。Windows x64 独立归档的启动、挂载、销毁、十工具、打开/查询/取消进程回归与退出通过。新的已认证 Codex 调用未执行（CLI 未登录）；未执行五平台已安装核心与 MCP 的真实 SSH 组合、旧版升级、netem 或新增物理 IME/DPI/读屏专项。
 
-待本次固定来源的 Check、五平台原生包与发行验收；正式发布后补充固定来源及永久证据。剩余交付见[当前计划](../../docs/plans/mcp-connections.md)。
+发行：[Agent MCP 0.6.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.6.0)，按用户要求标为仓库 Latest。来源 [90ee7b63472f2eb7f76a17760811716ad6fa7c10](https://github.com/BgaSol/soDeck/commit/90ee7b63472f2eb7f76a17760811716ad6fa7c10)；[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/44692897602)及[原始五平台打包/实际包验收](https://github.com/BgaSol/soDeck/actions/runs/44692964311)首次通过。五个原生目标的包内启动、十工具、打开/查询/取消与原任务进程回归、挂载/销毁/退出通过。来源 Check 的选中核心/UI/SSH/网络及 MCP 等业务回归通过；本次最终 Check 未选择五平台 MCP 单元 job，不将 skipped 计为通过。原始 Windows x64 归档再次与同来源核心夹具及三台隔离 OpenSSH 服务联调，两个新旧流程在 16.25 秒通过。
+
+发布复用同一草稿五份原始归档；公开六附件匿名下载的大小、SHA-256 与原报告及清单一致，Latest 返回同一 Release。[永久发行证据](release-evidence/v0.6.0-assets.json)保留来源、原始 run、五份报告、实际 SSH 范围及初次候选失败事实。
 
 首次候选 [44691660189](https://github.com/BgaSol/soDeck/actions/runs/44691660189)五平台构建通过，Windows x64 原包分页回归未在默认 1000 毫秒内完成文件保存，返回 pending 使测试的完成断言失败；没有生成草稿或正式发行。分页用例现在显式等待 5000 毫秒，原三十次短任务的默认等待断言保留，产品默认和输出契约没有改变。连同核心终态发布修正，最终候选按新的固定来源重新打包。
 
