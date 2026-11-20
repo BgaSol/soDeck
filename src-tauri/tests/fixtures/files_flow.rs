@@ -5,7 +5,8 @@ async fn fd(core: &Arc<AppCore>, token: &str, id: &str, mut p: Value) -> Result<
 }
 async fn editor_draft(core:&Arc<AppCore>,token:&str,id:&str,document:&Value,sequence:u64,bytes:&[u8])->Value {
     use sha2::Digest;
-    let identity=json!({"id":id,"documentId":document["documentId"],"uploadId":format!("draft-{sequence}"),"uploadSequence":sequence.to_string(),"editRevision":sequence.to_string(),"size":bytes.len(),"sha256":format!("{:x}",sha2::Sha256::digest(bytes))});
+    let hash:String=sha2::Sha256::digest(bytes).iter().map(|byte|format!("{byte:02x}")).collect();
+    let identity=json!({"id":id,"documentId":document["documentId"],"uploadId":format!("draft-{sequence}"),"uploadSequence":sequence.to_string(),"editRevision":sequence.to_string(),"size":bytes.len(),"sha256":hash});
     let mut p=identity.clone();p["action"]=json!("draft.begin");
     assert_eq!(fd(core,token,id,p).await.unwrap()["ok"],true);
     for (i,chunk) in bytes.chunks(16384).enumerate(){let mut p=identity.clone();p["action"]=json!("draft.append");p["offset"]=json!(i*16384);p["data"]=json!(chunk);assert_eq!(fd(core,token,id,p).await.unwrap()["ok"],true);}
