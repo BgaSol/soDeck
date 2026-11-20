@@ -27,15 +27,15 @@ function privileged(args, input) {
 function startDaemon(config) {
   return spawn(sudoTest ? 'sudo' : sshd, sudoTest ? ['-n', sshd, '-D', '-e', '-f', config] : ['-D','-e','-f',config], { windowsHide:true,stdio:['ignore','ignore','pipe'] });
 }
-async function stopDaemon(child, pidFile) {
+async function stopDaemon(child) {
   if (!child || child.exitCode !== null) return;
   const ended = new Promise(resolve=>child.once('exit',resolve));
-  if (sudoTest && fs.existsSync(pidFile)) {
-    const pid=fs.readFileSync(pidFile,'utf8').trim();
-    if (!/^[1-9][0-9]*$/.test(pid)) throw new Error('Invalid fixture daemon pid');
-    privileged(['kill','-TERM',pid]);
-  } else child.kill();
-  await ended;
+  if (sudoTest) privileged(['kill','-TERM',String(child.pid)]);
+  else child.kill();
+  let timer;
+  try {
+    await Promise.race([ended,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Fixture daemon did not stop')),5000);})]);
+  } finally { clearTimeout(timer); }
 }
 try {
   const socket = net.createServer(); await new Promise(resolve => socket.listen(0, "127.0.0.1", resolve));
@@ -60,7 +60,7 @@ try {
     `Port ${port}`, "ListenAddress 127.0.0.1", `HostKey ${quote(path.join(directory, "host"))}`,
     `PidFile ${quote(path.join(directory, "pid"))}`, `AuthorizedKeysFile ${quote(path.join(directory, "user.pub"))}`,
     "StrictModes no", "PasswordAuthentication no", "KbdInteractiveAuthentication no", "PubkeyAuthentication yes",
-    "AllowTcpForwarding yes", `Subsystem sftp ${process.env.SODECK_SFTP_SERVER ? quote(process.env.SODECK_SFTP_SERVER) : 'internal-sftp'}`, `LogLevel ${process.env.SODECK_SSHD_LOG_LEVEL ?? 'ERROR'}`, ...(process.platform === "win32" ? [] : ["UsePAM no"]), "",
+    "AllowTcpForwarding yes", `Subsystem sftp ${process.env.SODECK_SFTP_SERVER ? quote(process.env.SODECK_SFTP_SERVER) : 'internal-sftp'}`, `LogLevel ${process.env.SODECK_SSHD_LOG_LEVEL ?? 'ERROR'}`, ...(process.platform === "win32" ? [] : [sudoTest ? "UsePAM yes" : "UsePAM no"]), "",
   ].join("\n"));
   let diagnostic = "";
   daemon = startDaemon(path.join(directory, "sshd_config"));
