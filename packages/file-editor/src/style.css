@@ -17,6 +17,8 @@ footer button { font-size: 11px; padding: 1px 4px; }
 .editor-toolbar .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted, #777); font-size: 12px; }
 .editor-toolbar button { font-size: 12px; flex-shrink: 0; }
 .code-editor { position: relative; width: 100%; flex: 1; min-height: 0; overflow: hidden; background: var(--panel, #fff); }
+/* Keep Monaco's rail dimensions; its hidden option can leave a zero-width rail after recovery. */
+.code-editor[data-scroll-rail="minimap"] .monaco-scrollable-element>.scrollbar.vertical { visibility: hidden !important; pointer-events: none; }
 .editor-find { position: absolute; z-index: 5; top: 6px; right: 100px; max-width: calc(100% - 112px); display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; border: var(--sd-stroke-control, 1px) solid var(--border); background: var(--panel); border-radius: var(--sd-radius-control, 5px); }
 .editor-find input { flex: 1; width: 140px; min-width: 70px; padding: 4px 6px; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 3px; }
 .editor-find input::placeholder { color: var(--muted); }

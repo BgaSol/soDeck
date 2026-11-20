@@ -10,6 +10,7 @@ fs.cpSync('ui-src','ui',{recursive:true});
 packageStyles('.');
 fs.copyFileSync('../shared/clipboard.js','ui/clipboard-bridge.js');
 fs.copyFileSync('../shared/state.js','ui/state.js');
+fs.copyFileSync('../../packages/ui/scroll-rail.js','ui/scroll-rail.js');
 await packageMenuAssets('.');
 packageSettingsAssets(JSON.parse(fs.readFileSync('release.json','utf8')),'.');
 for(const [pkg,file,name] of [

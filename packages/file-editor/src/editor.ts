@@ -3,6 +3,7 @@ import * as monaco from 'monaco-editor/editor/editor.api.js';
 import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 import {detectLanguage,languages} from './languages';
 import type {MenuPosition} from '../../../src/menu-position';
+import {resolveScrollRailMode} from '../../ui/scroll-rail.js';
 
 const workers=new Set<Worker>();
 (globalThis as typeof globalThis & {MonacoEnvironment:monaco.Environment}).MonacoEnvironment={getWorker(){const worker=new EditorWorker();workers.add(worker);return worker;}};
@@ -37,6 +38,7 @@ export class FileEditor {
   private pendingState:EditorState|undefined;
   private pendingViewState:monaco.editor.ICodeEditorViewState|undefined;
   private preferences:Preferences={fontSize:14,lineHeight:1.5,tabSize:4,wordWrap:false,minimap:true};
+  private contrast=matchMedia('(forced-colors: active)');
   composing=false;
   constructor(options:Options){
     this.options=options;
@@ -63,6 +65,7 @@ export class FileEditor {
     this.disposables.push(this.model.onDidChangeContent(()=>{if(this.reverting)return;if(this.composing){this.compositionChanged=true;return;}this.acceptChange();}),this.editor.onDidChangeCursorSelection(()=>{this.updateLocation();this.options.position();}),this.editor.onDidScrollChange(event=>{if(event.scrollTopChanged||event.scrollLeftChanged)this.closeMenu();this.options.position();}),this.editor.onDidCompositionStart(()=>{this.composing=true;this.compositionChanged=false;this.editor.pushUndoStop();}),this.editor.onDidCompositionEnd(()=>{this.composing=false;if(this.compositionChanged){this.compositionChanged=false;this.acceptChange();}}));
     host.addEventListener('keydown',this.key,true);host.addEventListener('contextmenu',this.menu);host.addEventListener('paste',this.paste,true);host.addEventListener('copy',this.copy,true);host.addEventListener('cut',this.cut,true);document.addEventListener('pointerdown',this.outside,true);window.addEventListener('blur',this.closeMenu);
     this.observer=new ResizeObserver(()=>this.layout());this.observer.observe(host);
+    this.contrast.addEventListener('change',this.contrastChanged);
     this.editor.setPosition(this.model.getPositionAt(options.cursor||0));this.editor.setScrollTop(options.scroll||0);
     if(options.state?.version===1){this.pendingState=options.state;this.restore(options.state);}
     this.updateLocation();this.applyLanguage();
@@ -88,8 +91,21 @@ export class FileEditor {
   private applyLanguage(){const language=this.override==='auto'?detectLanguage(this.options.path,this.value()):this.override;if(this.model.getLanguageId()!==language)monaco.editor.setModelLanguage(this.model,language);this.language.title='当前语言：'+languages[language];this.language.options[0].textContent='自动 · '+languages[language];}
   preferencesChanged(values:Preferences,family:string){if(this.disposed)return;if(!this.pendingState){this.pendingState=this.state();this.pendingViewState=this.editor.saveViewState()??undefined;}this.preferences=values;this.model.updateOptions({tabSize:values.tabSize});this.editor.updateOptions({fontFamily:family,fontSize:values.fontSize,lineHeight:Math.round(values.fontSize*values.lineHeight),wordWrap:values.wordWrap?'on':'off'});this.layout();}
   theme(tokens:Record<string,string>){tokens=Object.fromEntries(Object.entries(tokens).map(([key,value])=>[key,/^#[0-9a-f]{3,4}$/i.test(value)?'#'+[...value.slice(1)].map(c=>c+c).join(''):value]));const dark=tokens['color-scheme']==='dark';monaco.editor.defineTheme('sodeck-files',{base:dark?'vs-dark':'vs',inherit:true,rules:[{token:'comment',foreground:dark?'9AAE9B':'526D55'},{token:'key',foreground:dark?'9CCBFF':'175C9E'},{token:'string.key.json',foreground:dark?'9CCBFF':'175C9E'},{token:'keyword',foreground:dark?'CFB7FF':'6840A3'},{token:'keyword.json',foreground:dark?'CFB7FF':'6840A3'},{token:'type',foreground:dark?'9CCBFF':'175C9E'},{token:'string',foreground:dark?'E2B990':'995126'},{token:'string.value.json',foreground:dark?'E2B990':'995126'},{token:'number',foreground:dark?'AAD8BB':'24633E'},{token:'variable',foreground:dark?'E5CE8C':'765500'}],colors:{'editor.background':tokens.panel||'#ffffff','editor.foreground':tokens.text||'#263044','editorLineNumber.foreground':tokens.muted||'#64748b','editorGutter.background':tokens.panel||'#ffffff','editorCursor.foreground':tokens.text||'#263044','editor.selectionBackground':dark?'#385372':'#C7DDF5','editor.inactiveSelectionBackground':dark?'#334155':'#DAE5F1','editorWidget.background':tokens.panel||'#ffffff','minimap.background':tokens.panel||'#ffffff'}});monaco.editor.setTheme('sodeck-files');}
-  private layout(){if(this.disposed||!this.visible)return;const width=this.options.host.clientWidth,height=this.options.host.clientHeight;if(width<=0||height<=0)return;this.editor.updateOptions({minimap:{enabled:this.preferences.minimap!==false&&width>=360,size:'fit',renderCharacters:false,showSlider:'always',maxColumn:100},overviewRulerLanes:width<360?1:0});this.editor.layout();if(this.pendingState){const state=this.pendingState,viewState=this.pendingViewState;this.pendingState=undefined;this.pendingViewState=undefined;if(viewState)this.editor.restoreViewState(viewState);else this.restore(state);}}
-  visibility(visible:boolean){this.visible=visible;if(visible)this.layout();else this.closeMenu();}
+  private syncScrollRail(){
+    const {host}=this.options,info=this.editor.getLayoutInfo();
+    const mode=resolveScrollRailMode({preferred:this.preferences.minimap!==false,mounted:!this.disposed&&host.isConnected,usable:this.visible&&host.clientHeight>0&&info.minimap.minimapWidth>0&&info.minimap.renderMinimap!==0,forcedColors:this.contrast.matches,narrow:host.clientWidth<360});
+    host.dataset.scrollRail=mode;
+  }
+  private contrastChanged=()=>this.layout();
+  private layout(){
+    if(this.disposed)return;
+    const width=this.options.host.clientWidth,height=this.options.host.clientHeight;
+    if(!this.visible||width<=0||height<=0){this.syncScrollRail();return;}
+    this.editor.updateOptions({minimap:{enabled:this.preferences.minimap!==false&&width>=360,size:'fit',renderCharacters:false,showSlider:'always',maxColumn:100},overviewRulerLanes:width<360?1:0});
+    this.editor.layout();this.syncScrollRail();
+    if(this.pendingState){const state=this.pendingState,viewState=this.pendingViewState;this.pendingState=undefined;this.pendingViewState=undefined;if(viewState)this.editor.restoreViewState(viewState);else this.restore(state);}
+  }
+  visibility(visible:boolean){this.visible=visible;this.layout();if(!visible)this.closeMenu();}
   readOnly(value:boolean){if(!value)this.layout();this.editor.updateOptions({readOnly:value});if(value)this.closeMenu();}
   isReadOnly(){return this.editor.getOption(monaco.editor.EditorOption.readOnly);}
   focus(){this.editor.focus();}
@@ -128,5 +144,5 @@ export class FileEditor {
     if(this.contextMenu!==menu){position.dispose();return;}this.menuPosition=position;
     void position.ready.then(ready=>{if(ready&&this.contextMenu===menu&&this.menuPosition===position&&!this.disposed&&this.visible)menu.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();});
   }
-  dispose(){if(this.disposed)return;this.disposed=true;this.pendingState=undefined;this.pendingViewState=undefined;clearTimeout(this.timer);this.observer.disconnect();this.closeMenu();document.removeEventListener('pointerdown',this.outside,true);window.removeEventListener('blur',this.closeMenu);this.options.host.removeEventListener('keydown',this.key,true);this.options.host.removeEventListener('contextmenu',this.menu);this.options.host.removeEventListener('paste',this.paste,true);this.options.host.removeEventListener('copy',this.copy,true);this.options.host.removeEventListener('cut',this.cut,true);this.disposables.forEach(d=>d.dispose());this.decorations.clear();this.editor.dispose();this.model.dispose();workers.forEach(worker=>worker.terminate());workers.clear();}
+  dispose(){if(this.disposed)return;this.disposed=true;this.pendingState=undefined;this.pendingViewState=undefined;clearTimeout(this.timer);this.observer.disconnect();this.contrast.removeEventListener('change',this.contrastChanged);delete this.options.host.dataset.scrollRail;this.closeMenu();document.removeEventListener('pointerdown',this.outside,true);window.removeEventListener('blur',this.closeMenu);this.options.host.removeEventListener('keydown',this.key,true);this.options.host.removeEventListener('contextmenu',this.menu);this.options.host.removeEventListener('paste',this.paste,true);this.options.host.removeEventListener('copy',this.copy,true);this.options.host.removeEventListener('cut',this.cut,true);this.disposables.forEach(d=>d.dispose());this.decorations.clear();this.editor.dispose();this.model.dispose();workers.forEach(worker=>worker.terminate());workers.clear();}
 }
