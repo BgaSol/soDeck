@@ -19,6 +19,7 @@ test('output preview bounds UTF-8 bytes and lines before DOM insertion',()=>{
   assert.equal(preview({stdout:'1\n2\n3\n4'}),'2\n3\n4');
   assert.match(preview({stderr:'permission denied'}),/标准错误/);
   assert.equal(preview({}),'暂时没有输出。');
+  assert.equal(preview({terminal:'PTY prompt\nanswer'}),'PTY prompt\nanswer');
 });
 
 test('reading facts never regress revisions or discard loaded full input',()=>{

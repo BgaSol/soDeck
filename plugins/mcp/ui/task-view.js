@@ -28,7 +28,7 @@ export function chain(task) {
   ];
 }
 export function preview(page) {
-  const text = [page?.stdout,page?.stderr?'标准错误：\n'+page.stderr:''].filter(Boolean).join('\n');
+  const text = [page?.terminal,page?.stdout,page?.stderr?'标准错误：\n'+page.stderr:''].filter(Boolean).join('\n');
   if (!text) return '暂时没有输出。';
   const tail = text.trimEnd().split('\n').slice(-3).join('\n');
   const encoder = new TextEncoder(); let value = '', bytes = 0;

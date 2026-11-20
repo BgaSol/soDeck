@@ -272,7 +272,7 @@ try{
     await until(async()=>(await tool('sodeck_task_get',{taskId:recent.taskId})).value,s=>s.done);
   }
   const history=(await peer.request('ui.getView',{viewId:'a'})).data.tasks;
-  assert(history.length<=50&&history.length>=40);assert.equal(history[0].taskId,hang.taskId,'active operations remain visible beyond the recent record limit');
+  assert(history.length>0&&history.length<=50);assert(Buffer.byteLength(JSON.stringify(history))<=40*1024+50);assert.equal(history[0].taskId,hang.taskId,'active operations remain visible beyond the recent record limit');
   assert(!('input' in history[0])&&!('directory' in history[0]));assert((await peer.request('ui.getView',{viewId:'a'})).data.recordCount>50);
   const firstPage=(await tool('sodeck_tasks_list',{targetId:target,limit:20})).value;assert.equal(firstPage.tasks.length,20);assert(firstPage.hasMore);assert.equal(firstPage.counts.active,1);for(const row of firstPage.tasks){assert.equal(row.serverId,'server-a');for(const k of ['input','context','directory','output','outputInfo','file'])assert(!(k in row));assert(row.createdAt>0);}
   const inserted=(await tool('sodeck_exec_start',{...input,requestId:'inserted',command:'collect'})).value;await until(async()=>(await tool('sodeck_task_get',{taskId:inserted.taskId})).value,s=>s.done);
