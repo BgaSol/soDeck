@@ -46,29 +46,10 @@ pub use core::AppCore;
 pub const API_VERSION: &str = "1";
 pub const TARGET: &str = env!("SODECK_TARGET");
 
-pub(crate) fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
 pub fn app_version() -> String {
     serde_json::from_str::<serde_json::Value>(include_str!("../tauri.conf.json"))
         .expect("valid application configuration")["version"]
         .as_str()
         .expect("application version")
         .to_owned()
-}
-
-#[cfg(test)]
-mod tests {
-    use sha2::{Digest, Sha256};
-
-    #[test]
-    fn digest_hex_preserves_lowercase_and_leading_zeroes() {
-        assert_eq!(super::hex(&[]), "");
-        assert_eq!(super::hex(&[0, 1, 15, 16, 171, 255]), "00010f10abff");
-        assert_eq!(
-            super::hex(&Sha256::digest(b"abc")),
-            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-        );
-    }
 }

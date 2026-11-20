@@ -889,7 +889,12 @@ impl Transport {
                         return Err(Error::remote("下载包不完整"));
                     }
                     self.check_cancelled()?;
-                    verify(path, &crate::hex(&hash.finalize()))?;
+                    let digest: String = hash
+                        .finalize()
+                        .iter()
+                        .map(|byte| format!("{byte:02x}"))
+                        .collect();
+                    verify(path, &digest)?;
                     self.check_cancelled()?;
                     progress(count, Some(count));
                     Ok(())
