@@ -9,21 +9,23 @@ export function duration(task, now = Date.now()) {
 }
 export function facts(task) {
   const native = task.native || {}, state = native.state || native.admission || 'pending';
-  const problem = ['failed','unavailable','unknown','rejected'].includes(state) || Boolean(native.exitCode) || Boolean(task.evidence?.error) || Boolean(task.cleanupError) || (task.done && !task.evidence?.complete);
+  const problem = ['failed','unavailable','unknown','rejected'].includes(state) || Boolean(native.exitCode) || Boolean(native.exitSignal) || Boolean(task.evidence?.error) || Boolean(task.cleanupError) || (task.done && !task.evidence?.complete);
   let label = labels[state] || '状态未知';
   if (task.phase === 'finalizing') label = '正在收尾';
   else if (task.cancelRequested && !task.done) label = '已请求取消';
   if (native.exitCode != null) label += ' · 退出码 '+native.exitCode;
+  if (native.exitSignal) label += ' · 退出信号 '+native.exitSignal;
   const saved = task.kind === 'download' ? '文件已保存' : '完整输出已保存';
   const evidence = task.evidence?.complete ? saved : task.evidence?.state === 'failed' || task.evidence?.error ? '证据保存失败' : task.done ? '证据不完整' : '正在保存';
   return {label,problem,evidence,cancellable:!task.done && task.phase!=='finalizing' && !task.cancelRequested};
 }
 export function chain(task) {
   const native = task.native || {}, state = native.state || native.admission;
-  const started = native.execSent === true || ['running','committing','completed'].includes(state) || native.exitCode != null;
+  const started = native.launchAccepted === true || ['running','committing','completed'].includes(state) || native.remoteExitConfirmed === true || native.exitCode != null;
+  const admission = state==='unknown'?'远端接纳结果未知':native.launchQueued===true?'启动请求已排队，等待远端确认':native.execSent===true?'启动请求已发送，等待远端确认':'远端接纳待确认';
   return [
     '请求已记录 · '+time(task.createdAt),
-    started ? task.kind==='download'?'远程文件传输已接纳':'远端执行已启动' : '远端接纳'+(state==='unknown'?'结果未知':'待确认'),
+    started ? task.kind==='download'?'远程文件传输已接纳':'远端执行已启动' : admission,
     task.cancelRequested && !task.done ? '已请求取消，等待实际结果' : task.phase==='finalizing' ? '正在保存最终结果与清理' : facts(task).evidence
   ];
 }

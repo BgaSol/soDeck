@@ -79,6 +79,7 @@ function render(data) {
 }
 function selectTask(id,button) {
   const task=snapshot?.tasks.find(value=>value.taskId===id);if(!task)return;
+  notice('');
   config.close();$('server-info').open=false;$('directory-details').open=false;
   returnPosition={taskId:id,scrollTop:pane.scrollTop,top:button.getBoundingClientRect().top};
   factSequence++;reader.close();selected=task;$('overview').hidden=true;$('detail').hidden=false;$('new-tasks').hidden=true;

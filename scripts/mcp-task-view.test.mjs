@@ -11,6 +11,10 @@ test('task feedback preserves execution, saving, cancellation and cleanup facts'
   assert(facts({...task,native:{state:'completed',exitCode:0},cleanupError:{message:'release failed'}}).problem);
   assert.match(chain({...task,native:{admission:'unknown'}})[1],/结果未知/);
   assert(!chain({...task,native:{admission:'pending'}}).some(value=>value.includes('已启动')));
+  const queued=chain({...task,native:{state:'opening',execSent:true,launchQueued:true,launchAccepted:false}});
+  assert.match(queued[1],/排队，等待远端确认/);assert(!queued.some(value=>value.includes('已启动')));
+  assert.match(chain({...task,native:{state:'opening',execSent:true,launchAccepted:true}})[1],/已启动/);
+  const signalled=facts({...task,native:{state:'completed',exitSignal:'TERM'}});assert(signalled.problem);assert.match(signalled.label,/退出信号 TERM/);
 });
 
 test('output preview bounds UTF-8 bytes and lines before DOM insertion',()=>{

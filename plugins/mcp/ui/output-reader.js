@@ -38,7 +38,7 @@ export function createOutputReader({request,valid,accept,onBusy}) {
   $('output-retry').onclick=()=>{if(!loading)void retry?.();};
   return {
     open(task) {
-      this.close();taskId=task.taskId;
+      this.close();taskId=task.kind==='exec'?task.taskId:null;
       setText($('detail-output'),'等待读取输出');latestBytes=task.outputInfo?.savedBytes || '0';paint();
       if(task.kind==='exec')void read('history','0',[]);
     },
