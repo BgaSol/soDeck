@@ -1,7 +1,12 @@
 use super::*;
+mod destination;
+mod request;
+mod state;
+use request::CopyRequest;
+use state::CopyProgress;
 
 enum Reader {
-    Local(tokio::fs::File),
+    Local(crate::local_files::ReadSource),
     Remote(String),
 }
 enum Writer {
@@ -10,29 +15,52 @@ enum Writer {
 }
 impl Io {
     pub(super) async fn copy(&self, p: &Value) -> Result<Value, OperationError> {
+        let request = CopyRequest::parse(p)?;
+        let host_source = p["source"]["side"] == "localPath";
+        let mut progress = CopyProgress::new(self.operation.clone());
         let source = self.endpoint(&p["source"])?;
         let destination = self.endpoint(&p["destination"])?;
-        let source_parent = self.parent_identity(&source).await?;
+        let source_parent = if matches!(source, Endpoint::Remote(_)) {
+            Some(self.parent_identity(&source).await?)
+        } else {
+            None
+        };
         let destination_parent = self.parent_identity(&destination).await?;
-        if !["absent", "match"].contains(&p["destinationGuard"]["kind"].as_str().unwrap_or("")) {
-            return Err(failure("invalid", "复制缺少目标版本检查"));
-        }
-        let before = self
-            .inspect(&source)
-            .await?
-            .ok_or_else(|| failure("missing", "源文件不存在"))?;
+        let guard = if request.capture {
+            match self.inspect(&destination).await? {
+                None => json!({"kind":"absent"}),
+                Some(attrs) if attrs["kind"] == "file" => {
+                    json!({"kind":"match","stamp":attrs["stamp"]})
+                }
+                Some(_) => return Err(failure("typeConflict", "目标不是普通文件")),
+            }
+        } else {
+            p["destinationGuard"].clone()
+        };
+        let before = self.inspect(&source).await?.ok_or_else(|| {
+            failure(
+                if host_source {
+                    "sourceNotFound"
+                } else {
+                    "missing"
+                },
+                "源文件不存在",
+            )
+        })?;
         if before["kind"] != "file" {
             return Err(failure(
-                "unsupported",
+                if host_source {
+                    "sourceNotFile"
+                } else {
+                    "unsupported"
+                },
                 "只复制普通文件，符号链接与特殊条目由批次跳过",
             ));
         }
         if !p["sourceStamp"].is_null() && p["sourceStamp"] != before["stamp"] {
             return Err(failure("sourceChanged", "源文件已变化"));
         }
-        let original = self
-            .check_guard(&destination, &p["destinationGuard"])
-            .await?;
+        let original = self.check_guard(&destination, &guard).await?;
         if original.as_ref().is_some_and(|a| a["kind"] != "file") {
             return Err(failure("typeConflict", "目标不是普通文件"));
         }
@@ -64,9 +92,17 @@ impl Io {
             }
         };
         let mut reader = match &source {
-            Endpoint::Local(path) => {
-                Reader::Local(tokio::fs::File::open(path).await.map_err(local_error)?)
-            }
+            Endpoint::Local(path) => Reader::Local(
+                crate::local_files::ReadSource::open(path.clone())
+                    .await
+                    .map_err(|e| {
+                        if host_source {
+                            failure("sourceUnreadable", e)
+                        } else {
+                            local_error(e)
+                        }
+                    })?,
+            ),
             Endpoint::Remote(path) => Reader::Remote(
                 self.session
                     .raw
@@ -76,6 +112,7 @@ impl Io {
                     .handle,
             ),
         };
+        progress.source(&before, &reader);
         let writer = match &temporary {
             Endpoint::Local(path) => tokio::fs::OpenOptions::new()
                 .write(true)
@@ -90,7 +127,10 @@ impl Io {
                 .open(
                     path,
                     OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::EXCLUDE,
-                    FileAttributes::default(),
+                    FileAttributes {
+                        permissions: request.content_only.then_some(0o600),
+                        ..Default::default()
+                    },
                 )
                 .await
                 .map(|h| Writer::Remote(h.handle))
@@ -109,10 +149,13 @@ impl Io {
         let streaming = async {
             let mut buffer = vec![0u8; 64 * 1024];
             loop {
+                if self.operation.cancel.is_cancelled() {
+                    return Err(failure("cancelled", "传输已取消，原目标保留"));
+                }
                 self.core.connection_session(&self.owner.context)?;
                 let block = match &mut reader {
                     Reader::Local(file) => {
-                        let n = file.read(&mut buffer).await.map_err(local_error)?;
+                        let n = file.file.read(&mut buffer).await.map_err(local_error)?;
                         if n == 0 {
                             break;
                         }
@@ -149,7 +192,7 @@ impl Io {
                     }
                 }
                 offset += block.len() as u64;
-                *self.operation.state.lock().unwrap() = json!({"id":self.operation.id,"state":"running","received":offset.to_string(),"total":before["size"]});
+                progress.bytes(offset, before["size"].clone());
             }
             if before["size"]
                 .as_str()
@@ -164,9 +207,10 @@ impl Io {
             }
             Ok::<_, OperationError>(())
         };
-        let result = tokio::select! {biased;_=self.operation.cancel.cancelled()=>Err(failure("cancelled","传输已取消，原目标保留")),v=streaming=>v};
-        if let Reader::Remote(handle) = reader {
-            let _ = self.session.raw.close(handle).await;
+        // Each issued write finishes before cancellation is acted on.
+        let result = streaming.await;
+        if let Reader::Remote(handle) = &reader {
+            let _ = self.session.raw.close(handle.clone()).await;
         }
         let closed = match writer {
             Writer::Remote(handle) => self
@@ -183,15 +227,17 @@ impl Io {
         };
         let result=async{
             result?;closed?;
-            if self.parent_identity(&source).await? != source_parent || self.parent_identity(&destination).await? != destination_parent { return Err(failure("sourceChanged","传输期间父目录发生变化，未提交")); }
+            if let Some(parent) = &source_parent { if &self.parent_identity(&source).await? != parent { return Err(failure("sourceChanged","来源父目录发生变化，未提交")); } }
+            if self.parent_identity(&destination).await? != destination_parent { return Err(failure("targetChanged","目标父目录发生变化，未提交")); }
+            if let Reader::Local(source) = &reader { source.verify().await.map_err(|e|failure("sourceChanged",e))?; }
             // Preserve ordinary modification time and existing target mode where available.
             // Metadata failure is reported before replacing the destination.
             match &temporary {
                 Endpoint::Local(path) => {
                     let path=path.clone();
-                    let modified=before["mtime"].as_u64().map(|s|std::time::UNIX_EPOCH+Duration::from_secs(s));
+                    let modified=(!request.content_only).then(||before["mtime"].as_u64()).flatten().map(|s|std::time::UNIX_EPOCH+Duration::from_secs(s));
                     #[cfg(unix)]
-                    let permissions=original.as_ref().and_then(|v|v["permissions"].as_u64()).or_else(||before["permissions"].as_u64());
+                    let permissions=original.as_ref().and_then(|v|v["permissions"].as_u64()).or_else(|| if request.content_only {None} else {before["permissions"].as_u64()});
                     tokio::task::spawn_blocking(move || {
                         let file=std::fs::OpenOptions::new().write(true).open(&path).map_err(err)?;
                         if let Some(time)=modified {file.set_times(std::fs::FileTimes::new().set_modified(time)).map_err(err)?;}
@@ -201,49 +247,43 @@ impl Io {
                     }).await.map_err(err)??;
                 }
                 Endpoint::Remote(path) => {
-                    let mtime=before["mtime"].as_u64().and_then(|s|u32::try_from(s).ok());
-                    let permissions=original.as_ref().and_then(|v|v["permissions"].as_u64()).or_else(||before["permissions"].as_u64()).map(|p|p as u32 & 0o777);
-                    self.session.raw.setstat(path,FileAttributes{atime:mtime,mtime,permissions,..Default::default()}).await.map_err(err)?;
+                    let mtime=(!request.content_only).then(||before["mtime"].as_u64()).flatten().and_then(|s|u32::try_from(s).ok());
+                    let permissions=original.as_ref().and_then(|v|v["permissions"].as_u64()).or_else(|| if request.content_only {None} else {before["permissions"].as_u64()}).map(|p|p as u32 & 0o777);
+                    if mtime.is_some() || permissions.is_some() {self.session.raw.setstat(path,FileAttributes{atime:mtime,mtime,permissions,..Default::default()}).await.map_err(err)?;}
                 }
             }
             if self.inspect(&source).await?.as_ref().map(|a|&a["stamp"])!=Some(&before["stamp"]){return Err(failure("sourceChanged","传输期间源文件发生变化，未提交"));}
             if self.operation.cancel.is_cancelled(){return Err(failure("cancelled","传输已取消，原目标保留"));}
-            self.check_guard(&destination,&p["destinationGuard"]).await?;
+            self.check_guard(&destination,&guard).await?;
             self.core.connection_session(&self.owner.context)?;
-            *self.operation.state.lock().unwrap()=json!({"id":self.operation.id,"state":"committing","received":offset.to_string(),"total":before["size"]});
+            progress.committing();
             match (&temporary,&destination){
                 (Endpoint::Local(temp),Endpoint::Local(target))=>{
-                    if p["destinationGuard"]["kind"]=="absent" {
+                    if guard["kind"]=="absent" {
                         // A hard link is an atomic exclusive install of this same-directory ordinary file.
                         tokio::fs::hard_link(temp,target).await.map_err(|e|failure(if e.kind()==std::io::ErrorKind::AlreadyExists{"targetExists"}else{"io"},e))?;
                         let _=tokio::fs::remove_file(temp).await;
                     }else{tokio::fs::rename(temp,target).await.map_err(err)?;}
                 },
                 (Endpoint::Remote(temp),Endpoint::Remote(target))=>{
-                    let committed = if original.is_some() {
-                        let mut data=Vec::new();ssh_string(&mut data,temp);ssh_string(&mut data,target);
-                        match self.session.raw.extended("posix-rename@openssh.com",data).await {
-                            Ok(Packet::Status(status)) if status.status_code==StatusCode::Ok => Ok(()),
-                            Ok(Packet::Status(status)) => Err(mutation_error(Error::Status(status))),
-                            Ok(packet) => Err(failure("unknown",format!("提交响应无效，请核对目标：{packet:?}"))),
-                            Err(error) => Err(mutation_error(error)),
-                        }
-                    } else {self.session.raw.rename(temp,target).await.map(|_|()).map_err(mutation_error)};
-                    committed?;
+                    let committed = destination::commit_remote(&self.session.raw,temp,target,original.is_some()).await;
+                    if let Err(e) = committed { progress.rejected(&e); return Err(e); }
                 },_=>unreachable!(),
             }
+            progress.committed();
             match self.inspect(&destination).await {
                 Ok(Some(committed))=>Ok(json!({"size":offset.to_string(),"stamp":committed["stamp"]})),
                 result=>Ok(json!({"size":offset.to_string(),"cleanupWarning":format!("文件已提交，但后续目标查询未确认：{result:?}")})),
             }
         }.await;
         // An unacknowledged commit may still use the temporary name on the server.
-        if result.as_ref().is_err_and(|error| error.code == "unknown") {
+        if progress.is_unknown() {
             return result.map_err(|mut error| {
                 let path = match &temporary {
                     Endpoint::Local(path) => path.to_string_lossy().into_owned(),
                     Endpoint::Remote(path) => path.clone(),
                 };
+                progress.temporary(path.clone());
                 error
                     .message
                     .push_str(&format!("；提交未确认，保留临时路径供核对：{path}"));

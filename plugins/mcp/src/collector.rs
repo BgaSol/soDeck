@@ -2,7 +2,7 @@ use crate::app::App;
 use crate::{
     evidence,
     targets::State,
-    task::{ExecMode, Kind, Task, TaskSpec},
+    task::{ExecMode, FileSpec, Kind, Task, TaskOperation},
     tasks::{error, failure, text},
 };
 use serde_json::{json, Value};
@@ -11,9 +11,12 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod command;
+mod files;
+
 enum Native {
     Command(String),
-    Download { file: String, operation: String },
+    File { file: String, operation: String },
 }
 struct Outcome {
     complete: bool,
@@ -44,7 +47,7 @@ pub fn run(app: &App, task: &Task) {
     };
     let result = collector.prepare().and_then(|_| match task.kind() {
         Kind::Exec => collector.command(),
-        Kind::Download => collector.download(),
+        Kind::Download | Kind::Upload => collector.files(),
     });
     let outcome = result.unwrap_or_else(Outcome::failed);
     if collector.native.is_none() && !collector.admission_unknown {
@@ -62,13 +65,22 @@ pub fn run(app: &App, task: &Task) {
     }
     task.finalizing(outcome.complete, outcome.error);
     // Keep the last native facts on disk before native result buffers are released.
-    if let Err(message) = evidence::metadata(
+    let saved_native = evidence::metadata(
         &task.directory,
         &evidence::task_metadata(task, &task.snapshot()),
-    ) {
+    );
+    if let Err(message) = &saved_native {
+        task.capture_error(error(message.clone()));
         let _ = app.rpc("logging.write", json!({"level":"warn","message":"释放前的任务元数据保存失败","fields":{"taskId":task.id,"error":message}}));
     }
-    collector.cleanup();
+    if saved_native.is_ok() {
+        collector.cleanup();
+    } else {
+        task.cleanup(
+            false,
+            failure("recordNotSaved", "原生回执尚未落盘，保留至资源关闭"),
+        );
+    }
     let candidate = task.final_candidate();
     let saved = evidence::metadata(&task.directory, &evidence::task_metadata(task, &candidate))
         .err()
@@ -108,182 +120,6 @@ impl Collector<'_> {
             &evidence::task_metadata(self.task, &self.task.snapshot()),
         )
         .map_err(error)
-    }
-    fn command(&mut self) -> Result<Outcome, Value> {
-        let mut output =
-            evidence::Output::new(&self.task.directory, self.task.terminal()).map_err(error)?;
-        let spec = match &self.task.spec {
-            TaskSpec::Exec(spec) => spec,
-            TaskSpec::Download(_) => unreachable!(),
-        };
-        let io = match spec.mode {
-            ExecMode::Batch => json!({"kind":"pipe","stdin":"closed"}),
-            ExecMode::Pipe => json!({"kind":"pipe","stdin":"open"}),
-            ExecMode::Pty => {
-                let (cols, rows) = spec.terminal_size.unwrap();
-                json!({"kind":"pty","cols":cols,"rows":rows})
-            }
-        };
-        let request = json!({"viewId":self.task.target.view,"expectedContext":self.task.target.context,"operationId":self.task.id,"sequence":self.task.admission_sequence.to_string(),"command":spec.command,"timeoutMs":spec.timeout_seconds.map(|n|n*1000),"maxOutputBytes":16*1024*1024,"retention":"fixed","io":io});
-        let accepted = self.accept(
-            "session.process.start",
-            request.clone(),
-            "session.process.lookup",
-            request,
-            "processId",
-        )?;
-        let id = text(&accepted, "processId", 256)?.to_owned();
-        self.native = Some(Native::Command(id.clone()));
-        let result = self.poll_command(&id, &mut output);
-        match (result, output.sync()) {
-            (Ok(outcome), Ok(())) => Ok(outcome),
-            (Ok(_), Err(e)) => Err(error(e)),
-            (Err(e), _) => Err(e),
-        }
-    }
-    fn poll_command(&self, id: &str, output: &mut evidence::Output) -> Result<Outcome, Value> {
-        let mut offset = 0u64;
-        let mut cancelled = false;
-        let mut save_error = Value::Null;
-        loop {
-            if self.app.shutdown.is_cancelled() || self.app.client.is_closed() {
-                return Err(if save_error.is_null() {
-                    error("通信结束，最终结果未知")
-                } else {
-                    save_error
-                });
-            }
-            if (self.app.stopped(self.task) || !save_error.is_null()) && !cancelled {
-                cancelled = self
-                    .app
-                    .rpc("session.process.cancel", json!({"processId":id}))
-                    .is_ok();
-            }
-            let polled = match self.app.rpc(
-                "session.process.read",
-                json!({"processId":id,"offset":offset.to_string()}),
-            ) {
-                Ok(value) => value,
-                Err(e) => {
-                    self.unavailable(e.clone());
-                    return Err(if save_error.is_null() { e } else { save_error });
-                }
-            };
-            let native = polled["status"].clone();
-            if save_error.is_null() {
-                let result = (|| {
-                    let chunks = polled["chunks"]
-                        .as_array()
-                        .ok_or_else(|| error("核心输出页无效"))?;
-                    let next = text(&polled, "nextOffset", 32)?
-                        .parse::<u64>()
-                        .map_err(|_| error("核心偏移无效"))?;
-                    if next < offset {
-                        return Err(error("核心偏移倒退"));
-                    }
-                    output.append(chunks).map_err(error)?;
-                    offset = next;
-                    Ok::<_, Value>(())
-                })();
-                if let Err(e) = result {
-                    save_error = e;
-                    self.task.capture_error(save_error.clone());
-                }
-            }
-            self.task.observe(native.clone(), Some(output.committed));
-            if native["workerFinished"] == true
-                && (!save_error.is_null() || polled["nextOffset"] == polled["watermark"])
-            {
-                return Ok(Outcome {
-                    complete: save_error.is_null() && native["outputComplete"] == true,
-                    error: save_error,
-                });
-            }
-            thread::sleep(Duration::from_millis(100));
-        }
-    }
-    fn download(&mut self) -> Result<Outcome, Value> {
-        let existing = self
-            .task
-            .target
-            .admission(Kind::Download)
-            .lock()
-            .unwrap()
-            .file
-            .clone();
-        let file = if let Some(file) = existing {
-            file
-        } else {
-            let opened = self.app.rpc(
-                "files.request",
-                json!({"action":"open","viewId":self.task.target.view}),
-            )?;
-            let file = text(&opened, "id", 256)?.to_owned();
-            self.task
-                .target
-                .admission(Kind::Download)
-                .lock()
-                .unwrap()
-                .file = Some(file.clone());
-            file
-        };
-        self.batch_file = Some(file.clone());
-        self.app.rpc("files.request",json!({"id":file,"action":"batch.begin","protocolVersion":2,"batchId":self.task.id,"context":self.task.target.context}))?;
-        let request = json!({
-            "id":file,"action":"start","protocolVersion":2,"batchId":self.task.id,"requestId":self.task.id,
-            "expectedContext":self.task.target.context,"sequence":self.task.admission_sequence.to_string(),
-            "operation":{"kind":"copyFile","source":{"side":"remote","path":self.task.start_input()["remotePath"]},
-                "destination":{"side":"pluginData","relative":["evidence",self.task.run,self.task.id,"download.bin"]},
-                "destinationGuard":{"kind":"absent"}},
-        });
-        let lookup = json!({"id":file,"action":"lookup","protocolVersion":2,"batchId":self.task.id,"requestId":self.task.id});
-        let accepted = self.accept(
-            "files.operations",
-            request,
-            "files.operations",
-            lookup,
-            "id",
-        )?;
-        let operation = text(&accepted, "id", 256)?.to_owned();
-        self.native = Some(Native::Download {
-            file: file.clone(),
-            operation: operation.clone(),
-        });
-        let mut cancelled = false;
-        loop {
-            if self.app.shutdown.is_cancelled() || self.app.client.is_closed() {
-                return Err(error("通信结束，最终结果未知"));
-            }
-            if self.app.stopped(self.task) && !cancelled {
-                cancelled = self
-                    .app
-                    .rpc(
-                        "files.operations",
-                        json!({"id":file,"action":"cancel","operationId":operation}),
-                    )
-                    .is_ok();
-            }
-            let native = match self.app.rpc(
-                "files.operations",
-                json!({"id":file,"action":"poll","operationId":operation}),
-            ) {
-                Ok(value) => value,
-                Err(e) => {
-                    self.unavailable(e.clone());
-                    return Err(e);
-                }
-            };
-            self.task.observe(native.clone(), None);
-            if ["completed", "failed", "cancelled", "unknown"]
-                .contains(&native["state"].as_str().unwrap_or(""))
-            {
-                return Ok(Outcome {
-                    complete: native["state"] == "completed",
-                    error: Value::Null,
-                });
-            }
-            thread::sleep(Duration::from_millis(100));
-        }
     }
     fn accept(
         &mut self,
@@ -345,10 +181,19 @@ impl Collector<'_> {
     }
     fn unavailable(&self, error: Value) {
         let previous = self.task.snapshot().native.clone();
-        self.task.observe(
-            json!({"state":"unavailable","lastResult":previous,"error":error}),
-            None,
-        );
+        let mut next = json!({"state":"unavailable","lastResult":previous,"error":error});
+        if self.task.kind() != Kind::Exec {
+            next["transfer"] = previous["transfer"].clone();
+            if next["transfer"].is_null() {
+                next["transfer"] = json!({});
+            }
+            if !["committed", "notCommitted"]
+                .contains(&next["transfer"]["commitState"].as_str().unwrap_or(""))
+            {
+                next["transfer"]["commitState"] = json!("unknown");
+            }
+        }
+        self.task.observe(next, None);
     }
     fn cleanup(&self) {
         let mut errors = Vec::new();
@@ -357,7 +202,7 @@ impl Collector<'_> {
             let snapshot = self.task.snapshot();
             let ended = match native {
                 Native::Command(_) => snapshot.native["workerFinished"] == true,
-                Native::Download { .. } => ["completed", "failed", "cancelled", "unknown"]
+                Native::File { .. } => ["completed", "failed", "cancelled", "unknown"]
                     .contains(&snapshot.native["state"].as_str().unwrap_or("")),
             };
             let mut ready = ended;
@@ -366,7 +211,7 @@ impl Collector<'_> {
                     Native::Command(id) => self
                         .app
                         .rpc("session.process.cancel", json!({"processId":id})),
-                    Native::Download { file, operation } => self.app.rpc(
+                    Native::File { file, operation } => self.app.rpc(
                         "files.operations",
                         json!({"id":file,"action":"cancel","operationId":operation}),
                     ),
@@ -383,7 +228,7 @@ impl Collector<'_> {
                         Native::Command(id) => self
                             .app
                             .rpc("session.process.status", json!({"processId":id})),
-                        Native::Download { file, operation } => self.app.rpc(
+                        Native::File { file, operation } => self.app.rpc(
                             "files.operations",
                             json!({"id":file,"action":"poll","operationId":operation}),
                         ),
@@ -392,7 +237,7 @@ impl Collector<'_> {
                         Ok(value) => {
                             ready = match native {
                                 Native::Command(_) => value["workerFinished"] == true,
-                                Native::Download { .. } => {
+                                Native::File { .. } => {
                                     ["completed", "failed", "cancelled", "unknown"]
                                         .contains(&value["state"].as_str().unwrap_or(""))
                                 }
@@ -411,11 +256,20 @@ impl Collector<'_> {
                 }
             }
             if ready {
+                if let Err(message) = evidence::metadata(
+                    &self.task.directory,
+                    &evidence::task_metadata(self.task, &self.task.snapshot()),
+                ) {
+                    self.task.capture_error(error(message.clone()));
+                    errors.push(json!({"step":"saveBeforeRelease","error":error(message)}));
+                    self.task.cleanup(false,json!({"code":"recordNotSaved","message":"最终原生事实未落盘","details":errors}));
+                    return;
+                }
                 let result = match native {
                     Native::Command(id) => self
                         .app
                         .rpc("session.process.release", json!({"processId":id})),
-                    Native::Download { file, operation } => self.app.rpc(
+                    Native::File { file, operation } => self.app.rpc(
                         "files.operations",
                         json!({"id":file,"action":"release","operationId":operation}),
                     ),

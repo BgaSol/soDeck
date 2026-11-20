@@ -2,7 +2,8 @@ use crate::app::App;
 use crate::{
     collector,
     task::{
-        CapturedTask, DownloadSpec, ExecMode, ExecSpec, NewTask, Phase, Task, TaskFailure, TaskSpec,
+        CapturedTask, ExecMode, ExecSpec, FileSpec, NewTask, Phase, Task, TaskFailure,
+        TaskOperation, TaskSpec,
     },
 };
 use serde_json::{json, Value};
@@ -38,6 +39,26 @@ impl WaitSlots {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn uploads_keep_fixed_parameters_and_do_not_depend_on_source_existence() {
+        let p = json!({"targetId":"target","requestId":"upload","localPath":"/not-yet-present","remotePath":"/tmp/中文 $ file"});
+        let first = parse_upload_start(&p).unwrap();
+        let mut retry = p.clone();
+        retry["overwrite"] = json!(false);
+        assert_eq!(first.spec, parse_upload_start(&retry).unwrap().spec);
+        for (field, value) in [
+            ("overwrite", Value::Null),
+            ("overwrite", json!("true")),
+            ("remotePath", json!("relative")),
+            ("remotePath", json!("/tmp/")),
+            ("localPath", json!("bad\0path")),
+            ("waitMs", json!(0)),
+        ] {
+            let mut bad = p.clone();
+            bad[field] = value;
+            assert!(parse_upload_start(&bad).is_err(), "{bad}");
+        }
+    }
     #[test]
     fn waiting_is_validated_and_never_part_of_execution_identity() {
         let input = json!({"targetId":"target","requestId":"request","command":"true"});
@@ -152,14 +173,16 @@ pub fn parse_exec_start(p: &Value) -> Result<StartRequest, Value> {
         return Err(failure("invalidParams", "waitMs 超出范围"));
     }
     Ok(StartRequest {
-        spec: TaskSpec::Exec(ExecSpec {
+        spec: TaskSpec {
             target_id: text(p, "targetId", 256)?.into(),
             request_id: text(p, "requestId", 128)?.into(),
-            command: command.into(),
-            mode,
-            timeout_seconds: timeout,
-            terminal_size,
-        }),
+            operation: TaskOperation::Exec(ExecSpec {
+                command: command.into(),
+                mode,
+                timeout_seconds: timeout,
+                terminal_size,
+            }),
+        },
         wait_ms,
     })
 }
@@ -169,11 +192,58 @@ pub fn parse_download_start(p: &Value) -> Result<StartRequest, Value> {
         return Err(failure("invalidParams", "远程路径或下载等待参数无效"));
     }
     Ok(StartRequest {
-        spec: TaskSpec::Download(DownloadSpec {
+        spec: TaskSpec {
             target_id: text(p, "targetId", 256)?.into(),
             request_id: text(p, "requestId", 128)?.into(),
-            remote_path: path.into(),
-        }),
+            operation: TaskOperation::File(FileSpec::Download {
+                remote_path: path.into(),
+            }),
+        },
+        wait_ms: 0,
+    })
+}
+
+pub fn parse_upload_start(p: &Value) -> Result<StartRequest, Value> {
+    let local = text(p, "localPath", 4096)?;
+    let remote = text(p, "remotePath", 4096)?;
+    if local.contains('\0')
+        || remote.contains('\0')
+        || !remote.starts_with('/')
+        || remote.ends_with('/')
+        || remote
+            .rsplit('/')
+            .next()
+            .is_none_or(|n| n == "." || n == "..")
+        || p.as_object().is_none_or(|v| {
+            v.keys().any(|k| {
+                ![
+                    "targetId",
+                    "requestId",
+                    "localPath",
+                    "remotePath",
+                    "overwrite",
+                ]
+                .contains(&k.as_str())
+            })
+        })
+    {
+        return Err(failure("invalidParams", "上传路径或参数无效"));
+    }
+    let overwrite = match p.get("overwrite") {
+        None => false,
+        Some(Value::Bool(v)) => *v,
+        _ => return Err(failure("invalidParams", "overwrite 必须是布尔值")),
+    };
+    Ok(StartRequest {
+        spec: TaskSpec {
+            target_id: text(p, "targetId", 256)?.into(),
+            request_id: text(p, "requestId", 128)?.into(),
+            operation: TaskOperation::File(FileSpec::Upload {
+                local_path: local.into(),
+                remote_path: remote.into(),
+                overwrite,
+            }),
+        },
         wait_ms: 0,
     })
 }

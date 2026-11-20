@@ -1,7 +1,7 @@
 {
   "id": "sodeck.mcp",
   "name": "Agent MCP",
-  "description": "让本机 AI 客户端发现并连接保存的服务器，执行调查命令并下载证据。",
+  "description": "让本机 AI 客户端发现并连接保存的服务器，执行命令、上传文件并下载证据。",
   "icon": "bot",
   "icons": {"bot": "assets/icons/robot.svg"},
   "order": 60,

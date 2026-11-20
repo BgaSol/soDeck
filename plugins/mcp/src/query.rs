@@ -465,7 +465,7 @@ pub fn list(app: &App, p: &Value) -> Result<TaskList, Value> {
         .transpose()?
         .unwrap_or(20);
     if !["all", "active", "done"].contains(&status.as_str())
-        || !["all", "exec", "download"].contains(&kind.as_str())
+        || !["all", "exec", "download", "upload"].contains(&kind.as_str())
         || !(1..=50).contains(&limit)
     {
         return Err(failure("invalidParams", "列表筛选或 limit 无效"));

@@ -54,7 +54,7 @@ async function tool(name,args={}){const r=await call('tools/call',{name,argument
 async function until(read,check){const end=Date.now()+12000;let result;do{result=await read();if(check(result))return result;await delay(20);}while(Date.now()<end);throw new Error('Did not settle: '+JSON.stringify(result));}
 const open=(id,requestId,waitMs=0)=>tool('sodeck_connection_open',{serverId:'server-'+id,expectedProfileToken:'token-'+id,requestId,waitMs});
 try{
-  await peer.request('initialize',{capabilities:['session.target.v2','session.process.v1','files.pluginData.v1','files.operations.v2','ui.background.v1','settings.v1','servers.read.v1','connections.v1'],dataDirectory:directory});
+  await peer.request('initialize',{capabilities:['session.target.v2','session.process.v1','files.pluginData.v1','files.operations.v2','files.copy.v1','ui.background.v1','settings.v1','servers.read.v1','connections.v1'],dataDirectory:directory});
   token=fs.readFileSync(path.join(directory,'access-token'),'utf8');
   await until(()=>call('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'opening-regression',version:'1'}}).catch(()=>null),Boolean);
   const first=(await tool('sodeck_servers_list',{query:'187',limit:1})).value;

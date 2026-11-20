@@ -9,6 +9,7 @@ mod desktop_open;
 pub mod desktop_updates;
 mod execution_output;
 pub mod lifecycle;
+mod local_files;
 pub mod model;
 pub mod network;
 pub mod network_metrics;

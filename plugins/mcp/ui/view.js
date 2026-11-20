@@ -84,7 +84,7 @@ function selectTask(id,button) {
   returnPosition={taskId:id,scrollTop:pane.scrollTop,top:button.getBoundingClientRect().top};
   factSequence++;reader.close();selected=task;$('overview').hidden=true;$('detail').hidden=false;$('new-tasks').hidden=true;
   paintDetail(task);pane.scrollTop=0;$('detail-close').focus({preventScroll:true});reader.open(task);animate($('detail'),4);
-  if(task.kind==='download')void loadFacts();
+  if(task.kind!=='exec')void loadFacts();
 }
 async function loadFacts() {
   if(!selected || owner()===null)return;

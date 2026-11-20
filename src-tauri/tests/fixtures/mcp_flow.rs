@@ -1,3 +1,15 @@
+fn upload_peak_memory()->u64 {
+    #[cfg(windows)] {
+        use windows_sys::Win32::{System::{ProcessStatus::{GetProcessMemoryInfo,PROCESS_MEMORY_COUNTERS},Threading::GetCurrentProcess}};
+        let mut memory:PROCESS_MEMORY_COUNTERS=unsafe{std::mem::zeroed()};
+        assert_ne!(unsafe{GetProcessMemoryInfo(GetCurrentProcess(),&mut memory,std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32)},0);
+        memory.PeakWorkingSetSize as u64
+    }
+    #[cfg(unix)] {
+        let mut usage:libc::rusage=unsafe{std::mem::zeroed()};assert_eq!(unsafe{libc::getrusage(libc::RUSAGE_SELF,&mut usage)},0);
+        if cfg!(target_os="macos") {usage.ru_maxrss as u64}else{usage.ru_maxrss as u64*1024}
+    }
+}
 async fn call(client:&reqwest::Client,url:&str,token:&str,method:&str,params:Value)->Value{
     let response=client.post(url).bearer_auth(token).header("Accept","application/json, text/event-stream").header("MCP-Protocol-Version","2025-11-25").json(&json!({"jsonrpc":"2.0","id":1,"method":method,"params":params})).send().await.unwrap();let code=response.status();let text=response.text().await.unwrap();assert_eq!(code,200,"{text}");serde_json::from_str::<Value>(&text).unwrap()["result"].clone()
 }
@@ -196,6 +208,36 @@ async fn openssh_mcp_plugin(){
         let follow=tool(&client,url,&token,"sodeck_exec_start",json!({"targetId":target["targetId"],"requestId":"follow","command":if cfg!(windows){"cmd /c echo sodeck-followup"}else{"printf sodeck-followup"}})).await;assert_eq!(done(&client,url,&token,&follow["taskId"]).await["evidence"]["complete"],true);
         let download=tool(&client,url,&token,"sodeck_file_download",json!({"targetId":target["targetId"],"requestId":"evidence","remotePath":remote.to_str().unwrap().replace('\\',"/")})).await;let result=done(&client,url,&token,&download["taskId"]).await;assert_eq!(result["native"]["state"],"completed","{result}");assert_eq!(result["evidence"]["complete"],true);assert_eq!(std::fs::read(result["file"]["localPath"].as_str().unwrap()).unwrap(),bytes);
     }
+    // Upload uses the MCP HTTP API and the real plugin/core session without a files plugin.
+    let target=&targets["targets"][0]["targetId"];
+    let source=f.path.join("upload source 中文 $.bin");
+    let destination=f.path.join("uploaded 中文 $.bin");
+    let remote_path=if cfg!(windows){format!("/{}",destination.to_str().unwrap().replace('\\',"/"))}else{destination.to_str().unwrap().into()};
+    for (index,payload) in [Vec::new(),bytes.clone()].iter().enumerate() {
+        std::fs::write(&source,payload).unwrap();
+        let params=json!({"targetId":target,"requestId":format!("upload-{index}"),"localPath":source,"remotePath":remote_path,"overwrite":index>0});
+        let accepted=tool(&client,url,&token,"sodeck_file_upload",params.clone()).await;
+        let result=done(&client,url,&token,&accepted["taskId"]).await;
+        assert_eq!(result["file"]["commitState"],"committed","{result}");assert_eq!(result["evidence"]["complete"],true);assert!(result.get("output").is_none());
+        assert_eq!(std::fs::read(&destination).unwrap(),*payload);assert_eq!(std::fs::read(&source).unwrap(),*payload);
+        std::fs::remove_file(&source).unwrap();assert_eq!(tool(&client,url,&token,"sodeck_file_upload",params).await["taskId"],accepted["taskId"],"recovery never reopens a deleted source");
+    }
+    std::fs::write(&source,b"must not replace").unwrap();
+    let conflict=tool(&client,url,&token,"sodeck_file_upload",json!({"targetId":target,"requestId":"upload-conflict","localPath":source,"remotePath":remote_path})).await;
+    let conflict=done(&client,url,&token,&conflict["taskId"]).await;assert_eq!(conflict["file"]["commitState"],"notCommitted");assert_eq!(std::fs::read(&destination).unwrap(),bytes);
+    let large_source=f.path.join("upload large.bin");let large=std::fs::File::create(&large_source).unwrap();large.set_len(1024*1024*1024).unwrap();drop(large);
+    let large_destination=f.path.join("uploaded large.bin");let large_remote=if cfg!(windows){format!("/{}",large_destination.to_str().unwrap().replace('\\',"/"))}else{large_destination.to_str().unwrap().into()};
+    let peak_before=upload_peak_memory();
+    let accepted=tool(&client,url,&token,"sodeck_file_upload",json!({"targetId":target,"requestId":"upload-1gib","localPath":large_source,"remotePath":large_remote})).await;
+    let large_started=std::time::Instant::now();
+    let result=loop {let value=tool(&client,url,&token,"sodeck_task_get",json!({"taskId":accepted["taskId"],"outputMode":"none","waitMs":20000})).await;if value["done"]==true {break value;}assert!(large_started.elapsed()<Duration::from_secs(600),"large upload timed out: {value}");};
+    assert_eq!(result["file"]["commitState"],"committed","{result}");assert_eq!(std::fs::metadata(&large_destination).unwrap().len(),1024*1024*1024);
+    let peak_after=upload_peak_memory();assert!(peak_after.saturating_sub(peak_before)<256*1024*1024,"1 GiB upload must not be buffered as a whole: before={peak_before},after={peak_after}");
+    println!("MCP_UPLOAD_MEMORY {}",json!({"bytes":1024u64*1024*1024,"corePeakBefore":peak_before,"corePeakAfter":peak_after,"elapsedMs":large_started.elapsed().as_millis()}));
+    use std::io::Read;
+    let mut original=std::fs::File::open(&large_source).unwrap();let mut uploaded=std::fs::File::open(&large_destination).unwrap();let mut left=vec![0;65536];let mut right=vec![0;65536];
+    loop {let n=original.read(&mut left).unwrap();let m=uploaded.read(&mut right).unwrap();assert_eq!(n,m);assert_eq!(&left[..n],&right[..m]);if n==0 {break;}}
+    std::fs::remove_file(large_source).unwrap();std::fs::remove_file(large_destination).unwrap();
     if let Ok(codex)=std::env::var("SODECK_TEST_CODEX"){
         let short_command=if cfg!(windows){"cmd /c \"ver & echo sodeck-codex-short\""}else{"uname -s; printf sodeck-codex-short"};
         let command=if cfg!(windows){"powershell.exe -NoProfile -Command \"Start-Sleep -Seconds 2; Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors | Format-List; Write-Output ('page-line-' * 2400); Write-Output sodeck-codex-acceptance\""}else{"sleep 2; lscpu; printf '%024000d' 0; printf sodeck-codex-acceptance"};

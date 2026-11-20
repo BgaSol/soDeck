@@ -694,13 +694,17 @@ impl AppCore {
                 result.await
             };
             drop(state);
-            *operation.state.lock().unwrap() = match result {
+            let mut snapshot = operation.state.lock().unwrap();
+            let terminal = match result {
                 Ok(value) => json!({"id":operation.id,"state":"completed","result":value}),
                 Err(error) => {
                     let value = error_value(error);
                     json!({"id":operation.id,"state":if value["code"]=="unknown"{"unknown"}else if value["code"]=="cancelled"{"cancelled"}else{"failed"},"error":value})
                 }
             };
+            for (key, value) in terminal.as_object().unwrap() {
+                snapshot[key] = value.clone();
+            }
         });
         Ok(json!({"id":id,"state":"running"}))
     }
@@ -778,6 +782,20 @@ impl Io {
                 path.push(name);
             }
             return Ok(Endpoint::Local(path));
+        }
+        if p["side"] == "localPath" {
+            let operation = &self.operation.request["operation"];
+            if operation["kind"] != "copyFile"
+                || &operation["source"] != p
+                || operation["destination"]["side"] != "remote"
+            {
+                return Err(failure("invalid", "本机路径只支持复制来源"));
+            }
+            let value = string(p, "path")?;
+            if value.len() > 4096 || value.contains('\0') || !Path::new(value).is_absolute() {
+                return Err(failure("invalid", "本机来源需要绝对路径"));
+            }
+            return Ok(Endpoint::Local(PathBuf::from(value)));
         }
         if p["side"] == "remote" {
             let path = string(p, "path")?;

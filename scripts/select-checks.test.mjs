@@ -285,3 +285,5 @@ test('integration groups isolate network on both native architectures from other
   assert(selectChecks(['.github/workflows/check.yml']).workflow);
   assert(selectChecks([], { suite: 'all' }).workflow);
 });
+
+test('single-file copying selects both files and MCP consumers',()=>{for(const file of ['src-tauri/src/local_files.rs','src-tauri/src/remote_files/operations/copy/state.rs']){const p=selectChecks([file]);assert.equal(p.native.length,5);assert(p.integration.some(t=>t.files&&t.mcp));}});

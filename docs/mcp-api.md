@@ -1,12 +1,12 @@
 # MCP API
 
-本文定义Agent MCP插件 0.7.x 的客户端契约。接入、页面操作和限制见[功能说明](features/mcp.md)；核心通用 RPC 见[插件 API](plugin-api.md)，发行证据见插件 [CHANGELOG](../plugins/mcp/CHANGELOG.md)。客户端先进行 MCP initialize 和 tools/list；新增能力以工具发现结果为准。
+本文定义Agent MCP插件 0.9.x 的客户端契约。接入、页面操作和限制见[功能说明](features/mcp.md)；核心通用 RPC 见[插件 API](plugin-api.md)，发行证据见插件 [CHANGELOG](../plugins/mcp/CHANGELOG.md)。客户端先进行 MCP initialize 和 tools/list；新增能力以工具发现结果为准。
 
 ## 传输与调用
 
 服务为带 Bearer Token 的回环 Streamable HTTP，端点 `http://127.0.0.1:<port>/mcp`。MCP 请求正文最多 32 KiB，总并发最多 32。Host 与可选 Origin 需匹配该回环地址。HTTP 401/403 为接入失败，429 为容量限制。字符串参数按 UTF-8 字节限制；未知参数或工具返回 MCP 协议 invalid_params。认证资料由核心管理。
 
-十一个工具的成功与业务错误均只返回一个 JSON TextContent，缺席 structuredContent，不同时附原文副本或 outputSchema；客户端只解析一次 text。业务错误使用 isError=true 与 `{"error":{...}}`，取得任务时另以顶层 task 附一份该次事实。工具声明的只读/破坏性提示不能替代实际远端操作判断。
+十二个工具的成功与业务错误均只返回一个 JSON TextContent，缺席 structuredContent，不同时附原文副本或 outputSchema；客户端只解析一次 text。业务错误使用 isError=true 与 `{"error":{...}}`，取得任务时另以顶层 task 附一份该次事实。工具声明的只读/破坏性提示不能替代实际远端操作判断。
 
 ## 保存资料发现与打开（0.6.0）
 
@@ -43,7 +43,7 @@ cancel 与 ready 发布决定先后：取消先胜后不再发布 ready，核心
 | connectionRequestNotFound | 原打开身份不属于本次运行；不可借新身份重放未知命令 |
 | targetInitializationFailed | SSH 接纳后后台目标准备失败；共享会话保留 |
 
-新客户端将默认名称/IP 发现由 targets_list 改为 servers_list。已配置的 Token、端口、插件 ID和原任务 API 沿用；本版元数据为 schemaVersion=2；旧核心缺少能力时初始化明确提示升级，不回退为插件自己的 SSH 连接。
+新客户端将默认名称/IP 发现由 targets_list 改为 servers_list。已配置的 Token、端口、插件 ID和原任务 API 沿用；本版元数据为 schemaVersion=3；旧核心缺少能力时初始化明确提示升级，不回退为插件自己的 SSH 连接。
 
 ## 目标与启动
 
@@ -67,6 +67,25 @@ waitMs 只控制本次主动等待，timeoutSeconds 仍控制实际执行。窗�
 runId 是插件进程身份，taskId 包含运行身份并按不透明字符串使用。targetId 包含连接代次。重新连接要重新选择目标；旧任务在原插件进程中仍可查询。升级/重启后新进程不扫描恢复历史，也不接受旧短 task-N 别名。HTTP 断开和零匹配列表都不能证明远端未执行。
 
 取消只在 collecting 阶段首次记录请求。finalizing/done 返回实际既有 cancelRequested，不修改事实；ACK 不表示远端或所有子进程已退出，也不撤销副作用。
+
+## 单文件上传（0.9.0）
+
+要求核心 1.11.0 的 `files.copy.v1`。新增第十二个工具 `sodeck_file_upload`；行为、元数据与并发限制见[上传说明](features/mcp.md#上传文件)。沿用目标选择、固定请求去重、当前插件运行内查询与额度。
+
+| 参数 | 范围 |
+| --- | --- |
+| targetId / requestId | 沿用目标与启动规则；固定为同一次上传，不以重连目标重放 |
+| localPath | SoDeck 主机普通源文件绝对路径，1–4096 UTF-8 字节，无 NUL；本机核心处理盘符、UNC 和 POSIX 差异 |
+| remotePath | 当前文件服务完整绝对路径，含文件名，1–4096 UTF-8 字节，无 NUL；例如 /tmp/job.sh 或 /C:/Temp/job.ps1 |
+| overwrite | 布尔值，默认 false；true 允许替换开始时已有普通文件，仍拒绝后到目标和类型冲突 |
+
+拒绝未知字段；没有 waitMs、内联正文、自动 mkdir 或执行参数。立即返回 `{runId,taskId,kind:"upload"}`，然后用 task_get 等待/读取；task_input 不适用于上传。上传参数和缺省 overwrite=false 参与去重，同身份同参数恢复原 taskId，不重新打开来源；更改参数为 requestConflict。
+
+任务普通结果增加 `file:{localPath,remotePath,overwrite,commitState}`。localPath 在上传中恒指来源，不是下载交付路径；已有下载语义不变。commitState 为 pending/committed/notCommitted/unknown。native.received/total 为十进制字节数字符串（准备期总量可缺省），记录远端已确认写入临时文件的字节；native.transfer.commitAttempted 表示已进入提交尝试。普通结果保留 native.result 的最终大小与附属警告；detail 才含来源版本及未决临时路径。无 output/outputInfo 正文，outputMode 不改变文件读取方式。
+
+提交得到 ACK 后为 committed，最终 stat、本地元数据和清理故障另报，不能改成可重传失败；明确未提交为 notCommitted，未收到提交确认或接纳结果不明为 unknown。done 只表示稳定收尾。开始前额度/参数拒绝可无 taskId，登记后所有失败均保留原身份。重启不恢复任务或跨运行去重；旧任务不存在不能证明远端未提交。
+
+本版落地元数据 schemaVersion=3，包含 upload 种类和 transfer 事实；旧证据不迁移，命令原字节信封不变。工具列表与 kind=all 增量包含上传，严格枚举客户端需识别 upload。
 
 ## 交互输入（0.7.0）
 
@@ -138,7 +157,7 @@ registryChanged=true 或 unresolved 非空时 resolution=incomplete。无 query 
 | serverId | 可选，1–256 字节 | 匹配保存的 context.serverId，包括不同连接代次 |
 | requestId | 可选，1–128 字节 | 精确匹配，可组合其他筛选 |
 | status | all / active / done，默认 all | active 为 done=false，包含未知和收尾；done 为稳定终态 |
-| kind | all / exec / download，默认 all | 原任务种类 |
+| kind | all / exec / download / upload，默认 all | 原任务种类 |
 | limit | 整数，默认 20，1–50 | 每页条数 |
 | cursor | 可选，1–2048 字节 | 只使用上次返回的 nextCursor |
 
@@ -223,7 +242,7 @@ MCP 请求取消、HTTP 中断或插件 shutdown 释放等待及配额；不调�
 
 ## 状态、证据与错误
 
-output.jsonl 的 batch/pipe 信封为 v1、source=stdout/stderr；PTY 为 v2、source=terminal。读取按任务固定模式校验来源与版本，不把未知来源归为 stdout。终端文本保留 ANSI 等原字节的有损预览，不提供屏幕仿真。metadata.json schemaVersion=2 保留规范化启动 input、interaction 和原生事实。
+output.jsonl 的 batch/pipe 信封为 v1、source=stdout/stderr；PTY 为 v2、source=terminal。读取按任务固定模式校验来源与版本，不把未知来源归为 stdout。终端文本保留 ANSI 等原字节的有损预览，不提供屏幕仿真。metadata.json schemaVersion=3 保留规范化启动 input、interaction 和原生事实。
 
 phase=collecting 表示接纳/采集，finalizing 表示最终保存和原生清理，done 表示稳定发布。evidence.state 为 collecting/finalizing/saved/incomplete/failed，complete 仅在完整捕获或下载、保存无错误且最终 metadata 保存成功时为 true。非零退出码可有完整证据；done、取消 ACK 或本地保存不能推断全部远端子进程结束。清理失败完整信息在 detail=true 的 cleanupError.details，按 step 标识 cancel/status/release/batch.end。
 
@@ -248,6 +267,6 @@ phase=collecting 表示接纳/采集，finalizing 表示最终保存和原生清
 
 0.5.0 将 targets_list 默认形状改为简明候选和 resolution；原 context/state/closing 改用 detail=true，客户端需重新发现工具并处理 ambiguous/incomplete。要求核心 1.6.0 的 session.target.v2，旧核心明确初始化失败，不用目录或缓存补出不可靠摘要。
 
-0.3.0 升级读取契约：默认由 full 改为 text，任务事实默认精简，full 不再附文本，structuredContent 删除。旧客户端需改为解析 content[0].text；原参数、路径、完整错误改用 detail=true。0.4.0 将 exec_start 从立即凭据改为默认有限等待与普通任务/第一文本页；依赖旧形状或极短回包期限的客户端需迁移，waitMs=0 保留立即交接意图但不恢复旧形状。客户端重新发现 tools/list。六工具名、启动/目标身份、task_get 的变化等待、分页、去重保持；0.7.0 元数据使用 schemaVersion=2，保存模式及最近输入摘要，原文件不扫描或迁移。无旧版开关或重复工具。
+0.3.0 升级读取契约：默认由 full 改为 text，任务事实默认精简，full 不再附文本，structuredContent 删除。旧客户端需改为解析 content[0].text；原参数、路径、完整错误改用 detail=true。0.4.0 将 exec_start 从立即凭据改为默认有限等待与普通任务/第一文本页；依赖旧形状或极短回包期限的客户端需迁移，waitMs=0 保留立即交接意图但不恢复旧形状。客户端重新发现 tools/list。六工具名、启动/目标身份、task_get 的变化等待、分页、去重保持；0.7.0 元数据使用 schemaVersion=3，保存模式及最近输入摘要，原文件不扫描或迁移。无旧版开关或重复工具。
 
 返回[文档索引](README.md)。
