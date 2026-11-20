@@ -27,5 +27,5 @@ try{
       results.push({shell,passed:true,scope:'real Windows OpenSSH PTY, PSReadLine Enter, output, success and unknown'});
     }finally{if(child.exitCode===null)child.kill();}
   }
-  fs.writeFileSync('artifacts/powershell-pty-results.json',JSON.stringify(results,null,2)+'\n');console.log(results);
+  fs.mkdirSync('artifacts',{recursive:true});fs.writeFileSync('artifacts/powershell-pty-results.json',JSON.stringify(results,null,2)+'\n');console.log(results);
 }finally{if(daemon&&daemon.exitCode===null){daemon.kill();await new Promise(r=>daemon.once('exit',r));}assert.equal(path.dirname(path.resolve(dir)),path.resolve(os.tmpdir()));assert(path.basename(dir).startsWith('sodeck-reading-ssh-'));fs.rmSync(dir,{recursive:true,force:true});}
