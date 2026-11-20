@@ -69,12 +69,13 @@ impl Terminals {
                 return Ok(());
             }
             let rx = t.execution.submit(InputOperation::Barrier)?;
-            tauri::async_runtime::block_on(async {
+            let outcome = tauri::async_runtime::block_on(async {
                 tokio::time::timeout(std::time::Duration::from_secs(5), rx)
                     .await
                     .map_err(|_| "终端输入排空超时".to_string())?
                     .map_err(|_| "终端已结束".to_string())
             })?;
+            input_result(outcome)?;
         }
         Ok(())
     }
@@ -425,6 +426,30 @@ mod tests {
         match rx.try_recv().unwrap().operation {
             InputOperation::Write(bytes) => bytes.to_vec(),
             _ => panic!("unexpected control message"),
+        }
+    }
+    #[test]
+    fn drain_preserves_sent_failed_and_unknown_barrier_results() {
+        for outcome in [
+            InputOutcome::Sent(None),
+            InputOutcome::NotSent("inputClosed:stopped".into()),
+            InputOutcome::Unconfirmed("inputUnknown:lost".into()),
+        ] {
+            let expected = matches!(outcome, InputOutcome::Sent(_));
+            let (terminal, mut input) = terminal();
+            let guard = terminal.tasks.enter().unwrap();
+            let terminals = Arc::new(Terminals::default());
+            terminals
+                .entries
+                .lock()
+                .unwrap()
+                .insert("terminal".into(), Arc::new(terminal));
+            let worker = std::thread::spawn(move || terminals.drain_view("view"));
+            let queued = input.blocking_recv().unwrap();
+            assert_eq!(queued.operation, InputOperation::Barrier);
+            queued.completion.send(outcome).unwrap();
+            assert_eq!(worker.join().unwrap().is_ok(), expected);
+            drop(guard);
         }
     }
     #[test]
