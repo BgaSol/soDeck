@@ -19,7 +19,7 @@ window.remount=()=>{window.ready=false;iframe.src='/__terminal__/index.html?rest
 window.lifecycle=(type,detail={})=>post({type,...detail});
 window.theme=theme=>{document.documentElement.dataset.theme=theme;post({type:'themeChanged',tokens:themeTokens()});};
 addEventListener('message',event=>{if(event.source!==iframe.contentWindow||event.data?.channel!=='sodeck-ui-v2')return;const m=event.data,p=m.params;
-if(m.type==='ready'){post({type:'mount',viewId:'terminal',context:{generation:1},data:{streamId:'stream',integration:{mode:'auto',token:'reading-test'},openedContext:{generation:1}},visible:true,tokens:themeTokens(),capabilities:{clipboard:1}});return;}
+if(m.type==='ready'){post({type:'mount',viewId:'terminal',context:{generation:1},data:{streamId:'stream',integration:{mode:'auto',token:'reading-test',shell:'bash'},openedContext:{generation:1}},visible:true,tokens:themeTokens(),capabilities:{clipboard:1}});return;}
 if(m.type==='prepared'){window.ready=true;return;}if(m.type==='flushed'){flushes.get(m.id)?.(m.error);return;}if(m.type!=='request')return;
 if(m.method==='data'){
 if(p.op==='write'&&window.failWrite){post({type:'response',id:m.id,error:'fixture input rejected'});return;}
@@ -33,12 +33,24 @@ await page.route(url+'__terminal__/**',route=>{const relative=new URL(route.requ
 const frame=page.frameLocator('iframe'),child=()=>page.frames().find(f=>f.url().includes('/__terminal__/'));
 const osc=(kind,id,result)=>'\x1b]633;SODECK;reading-test;reading;1;'+kind+';'+id+(result===undefined?'':';'+result)+'\x07';
 const emit=text=>page.evaluate(text=>window.emit(text),text);
+const contextMenu=async()=>{await frame.locator('.xterm-helper-textarea').focus();await page.keyboard.press('Shift+F10');await frame.getByRole('menu').waitFor();};
 try{
   await page.goto(url);await page.waitForFunction(()=>window.ready);await child().waitForFunction(()=>window.testTerminal.options.fontFamily.includes('SoDeckFont') && window.testTerminal.rows > 24);
-  await emit(osc('prompt',1)+'ops@edge:~$ '+osc('input',1)+'cat app.log\r\n'+osc('start',1)+Array.from({length:160},(_,i)=>`line ${i} 中文🙂\r\n`).join('')+osc('end',1,'0')+osc('prompt',2)+'$ '+osc('input',2));
+  await emit('\x1b]633;SODECK;reading-test;ready;'+Buffer.from('/var/log/edge-api').toString('hex')+';'+Buffer.from('/tmp/identity').toString('hex')+'\x07');
+  assert.equal(await frame.locator('.reading-directory').textContent(),'/var/log/edge-api','Local directory context does not require shared-state RPC');
+  await emit(osc('prompt',1)+'ops@edge:~$ '+osc('input',1)+'cat app.log\r\n'+osc('start',1)+Array.from({length:160},(_,i)=>`10:12:${String(i%60).padStart(2,'0')}.241  \x1b[${i%7?'32':'33'}m${i%7?'INFO':'WARN'}\x1b[0m  http  GET /api/${i%2?'health':'servers'}  200  ${i+2}ms\r\n`).join('')+osc('end',1,'0')+osc('prompt',2)+'$ '+osc('input',2));
   await child().evaluate(()=>window.testTerminal.scrollToLine(20));
   await frame.locator('.terminal-command-sticky:not([hidden])').waitFor();assert.equal(await frame.locator('.reading-command-title').textContent(),'cat app.log');
   await frame.getByRole('button',{name:'回到起点',exact:true}).click();assert.equal(await child().evaluate(()=>window.testTerminal.buffer.active.viewportY),0);
+  await frame.locator('.reading-marker').first().waitFor();
+  const markerStyle=await frame.locator('.reading-marker').first().evaluate(element=>{const style=getComputedStyle(element),svg=getComputedStyle(element.querySelector('svg'));return {border:style.borderTopWidth,background:style.backgroundColor,fill:svg.fill};});
+  assert.equal(markerStyle.border,'0px','Reading markers must not inherit native button chrome');assert.equal(markerStyle.background,'rgba(0, 0, 0, 0)');assert.equal(markerStyle.fill,'none');
+  const geometry=await child().evaluate(()=>{const marker=document.querySelector('.reading-marker').getBoundingClientRect(),screen=document.querySelector('.xterm-screen').getBoundingClientRect(),host=document.querySelector('#terminal').getBoundingClientRect();return {gutter:screen.left-host.left,gap:screen.left-marker.right};});assert(geometry.gutter>=42&&geometry.gap>=8,'Markers have their own gutter, clear of selectable text');
+  assert.equal(await frame.getByRole('button',{name:'阅读选项',exact:true}).count(),0);assert.equal(await frame.locator('.terminal-reading-options').count(),0,'Reading options must never cover terminal content');
+  await frame.locator('.reading-result').filter({hasText:'已完成'}).waitFor();
+  fs.mkdirSync('artifacts/terminal-reading',{recursive:true});
+  for(const theme of ['light','dark','dopamine']){await page.evaluate(theme=>window.theme(theme),theme);await frame.locator('.reading-marker').first().hover();await page.screenshot({path:`artifacts/terminal-reading/${theme}-start.png`});await child().evaluate(()=>window.testTerminal.scrollToLine(20));await frame.locator('.terminal-command-sticky:not([hidden])').waitFor();await page.screenshot({path:`artifacts/terminal-reading/${theme}-sticky.png`});await child().evaluate(()=>window.testTerminal.scrollToLine(0));await frame.locator('.reading-marker').first().waitFor();}
+  await page.evaluate(()=>window.theme('light'));
   await frame.getByRole('button',{name:'添加标记',exact:true}).click();
   await child().evaluate(()=>window.testTerminal.scrollToLine(20));await frame.getByRole('button',{name:'上一处',exact:true}).click();assert.equal(await child().evaluate(()=>window.testTerminal.buffer.active.viewportY),0);
   assert.equal(await page.evaluate(()=>window.flush()),undefined);await page.evaluate(()=>window.remount());await page.waitForFunction(()=>window.ready);await child().waitForFunction(()=>window.testTerminal.options.fontFamily.includes('SoDeckFont') && window.testTerminal.rows > 24);
@@ -51,16 +63,26 @@ try{
   await emit('\x1b]633;SODECK-READING;1;begin\x07\x1b]633;SODECK-READING;1;part;7b7d\x07\x1b]633;SODECK-READING;1;end\x07');
   await child().evaluate(()=>window.testTerminal.scrollToLine(20));await frame.locator('.terminal-command-sticky:not([hidden])').waitFor();
   await emit('\x1b[?1049h');await child().waitForFunction(()=>document.querySelector('[aria-label="添加标记"]').disabled);assert.equal(await frame.getByRole('button',{name:'添加标记',exact:true}).isDisabled(),true);
-  await emit('\x1b[?1049l');await frame.getByRole('button',{name:'阅读选项',exact:true}).click();
-  await frame.getByLabel('回车辅助标记（仅当前终端）').check();
+  await emit('\x1b[?1049l');await contextMenu();
+  await frame.getByRole('menuitemcheckbox',{name:/回车辅助标记/}).click();
+  assert.equal(await frame.getByRole('menu').count(),0);assert(await frame.locator('.xterm-helper-textarea').evaluate(element=>element===document.activeElement),'Closing a reading action restores terminal input focus');
   await frame.locator('.xterm-helper-textarea').focus();await page.keyboard.press('Enter');await page.waitForFunction(()=>window.writes.length>0);
   await child().waitForFunction(()=>window.testReading.state().entries.some(e=>e.kind==='input'));
   const inputCount=await child().evaluate(()=>window.testReading.state().entries.filter(e=>e.kind==='input').length);
   await page.evaluate(()=>window.failWrite=true);await page.keyboard.press('Enter');await frame.locator('#status').filter({hasText:'fixture input rejected'}).waitFor();assert.equal(await child().evaluate(()=>window.testReading.state().entries.filter(e=>e.kind==='input').length),inputCount);
-  await frame.getByRole('button',{name:'阅读选项',exact:true}).click();
+  await contextMenu();assert.equal(await frame.getByRole('menuitemcheckbox',{name:/回车辅助标记/}).getAttribute('aria-checked'),'true');await frame.getByRole('menuitem',{name:'清除输入标记',exact:true}).click();assert.equal(await child().evaluate(()=>window.testReading.state().entries.filter(e=>e.kind==='input').length),0);await frame.locator('#status').evaluate(element=>element.hidden=true);
   for(const theme of ['light','dark','dopamine']){await page.evaluate(theme=>window.theme(theme),theme);for(const width of [1000,320]){await page.setViewportSize({width,height:650});await child().evaluate(()=>window.testTerminal.scrollToLine(20));await page.waitForTimeout(80);assert(await child().evaluate(()=>document.documentElement.scrollWidth<=innerWidth));fs.mkdirSync('artifacts/terminal-reading',{recursive:true});await page.screenshot({path:`artifacts/terminal-reading/${theme}-${width}.png`});}}
+  await page.setViewportSize({width:1000,height:650});await page.evaluate(()=>window.theme('light'));await emit('\x1b[3J\x1b[2J\x1b[H');
+  await emit(osc('prompt',4)+'$ '+osc('input',4)+'pwd\r\n'+osc('start',4)+'/var/log/edge-api\r\n'+osc('end',4,'0')+osc('prompt',5)+'$ '+osc('input',5)+'cat missing.log\r\n'+osc('start',5)+'cat: missing.log: No such file or directory\r\n'+osc('end',5,'1')+osc('prompt',6)+'$ '+osc('input',6));
+  await frame.locator('.reading-result.is-error').waitFor();assert.equal(await frame.locator('.reading-result.is-error').textContent(),'退出 1');await page.screenshot({path:'artifacts/terminal-reading/short-and-error.png'});
+  await emit(osc('prompt',7)+'$ '+osc('input',7)+'x'.repeat(110)+'\r\n'+osc('start',7));
+  await frame.getByRole('button',{name:'x'.repeat(110)+' · 执行中',exact:true}).waitFor();
+  const occupied=await child().evaluate(()=>{const row=window.testReading.state().entries.at(-1).start.line,screen=document.querySelector('.xterm-screen').getBoundingClientRect(),top=screen.top+(row-window.testTerminal.buffer.active.viewportY)*(screen.height/window.testTerminal.rows);return [...document.querySelectorAll('.reading-result')].some(element=>Math.abs(element.getBoundingClientRect().top-top)<1);});assert.equal(occupied,false,'Command results never paint over occupied terminal cells');
+  await emit(osc('end',7,'0'));
+  await page.evaluate(()=>window.lifecycle('settingsChanged',{settings:{definitionToken:'fixture',revision:'1',pageId:'terminal',values:{readingMode:'off'}}}));await frame.locator('.terminal-reading-toolbar').waitFor({state:'hidden'});await frame.locator('.terminal-reading-footer').waitFor({state:'hidden'});assert.equal(await frame.locator('#terminal').evaluate(element=>element.classList.contains('has-reading-gutter')),false);
+  await page.evaluate(()=>window.lifecycle('settingsChanged',{settings:{definitionToken:'fixture',revision:'2',pageId:'terminal',values:{readingMode:'auto'}}}));await frame.locator('.terminal-reading-toolbar').waitFor({state:'visible'});
   // Captured visible titles never include password-like data that wasn't echoed.
-  await emit(osc('prompt',4)+'Password: '+osc('input',4)+'\r\n'+osc('start',4)+'done\r\n'+osc('end',4,'0'));
+  await emit(osc('prompt',8)+'Password: '+osc('input',8)+'\r\n'+osc('start',8)+'done\r\n'+osc('end',8,'0'));
   assert.equal(await child().evaluate(()=>window.testReading.state().entries.at(-1).title),undefined);
   await child().evaluate(()=>window.testTerminal.scrollToBottom());
   await frame.getByRole('button',{name:'添加标记',exact:true}).click();

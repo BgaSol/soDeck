@@ -20,13 +20,13 @@ export function parseOsc7(text,host){
     const windows=/^\/[a-z]:\//i.test(path);return {state:'known',path:windows?path.slice(1).replaceAll('/','\\'):path,pathStyle:windows?'windows':'posix',filesystemView:'session-default',method:'shell-integration'};
   }catch{return null;}
 }
-export function createLocation(terminal){
+export function createLocation(terminal,onLocation=()=>{}){
   let client,mount,host='',kind='',frameOffset=0,report,latest,ready=false,busy=false,disposed=false,timer,epoch=0,integration={},observed=false,confirmed=false,handshake;
   const valid=()=>!disposed&&ready&&client?.available&&JSON.stringify(mount.context)===JSON.stringify(mount.data.openedContext);
   const handler=terminal.parser.registerOscHandler(7,text=>{if(kind==='data'&&integration.mode==='manual')report=parseOsc7(text,host)||{state:'unknown',path:null,reasonCode:'invalid-report'};return true;});
   // Integration failure belongs to both observers. Let reading receive the same OSC event.
   const automatic=terminal.parser.registerOscHandler(633,text=>{if(kind==='data'&&integration.mode==='auto'){const parsed=parseIntegration(text,integration.token);if(parsed){observed=true;if(parsed.state==='known')confirmed=true;if(parsed.activity==='unavailable')confirmed=false;clearTimeout(handshake);report=parsed;return parsed.activity!=='unavailable';}}return false;});
-  function observation(value){return {...value,terminalId:mount.data.streamId,title:mount.data.title,shell:integration.shell,outputOffset:String(frameOffset),observedAt:Date.now()};}
+  function observation(value){const record={...value,terminalId:mount.data.streamId,title:mount.data.title,shell:integration.shell,outputOffset:String(frameOffset),observedAt:Date.now()};onLocation(record);return record;}
   async function publish(){
     if(!valid()||busy||!latest)return;busy=true;const ticket=epoch,target=latest;
     try{
@@ -39,8 +39,8 @@ export function createLocation(terminal){
     finally{busy=false;if(!timer&&latest&&valid())queueMicrotask(publish);}
   }
   return {
-    mount(value){client?.dispose();mount=value;client=new SharedState(value);host=value.settings?.values?.directoryReportHost||'';integration=value.data.integration||{mode:'manual'};ready=false;latest=null;observed=false;++epoch;},
-    settings(value){const next=value?.values?.directoryReportHost||'';if(integration.mode==='manual'&&next!==host){host=next;report=null;latest={state:'unknown',path:null,reason:'目录报告配置已更换',terminalId:mount.data.streamId,outputOffset:String(frameOffset),observedAt:Date.now()};++epoch;void publish();}},
+    mount(value){client?.dispose();mount=value;client=new SharedState(value);host=value.settings?.values?.directoryReportHost||'';integration=value.data.integration||{mode:'manual'};ready=false;latest=null;observed=false;++epoch;onLocation({state:'unknown'});},
+    settings(value){const next=value?.values?.directoryReportHost||'';if(integration.mode==='manual'&&next!==host){host=next;report=null;latest=observation({state:'unknown',path:null,reason:'目录报告配置已更换'});++epoch;void publish();}},
     frame(type,offset){kind=type;frameOffset=offset;report=null;},
     completed(){if(report&&Number.isSafeInteger(frameOffset)){latest=observation(report);void publish();}report=null;},
     ready(){ready=true;void publish();const ticket=epoch;void client?.request('get',{topic:'terminal.location.v1',key:'current'}).then(({record})=>{
@@ -49,8 +49,8 @@ export function createLocation(terminal){
       if(integration.mode==='auto')handshake=setTimeout(()=>{if(ticket===epoch&&!disposed&&!observed){latest=observation({state:'unknown',path:null,activity:'unavailable',reasonCode:'handshake-timeout'});void publish();}},8000);
     }).catch(()=>{});},
     input(text){if(integration.mode==='auto'&&confirmed&&/[\r\n\x03\x04]/.test(text)){latest=observation({state:'unknown',path:null,activity:'busy',reasonCode:'busy'});void publish();}},
-    unknown(offset,reason){if(Number.isSafeInteger(offset)){latest={state:'unknown',path:null,reason,terminalId:mount.data.streamId,outputOffset:String(offset),observedAt:Date.now()};void publish();}},
-    invalidate(){ready=false;latest=null;++epoch;clearTimeout(timer);clearTimeout(handshake);timer=undefined;},
+    unknown(offset,reason){if(Number.isSafeInteger(offset)){latest={state:'unknown',path:null,reason,terminalId:mount.data.streamId,outputOffset:String(offset),observedAt:Date.now()};onLocation(latest);void publish();}},
+    invalidate(){ready=false;latest=null;++epoch;clearTimeout(timer);clearTimeout(handshake);timer=undefined;onLocation({state:'unknown'});},
     dispose(){disposed=true;++epoch;clearTimeout(timer);clearTimeout(handshake);handler.dispose();automatic.dispose();client?.dispose();},
   };
 }
