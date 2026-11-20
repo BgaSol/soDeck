@@ -107,11 +107,13 @@ export class ServerManager {
     const bounds=tree.getBoundingClientRect(),rows=[...tree.querySelectorAll<HTMLElement>('.connection-node')];
     if(!bounds.width||!bounds.height){svg.innerHTML='';return;}
     const index=new Map(rows.map(row=>[row.dataset.path,row]));
+    const originBox=origin.querySelector('.tree-origin-symbol')!.getBoundingClientRect();
     svg.setAttribute('viewBox',` 0 0 ${bounds.width} ${bounds.height}`.trim());
     const lines=rows.map(row=>{
-      const parent=index.get(row.dataset.parent),anchor=(parent?.querySelector('.tree-toggle,.tree-toggle-placeholder')??origin.querySelector('.tree-origin-symbol'))!.getBoundingClientRect();
+      const parent=index.get(row.dataset.parent),anchor=parent?.querySelector('.node-card')!.getBoundingClientRect()??originBox;
       const box=row.querySelector('.node-card')!.getBoundingClientRect();
-      const x=Math.round(anchor.left-bounds.left+anchor.width/2)+.5,py=Math.round(anchor.top-bounds.top+anchor.height/2)+.5,y=Math.round(box.top-bounds.top+box.height/2)+.5;
+      const inset=parent?Math.min(originBox.width/2,box.left-anchor.left-4):originBox.width/2;
+      const x=Math.round(anchor.left-bounds.left+inset)+.5,py=Math.round(anchor.bottom-bounds.top)+.5,y=Math.round(box.top-bounds.top+box.height/2)+.5;
       return {d:`M ${x} ${py} V ${y-4} Q ${x} ${y} ${x+4} ${y} H ${box.left-bounds.left}`,selected:row.classList.contains('on-route')};
     });
     svg.innerHTML=lines.map(line=>`<path d="${line.d}"/>`).join('')+lines.filter(line=>line.selected).map(line=>`<path class="on-route" d="${line.d}"/>`).join('');

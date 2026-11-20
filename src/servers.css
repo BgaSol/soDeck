@@ -33,7 +33,7 @@
   .tree-origin-symbol svg {width:16px;height:16px;}
   .tree-lines {position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;stroke:color-mix(in srgb,var(--muted) 65%,var(--canvas));fill:none;stroke-width:1;stroke-linecap:round;stroke-linejoin:round;}
   .tree-lines .on-route {stroke:var(--accent);stroke-width:1.5;}
-  .connection-node {position:relative;display:flex;align-items:center;min-height:var(--sd-connection-height);margin:4px 0 4px calc(var(--node-depth)*var(--sd-connection-indent));cursor:pointer;}
+  .connection-node {position:relative;display:flex;align-items:center;min-height:var(--sd-connection-height);margin:4px 0 4px calc(var(--node-depth)*var(--sd-connection-indent));padding-left:var(--sd-tree-gutter);cursor:pointer;}
   .node-card {display:flex;align-items:center;gap:8px;min-width:0;flex:1;min-height:var(--sd-connection-height);padding:5px 9px;border:var(--sd-stroke-control) solid var(--border);border-radius:6px;background:var(--panel);}
   .connection-node:hover .node-card {background:var(--hover);}
   .connection-node.selected .node-card {background:var(--accent-bg);border-color:var(--accent);}
@@ -51,9 +51,9 @@
   .node-subline {line-height:18px;font-size:11px;color:var(--muted);}
   .node-endpoint {font-family:Consolas,'SFMono-Regular',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:40px;}
   .node-tags {margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:45%;}
-  .connection-node .tree-toggle {width:var(--sd-tree-gutter);height:28px;min-height:28px;flex-shrink:0;padding:6px;border:0;border-radius:4px;background:var(--canvas);color:var(--muted);z-index:1;}
-  .connection-node .tree-toggle:hover:not(:disabled) {background:var(--hover);color:var(--text);}
-  .connection-node .tree-toggle:disabled {opacity:1;background:var(--canvas);cursor:default;}
+  .connection-node .tree-toggle {width:var(--sd-tree-gutter);height:28px;min-height:28px;flex-shrink:0;padding:6px;border:0;border-radius:4px;background:transparent;color:var(--muted);}
+  .connection-node .tree-toggle:hover:not(:disabled) {background:color-mix(in srgb,var(--accent) 12%,var(--panel));color:var(--text);}
+  .connection-node .tree-toggle:disabled {opacity:1;background:transparent;cursor:default;}
   .connection-node .tree-toggle svg {width:12px;height:12px;transform:rotate(90deg);}
   .connection-node[aria-expanded=false] .tree-toggle svg {transform:rotate(0deg);}
   .tree-toggle-placeholder {width:var(--sd-tree-gutter);height:28px;flex-shrink:0;}
@@ -154,7 +154,7 @@
     .catalog-new {margin-left:auto;}
     .catalog-list {padding:10px 12px 20px;}
   }
-  @media (pointer:coarse) {.catalog-page {--sd-tree-gutter:32px;} .catalog-tag-filters button,.catalog-new button,.catalog-toolbar>button {min-height:44px;min-width:44px;} .connection-node .tree-toggle {min-height:44px;} }
+  @media (pointer:coarse) {.catalog-page {--sd-tree-gutter:32px;} .catalog-tag-filters button,.catalog-new button,.catalog-toolbar>button {min-height:44px;min-width:44px;} .connection-node .tree-toggle {min-height:44px;} .connection-node .tree-toggle,.tree-toggle-placeholder {width:44px;} }
   @media (max-width:500px) {
     .catalog-dialog-heading,.catalog-dialog-footer {padding:14px;}
     .catalog-form-body {padding:0 14px;}
