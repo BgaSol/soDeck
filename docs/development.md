@@ -132,11 +132,15 @@ Linux 安装 Bash、Zsh 和 Python 3 后运行 `python3 scripts/test-terminal-sh
 
 docker:windows:test 先运行 test:prepare -- docker；需要本机 Docker Desktop 已启动，docker.exe/ssh-keygen/Cargo 在 PATH，Windows OpenSSH sshd 可用。测试只启动临时回环服务与独立密钥，不修改系统 SSH 配置；创建唯一名称/标签的容器、卷、网络与派生镜像，结束仅清理这些资源。它不等于 Windows Server Engine 或 ARM64 远端验收。docker:process:test 与实际插件包回归另覆盖模拟 POSIX/Linux、Windows/Linux、Windows/Windows 三种组合，模拟不计为真实 Engine 验收。
 
-## 打包
+### MCP 调查与交互回归
 
 `npm run mcp:test` 在三个隔离 OpenSSH 服务上从零工作区发现保存资料、打开并直接执行/下载，验证主机密钥交接、固定打开回执、重连及插件停止保留接纳会话；另保留真实核心与 MCP 插件的名称/主机/端点/IPv4 尾段目标发现、断开/重连与旧任务恢复、首次采集、补采、任务查找、文本/状态等待、去重和原字节下载；`mcp:process:test` 用实际插件进程验证保存资料完整分页、歧义、共享打开、创建 ACK、换代销毁、延迟接纳前取消，以及原任务接纳回包丢失、归属、稳定收尾、输出模式、分页、等待唤醒/HTTP 中断及容量、最终元数据和清理失败。`mcp:ui:test` 验证摘要与完整详情、主题、窄屏、焦点、接入配置和隐藏/卸载。先执行 `npm run test:prepare -- mcp`。本机可选设 `SODECK_TEST_MCP_BASELINE` 为旧 MCP 0.4.0 包目录，比较同一真实会话范围的全量回包与新定位回包；新核心的 v1 投影供旧包读取，不作为旧核心全套验收。本机可选设 `SODECK_TEST_CODEX` 为已登录的 Codex CLI 路径，在同一真实三服务器夹具中增加实际 Codex 工具调用验收，包括唯一目标两次调用、歧义不执行和重连后查询原任务；此项依赖本机认证，不在无认证 CI 中自动运行。CI 业务矩阵包含前三项；独立插件 package/verify 在五个原生目标验收实际包，并对 MCP 0.6.0 起的原包运行同一打开、进程查询与断开测试。
 
+`mcp:test` 还通过真实 pipe 验证多轮问答、9000 字节跨块输入和 EOF，通过 PTY 验证输入与 resize。POSIX 远端另验证无回显原始控制字节、窗口尺寸、持续 shell、Ctrl+C 与 Ctrl+D；Linux 创建一次性账号和 sudo 规则，验证错误密码后继续原任务、实际 root 文件副作用及退出码。夹具使用独立回环 SSH 服务，结束时有界停止服务并删除临时账号和规则，不在用户服务器执行此专项。`mcp:process:test` 覆盖输入去重、回包丢失、迟到观察、接纳前拒绝与 EOF；五平台插件原包验收复用该进程入口，受控宿主不能替代真实 SSH。
+
 本机可选设 `SODECK_TEST_CODEX_OPEN` 为已登录 Codex CLI 路径，增加零工作区的实际客户端资料发现、原打开等待与直接执行验收；夹具用户只回答自己的隔离主机密钥提示，不修改客户端永久配置。原 `SODECK_TEST_CODEX` 继续用于已有任务读取/恢复验收。两项都依赖本机认证，CI 不自动执行。
+
+## 打包
 
 核心与插件各自打包。核心打包只依赖核心和自身运行资源，不需要构建业务插件。
 

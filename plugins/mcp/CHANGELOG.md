@@ -5,7 +5,17 @@
 - Collector 使用核心通用进程契约；类型化启动参数是唯一来源，输入封闭和实际 RPC 收尾后固定结果。PTY 输出为 v2 terminal，metadata 为 schemaVersion=2。
 - 原十工具、连接发现/打开、下载与 batch 输出继续使用；新增为第十一个工具。无新增生产依赖，SSH 认证仍复用核心。
 
-要求核心 1.10.0 的 session.process.v1；缺少能力时初始化提示升级。行为见[功能说明](../../docs/features/mcp.md)，字段见[MCP API](../../docs/mcp-api.md)。固定来源检查和五平台独立包验收尚待完成，发行后在此记录原始来源与链接。
+要求核心 1.10.0 的 session.process.v1；缺少能力时初始化提示升级。行为见[功能说明](../../docs/features/mcp.md)，字段见[MCP API](../../docs/mcp-api.md)。更新核心和已启用插件后重启 SoDeck；端口、Token、客户端配置与原侧栏位置沿用。
+
+发行：[Agent MCP 0.7.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.7.0)，独立正式插件发行，仓库 Latest 保持[核心 1.10.0](https://github.com/BgaSol/soDeck/releases/tag/v1.10.0)。包来源 [c59f4786a0ce66efb6a5c88300d5b3d452245c56](https://github.com/BgaSol/soDeck/commit/c59f4786a0ce66efb6a5c88300d5b3d452245c56)；[原始五平台打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/44740814071)第 1 次尝试通过，五份原生归档继续使用同一批原始字节。
+
+Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 均验证原包程序启动、十一工具发现、输入/回包丢失/去重/查询与打开控制进程回归、挂载、销毁及退出，版本、架构、来源、UI 与图标检查通过。控制测试使用匹配 session.process.v1 的受控宿主。五份报告、原始包摘要、Release 与匿名下载核验保存于[永久发行证据](release-evidence/v0.7.0-assets.json)。
+
+[包来源 Check](https://github.com/BgaSol/soDeck/actions/runs/44740795514)的五平台 MCP 源码检查通过，业务组取消，不将整体运行记为通过。之后只修改核心终端屏障与 Linux 验收夹具，MCP 生产输入保持一致；[最终 Check](https://github.com/BgaSol/soDeck/actions/runs/44751914413)的五平台核心/插件源码及全部选中界面、SSH、网络和业务回归通过，netem 未选择。
+
+本机 191 项工程脚本通过。Windows x86_64 的原始 MCP 归档与 afc8948 核心夹具、三个隔离 OpenSSH 服务再次联调，两个流程在 16.49 秒通过，覆盖跨块 pipe、多轮输入、EOF、PTY 与 resize。Linux 最终回归另验证原始 NUL/控制/方向键字节、无回显、持续 shell、Ctrl+C/Ctrl+D，以及真实 sudo 错误密码后继续同一任务，核对 root 文件副作用、退出码与完整输出。夹具曾在真实流程已通过后因临时账号残留 PAM 进程而清理失败；修正后实际 SSH 服务、用户、规则和目录均清理，完整 CI 与隔离活跃会话清理通过。此修正没有重建已通过的插件包。
+
+直接发布同一草稿附件，五份原始归档保持；仅同步发行说明和更新清单 notes。公开六附件的匿名下载大小和 SHA-256 与原报告及清单一致。未执行五平台已安装核心与 MCP 的真实 SSH 组合、旧版实际升级、netem、新的已认证 Codex CLI 调用、真实超过 300 秒持续等待或新增物理 IME/DPI/读屏专项。
 
 # 0.6.0
 
