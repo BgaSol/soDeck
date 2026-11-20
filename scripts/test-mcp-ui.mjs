@@ -17,8 +17,8 @@ const server=createServer((req,res)=>{
   res.setHeader('Content-Type',{'.js':'text/javascript','.html':'text/html','.css':'text/css'}[path.extname(file)]||'application/octet-stream');res.end(fs.readFileSync(file));
 });
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
-const browser=await chromium.launch({headless:true}),themes=await readTestThemeTokens(browser),page=await browser.newPage({viewport:{width:1040,height:850}});
-let longOutput=false,bodyFail=false,holdConfig;
+const browser=await chromium.launch({headless:true}),themes=await readTestThemeTokens(browser),page=await browser.newPage({viewport:{width:1040,height:850},recordVideo:{dir:'artifacts/mcp-ui/motion',size:{width:1040,height:850}}});
+let longOutput=false,bodyFail=false,holdConfig,holdClipboard,clipboardFail=false,clipboardWrites=0;
 const longLines=Array.from({length:24000},(_,i)=>'log-'+i+' nginx request status=200').join('\n').split('\n');
 let snapshots=0,configs=0,clipboard='',actions=[],fail=false,targetFail=false,invalidIdentity=false,detailFail=false,hold,holdDetail,holdSettings,taskReads=[];
 let settingsSnapshot={pageId:'connection',definitionToken:'test-settings',revision:'1',values:{port:19846}},settingsSaves=[],conflict=false;
@@ -27,7 +27,7 @@ const errors=[];page.on('pageerror',e=>errors.push(e.message));
 Object.assign(data.tasks[0],{input:{command:"journalctl -u consul --since '15 minutes ago' --no-pager"},createdAt:Date.now()-12000});
 Object.assign(data.tasks[1],{input:{remotePath:'/tmp/consul-evidence.log'},createdAt:Date.now()-20000,finishedAt:Date.now()-15000,native:{state:'completed',result:{size:'25190'}},evidence:{complete:true,path:'/evidence/t2/download.bin'}});
 Object.assign(data.tasks[2],{input:{command:'printf "<img src=x onerror=alert(1)>"\n'+'x'.repeat(16000)},createdAt:Date.now()-40000,finishedAt:Date.now()-35000});
-for(const task of data.tasks){task.targetId=data.targetId;task.runId=data.runId;task.revision='1';task.outputInfo={savedBytes:'200'};task.target=structuredClone(data.target.descriptor);}
+for(const task of data.tasks){task.phase=task.done?'done':'collecting';task.evidence.state=task.done?'saved':'collecting';task.targetId=data.targetId;task.runId=data.runId;task.revision='1';task.outputInfo={savedBytes:'200'};task.target=structuredClone(data.target.descriptor);}
 function summary(task){const {input,directory,...row}=structuredClone(task);const value=input?.command??input?.remotePath??task.requestId;row.inputPreview=value.slice(0,256);row.inputTruncated=value.length>256;if(row.evidence)delete row.evidence.path;return row;}
 const records=new Map(data.tasks.map(task=>[task.taskId,task]));
 await page.exposeFunction('mcpRequest',async(method,p)=>{
@@ -37,7 +37,7 @@ await page.exposeFunction('mcpRequest',async(method,p)=>{
     if(p.op==='save'){settingsSaves.push(p);if(holdSettings)await new Promise(r=>{holdSettings=r;});if(conflict){settingsSnapshot={...settingsSnapshot,revision:'2',values:{port:19849}};return {persisted:false,conflict:true,snapshot:structuredClone(settingsSnapshot)};}
       assert.equal(p.baseRevision,settingsSnapshot.revision);settingsSnapshot={...settingsSnapshot,revision:String(Number(settingsSnapshot.revision)+1),values:p.values};return {persisted:true,snapshot:structuredClone(settingsSnapshot)};}
   }
-  if(method==='clipboard'){if(p.op==='beginWrite'){clipboard='';return {id:'clip'};}if(p.op==='writeChunk'){clipboard+=p.text;return {};}return {};}
+  if(method==='clipboard'){if(p.op==='beginWrite'){clipboardWrites++;if(clipboardFail)throw new Error('clipboard unavailable');if(holdClipboard)await new Promise(r=>{holdClipboard=r;});clipboard='';return {id:'clip'};}if(p.op==='writeChunk'){clipboard+=p.text;return {};}return {};}
   if(method==='data'){actions.push(p);return {};}
   actions.push(p.action);
   if(p.action==='config'){configs++;if(holdConfig)await new Promise(r=>{holdConfig=r;});return {token:'illustrative-secret',config:'[mcp_servers.sodeck]\nurl = "http://127.0.0.1:19846/mcp"\nhttp_headers = { Authorization = "Bearer illustrative-secret" }'};}
@@ -128,11 +128,31 @@ try {
   delete data.tasks[0].phase;data.tasks[0].revision=String(BigInt(data.tasks[0].revision)+1n);
   await choose('查看命令详情 inspect-network');await frame.locator('#detail-command').filter({hasText:'printf'}).waitFor();
   assert.equal(await frame.locator('#detail-command').textContent(),records.get('t3').input.command);
-  assert((await frame.locator('#detail-state').textContent()).includes('退出码 7'));assert(await frame.locator('#detail-error').isVisible());
+  assert((await frame.locator('#detail-state').textContent()).includes('退出码 7'));assert(await frame.locator('#detail-evidence').isVisible());
   await capture({path:'artifacts/mcp-ui/failed-command.png',fullPage:true});
   const signalTask=data.tasks.find(t=>t.taskId==='t3'),savedNative=signalTask.native;signalTask.native={state:'completed',exitSignal:'TERM'};signalTask.revision='2';
   await frame.locator('#refresh').click();await frame.locator('#detail-state').filter({hasText:'退出信号 TERM'}).waitFor();
   await capture({path:'artifacts/mcp-ui/signal-exit.png',fullPage:true});signalTask.native=savedNative;signalTask.revision='3';
+  const savedEvidence=signalTask.evidence;
+  signalTask.native={state:'completed',exitCode:0};signalTask.evidence={state:'failed',complete:false,error:{message:'磁盘已满'}};signalTask.cleanupError={message:'通道未释放'};signalTask.revision='9007199254740993';
+  await frame.locator('#refresh').click();await frame.locator('#detail-state').filter({hasText:'已结束 · 退出码 0'}).waitFor();
+  assert.equal(await frame.locator('#detail-state').getAttribute('data-tone'),'normal');assert(await frame.locator('#detail-error').isHidden());
+  assert((await frame.locator('#detail-evidence').textContent()).includes('磁盘已满'));assert((await frame.locator('#detail-cleanup').textContent()).includes('通道未释放'));
+  await frame.locator('#evidence-details>summary').click();await frame.locator('#detail-output').focus();
+  await frame.locator('#detail-output').evaluate(el=>{const range=document.createRange();range.selectNodeContents(el);getSelection().removeAllRanges();getSelection().addRange(range);});
+  const selection=await frame.locator('#detail-output').evaluate(()=>getSelection().toString());
+  signalTask.revision='9007199254740992';signalTask.native={state:'running'};signalTask.evidence={complete:true};
+  await frame.locator('#refresh').click();await page.waitForTimeout(100);
+  assert((await frame.locator('#detail-state').textContent()).includes('退出码 0'),'older revisions above Number precision cannot replace accepted facts');
+  assert(await frame.locator('#evidence-details').evaluate(el=>el.open));assert.equal(await frame.locator('#detail-command').textContent(),records.get('t3').input.command,'summary polling retains the complete input');
+  assert.equal(await frame.locator('#detail-output').evaluate(()=>getSelection().toString()),selection,'fact updates preserve the frozen log selection');
+  await overview();const issueRow=frame.locator('[data-task-id="t3"]');
+  assert.equal(await issueRow.getAttribute('data-tone'),'normal');assert((await issueRow.textContent()).includes('磁盘已满'));assert((await issueRow.textContent()).includes('通道未释放'));
+  assert.equal(await issueRow.locator('time').count(),1);assert.equal((await issueRow.textContent()).split('证据保存失败').length-1,1);
+  await issueRow.scrollIntoViewIfNeeded();
+  await capture({path:'artifacts/mcp-ui/independent-save-cleanup.png',fullPage:true});
+  signalTask.native=savedNative;signalTask.evidence=savedEvidence;delete signalTask.cleanupError;signalTask.revision='9007199254740994';
+  await frame.locator('#refresh').click();await choose('查看命令详情 inspect-network');
   const selected=data.tasks.find(task=>task.taskId==='t3');
   data.tasks=data.tasks.filter(task=>task.taskId!=='t3');
   await frame.locator('#refresh').click();await frame.locator('#detail-request').filter({hasText:'inspect-network'}).waitFor({state:'attached'});
@@ -143,7 +163,8 @@ try {
   await choose('查看下载详情 consul-evidence');await frame.locator('#file-local').filter({hasText:'/evidence/t2/download.bin'}).waitFor();
   assert(await frame.locator('#detail-output-section').isHidden());assert.equal(await frame.locator('#file-name').textContent(),'consul-evidence.log');
   assert.equal(await frame.locator('#file-path-label').textContent(),'保存位置');
-  assert((await frame.locator('#file-summary').textContent()).includes('25190 字节'),'file receipt uses the existing native copy result size');
+  assert((await frame.locator('#file-summary').textContent()).includes('24.6 KiB'),'file receipt formats the existing native size');
+  await frame.locator('#evidence-details>summary').click();assert.equal(await frame.locator('#detail-size').textContent(),'25190 字节');await frame.locator('#evidence-details>summary').click();
   const beforeDownloadResume=taskReads.length;await message('visibilityChanged',{visible:false});await message('visibilityChanged',{visible:true});
   await frame.locator('#refresh').click();await page.waitForTimeout(100);
   assert(taskReads.slice(beforeDownloadResume).every(p=>p.outputMode==='none'),'download resume only reads facts');
@@ -157,7 +178,30 @@ try {
   await choose('查看下载详情 consul-evidence');late();await page.waitForTimeout(100);
   assert.equal(await frame.locator('#detail-request').textContent(),'consul-evidence');
   await overview();await frame.locator('#config-toggle').click();await frame.locator('#config').filter({hasText:'illustrative-secret'}).waitFor();
-  await frame.locator('#copy').click();await frame.locator('#config-notice').filter({hasText:'配置已复制'}).waitFor();assert(clipboard.includes('illustrative-secret'));
+  await frame.locator('#config-popover').evaluate(async el=>{await Promise.all(el.getAnimations().map(a=>a.finished.catch(()=>{})));});
+  const copyWidth=(await frame.locator('#copy').boundingBox()).width;
+  holdClipboard=true;const writesBefore=clipboardWrites;await frame.locator('#copy').click();await frame.locator('#copy').filter({hasText:'复制中…'}).waitFor();
+  assert.equal((await frame.locator('#copy').boundingBox()).width,copyWidth);assert.equal(await frame.locator(':focus').getAttribute('id'),'copy');
+  while(typeof holdClipboard!=='function')await page.waitForTimeout(10);
+  await frame.locator('#copy').evaluate(el=>el.click());assert.equal(clipboardWrites,writesBefore+1,'busy copy cannot start another write');
+  const releaseClipboard=holdClipboard;holdClipboard=null;releaseClipboard();
+  await frame.locator('#copy').filter({hasText:'已复制'}).waitFor();assert.equal((await frame.locator('#copy').boundingBox()).width,copyWidth);
+  clipboardFail=true;await frame.locator('#copy').click();await frame.locator('#copy').filter({hasText:'重试复制'}).waitFor();
+  assert.equal((await frame.locator('#copy').boundingBox()).width,copyWidth);assert(await frame.locator('#config-notice').isVisible());clipboardFail=false;
+  await frame.locator('#copy').click();await frame.locator('#copy').filter({hasText:'已复制'}).waitFor();assert(clipboard.includes('illustrative-secret'));
+  // Interrupt the exit in the same frame: no old animation may hide a reopened popup.
+  await frame.locator('#config-toggle').evaluate(el=>{el.click();if(document.getElementById('config').textContent!=='')throw new Error('secret retained while closing');el.click();});
+  await frame.locator('#config').filter({hasText:'illustrative-secret'}).waitFor();await page.waitForTimeout(200);assert(await frame.locator('#config-popover').isVisible());
+  assert.equal(await frame.locator('#config-popover').evaluate(el=>el.style.height),'');
+  holdClipboard=true;await frame.locator('#copy').click();while(typeof holdClipboard!=='function')await page.waitForTimeout(10);
+  await frame.locator('#config-toggle').evaluate(el=>{el.click();el.click();});await frame.locator('#config').filter({hasText:'illustrative-secret'}).waitFor();
+  const staleClipboard=holdClipboard;holdClipboard=null;staleClipboard();await page.waitForTimeout(100);assert.equal(await frame.locator('#copy').textContent(),'复制','old copy result cannot mark a new open as copied');
+  await frame.locator('#config-toggle').evaluate(el=>{el.click();el.click();});await message('themeChanged',{tokens:themes.dark});
+  assert.equal(await frame.locator('#config-popover').evaluate(el=>el.getAnimations().length),0);assert.equal(await frame.locator('#config-popover').evaluate(el=>el.style.height),'');
+  await frame.locator('#config').filter({hasText:'illustrative-secret'}).waitFor();
+  await frame.locator('#config-toggle').evaluate(el=>el.click());await page.emulateMedia({reducedMotion:'reduce'});
+  await frame.locator('#config-popover').waitFor({state:'hidden'});assert.equal(await frame.locator('#config-popover').evaluate(el=>el.getAnimations().length),0);
+  await page.emulateMedia({reducedMotion:'no-preference'});await frame.locator('#config-toggle').click();await frame.locator('#config').filter({hasText:'illustrative-secret'}).waitFor();
   await frame.locator('#settings>summary').click();await frame.locator('#show-token').click();await frame.locator('#access-token').filter({hasText:'illustrative-secret'}).waitFor();
   await frame.locator('#port').fill('1023');await frame.locator('#save-port').click();assert.equal(settingsSaves.length,0);
   await frame.locator('#port').fill('19847');await frame.locator('#save-port').click();await frame.locator('#port-notice').filter({hasText:'重启'}).waitFor();
@@ -165,7 +209,10 @@ try {
   conflict=true;await frame.locator('#port').fill('19848');await frame.locator('#save-port').click();await frame.locator('#port-notice').filter({hasText:'草稿已保留'}).waitFor();
   assert.equal(await frame.locator('#port').inputValue(),'19848');assert(await frame.locator('#save-port').isDisabled());await frame.locator('#reload-port').click();assert.equal(await frame.locator('#port').inputValue(),'19849');conflict=false;
   await frame.locator('#port').fill('19850');
-  await frame.locator('#config').press('Escape');assert(await frame.locator('#config-popover').isHidden());
+  await frame.locator('#config').press('Escape');
+  assert.equal(await frame.locator('#config-popover').getAttribute('aria-hidden'),'true');assert(await frame.locator('#config-popover').evaluate(el=>el.inert));
+  assert.equal(await frame.locator('#config').textContent(),'','closing clears the secret in the same interaction, before visual exit');
+  await frame.locator('#config-popover').waitFor({state:'hidden'});
   assert.equal(await frame.locator('#config').textContent(),'');assert(!(await frame.locator('#access-token').textContent()).includes('illustrative-secret'));assert.equal(await frame.locator(':focus').getAttribute('id'),'config-toggle');
   await frame.locator('#config-toggle').click();await frame.locator('#config').filter({hasText:'illustrative-secret'}).waitFor();await frame.locator('#settings>summary').click();assert.equal(await frame.locator('#port').inputValue(),'19850','closing the popover preserves the unsaved port draft');
   await frame.locator('#reload-port').evaluate(el=>el.click());await frame.locator('#config-toggle').click();
@@ -188,6 +235,7 @@ try {
   data.tasks.push({...structuredClone(originalTasks[0]),taskId:'new-row',requestId:'new-row',createdAt:Date.now()+1000});
   data.tasks.shift();await frame.locator('#refresh').click();await frame.locator('#new-tasks').waitFor();
   assert(Math.abs((await frame.locator('#content').evaluate(el=>el.scrollTop))-beforeNew)<5,'new messages preserve the reading anchor');
+  await capture({path:'artifacts/mcp-ui/new-operations.png',fullPage:true});
   const row=frame.locator('#tasks>.record').nth(4),rowId=await row.getAttribute('data-task-id');
   const rowNode=await row.elementHandle();data.tasks.find(t=>t.taskId===rowId).done=true;
   await frame.locator('#refresh').click();assert.equal(await rowNode.evaluate(el=>el.isConnected),true,'state changes preserve the task DOM node');

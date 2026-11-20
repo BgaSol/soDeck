@@ -1,4 +1,5 @@
-import {chronological,createRow,updateRow,paintDetail,mergeTask,preview,setText} from './task-view.js';
+import {createRow,updateRow,paintDetail} from './task-view.js';
+import {presentTask,preview} from './task-presentation.js';
 import {createOutputReader} from './output-reader.js';
 import {createConfigPopover} from './config-popover.js';
 const $=id=>document.getElementById(id), pane=$('content');
@@ -6,6 +7,13 @@ const event=async data=>{const value=await sodeck.request('event',data);return v
 let mounted=false,visible=false,epoch=0,timer,pending=false,again=false,snapshot,selected,returnPosition,config,observer,factSequence=0,reading=0,rotation=0,initial=true;
 const rows=new Map(),previews=new Map(),inView=new Set(),animations=new Set();
 const owner=()=>mounted && visible?epoch:null;
+function setText(el,value){value=String(value ?? '');if(el.textContent!==value)el.textContent=value;}
+function mergeTask(previous,next){
+  if(!previous || previous.taskId!==next.taskId)return next;
+  if(BigInt(previous.revision || '0')>BigInt(next.revision || '0'))return previous;
+  return {...next,input:next.input ?? previous.input,directory:next.directory ?? previous.directory,file:next.file ?? previous.file,evidence:{...next.evidence,path:next.evidence?.path ?? previous.evidence?.path}};
+}
+const chronological=tasks=>[...tasks].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0) || a.taskId.localeCompare(b.taskId));
 function notice(value){setText($('notice'),value);$('notice').hidden=!value;}
 function animate(el,offset=4) {
   if(owner()===null || matchMedia('(prefers-reduced-motion: reduce)').matches)return;
@@ -17,7 +25,7 @@ function theme(tokens){for(const [key,value]of Object.entries(tokens || {}))docu
 function belongs(task){return task && task.runId===snapshot?.runId && task.targetId===snapshot?.targetId;}
 function accept(task) {
   if(!selected || task.taskId!==selected.taskId || !belongs(task))return;
-  selected=mergeTask(selected,task);paintDetail(selected);reader.update(selected);
+  selected=mergeTask(selected,task);paintDetail(presentTask(selected,Date.now()));reader.update(selected);
 }
 const reader=createOutputReader({request:event,valid:()=>selected?owner():null,accept,onBusy:value=>{reading=Math.max(0,reading+(value?1:-1));}});
 function closeDetail(restore=false) {
@@ -33,7 +41,7 @@ function closeDetail(restore=false) {
   returnPosition=null;
 }
 function reset() {
-  epoch++;config?.close();closeDetail();previews.clear();inView.clear();observer?.disconnect();
+  epoch++;config?.close(false,false);closeDetail();previews.clear();inView.clear();observer?.disconnect();
   for(const row of rows.values())row.li.remove();rows.clear();initial=true;$('new-tasks').hidden=true;$('directory-details').open=false;
 }
 function anchor() {
@@ -47,7 +55,7 @@ function render(data) {
   const previous=new Map((snapshot?.tasks || []).map(task=>[task.taskId,task]));
   const tasks=chronological((data.tasks || []).map(task=>changed?task:mergeTask(previous.get(task.taskId),task)));
   const position=!selected?anchor():null, scroll=pane.scrollTop, bottom=pane.scrollHeight-pane.clientHeight-scroll<48;
-  const added=tasks.some(task=>!rows.has(task.taskId));
+  const added=tasks.some(task=>!rows.has(task.taskId)),entering=[],mayEnter=!initial && !selected && bottom,now=Date.now();
   snapshot={...data,tasks};config.update(data.endpoint);
   const target=data.target.descriptor,error=data.target.error,availability={ready:'已连接',disconnected:'已断开',closing:'正在关闭',stale:'连接已失效',unavailable:'暂不可用'}[data.target.availability] || '状态未知';
   setText($('server'),target?target.name || target.endpoint:error?'目标信息暂不可用':'服务器未连接');
@@ -59,9 +67,9 @@ function render(data) {
   for(const [id,row]of rows)if(!ids.has(id)){observer?.unobserve(row.li);row.li.remove();rows.delete(id);previews.delete(id);inView.delete(id);}
   tasks.forEach((task,index)=>{
     let row=rows.get(task.taskId);
-    if(!row){row=createRow(task,selectTask,cancel);rows.set(task.taskId,row);observer?.observe(row.li);}
+    if(!row){row=createRow(task.taskId,selectTask,cancel);rows.set(task.taskId,row);observer?.observe(row.li);if(mayEnter && entering.length<4)entering.push(row.li);}
     if($('tasks').children[index]!==row.li)$('tasks').insertBefore(row.li,$('tasks').children[index] || null);
-    updateRow(row,task,previews.get(task.taskId));if(selected?.taskId===task.taskId)row.button.setAttribute('aria-current','true');
+    updateRow(row,presentTask(task,now),previews.get(task.taskId));if(selected?.taskId===task.taskId)row.button.setAttribute('aria-current','true');
   });
   $('empty').hidden=Boolean(tasks.length);
   const active=tasks.filter(task=>!task.done).length,total=Math.max(data.recordCount ?? tasks.length,tasks.length);
@@ -69,21 +77,22 @@ function render(data) {
   if(selected) {
     const task=tasks.find(task=>task.taskId===selected.taskId);
     if(task)selected=mergeTask(selected,task);
-    paintDetail(selected);reader.update(selected);
+    paintDetail(presentTask(selected,Date.now()));reader.update(selected);
   } else if(initial || bottom) {
     pane.scrollTop=pane.scrollHeight;$('new-tasks').hidden=true;initial=false;
   } else {
     const row=rows.get(position?.id);pane.scrollTop=row?scroll+row.li.getBoundingClientRect().top-position.top:scroll;
     if(added)$('new-tasks').hidden=false;
   }
+  for(const el of entering){const box=el.getBoundingClientRect(),viewport=pane.getBoundingClientRect();if(box.bottom>viewport.top && box.top<viewport.bottom)animate(el,0);}
 }
 function selectTask(id,button) {
   const task=snapshot?.tasks.find(value=>value.taskId===id);if(!task)return;
   notice('');
-  config.close();$('server-info').open=false;$('directory-details').open=false;
+  config.close(false,false);$('server-info').open=false;$('directory-details').open=false;
   returnPosition={taskId:id,scrollTop:pane.scrollTop,top:button.getBoundingClientRect().top};
   factSequence++;reader.close();selected=task;$('overview').hidden=true;$('detail').hidden=false;$('new-tasks').hidden=true;
-  paintDetail(task);pane.scrollTop=0;$('detail-close').focus({preventScroll:true});reader.open(task);animate($('detail'),4);
+  paintDetail(presentTask(task,Date.now()));pane.scrollTop=0;$('detail-close').focus({preventScroll:true});reader.open(task);animate($('detail'),4);
   if(task.kind!=='exec')void loadFacts();
 }
 async function loadFacts() {
@@ -106,9 +115,9 @@ async function loadPreviews() {
       const value=await event({action:'task',taskId:task.taskId,tail:true});
       if(context!==owner() || selected || !belongs(value) || !rows.has(task.taskId))return;
       const cached={text:preview(value.output),bytes:value.output?.savedBytes ?? value.outputInfo?.savedBytes};
-      previews.set(task.taskId,cached);updateRow(rows.get(task.taskId),snapshot.tasks.find(t=>t.taskId===task.taskId),cached);
+      previews.set(task.taskId,cached);updateRow(rows.get(task.taskId),presentTask(snapshot.tasks.find(t=>t.taskId===task.taskId),Date.now()),cached);
     } catch(error) {
-      if(context===owner() && !selected && rows.has(task.taskId)){const cached={text:previews.get(task.taskId)?.text || '预览读取失败，请刷新重试。'};previews.set(task.taskId,cached);updateRow(rows.get(task.taskId),task,cached);}
+      if(context===owner() && !selected && rows.has(task.taskId)){const cached={text:previews.get(task.taskId)?.text || '预览读取失败，请刷新重试。'};previews.set(task.taskId,cached);updateRow(rows.get(task.taskId),presentTask(task,Date.now()),cached);}
     }
   }
 }
@@ -145,7 +154,7 @@ addEventListener('sodeck:mount',({detail})=>{
   for(const row of rows.values())observer.observe(row.li);
   if(detail.data)render(detail.data);config.settings(detail.settings);sodeck.mounted();void refresh();void config.readSettings();
 });
-addEventListener('sodeck:themeChanged',({detail})=>theme(detail.tokens));
+addEventListener('sodeck:themeChanged',({detail})=>{stopAnimations();config?.finishMotion();theme(detail.tokens);});
 addEventListener('sodeck:settingsChanged',({detail})=>config?.settings(detail.settings));
 addEventListener('sodeck:visibilityChanged',({detail})=>{
   epoch++;visible=detail.visible;clearTimeout(timer);config?.stop();stopAnimations();

@@ -9,7 +9,7 @@
       <button id="config-toggle" class="text-button" type="button" aria-expanded="false" aria-controls="config-popover">配置 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button>
     </div>
     <p id="service" class="caption" role="status" hidden></p><p id="freshness" class="caption" role="status" hidden></p>
-    <section id="config-popover" role="dialog" aria-label="客户端配置" hidden>
+    <section id="config-popover" role="dialog" aria-label="客户端配置" aria-hidden="true" inert hidden>
       <div class="heading"><h2>客户端配置</h2><button id="copy" class="sd-control primary" type="button">复制</button></div>
       <pre id="config" aria-label="客户端配置内容"></pre><p id="config-notice" class="caption" role="status"></p>
       <details id="settings"><summary>接入选项</summary>
@@ -26,7 +26,7 @@
       <div id="empty"><h2>等待第一条操作</h2><p class="caption">接入 MCP 客户端后，命令、上传、下载和执行反馈会显示在这里。</p><button id="empty-config" class="text-button" type="button">查看配置</button></div>
     </section>
     <section id="detail" aria-label="任务详情" hidden>
-      <div class="detail-nav heading"><button id="detail-close" class="text-button" type="button">‹ 返回对话</button><span id="detail-title" class="caption">命令详情</span></div>
+      <div class="detail-nav heading"><button id="detail-close" class="text-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>返回对话</button><span id="detail-title" class="caption">命令详情</span></div>
       <div id="command-info"><span class="caption">实际命令</span><pre id="detail-command"></pre></div>
       <div class="heading detail-status"><span id="detail-state" class="state"></span><span id="detail-time" class="caption"></span></div>
       <div id="file-receipt" hidden><h2 id="file-name"></h2><p id="file-summary" class="caption"></p><dl><dt>远程路径</dt><dd id="file-remote" class="path"></dd><dt id="file-path-label">保存位置</dt><dd id="file-local" class="path"></dd></dl></div>
@@ -37,11 +37,11 @@
         <div class="heading reader-footer"><span id="page-number" class="caption">第 1 页</span><div class="heading"><button id="previous" class="text-button" type="button" disabled>上一页</button><button id="next" class="text-button" type="button" disabled>下一页</button></div></div>
         <p id="output-error" class="error" role="status" hidden></p><button id="output-retry" class="text-button" type="button" hidden>重试读取</button>
       </section>
-      <div class="heading detail-foot"><span id="detail-evidence" class="caption"></span><button id="detail-cancel" class="text-button cancel" type="button">请求取消</button></div>
-      <details id="evidence-details"><summary>证据与任务信息</summary><ol id="detail-chain" class="steps"></ol><p id="detail-server" class="path caption"></p><p id="detail-created" class="caption"></p><dl><dt>请求编号</dt><dd id="detail-request" class="path"></dd><dt>任务编号</dt><dd id="detail-id" class="path"></dd><dt>本地证据</dt><dd id="detail-path" class="path"></dd></dl></details>
+      <div class="heading detail-foot"><span id="detail-evidence" class="caption"></span><button id="detail-cancel" class="text-button cancel" type="button">请求取消</button></div><p id="detail-cleanup" class="caption" hidden></p>
+      <details id="evidence-details"><summary>证据与任务信息</summary><ol id="detail-chain" class="steps"></ol><p id="detail-server" class="path caption"></p><p id="detail-created" class="caption"></p><dl><dt>请求编号</dt><dd id="detail-request" class="path"></dd><dt>任务编号</dt><dd id="detail-id" class="path"></dd><dt>本地证据</dt><dd id="detail-path" class="path"></dd><dt id="detail-size-field" hidden>精确大小</dt><dd id="detail-size" hidden></dd></dl></details>
     </section>
   </div>
-  <button id="new-tasks" class="new-tasks" type="button" hidden>有新操作 ↓</button>
+  <button id="new-tasks" class="new-tasks" type="button" hidden>有新操作<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14m-6-6 6 6 6-6"/></svg></button>
   <p id="notice" class="notice" role="status" hidden></p>
   <footer class="heading caption"><span id="task-count">等待操作</span><details id="directory-details"><summary>本地证据</summary><div><p id="directory" class="path"></p><p>最近最多 50 条，活动优先；重启后列表不恢复，证据保留。</p><button id="reveal" class="text-button" type="button">打开证据目录</button></div></details></footer>
 </main><script src="bridge.js"></script><script src="text-menu.js"></script><script src="clipboard-bridge.js"></script><script type="module" src="view.js"></script></body>

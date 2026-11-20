@@ -1,4 +1,5 @@
-import {setText} from './task-view.js';
+import {outputText} from './task-presentation.js';
+function setText(el,value){value=String(value ?? '');if(el.textContent!==value)el.textContent=value;}
 export function createOutputReader({request,valid,accept,onBusy}) {
   const $=id=>document.getElementById(id);
   let taskId, sequence=0, mode='history', cursor='0', pages=[], page, seen='0', latestBytes='0', loading=false, retry;
@@ -22,7 +23,7 @@ export function createOutputReader({request,valid,accept,onBusy}) {
       if(!result.output)throw new Error('未返回输出页，请重试。');
       mode=nextMode;cursor=nextCursor;pages=nextPages;page=result.output;seen=page.savedBytes || result.outputInfo?.savedBytes || '0';
       latestBytes=BigInt(latestBytes)>BigInt(seen)?latestBytes:seen;
-      const text=[page.terminal,page.stdout,page.stderr?'标准错误：\n'+page.stderr:''].filter(Boolean).join('\n') || '暂时没有输出。';
+      const text=outputText(page) || '暂时没有输出。';
       setText($('detail-output'),text);$('detail-output').scrollTop=mode==='latest'?$('detail-output').scrollHeight:0;
       accept(result);
     } catch(error) {
