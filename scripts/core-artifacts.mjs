@@ -4,6 +4,11 @@ import { createHash } from "node:crypto";
 export const targets = ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc", "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "aarch64-apple-darwin"];
 
 export const sha256 = file => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+export function cleanupWindowsUninstaller(install) {
+  fs.rmSync(path.join(install, 'uninstall.exe'), { force: true });
+  try { fs.rmdirSync(install); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+}
 export function coreNames(version, target) {
   if (!targets.includes(target)) throw new Error("Invalid core target");
   const arm = target.startsWith("aarch64");

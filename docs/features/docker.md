@@ -9,7 +9,7 @@ Docker 是独立插件，默认固定在右侧工具栏、按需打开。通过�
 - 在中央日志工作区连续阅读，跟随最新、固定当前位置、按时间补读、搜索/筛选、查看上下文和详情、复制原文及导出当前结果；右侧缩略支持定位和拖动。
 - 对象菜单提供容器启动、停止、重启、暂停、恢复和删除。启动、恢复直接执行，其余在侧栏确认；只允许删除已停止容器，不使用 force 或删除挂载卷参数。详情页继续提供快捷操作。
 - 单击选择，箭头展开，双击或 Enter 打开详情；引用节点定位实际资源。右键、选中行“更多”和 Shift+F10 打开相同对象菜单，底部提供日志/终端等快捷入口。已有手动停靠位置继续恢复，首次默认位于右侧。
-- 运行中的容器可从侧栏或详情打开终端。容器 Shell 默认 /bin/sh；侧栏“更多 → 终端选项”可填写容器内的绝对可执行路径。通过核心 terminal.open.v1 命令请求终端插件，无需直接调用插件。
+- 运行中的容器可从侧栏或详情打开终端。Linux Engine 默认 /bin/sh，Windows Engine 默认 cmd.exe，未知系统要求明确填写程序；侧栏“更多 → 终端选项”可修改容器内的可执行程序。通过核心 terminal.open.v1 命令请求终端插件。
 - 按需读取 CPU、内存、网络、块 IO 和进程数；累计字节不当作速率。已读取分类按设置刷新，关系、详情和指标按需读取。
 - 拉取公开镜像，删除无引用镜像、自定义网络和未使用卷；侧栏任务查看执行结果与拉取原始输出。
 
@@ -65,9 +65,15 @@ Docker Root 位于 Engine 下、四类资源之前，不被搜索和容器筛选
 
 容器运行很久也不会一次下载全部历史：近期内容有界轮换，阅读时最多固定一个窗口，历史按需读取。搜索、缩略和导出始终只覆盖已保留内容，不提供永久归档或整个容器的远端全文索引。Docker的tail/since减少返回量，也不保证daemon完全不扫描历史。
 
-## Endpoint 与操作语义
+## Docker 连接与操作语义
 
-当前远端范围为 Linux Docker Engine，默认明确指定 `unix:///var/run/docker.sock`，可保存其他绝对 Unix socket。更改 endpoint 前需要关闭该服务器的详情/日志并等待请求及镜像拉取完成；配置保存在插件数据目录的 `endpoints.json`。
+Docker 0.6.0 需要核心 1.8.1 的 session.program.v1。远端执行环境与 Engine 系统分别识别：Windows OpenSSH 用原生 Docker CLI 访问当前账号的本机命名管道，Desktop 的 WSL2 Linux Engine 使用 Linux 容器规则；POSIX 会话访问 Unix socket。显示实际 Client/Server 系统、版本、架构和 Docker Root，保留 Windows 盘符路径，不换算 WSL 虚拟磁盘。Windows Engine 已实现对应程序默认值和系统网络保护，暂停/恢复不提供；真实兼容验收范围见 [CHANGELOG](../../plugins/docker/CHANGELOG.md)与[待验收范围](../plans/docker-windows.md)。
+
+新服务器默认“自动识别”：DOCKER_CONTEXT 优先于 DOCKER_HOST，未覆盖时读取当前 Context 的 Docker endpoint。一次识别共享 30 秒期限，只读取发现所需环境变量。仅接受远端绝对 Unix socket 或远端本机 npipe（如 `npipe:////./pipe/dockerDesktopLinuxEngine`）；不自动回退其他端点、开放 TCP、进入 WSL 或提权。Docker Desktop 必须已启动，当前 SSH 账号必须能访问 CLI 和 Engine。
+
+“手动指定”只使用填写的端点。可选远端 CLI 绝对路径（允许空格/中文，不带参数），留空按远端 PATH 查找。旧 endpoints.json 的保存端点迁移为手动配置，升级不切换目标；新配置使用 schemaVersion 2，保留原文件备份，损坏或保存失败不覆盖原配置。
+
+“测试连接”只验证表单；“保存并连接”重新验证后提交，失败保留旧配置和目标。编辑后旧测试结果失效，后台刷新保留草稿。自动识别成功后固定实际端点和 Engine；外部 Context 变化不会重定向普通刷新。主动“重新识别”、切换模式、改端点或 CLI 前需关闭该服务器详情/日志，并等待在途请求、拉取与终端创建结束。Engine 身份或系统改变时旧快照标为待核对，停止维护，要求重新识别；旧页面不自动接管新目标。
 
 命令清除 Docker host/context/TLS/API 环境覆盖并显式指定 socket，不自动安装 Docker、不修改用户组、不添加 sudo。每次采集核对 Context、Engine ID 和完整容器 ID；Engine 更换后旧详情页提示重新打开。
 

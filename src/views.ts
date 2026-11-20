@@ -11,7 +11,6 @@ export interface ViewState {
   officialFetchedAt: number;
   officialLoading: boolean;
   officialError: string;
-  section: string;
   plugin: string;
   messages: Message[];
   unread: boolean;
@@ -36,9 +35,16 @@ export interface ViewState {
 }
 const pair = (name: string, value: unknown) =>
   `<div class="pair"><dt>${name}</dt><dd>${e(value)}</dd></div>`;
-export function settings(s: Snapshot, v: ViewState, componentNavigation = "") {
-  const nav = (id: string, label: string, symbol: string) => b("section",label,symbol,id === v.section ? "nav-item active" : "nav-item",`id="settings-nav-${id}" data-id="${id}" aria-current="${id === v.section ? "page" : "false"}"`);
-  return `<aside class="settings-nav" aria-label="设置导航">${nav("appearance","外观","sun")}${componentNavigation}${nav("about","应用与数据","info")}<div class="nav-bottom">SoDeck <span>v${e(s.version)}</span></div></aside><div class="settings-main"><section class="settings-page" data-scroll="settings" data-settings-section="${e(v.section)}" ${v.section === "components" ? 'id="component-settings-page"' : ""}>${v.section === "components" ? "" : v.section === "plugins" ? pluginsPage(s,v) : v.section === "appearance" ? appearance(s) : v.section === "updates" ? updatesPage(s,v) : about(s)}</section>${["plugins","updates"].includes(v.section) ? pendingUpdates(s,v) : ""}</div>`;
+export type SettingsSection = "appearance" | "components" | "about";
+export function settingsNavigation(section:SettingsSection|null, componentNavigation:string) {
+  const nav = (id:SettingsSection, label:string, symbol:string) => `<li>${b("section",`<span>${label}</span>`,symbol,"console-settings-item",`id="settings-nav-${id}" data-id="${id}" aria-current="${id === section ? "page" : "false"}"`)}</li>`;
+  return nav("appearance","外观","sun")+componentNavigation+nav("about","应用与数据","info");
+}
+export function settings(s:Snapshot, section:SettingsSection) {
+  return `<section class="settings-page" data-scroll="settings" data-settings-section="${section}" ${section === "components" ? 'id="component-settings-page"' : ""}>${section === "components" ? "" : section === "appearance" ? appearance(s) : about(s)}</section>`;
+}
+export function maintenance(s:Snapshot, v:ViewState, page:"plugins"|"updates") {
+  return `<div class="maintenance-main"><section class="maintenance-page" data-scroll="${page}">${page === "plugins" ? pluginsPage(s,v) : updatesPage(s,v)}</section>${pendingUpdates(s,v)}</div>`;
 }
 function appearance(s: Snapshot) {
   return `<div class="section-heading"><div><h2>外观</h2><p>选择适合当前环境的显示主题。</p></div></div><h3 class="field-title">应用主题</h3><div class="themes">${[["system", "跟随系统"], ...themes.map(t => [t.id, t.name])]

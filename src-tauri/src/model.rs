@@ -21,6 +21,10 @@ pub struct Manifest {
     pub commands: Option<crate::commands::Declaration>,
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub icon: String,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub icons: std::collections::BTreeMap<String, String>,
     pub version: String,
     pub api_version: String,
     pub target: String,

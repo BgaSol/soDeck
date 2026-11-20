@@ -1,5 +1,6 @@
 //! Local server directory. This module does not open network connections.
 pub(crate) mod connection_profile;
+mod read;
 use crate::{core::now, storage, AppCore};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};

@@ -4,6 +4,7 @@ use super::{
     ssh, Attempt, Error,
 };
 use crate::servers::connection_profile::{Auth, Profile};
+use crate::workspaces::ConnectionTarget;
 use std::{sync::Arc, time::Duration};
 use tokio::net::TcpStream;
 use tokio_util::sync::CancellationToken;
@@ -12,13 +13,7 @@ pub(crate) struct Session {
     pub(super) chain: Vec<russh::client::Handle<ssh::Client>>,
     cancel: CancellationToken,
     pub(crate) path: serde_json::Value,
-    pub(crate) target: TargetSummary,
-}
-#[derive(Clone, serde::Serialize)]
-pub(crate) struct TargetSummary {
-    pub protocol: String,
-    pub endpoint: String,
-    pub username: Option<String>,
+    pub(crate) target: ConnectionTarget,
 }
 impl Session {
     pub(crate) fn cancellation(&self) -> CancellationToken {
@@ -111,9 +106,10 @@ pub(super) async fn connect(
         chain: vec![],
         path: serde_json::json!(profile.nodes.iter().map(|n|serde_json::json!({"kind":if n.is_ssh(){"ssh"}else{"socks5"},"host":n.host,"port":n.port})).collect::<Vec<_>>()),
         cancel: a.cancel.clone(),
-        target: TargetSummary {
+        target: ConnectionTarget {
             protocol: "ssh".into(),
-            endpoint: target.endpoint(),
+            host: target.host.clone(),
+            port: target.port,
             username: Some(target.username.clone()),
         },
     };

@@ -322,6 +322,7 @@ fn old_session_results_rejected_after_disconnect_reconnect_and_close() {
             &a.context,
             "session-next".into(),
             "ops@new.invalid:22".into(),
+            None,
         )
         .unwrap();
     assert_eq!(next.generation, 2);

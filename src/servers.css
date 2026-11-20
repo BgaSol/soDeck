@@ -80,13 +80,31 @@
   .route-preview { list-style: none; padding: 0; margin: 16px 0; }
   .route-preview li { display: flex; gap: 10px; position: relative; padding-bottom: 20px; }
   .route-preview li:last-child { padding-bottom: 0; }
-  .route-preview li:not(:last-child)::after { content: ''; width: 1px; background: var(--border); position: absolute; left: 12px; top: 26px; bottom: 0; }
-  .route-number { border: 1px solid var(--border); border-radius: 50%; width: 26px; height: 26px; flex-shrink: 0; display: inline-flex; justify-content: center; align-items: center; font-size: 10px; background: var(--subtle); }
+  .route-symbol { border: var(--sd-stroke-control) solid var(--border); border-radius: 50%; width: 26px; height: 26px; flex-shrink: 0; display: inline-flex; justify-content: center; align-items: center; background: var(--subtle); }
+  .route-symbol > svg { width: 16px; height: 16px; }
+  .route-edge { position: absolute; left: 12px; top: 26px; bottom: 0; width: 2px; overflow: hidden; background: var(--border); pointer-events: none; color: var(--accent); }
+  .route-edge-complete { background: color-mix(in srgb, var(--accent) 40%, var(--canvas)); }
+  .route-edge > span { position: absolute; inset: 0; opacity: 0; }
+  .route-edge > span::after { content: ''; display: block; width: 2px; height: 12px; border-radius: 2px; background: currentColor; }
+  .route-edge-flow > span { animation: route-flow 2.8s linear infinite; animation-delay: var(--route-flow-delay); }
+  .route-active .route-symbol, .route-active .route-state { color: var(--accent); border-color: var(--accent); }
+  .route-waiting .route-symbol, .route-waiting .route-state { color: var(--warning); border-color: var(--warning); }
+  .route-failed .route-symbol, .route-failed .route-state { color: var(--error); border-color: var(--error); }
+  .route-motion-paused .route-edge-flow > span, .route-background .route-edge-flow > span { animation-play-state: paused; }
   .route-preview li > div { min-width: 0; padding-top: 4px; }
   .route-preview strong { font-size: 12px; overflow-wrap: anywhere; }
   .route-preview small { display: block; color: var(--muted); line-height: 1.6; margin-top: 4px; overflow-wrap: anywhere; }
   .route-preview .text-button { min-height: 0; padding: 0; font-size: 12px; white-space: normal; text-align: left; overflow-wrap: anywhere; }
   .route-explanation { font-size: 10px; }
+  @keyframes route-flow {
+    0% { transform: translateY(-12px); opacity: 0; }
+    12%, 82% { opacity: 1; }
+    100% { transform: translateY(100%); opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .route-edge-flow > span { animation: none; }
+    .route-edge-flow { background: var(--accent); }
+  }
   .catalog-dialog { padding: 0; width: min(720px, calc(100vw - 32px)); max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); border: 1px solid var(--border); border-radius: 14px; color: var(--text); background: var(--panel); box-shadow: var(--shadow); overflow: hidden; }
   .catalog-dialog::backdrop { background: #11152266; }
   .catalog-dialog form { display: flex; flex-direction: column; max-height: calc(100dvh - 36px); }

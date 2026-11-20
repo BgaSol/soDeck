@@ -126,7 +126,7 @@ impl AppCore {
                 for raw in pages {
                     let id = raw["id"].as_str().unwrap_or("");
                     let error = self.settings_definition(&p.manifest.id, id).err();
-                    entries.push(json!({"pluginId":p.manifest.id,"pluginName":p.manifest.name,"version":p.manifest.version,"pageId":id,"title":raw["title"].as_str().unwrap_or("组件设置"),"icon":raw["icon"],"order":raw["order"].as_u64().unwrap_or(1000),"enabled":p.enabled,"available":error.is_none(),"error":error}));
+                    entries.push(json!({"pluginId":p.manifest.id,"pluginName":p.manifest.name,"version":p.manifest.version,"pageId":id,"title":raw["title"].as_str().unwrap_or("组件设置"),"icon":raw["icon"],"iconUrl":crate::plugin_icons::url(&p.manifest,raw["icon"].as_str().unwrap_or("")),"order":raw["order"].as_u64().unwrap_or(1000),"enabled":p.enabled,"available":error.is_none(),"error":error}));
                 }
             } else {
                 entries.push(json!({"pluginId":p.manifest.id,"pluginName":p.manifest.name,"version":p.manifest.version,"pageId":"","title":p.manifest.name,"order":1000,"enabled":p.enabled,"available":false,"error":"此版本尚未提供可用组件设置，请更新插件"}));

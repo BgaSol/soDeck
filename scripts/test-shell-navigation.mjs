@@ -7,13 +7,14 @@ const browser=await chromium.launch({headless:true}),page=await browser.newPage(
 const url=server.resolvedUrls.local[0];
 const errors=[];page.on('pageerror',e=>errors.push(String(e)));
 await page.route(url,route=>route.fulfill({contentType:'text/html',body:`<html><body><div id="app"></div><script type="module">
-import {Shell} from '/shell.ts';import {ConnectionsUi} from '/connections.ts';import '/style.css';
+import {Shell} from '/shell.ts';import {ConnectionsUi} from '/connections.ts';import {settingsNavigation} from '/views.ts';import '/style.css';
 let views=[],gate;window.focuses=[];window.hidden=[];
 const context={workspaceId:'w',serverId:'s',connectionId:'a',generation:1};
 let state={window:{id:'main',role:'main',activeWorkspace:null},workspaces:[{context,name:'test',endpoint:'ops@test',connected:true}]};
 window.__TAURI_INTERNALS__={invoke:async(command,args)=>{if(args.command?.op==='focus'){focuses.push(args.command.context);state.window.activeWorkspace='w';return views;}if(args.command?.op==='snapshot')return structuredClone(views);if(args.command?.op==='start')return await new Promise(resolve=>gate=resolve);throw new Error(command);}};
 const workspaces={setHostCallbacks(changed,selected){this.changed=changed;this.selected=selected;changed(state);},setHostVisible(v){hidden.push(!v);},async refresh(){this.changed(state);}};
 window.shell=new Shell(document.querySelector('#app'),true);window.connection=new ConnectionsUi('main',()=>{},e=>errors.push(e));shell.attach(workspaces,connection);
+shell.onPage=page=>shell.updateSettingsNavigation(settingsNavigation(page==='settings'?'appearance':null,''));
 window.gated=()=>!!gate;window.finish=()=>{views=[{attemptId:'a',serverId:'s',windowId:'main',state:'connected',context}];const finish=gate;gate=undefined;finish?.(structuredClone(views));};
 window.clear=()=>{views=[];focuses.length=0;};window.passive=async()=>{views=[{attemptId:'a',serverId:'s',windowId:'main',state:'connecting'}];await connection.refresh();views=[{attemptId:'a',serverId:'s',windowId:'main',state:'connected',context}];await connection.refresh();};
 window.ready=true;
@@ -27,7 +28,14 @@ try {
   await page.setViewportSize({width,height:720});
   for(const destination of ['connections','plugins','settings','messages','logs','status','updates']){
    await page.locator(`[data-console-page=${destination}]`).focus();await page.keyboard.press('Enter');
-   assert.equal(await page.locator('.console-nav [aria-current="page"]').getAttribute('data-console-page'),destination);
+   if(destination==='settings'){
+    assert.equal(await page.locator('[data-console-page="settings"]').getAttribute('aria-expanded'),'true');
+    assert.equal(await page.locator('.console-nav [aria-current="page"]').getAttribute('data-id'),'appearance');
+    assert.equal(await page.locator('#console-settings-nav').evaluate(el=>el.parentElement.className),'console-nav');
+   }else{
+    assert.equal(await page.locator('.console-nav [aria-current="page"]').getAttribute('data-console-page'),destination);
+    assert.equal(await page.locator('#console-settings-nav').isVisible(),false);
+   }
    const gap=await page.evaluate(()=>{
     const content=document.querySelector(shell.route.page==='connections'?'#server-catalog':'#console-page');
     return content.getBoundingClientRect().top-document.querySelector('.console-main').getBoundingClientRect().top;

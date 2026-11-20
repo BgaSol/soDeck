@@ -87,7 +87,7 @@ await page.addInitScript(({snapshot,tokens})=>{
 },{snapshot,tokens:themes.light});
 const url='http://127.0.0.1:'+server.address().port;
 try{
-  await page.goto(url);let frame=page.frames()[1];
+  await page.goto(url);await page.waitForFunction(()=>window.prepared>0);let frame=page.frames()[1];
   fs.mkdirSync('artifacts/docker-ui',{recursive:true});
   for(const mode of ['container','logs']){
     snapshot={...snapshot,kind:mode,name:'prod-api-中文',status:'running',terminal:null,operation:null,revision:String(Number(snapshot.revision)+1)};
@@ -154,7 +154,7 @@ try{
       await frame.locator('#log-query').fill('unique');await frame.locator('#log-matches').filter({hasText:'1处'}).waitFor();
       await frame.locator('#log-next-match').click();await frame.locator('#log-lines').filter({hasText:'off-page UNIQUE'}).waitFor();
       await frame.locator('#log-query').fill('no-match');await frame.locator('#log-matches').filter({hasText:'0处'}).waitFor();
-      await frame.locator('#log-query').fill('refused');await frame.locator('#log-next-match').click();await frame.locator('#log-lines').filter({hasText:'refused'}).waitFor();
+      await frame.locator('#log-query').fill('refused');await frame.locator('#log-matches').filter({hasText:'1处'}).waitFor();await frame.locator('#log-lines mark').filter({hasText:'refused'}).waitFor();await frame.locator('#log-next-match').click();
       await frame.waitForFunction(()=>{const v=document.getElementById('log-viewport'),line=[...document.querySelectorAll('.log-line')].find(e=>e.querySelector('mark')?.textContent==='refused');if(!line)return false;const a=line.getBoundingClientRect(),b=v.getBoundingClientRect();return v.scrollTop<1||Math.abs(a.top+a.height/2-b.top-b.height/2)<3;});
       const before=await frame.locator('#log-viewport').evaluate(e=>e.scrollTop);await appendLive([{stream:'stdout',text:'INFO received while reading'}]);await frame.locator('#log-latest').filter({hasText:'41条新日志'}).waitFor();assert.equal(await frame.locator('#log-viewport').evaluate(e=>e.scrollTop),before,'incoming output keeps pinned reading position');
       await frame.locator('#log-query').fill('');await frame.locator('.log-map-thumb').focus();await page.keyboard.press('Home');await frame.locator('#log-lines').filter({hasText:'服务启动'}).waitFor();

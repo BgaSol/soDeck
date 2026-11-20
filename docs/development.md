@@ -94,6 +94,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --lib -
 | `npm run system-status:test` | 独立测试目录、真实 OpenSSH 采集/隐藏/暂停/关闭和三主题侧栏 |
 | `npm run system-status:ui:test` | 固定数据 UI、概览用量条、CPU/内存趋势切换与重挂载、三主题 160/200/240/280/320/400/480px；`SODECK_TEST_SYSTEM_STATUS_PLUGIN` 可指向实际包 |
 | `npm run docker:test` | 本机原生插件、真实核心与隔离 Linux Docker Engine/OpenSSH；验证单容器操作、日志、资源、断线保留及删容器保留卷 |
+| `npm run docker:windows:test` | Windows 本机 OpenSSH 与 Docker Desktop Linux Engine，验证原生 CLI/npipe、完整容器/资源/日志/PTY/拉取流程；使用独立标记测试资源并清理 |
 | `npm run docker:process:test` | 实际插件进程与假核心；验证查询复用、跨页搜索、操作去重、丢失回执、失败/中断状态、关闭与资源释放 |
 | `npm run docker:ui:test` | 固定数据 UI、维护/环境变量、日志持续接收与固定阅读、搜索/筛选/详情、缩略拖动取消、候选原捕获恢复、三主题与 200/320/400/900px 布局 |
 
@@ -129,9 +130,17 @@ macOS 用系统 clang、AppKit/LaunchServices、Apple Events 和 ad hoc 签名�
 
 Linux 安装 Bash、Zsh 和 Python 3 后运行 `python3 scripts/test-terminal-shell.py`，以真实 PTY 验证随终端发行的启动脚本、用户配置顺序、字符串/数组提示符钩子、退出状态、特殊字符、嵌套 shell、Ctrl-C 与临时文件清理。Check 的终端业务任务执行此入口；Python/Zsh 是测试工具，不加入产品包。`npm run communication:test` 在 Linux 使用默认自动集成，不配置 hostname 或注入提示符钩子；Windows 保留 PowerShell 手动 OSC 7 兼容回归。
 
-## 打包
+docker:windows:test 先运行 test:prepare -- docker；需要本机 Docker Desktop 已启动，docker.exe/ssh-keygen/Cargo 在 PATH，Windows OpenSSH sshd 可用。测试只启动临时回环服务与独立密钥，不修改系统 SSH 配置；创建唯一名称/标签的容器、卷、网络与派生镜像，结束仅清理这些资源。它不等于 Windows Server Engine 或 ARM64 远端验收。docker:process:test 与实际插件包回归另覆盖模拟 POSIX/Linux、Windows/Linux、Windows/Windows 三种组合，模拟不计为真实 Engine 验收。
 
-`npm run mcp:test` 在三个隔离 OpenSSH 服务上验证真实核心与 MCP 插件的首次采集、补采、去重和原字节下载；`mcp:process:test` 用实际插件进程注入接纳回包丢失与失败，`mcp:ui:test` 验证主题、窄屏、焦点、接入配置和隐藏/卸载。先执行 `npm run test:prepare -- mcp`。本机可选设 `SODECK_TEST_CODEX` 为已登录的 Codex CLI 路径，在同一真实三服务器夹具中增加实际 Codex 工具调用验收；此项依赖本机认证，不在无认证 CI 中自动运行。CI 业务矩阵包含前三项，独立插件包由原生 package/verify 验收。
+### MCP 调查与交互回归
+
+`npm run mcp:test` 在三个隔离 OpenSSH 服务上从零工作区发现保存资料、打开并直接执行/下载，验证主机密钥交接、固定打开回执、重连及插件停止保留接纳会话；另保留真实核心与 MCP 插件的名称/主机/端点/IPv4 尾段目标发现、断开/重连与旧任务恢复、首次采集、补采、任务查找、文本/状态等待、去重和原字节下载；`mcp:process:test` 用实际插件进程验证保存资料完整分页、歧义、共享打开、创建 ACK、换代销毁、延迟接纳前取消，以及原任务接纳回包丢失、归属、稳定收尾、输出模式、分页、等待唤醒/HTTP 中断及容量、最终元数据和清理失败。`mcp:ui:test` 验证摘要与完整详情、主题、窄屏、焦点、接入配置和隐藏/卸载。先执行 `npm run test:prepare -- mcp`。本机可选设 `SODECK_TEST_MCP_BASELINE` 为旧 MCP 0.4.0 包目录，比较同一真实会话范围的全量回包与新定位回包；新核心的 v1 投影供旧包读取，不作为旧核心全套验收。本机可选设 `SODECK_TEST_CODEX` 为已登录的 Codex CLI 路径，在同一真实三服务器夹具中增加实际 Codex 工具调用验收，包括唯一目标两次调用、歧义不执行和重连后查询原任务；此项依赖本机认证，不在无认证 CI 中自动运行。CI 业务矩阵包含前三项；独立插件 package/verify 在五个原生目标验收实际包，并对 MCP 0.6.0 起的原包运行同一打开、进程查询与断开测试。
+
+`mcp:test` 还通过真实 pipe 验证多轮问答、9000 字节跨块输入和 EOF，通过 PTY 验证输入与 resize。POSIX 远端另验证无回显原始控制字节、窗口尺寸、持续 shell、Ctrl+C 与 Ctrl+D；Linux 创建一次性账号和 sudo 规则，验证错误密码后继续原任务、实际 root 文件副作用及退出码。夹具使用独立回环 SSH 服务，结束时有界停止服务并删除临时账号和规则，不在用户服务器执行此专项。`mcp:process:test` 覆盖输入去重、回包丢失、迟到观察、接纳前拒绝与 EOF；五平台插件原包验收复用该进程入口，受控宿主不能替代真实 SSH。
+
+本机可选设 `SODECK_TEST_CODEX_OPEN` 为已登录 Codex CLI 路径，增加零工作区的实际客户端资料发现、原打开等待与直接执行验收；夹具用户只回答自己的隔离主机密钥提示，不修改客户端永久配置。原 `SODECK_TEST_CODEX` 继续用于已有任务读取/恢复验收。两项都依赖本机认证，CI 不自动执行。
+
+## 打包
 
 核心与插件各自打包。核心打包只依赖核心和自身运行资源，不需要构建业务插件。
 
@@ -190,7 +199,7 @@ Check 始终响应 main push/PR，不使用 workflow 级 `paths` 跳过。`selec
 | 单插件 Rust/清单/锁文件/构建输入 | 该插件格式与五平台原生 Rust 测试、该插件普通业务验收；其他插件不跟随 |
 | desktop_files 的 windows/linux/macos.rs | 对应系统两架构/一个 macOS 架构的核心测试、文件业务；Windows 保留系统专项，普通 UI 不跟随 |
 | network_metrics.rs、settings/declaration.rs | 一次 Linux x86_64 完整核心套件；声明变化另走前端相关回归 |
-| session_stream、content_export | 五平台原生核心、Linux UI、Windows SSH、六插件普通业务验收，与连接/流生命周期相同 |
+| session_stream、session_process、remote_execution、execution_output、content_export | 五平台原生核心、Linux UI、Windows SSH、六插件普通业务验收，与连接/流生命周期相同 |
 | 其他已映射核心系统/更新模块 | 五平台原生核心和相关 UI；网络、文件、终端服务分别追加自己的普通业务验收 |
 | 连接、流、生命周期/RPC、平台进程、服务器路由 | 五平台原生核心、Linux UI、Windows SSH、六插件普通业务验收 |
 | 共享 UI/字体/菜单 | 扩大至核心与六插件 UI/普通业务验收；不因此运行 netem 或旧版升级 |
@@ -228,6 +237,8 @@ CI 的 npm 下载缓存按任务实际使用的锁文件配置；核心打包只
 包含核心的原生测试统一声明现有核心/六插件 workspace 输入，复用同一稳定 `check-tests` 键，避免每个组件/平台范围生成大份重复核心依赖。声明缓存目录不启动对应插件测试；实际执行仍由所选范围控制。仅插件的原生 job 保留小范围 workspace，不恢复核心 target。发行缓存仍只有核心自身输入。
 
 `core-release-v2` 是一次性的缓存迁移标识，不随提交、版本或 run ID 变化。它保留固定 action 的默认工具链/环境/Cargo 输入隔离，只缓存依赖编译结果；宿主构建依赖与目标架构 release 依赖一并保留，不开启 workspace crate 或 incremental 缓存。恢复后仍执行 `npm ci`、当前前端及当前核心的正式构建。main 手动打包会保存依赖，后续适用分支和标签可恢复默认分支缓存；详见[分发文档](distribution.md)。Linux 打包依赖安装复用官方软件源修正与有限重试，不缓存系统安装状态。
+
+MCP 的真实 OpenSSH 入口继续为 `npm run mcp:test`，覆盖多轮 pipe、跨块输入、EOF 和 PTY；Linux 额外创建一次性账号与 sudoers，用真实 sudo 验证错误密码后同任务继续。该 Linux 测试要求 openssh-server、sudo、useradd/chpasswd/visudo 及无交互 sudo 夹具管理能力，退出清理账号、配置与测试副作用。其余平台验证通用输入；不把 Linux sudo 专项推定为全部远端系统验证。
 
 ## 文档与开发收束
 

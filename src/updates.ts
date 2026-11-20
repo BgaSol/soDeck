@@ -4,6 +4,7 @@ import { button as b, escape as e, icon } from "./ui";
 import { date } from "./datetime";
 import { renderReleaseNotes } from "./release-notes";
 import { updateNetworkPanel } from "./update-network";
+import {packageIcon} from './plugin-icons';
 
 export const CORE_ID = "sodeck.core";
 export const updateWorking = (u?: Update) => !!u && ["checking", "waiting", "downloading", "preparing"].includes(u.phase);
@@ -14,7 +15,7 @@ export function pluginUpdate(p: Plugin, v: ViewState): Update {
   return u ?? { id: p.manifest.id, phase: p.manifest.updateSource ? "idle" : "local", version: null, notes: "", downloadedBytes: 0, totalBytes: null, error: null };
 }
 function items(s: Snapshot, v: ViewState) {
-  return [{ id: CORE_ID, name: "SoDeck", kind: "应用", version: s.version, target: s.target, symbol: "grid", update: v.updates[CORE_ID] }, ...s.plugins.map(p => ({ id: p.manifest.id, name: p.manifest.name, kind: "插件", version: p.manifest.version, target: p.manifest.target, symbol: "plug", update: pluginUpdate(p, v) }))];
+  return [{ id: CORE_ID, name: "SoDeck", kind: "应用", version: s.version, target: s.target, symbol: "grid", update: v.updates[CORE_ID] }, ...s.plugins.map(p => ({ id: p.manifest.id, name: p.manifest.name, kind: "插件", version: p.manifest.version, target: p.manifest.target, symbol: packageIcon(p.manifest), update: pluginUpdate(p, v) }))];
 }
 export function downloadableIds(s: Snapshot, v: ViewState) { return items(s, v).filter(p => canDownload(p.update)).map(p => p.id); }
 export function updateCount(s: Snapshot, v: ViewState) { return downloadableIds(s, v).length; }

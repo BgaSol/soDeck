@@ -98,3 +98,64 @@ async fn content_export_picker_and_commit_failures_preserve_existing_files() {
     assert_eq!(f.core.content_export_data("main",&token,json!({"id":id,"action":"finish"})).await.unwrap()["state"],"completed");
     assert_eq!(std::fs::read(&target).unwrap(),b"abcdef");close_terminal_views(&f);f.core.shutdown().unwrap();
 }
+#[tokio::test(flavor="multi_thread",worker_threads=2)]
+async fn process_pipe_preserves_raw_input_deduplicates_and_closes_only_stdin(){
+    use base64::{engine::general_purpose::STANDARD,Engine};
+    let f=Fixture::new();let ssh=SshServer::new().await;let server=f.server("127.0.0.1",ssh.addr.port(),json!([]));let context=connected(&f,&server).await.context.unwrap();let (_,token,terminal)=terminal_fixture(&f);
+    let invoke=|name:&str,p:Value|f.core.ui_event("main",&token,json!({"rpc":name,"params":p})).unwrap();
+    let request=json!({"expectedContext":context,"operationId":"interactive-pipe","sequence":"1","command":"status-test:interactive","maxOutputBytes":100000,"retention":"fixed","io":{"kind":"pipe","stdin":"open"}});
+    let started=invoke("session.process.start",request.clone());let id=started["processId"].as_str().unwrap();assert_eq!(invoke("session.process.start",request)["processId"],id);
+    let deadline=std::time::Instant::now()+Duration::from_secs(5);
+    loop{let status=invoke("session.process.status",json!({"processId":id}));if status["input"]["available"]==true{break;}assert!(std::time::Instant::now()<deadline,"{status}");tokio::time::sleep(Duration::from_millis(10)).await;}
+    let bytes=b"\0\xff\x80\r\nraw";let input=json!({"processId":id,"inputSequence":"1","action":"write","dataBase64":STANDARD.encode(bytes)});
+    assert_eq!(invoke("session.process.input",input.clone())["input"]["last"]["sequence"],"1");invoke("session.process.input",input.clone());
+    loop{if ssh.state.input_bytes.lock().unwrap().len()==1{break;}assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(10)).await;}
+    assert_eq!(ssh.state.input_bytes.lock().unwrap().as_slice(),&[bytes.to_vec()]);
+    let mut conflict=input;conflict["dataBase64"]=json!(STANDARD.encode(b"different"));assert!(invoke("session.process.input",conflict)["rpcError"].is_object());
+    loop{let status=invoke("session.process.status",json!({"processId":id}));if status["input"]["last"]["state"]=="sent"{break;}assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(10)).await;}
+    let eof=json!({"processId":id,"inputSequence":"2","action":"eof"});invoke("session.process.input",eof.clone());
+    loop{let status=invoke("session.process.status",json!({"processId":id}));if status["workerFinished"]==true{assert_eq!(status["exitCode"],0);assert_eq!(status["outputComplete"],true);assert_eq!(status["input"]["last"]["state"],"sent");break;}assert!(std::time::Instant::now()<deadline,"{status}");tokio::time::sleep(Duration::from_millis(10)).await;}
+    assert_eq!(invoke("session.process.input",eof)["input"]["last"]["sequence"],"2");
+    let output=invoke("session.process.read",json!({"processId":id,"offset":"0"}));let mut raw=vec![];for chunk in output["chunks"].as_array().unwrap(){assert_eq!(chunk["v"],1);assert_eq!(chunk["source"],"stdout");raw.extend(STANDARD.decode(chunk["dataBase64"].as_str().unwrap()).unwrap());}assert_eq!(raw,[b"prompt> ".as_slice(),bytes,b"eof-tail"].concat());
+    assert_eq!(ssh.state.executions.lock().unwrap().iter().filter(|c|c.as_slice()==b"status-test:interactive").count(),1);
+    assert_eq!(invoke("session.process.release",json!({"processId":id}))["resourceReleased"],true);
+    td(&f.core,"main",&token,json!({"op":"write","id":terminal,"sequence":0,"data":b"still-connected"})).await.unwrap();assert_eq!(ssh.state.auth.load(Ordering::Relaxed),1);close_terminal_views(&f);f.core.shutdown().unwrap();
+}
+
+#[tokio::test(flavor="multi_thread",worker_threads=2)]
+async fn process_pty_keeps_terminal_bytes_and_resize_and_rejects_pipe_eof(){
+    use base64::{engine::general_purpose::STANDARD,Engine};
+    let f=Fixture::new();let ssh=SshServer::new().await;let server=f.server("127.0.0.1",ssh.addr.port(),json!([]));let context=connected(&f,&server).await.context.unwrap();let (_,token,_)=terminal_fixture(&f);
+    let invoke=|name:&str,p:Value|f.core.ui_event("main",&token,json!({"rpc":name,"params":p})).unwrap();
+    let started=invoke("session.process.start",json!({"expectedContext":context,"operationId":"interactive-pty","sequence":"1","command":"status-test:interactive","maxOutputBytes":100000,"retention":"fixed","io":{"kind":"pty","cols":120,"rows":30}}));let id=started["processId"].as_str().unwrap();
+    let deadline=std::time::Instant::now()+Duration::from_secs(5);loop{if invoke("session.process.status",json!({"processId":id}))["input"]["available"]==true{break;}assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(10)).await;}
+    assert!(invoke("session.process.input",json!({"processId":id,"inputSequence":"1","action":"eof"}))["rpcError"].is_object());
+    invoke("session.process.input",json!({"processId":id,"inputSequence":"1","action":"resize","cols":140,"rows":35}));
+    loop{if invoke("session.process.status",json!({"processId":id}))["input"]["last"]["state"]=="sent"{break;}assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(10)).await;}
+    let bytes=b"\x03\x04\x1b[A";invoke("session.process.input",json!({"processId":id,"inputSequence":"2","action":"write","dataBase64":STANDARD.encode(bytes)}));
+    loop{if ssh.state.input_bytes.lock().unwrap().len()==1&&invoke("session.process.status",json!({"processId":id}))["input"]["last"]["state"]=="sent"{break;}assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(10)).await;}
+    assert_eq!(ssh.state.input_bytes.lock().unwrap()[0],bytes);assert!(ssh.state.sizes.lock().unwrap().contains(&(140,35)));
+    invoke("session.process.input",json!({"processId":id,"inputSequence":"3","action":"write","dataBase64":STANDARD.encode(b"finish")}));
+    loop{if invoke("session.process.status",json!({"processId":id}))["workerFinished"]==true{break;}assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(10)).await;}
+    let output=invoke("session.process.read",json!({"processId":id,"offset":"0"}));let mut raw=vec![];for chunk in output["chunks"].as_array().unwrap(){assert_eq!(chunk["v"],2);assert_eq!(chunk["source"],"terminal");raw.extend(STANDARD.decode(chunk["dataBase64"].as_str().unwrap()).unwrap());}assert_eq!(raw,[b"prompt> ".as_slice(),bytes].concat());
+    invoke("session.process.release",json!({"processId":id}));close_terminal_views(&f);f.core.shutdown().unwrap();
+}
+
+#[tokio::test(flavor="multi_thread",worker_threads=2)]
+async fn process_requires_server_acceptance_and_rejection_keeps_shared_session() {
+    let f=Fixture::new();let ssh=SshServer::new().await;let server=f.server("127.0.0.1",ssh.addr.port(),json!([]));let context=connected(&f,&server).await.context.unwrap();let (_,token,_)=terminal_fixture(&f);
+    let invoke=|name:&str,p:Value|f.core.ui_event("main",&token,json!({"rpc":name,"params":p})).unwrap();
+    let request=|sequence:&str,command:&str|json!({"expectedContext":context,"operationId":command,"sequence":sequence,"command":command,"maxOutputBytes":4096,"retention":"fixed","io":{"kind":"pipe","stdin":"open"}});
+    let started=invoke("session.process.start",request("1","status-test:delayed-start"));let id=&started["processId"];
+    let deadline=std::time::Instant::now()+Duration::from_secs(5);
+    loop {let status=invoke("session.process.status",json!({"processId":id}));if status["launchQueued"]==true {assert_eq!(status["launchAccepted"],false);assert_eq!(status["input"]["available"],false);break;}assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(5)).await;}
+    let before=invoke("session.process.input",json!({"processId":id,"inputSequence":"1","action":"write","dataBase64":"eA=="}));assert_eq!(before["rpcError"]["data"]["code"],"inputNotReady");
+    ssh.state.launch_gate.notify_one();
+    loop {let status=invoke("session.process.status",json!({"processId":id}));if status["launchAccepted"]==true {assert_eq!(status["input"]["nextInputSequence"],"1");break;}assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(5)).await;}
+    invoke("session.process.cancel",json!({"processId":id}));loop {if invoke("session.process.status",json!({"processId":id}))["workerFinished"]==true{break;}assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(5)).await;}
+    invoke("session.process.release",json!({"processId":id}));
+    let rejected=invoke("session.process.start",request("2","status-test:reject"));let id=&rejected["processId"];
+    loop {let status=invoke("session.process.status",json!({"processId":id}));if status["workerFinished"]==true{assert_eq!(status["launchAccepted"],false);assert_eq!(status["error"]["code"],"execRejected");break;}assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(5)).await;}
+    invoke("session.process.release",json!({"processId":id}));assert_eq!(invoke("session.state",json!({}))["state"],"connected");
+    close_terminal_views(&f);f.core.shutdown().unwrap();
+}

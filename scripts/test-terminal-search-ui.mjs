@@ -153,9 +153,14 @@ try{
   await write('\x1b[H'+ 'x'.repeat(await child().evaluate(()=>window.testTerminal.cols-3))+'WRAPNEEDLE\r\n');await input.fill('WRAPNEEDLE');await count.filter({hasText:'1 / 1'}).waitFor();await page.setViewportSize({width:700,height:700});await count.filter({hasText:'1 / 1'}).waitFor();await page.waitForTimeout(250);assert.match(await count.textContent(),/1 \/ 1/,'Resize reflow preserves a completed soft-wrap match');
   await write('\x1b[3J\x1b[2J\x1b[H'+('a'.repeat(await child().evaluate(()=>window.testTerminal.cols))+'\r\n').repeat(45));
   await child().evaluate(()=>{const trace=window.searchTrace;trace.hold=true;trace.types=['visible'];trace.held=[];});await input.fill('a');
-  await child().waitForFunction(()=>window.searchTrace.held.some(m=>m.data.type==='visible'&&m.data.complete));
+  await child().waitForFunction(()=>{
+    const trace=window.searchTrace,query=trace.requests.findLast(m=>m.type==='query');if(query?.query!=='a')return false;
+    const visible=trace.requests.findLast(m=>m.type==='visible'&&m.queryRevision===query.queryRevision);if(!visible)return false;
+    const batches=trace.held.filter(m=>m.data.type==='visible'&&m.data.queryRevision===query.queryRevision&&m.data.requestId===visible.requestId);
+    return batches.some(m=>m.data.begin&&!m.data.complete)&&batches.some(m=>m.data.complete);
+  });
   const partial=await child().evaluate(()=>{
-    const trace=window.searchTrace,id=Math.max(...trace.held.map(m=>m.data.requestId)),batches=trace.held.filter(m=>m.data.requestId===id);
+    const trace=window.searchTrace,query=trace.requests.findLast(m=>m.type==='query'),visible=trace.requests.findLast(m=>m.type==='visible'&&m.queryRevision===query.queryRevision),batches=trace.held.filter(m=>m.data.type==='visible'&&m.data.queryRevision===query.queryRevision&&m.data.requestId===visible.requestId);
     const first=batches.find(m=>m.data.begin&&!m.data.complete);if(!first)return {batch:false,blank:false};
     trace.hold=false;first.worker.dispatchEvent(new MessageEvent('message',{data:first.data}));trace.hold=true;trace.held=trace.held.filter(m=>m!==first);
     const canvas=document.querySelector('.terminal-highlights');return {batch:true,blank:canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data.every((v,i)=>i%4!==3||v===0)};

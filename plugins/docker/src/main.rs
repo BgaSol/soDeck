@@ -1,5 +1,7 @@
 mod browser;
+mod cli;
 mod commands;
+mod connection;
 mod logs;
 mod pulls;
 mod resources;
@@ -15,6 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             for cap in [
                 "commands.v1",
                 "session.exec.v1",
+                "session.program.v1",
                 "session.stream.v1",
                 "viewData.v1",
                 "content.export.v1",
@@ -151,7 +154,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(r) = resource_ref {
                         json!({"kind":r.kind,"id":r.id,"engineId":v.expected_engine,"endpoint":v.endpoint}).to_string()
                     } else {
-                        json!({"id":container,"engineId":v.expected_engine}).to_string()
+                        json!({"id":container,"engineId":v.expected_engine,"endpoint":v.endpoint})
+                            .to_string()
                     },
                 )
             };
@@ -168,6 +172,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "ui.createView" => a.create(&p)?,
             "ui.disposeView" => {
                 a.views.remove(id);
+                a.prune_bindings();
                 return Ok(json!({}));
             }
             "ui.getView" => {
@@ -177,12 +182,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .filter(|v| !p["context"].is_null() && v.context != p["context"])
                 {
                     v.clear_terminal();
+                    v.target = None;
                     v.epoch += 1;
                     if let Some(b) = &mut v.browser {
                         *b = browser::BrowserState::default();
                     }
                     if v.kind == "browser" {
                         v.expected_engine.clear();
+                        v.endpoint.clear();
                     }
                     v.data["engine"] = Value::Null;
                     v.context = p["context"].clone();
@@ -221,6 +228,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ => return Err("未知 Docker 方法".into()),
         }
         let mut data = a.snapshot(id)?;
+        a.prune_bindings();
         if data["kind"] == "logs" {
             if let Some(logs) = log_holder.lock().unwrap().as_ref() {
                 data["logCapture"] = logs.snapshot(id)?;

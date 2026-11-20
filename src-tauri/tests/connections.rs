@@ -27,12 +27,18 @@ use tokio_util::sync::CancellationToken;
 #[derive(Clone, Default)]
 struct Ssh {
     terminal_channels: HashSet<ChannelId>,
+    input_channels: HashSet<ChannelId>,
+    input_bytes: Arc<Mutex<Vec<Vec<u8>>>>,
+    executions: Arc<Mutex<Vec<Vec<u8>>>>,
+    launch_gate: Arc<tokio::sync::Notify>,
     shells: Arc<AtomicUsize>,
     sizes: Arc<Mutex<Vec<(u32, u32)>>>,
     auth: Arc<AtomicUsize>,
     live: Arc<AtomicUsize>,
     hosts: Arc<Mutex<Vec<String>>>,
     routes: Arc<Mutex<HashMap<String, SocketAddr>>>,
+    environment_response: Arc<Mutex<Option<Vec<u8>>>>,
+    environment_probes: Arc<AtomicUsize>,
 }
 impl server::Handler for Ssh {
     type Error = russh::Error;
@@ -81,6 +87,17 @@ impl server::Handler for Ssh {
         data: &[u8],
         session: &mut Session,
     ) -> Result<(), Self::Error> {
+        if self.input_channels.contains(&id) {
+            self.input_bytes.lock().unwrap().push(data.to_vec());
+            if data == b"finish" {
+                session.exit_status_request(id, 0)?;
+                session.eof(id)?;
+                session.close(id)?;
+            } else {
+                session.data(id, data.to_vec())?;
+            }
+            return Ok(());
+        }
         if !self.terminal_channels.contains(&id) {
             return Ok(());
         }
@@ -90,6 +107,19 @@ impl server::Handler for Ssh {
             session.close(id)?;
         } else {
             session.data(id, data.to_vec())?;
+        }
+        Ok(())
+    }
+    async fn channel_eof(
+        &mut self,
+        id: ChannelId,
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        if self.input_channels.contains(&id) {
+            session.data(id, b"eof-tail".to_vec())?;
+            session.exit_status_request(id, 0)?;
+            session.eof(id)?;
+            session.close(id)?;
         }
         Ok(())
     }
@@ -132,7 +162,29 @@ impl server::Handler for Ssh {
         command: &[u8],
         session: &mut Session,
     ) -> Result<(), Self::Error> {
+        if command == b"status-test:reject" {
+            session.channel_failure(id)?;
+            return Ok(());
+        }
+        if command == b"status-test:delayed-start" {
+            self.launch_gate.notified().await;
+        }
         session.channel_success(id)?;
+        self.executions.lock().unwrap().push(command.to_vec());
+        if command == b"status-test:interactive" || command == b"status-test:delayed-start" {
+            self.input_channels.insert(id);
+            session.data(id, b"prompt> ".to_vec())?;
+            return Ok(());
+        }
+        let response = self.environment_response.lock().unwrap().clone();
+        if let Some(response) = response {
+            self.environment_probes.fetch_add(1, Ordering::Relaxed);
+            session.data(id, response)?;
+            session.exit_status_request(id, 37)?;
+            session.eof(id)?;
+            session.close(id)?;
+            return Ok(());
+        }
         if command == b"status-test:hang" {
             return Ok(());
         }
@@ -343,8 +395,11 @@ include!("fixtures/files_flow.rs");
 include!("fixtures/network_flow.rs");
 include!("fixtures/system_status_flow.rs");
 include!("fixtures/mcp_flow.rs");
+include!("fixtures/mcp_open_flow.rs");
 include!("fixtures/docker_flow.rs");
 include!("fixtures/session_stream_flow.rs");
+include!("fixtures/session_target_flow.rs");
+include!("fixtures/connection_requests.rs");
 struct Fixture {
     core: Arc<AppCore>,
     path: PathBuf,
@@ -975,32 +1030,34 @@ async fn cancelled_handshake_and_profile_edit_release_the_real_socket() {
         listener.local_addr().unwrap().port(),
         json!([]),
     );
-    let v = f.core.start_connection("main", &id).unwrap();
-    let (mut socket, _) = tokio::time::timeout(Duration::from_secs(3), listener.accept())
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        f.core.start_connection("main", &id).unwrap().attempt_id,
-        v.attempt_id
-    );
-    f.core.cancel_connection("main", &v.attempt_id).unwrap();
-    let mut bytes = vec![];
-    tokio::time::timeout(Duration::from_secs(3), socket.read_to_end(&mut bytes))
-        .await
-        .unwrap()
-        .unwrap();
-    until(|| f.core.connection_views()[0].state == "cancelled").await;
-    assert_eq!(
-        f.core.connection_views()[0].error.as_ref().unwrap().code,
-        "cancelled"
-    );
-    assert!(f
-        .core
-        .workspace_projection("main")
-        .unwrap()
-        .workspaces
-        .is_empty());
+    for _ in 0..8 {
+        let v = f.core.start_connection("main", &id).unwrap();
+        let (mut socket, _) = tokio::time::timeout(Duration::from_secs(3), listener.accept())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            f.core.start_connection("main", &id).unwrap().attempt_id,
+            v.attempt_id
+        );
+        f.core.cancel_connection("main", &v.attempt_id).unwrap();
+        let mut bytes = vec![];
+        tokio::time::timeout(Duration::from_secs(3), socket.read_to_end(&mut bytes))
+            .await
+            .unwrap()
+            .unwrap();
+        until(|| f.core.connection_views()[0].state == "cancelled").await;
+        assert_eq!(
+            f.core.connection_views()[0].error.as_ref().unwrap().code,
+            "cancelled"
+        );
+        assert!(f
+            .core
+            .workspace_projection("main")
+            .unwrap()
+            .workspaces
+            .is_empty());
+    }
     f.core.start_connection("main", &id).unwrap();
     let (mut socket, _) = tokio::time::timeout(Duration::from_secs(3), listener.accept())
         .await

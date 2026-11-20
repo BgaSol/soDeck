@@ -761,6 +761,9 @@ impl Io {
                 let name = part
                     .as_str()
                     .ok_or_else(|| failure("invalid", "本地文件名无效"))?;
+                if !crate::platform::valid_data_component(name) {
+                    return Err(failure("invalid", "插件数据路径分量无效"));
+                }
                 valid_name(name)?;
                 let attrs = std::fs::symlink_metadata(&path).map_err(err)?;
                 if attrs.file_type().is_symlink() || !attrs.is_dir() {
