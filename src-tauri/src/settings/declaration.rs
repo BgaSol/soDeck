@@ -265,6 +265,6 @@ impl Page {
     pub fn token(&self, plugin: &str, version: &str, schema: u64) -> String {
         let bytes =
             serde_json::to_vec(&(plugin, version, schema, self)).expect("serializable page");
-        format!("{:x}", Sha256::digest(bytes))
+        crate::hex(&Sha256::digest(bytes))
     }
 }

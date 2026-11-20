@@ -68,7 +68,7 @@ impl Profile {
     }
 }
 fn hash(value: &Value) -> String {
-    format!("{:x}", Sha256::digest(value.to_string().as_bytes()))
+    crate::hex(&Sha256::digest(value.to_string().as_bytes()))
 }
 impl ServerStore {
     pub(crate) fn connection_snapshot(&self, id: &str) -> Result<Profile, String> {
