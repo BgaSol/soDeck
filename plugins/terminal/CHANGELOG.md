@@ -4,7 +4,15 @@
 - 移除遮挡正文的“阅读选项”弹层。阅读模式、吸顶和淡底沿用终端设置；当前终端的回车辅助与清理输入标记归入现有右键菜单，操作后焦点返回终端。
 - 命令行右侧只在空白足够时显示真实执行状态，不覆盖输出、不补造耗时；目录未知时不猜测路径。无新增生产依赖或核心 API。
 
-待发行。本机真实 xterm 已补充标记样式、独立留白、结果避让、无选项弹层、回车辅助菜单与模式关闭回归。保留实际渲染：[命令起点](release-evidence/v0.10.1/light-start.png)、[长输出吸顶](release-evidence/v0.10.1/light-sticky.png)、[深色](release-evidence/v0.10.1/dark-start.png)、[窄页](release-evidence/v0.10.1/dopamine-320.png)、[短命令与失败](release-evidence/v0.10.1/short-and-error.png)；正式包来源和五平台验收将在发行后记录于本节。
+本机真实 xterm 已补充标记样式、独立留白、结果避让、无选项弹层、回车辅助菜单、输入焦点与模式关闭回归。保留实际渲染：[命令起点](release-evidence/v0.10.1/light-start.png)、[长输出吸顶](release-evidence/v0.10.1/light-sticky.png)、[深色](release-evidence/v0.10.1/dark-start.png)、[窄页](release-evidence/v0.10.1/dopamine-320.png)、[短命令与失败](release-evidence/v0.10.1/short-and-error.png)。输入、10 万行历史/搜索/检查点恢复、Windows OpenSSH 实际 PTY/多页/移窗与重挂载、205 项工程脚本、类型/格式、生产构建和文档检查通过。
+
+包来源：[cacb091283d4c378f2d1c7b67b8f454dbf170744](https://github.com/BgaSol/soDeck/commit/cacb091283d4c378f2d1c7b67b8f454dbf170744)；[同一来源 Check](https://github.com/BgaSol/soDeck/actions/runs/44796810329)；[原始独立打包与包内验收](https://github.com/BgaSol/soDeck/actions/runs/44796806411)。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 原生构建、架构、资源、包内进程挂载/释放与退出全部通过。本轮打包无重试；Check 首次在未改动的 Docker 日志滚动用例发生断言失败，本机完整 Docker UI 复核通过，仅重跑失败业务任务及汇总后全部通过，其余已通过任务保留。
+
+[五平台原生远程组合](https://github.com/BgaSol/soDeck/actions/runs/44797692543)通过，固定核心 1.10.0、本次终端 0.10.1 原包与文件 0.11.4，验证原生 WebView/Channel、PTY、文件读写下载、移窗、重开和退出；未选择网络插件。
+
+发行：[terminal 0.10.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.10.1)，按用户要求设为仓库 Latest。直接发布原始 run 的同一份草稿归档，五份程序附件没有重建或覆盖；草稿更新清单只同步 notes。六个公开附件均匿名下载验证大小与 SHA-256，固定来源、包报告、原生组合、重试及下载核验见[永久发行证据](release-evidence/v0.10.1-assets.json)。更新已启用插件后重启生效。
+
+真实设备 IME、DPI、多显示器、读屏、触控板、Windows ARM64 远端 PowerShell、极端负载/高密度命令和正式旧版在线升级专项未执行；netem 未运行，不计为通过。当前行为见[终端功能](../../docs/features/terminal.md)，长期未完成专项继续保留在[终端历史计划](../../docs/plans/terminal-history.md)。
 
 # 0.10.0
 
