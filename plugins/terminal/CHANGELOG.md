@@ -4,7 +4,15 @@
 - 滚动入口与预览生命周期统一同步，暂停、无尺寸或强制颜色模式恢复原生滚动条；预览着色／索引失败仍可按实际终端行数导航。
 - 与文件编辑器共用小型纯显示策略，各自管理引擎、拖动、焦点、恢复和释放。无新增生产依赖或核心 API。
 
-待发行；本次来源、实际验证与五平台原包验收将在发行后记录。实际渲染：[宽页](release-evidence/v0.10.2/light-start.png)、[窄页](release-evidence/v0.10.2/dopamine-320.png)。
+实际渲染：[宽页](release-evidence/v0.10.2/light-start.png)、[窄页](release-evidence/v0.10.2/dopamine-320.png)。本机 206 项工程脚本、类型/格式、前端生产构建、文档检查通过；真实 xterm 输入、10 万行历史/搜索/检查点、三主题、窄页、暂停与强制颜色回落、轨道几何不变和索引失败导航通过。Monaco 编辑器的临界宽度、开关、滚轮/键盘/横向滚动、隐藏恢复、选区/撤销/搜索回归通过。Windows OpenSSH 实际终端与文件流程通过。
+
+包来源：[b470cbca127494be2b7920a191720b17d2548c71](https://github.com/BgaSol/soDeck/commit/b470cbca127494be2b7920a191720b17d2548c71)；[同一来源 Check](https://github.com/BgaSol/soDeck/actions/runs/44810513051)一次通过，包含五平台源码、Linux 浏览器、Windows SSH 和选中的业务回归；[原始独立打包与包内验收](https://github.com/BgaSol/soDeck/actions/runs/44810510582)一次通过。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 原生构建、架构、资源及包内程序挂载/释放和退出全部通过。
+
+[原生远程组合](https://github.com/BgaSol/soDeck/actions/runs/44811314391)固定核心 1.10.0、本次终端 0.10.2 与文件 0.11.5 原包，未选择网络插件。Windows x86_64/ARM64、Linux x86_64、macOS ARM64 的 PTY、文件读写下载、移窗、重开和退出通过。Linux ARM64 在移窗时出现“目标窗口未就绪”，仅重试该平台与汇总两次仍未通过，[相同固定输入单平台重放](https://github.com/BgaSol/soDeck/actions/runs/44812996698)也失败。[旧版终端 0.10.1／文件 0.11.4 对照](https://github.com/BgaSol/soDeck/actions/runs/44812687021)在同一核心 1.10.0 下复现相同错误，根因未定位；本轮不将 Linux ARM64 远程组合计为通过，待定位范围见[原生专项](../../docs/plans/native-verification.md)。此限制与五平台插件包内启动/退出验收分别记录。
+
+发行：[terminal 0.10.2](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.10.2)，按用户要求设为仓库 Latest。直接发布原始 run 的同一份草稿归档，程序包未重建或覆盖；草稿更新清单仅同步 notes。六个公开附件均匿名下载验证大小与 SHA-256。固定来源、成功包报告、远程组合失败/重试/旧版对照与下载核验见[永久证据](release-evidence/v0.10.2-assets.json)。更新已启用插件后重启生效。
+
+真实设备 IME、DPI、读屏、触控板、多显示器、极端负载/高密度命令、Windows ARM64 远端 PowerShell 和正式旧版在线升级专项未执行；netem 未运行。当前行为见[终端功能](../../docs/features/terminal.md)，剩余性能和设备范围继续由既有专项计划维护。
 
 # 0.10.1
 

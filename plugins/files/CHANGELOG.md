@@ -4,7 +4,15 @@
 - 缩略图关闭、编辑区小于 360 px、无有效布局、隐藏或强制颜色模式恢复原生滚动条；恢复缩略图后自动切回，保留模型、输入、撤销、选区、搜索和阅读状态。
 - 编辑 SDK 与终端只共享纯显示策略，文件树、菜单和传输面板不受影响。无新增生产依赖或核心 API。
 
-待发行；本次来源、实际验证与五平台原包验收将在发行后记录。实际渲染：[缩略图滚动](release-evidence/v0.11.5/editor-light.png)、[窄页回落](release-evidence/v0.11.5/editor-narrow.png)。
+实际渲染：[缩略图滚动](release-evidence/v0.11.5/editor-light.png)、[窄页回落](release-evidence/v0.11.5/editor-narrow.png)。本机编辑 SDK 类型/构建与实际 Monaco 回归通过，覆盖 359/360 px 临界宽度、缩略图开关、强制颜色、隐藏恢复、轨道几何不变、滚轮/键盘/横向滚动、选区/撤销/搜索与菜单；206 项工程脚本、格式/类型、前端生产构建和文档检查通过。Windows OpenSSH 真实 SFTP、文件 UI 的读写下载、保存/冲突、草稿与跨窗口流程通过。
+
+包来源：[b470cbca127494be2b7920a191720b17d2548c71](https://github.com/BgaSol/soDeck/commit/b470cbca127494be2b7920a191720b17d2548c71)；[同一来源 Check](https://github.com/BgaSol/soDeck/actions/runs/44810513051)一次通过，包含五平台源码、Linux 浏览器、Windows SSH 和选中的业务回归；[原始独立打包与包内验收](https://github.com/BgaSol/soDeck/actions/runs/44810517738)一次通过。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 原生构建、架构、编辑资源及包内程序挂载/释放和退出全部通过。
+
+[原生远程组合](https://github.com/BgaSol/soDeck/actions/runs/44811314391)固定核心 1.10.0、终端 0.10.2 与本次文件 0.11.5 原包，未选择网络插件。Windows x86_64/ARM64、Linux x86_64、macOS ARM64 的原生 WebView/Channel、PTY、文件读写下载、移窗、重开和退出通过。Linux ARM64 移窗时出现“目标窗口未就绪”，仅重试该平台与汇总两次仍未通过，[相同固定输入单平台重放](https://github.com/BgaSol/soDeck/actions/runs/44812996698)也失败。[旧版终端 0.10.1／文件 0.11.4 对照](https://github.com/BgaSol/soDeck/actions/runs/44812687021)在同一核心 1.10.0 下复现相同错误，根因未定位；本轮不将 Linux ARM64 远程组合计为通过，待定位范围见[原生专项](../../docs/plans/native-verification.md)。此限制与五平台插件包内启动/退出验收分别记录。
+
+发行：[files 0.11.5](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.11.5)。终端 0.10.2 占用仓库 Latest，文件插件按自身标签独立发现本版更新。直接发布原始 run 的同一份草稿归档，程序包未重建或覆盖；草稿更新清单仅同步 notes。六个公开附件均匿名下载验证大小与 SHA-256。固定来源、成功包报告、远程组合失败/重试/旧版对照与下载核验见[永久证据](release-evidence/v0.11.5-assets.json)。更新已启用插件后重启生效。
+
+真实设备 IME、DPI、读屏、触控板、多显示器、极端负载、正式旧版在线升级、原生文件剪贴板/默认应用和 Windows 深度编辑器专项未执行；netem 未运行，不计为通过。当前行为和未完成设备范围见[文件编辑器](../../docs/features/file-editor.md)及既有原生专项。
 
 # 0.11.4
 
