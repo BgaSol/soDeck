@@ -27,10 +27,14 @@ function privileged(args, input) {
 function startDaemon(config) {
   return spawn(sudoTest ? 'sudo' : sshd, sudoTest ? ['-n', sshd, '-D', '-e', '-f', config] : ['-D','-e','-f',config], { windowsHide:true,stdio:['ignore','ignore','pipe'] });
 }
-async function stopDaemon(child) {
+async function stopDaemon(child, pidFile) {
   if (!child || child.exitCode !== null) return;
   const ended = new Promise(resolve=>child.once('exit',resolve));
-  if (sudoTest) privileged(['kill','-TERM',String(child.pid)]);
+  if (sudoTest) {
+    const pid = fs.existsSync(pidFile) ? fs.readFileSync(pidFile, 'utf8').trim() : String(child.pid);
+    if (!/^[1-9][0-9]*$/.test(pid)) throw new Error('Invalid fixture daemon pid');
+    privileged(['kill','-TERM',pid]);
+  }
   else child.kill();
   let timer;
   try {
@@ -121,11 +125,23 @@ try {
   if(communication){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-component-communication.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('Component communication failed');}
   }
 } finally {
-  const stopped = await Promise.allSettled([...extraDaemons, daemon].map(stopDaemon));
+  const stopped = await Promise.allSettled([
+    ...extraDaemons.map((child, i) => stopDaemon(child, path.join(directory, 'pid-' + i))),
+    stopDaemon(daemon, path.join(directory, 'pid')),
+  ]);
   try {
     if (sudoAccount) {
       privileged(['rm', '-f', '--', sudoers]);
-      privileged(['userdel', sudoUser]);
+      // PAM may leave a session process after the test's SSH channels close.
+      const terminated = spawnSync('sudo', ['-n', 'pkill', '-KILL', '-u', sudoUser], { encoding: 'utf8', windowsHide: true });
+      if (![0, 1].includes(terminated.status)) throw new Error(terminated.stderr || 'Fixture session cleanup failed');
+      const deadline = Date.now() + 5000;
+      for (;;) {
+        const removed = spawnSync('sudo', ['-n', 'userdel', sudoUser], { encoding: 'utf8', windowsHide: true });
+        if (removed.status === 0) break;
+        if (removed.status !== 8 || Date.now() >= deadline) throw new Error(removed.stderr || 'Fixture account cleanup failed');
+        await delay(100);
+      }
     }
   } finally {
     if (path.dirname(path.resolve(directory)) !== path.resolve(os.tmpdir()) || !path.basename(directory).startsWith("sodeck-openssh-")) throw new Error("Unexpected test cleanup path");
