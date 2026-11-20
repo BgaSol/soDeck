@@ -1,13 +1,9 @@
 @layer components {
   /* Expanding notes must not override the reader's explicit scroll position. */
-  .settings-page:has(.update-release-notes) { overflow-anchor:none; }
-  .settings-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-  .settings-nav > .nav-item { display: block; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .settings-nav > .nav-item svg { display: inline-block; vertical-align: middle; margin-right: 8px; }
-  .settings-nav .settings-management-label { margin-top: 22px; }
-  .settings-nav-count { margin-left: 4px; font-variant-numeric: tabular-nums; }
-  .settings-main > .settings-page { flex: 1; min-height: 0; padding: 24px; overflow: auto; }
-  .settings-main > .maintenance-pending { flex: none; margin: 0 24px 20px; }
+  .maintenance-page:has(.update-release-notes) { overflow-anchor:none; }
+  .maintenance-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .maintenance-page { flex: 1; min-width: 0; min-height: 0; padding: 24px; overflow: auto; }
+  .maintenance-main > .maintenance-pending { flex: none; margin: 0 24px 20px; }
   .maintenance-pending details[open] ul { max-height: 100px; overflow: auto; }
   .maintenance-heading { align-items: flex-start; flex-direction: row; gap: 18px; flex-wrap: wrap; }
   .maintenance-heading > .actions { margin: 0; flex-wrap: wrap; }
@@ -129,8 +125,8 @@
   .maintenance-details .update-source { margin-top: 0; padding-top: 0; border-top: 0; }
   .maintenance-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
   @media (max-width: 800px) {
-    .settings-main > .settings-page { padding: 18px; }
-    .settings-main > .maintenance-pending { margin: 0 18px 16px; padding: 12px; gap: 10px; }
+    .maintenance-page { padding: 18px; }
+    .maintenance-main > .maintenance-pending { margin: 0 18px 16px; padding: 12px; gap: 10px; }
     .maintenance-heading h2 { font-size: 20px; }
     .update-row-actions { grid-column: 2 / -1; justify-content: flex-start; }
     .update-row:has(.update-select) .update-row-actions { grid-column: 3 / -1; }
@@ -143,7 +139,7 @@
     .maintenance-pending > button { align-self: flex-start; }
   }
   @media (max-height: 600px) {
-    .settings-main > .settings-page { padding-top: 12px; }
+    .maintenance-page { padding-top: 12px; }
     .maintenance-heading { gap: 8px 12px; margin-bottom: 12px; }
     .plugin-tabs button { padding: 6px 0 8px; }
     .plugin-list-intro { margin-top: 10px; }

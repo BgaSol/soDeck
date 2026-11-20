@@ -11,7 +11,7 @@ let snapshot, ready=false, frozen=false, visible=true, epoch=0, revision, timer,
 const listHistory=[],fieldHistory=[];
 const pending = new Set();
 let terminalOpening=false;
-let shellOptions=false,containerShell='/bin/sh',operationSubmitting=false;
+let shellOptions=false,containerShell='',operationSubmitting=false;
 const confirmPanel=$('confirm');
 const event = data => {const promise=sodeck.request('event',data);pending.add(promise);return promise.finally(()=>pending.delete(promise));};
 function notice(message) { SoDeckMotion.setMotionText($('notice'),message||''); $('notice').hidden=!message; }
@@ -36,7 +36,6 @@ function renderHeader() {
   $('engine-version').textContent=snapshot.engine?.version?'Docker '+snapshot.engine.version+' · '+snapshot.engine.arch:'';
   $('connection').hidden=kind!=='browser';$('count').hidden=kind!=='browser';
   $('endpoint').textContent=snapshot.endpoint;
-  if(document.activeElement!==$('socket')) $('socket').value=snapshot.endpoint;
   $('refresh').disabled=!!snapshot.busy||frozen||!ready;
   $('cancel').hidden=!snapshot.busy;
   $('pause').hidden=kind!=='browser';$('pause').textContent=snapshot.paused?'恢复刷新':'暂停刷新';
@@ -47,13 +46,14 @@ function renderHeader() {
   const terminal=snapshot.terminal;
   $('open-terminal').disabled=terminalOpening||!!snapshot.busy||!ready||frozen||snapshot.status!=='running'||snapshot.state!=='ready'||terminal?.status==='pending';
   $('terminal-shell').disabled=$('open-terminal').disabled;
+  if(!containerShell&&document.activeElement!==$('terminal-shell'))$('terminal-shell').value=snapshot.defaultShell||'';
   $('terminal-result').hidden=!terminal;
   $('terminal-result').textContent=terminal?({pending:'终端请求待确认',completed:'终端页面已创建；容器连接结果请在终端查看',failed:'终端请求失败',invalidated:'终端请求已失效',unknown:'终端执行结果未确认'}[terminal.status]||terminal.status)+(terminal.error?.message?'：'+terminal.error.message:''):'';
   const op=snapshot.operation;
   $('operation').hidden=!op; $('operation').textContent=operationText(op);
   for(const button of document.querySelectorAll('[data-operation]')) {
     const action=button.dataset.operation, state=snapshot.status;
-    button.hidden=!available(action,state);
+    button.hidden=!available(action,state)||(snapshot.engine?.os==='windows'&&['pause','unpause'].includes(action));
     button.disabled=!writable()
       ||(action==='remove'&&!['exited','created','dead'].includes(state))||(action==='pause'&&state!=='running')||(action==='unpause'&&state!=='paused');
   }
@@ -140,7 +140,6 @@ $('refresh').onclick=()=>{fieldOffset=0;fieldHistory.length=0;void call({action:
 $('cancel').onclick=()=>void call({action:'cancel'}).then(()=>poll(true));
 $('pause').onclick=()=>void call({action:'pauseRefresh',paused:!snapshot.paused});
 $('read-stats').onclick=()=>void call({action:'stats'});
-$('endpoint-form').onsubmit=e=>{e.preventDefault();void call({action:'setEndpoint',endpoint:$('socket').value.trim()});};
 $('fields-prev').onclick=()=>{fieldOffset=fieldHistory.pop()??0;void renderBody();};
 $('fields-next').onclick=()=>{fieldHistory.push(fieldOffset);fieldOffset=fieldNext;void renderBody();};
 $('resource-prev').onclick=()=>{fieldOffset=fieldHistory.pop()??0;void renderBody();};
@@ -162,7 +161,7 @@ addEventListener('sodeck:mount',e=>{
   const nav=snapshot?.navigation||{};selected=nav.selected||'';offset=nav.offset||0;section=nav.section||'basic';fieldOffset=nav.fieldOffset||0;
   for(const [history,key] of [[listHistory,'listHistory'],[fieldHistory,'fieldHistory']])history.splice(0,history.length,...(nav[key]||[]));
   restoreScroll=nav.scrollTop||0;
-  containerShell=nav.shell||'/bin/sh';shellOptions=false;
+  containerShell=nav.shell||'';shellOptions=false;
   $('query').value=nav.query||'';$('status-filter').value=nav.status||'running';$('health-filter').value=nav.health||'all';$('group').checked=!!nav.group;
   renderHeader();sodeck.mounted();schedule();
 });

@@ -1,0 +1,224 @@
+{
+  "date": "2026-11-19",
+  "scope": "Actions Windows x86_64 archive from run 44349929560, source 50062c22566eaf8d9b4378e14a82115a4416064b; real core test program with three isolated OpenSSH sessions; not an installed packaged core or production 187",
+  "durationSeconds": 166,
+  "scenarios": [
+    {
+      "name": "acceptance",
+      "calls": [
+        {
+          "tool": "sodeck_targets_list",
+          "args": {},
+          "bytes": 1351,
+          "resolution": "ambiguous",
+          "targetCount": 3
+        },
+        {
+          "tool": "sodeck_exec_start",
+          "args": {
+            "targetId": "1795020251868-0d5bece209d647d5-target-1",
+            "requestId": "codex-short",
+            "command": "cmd /c \"ver & echo sodeck-codex-short\""
+          },
+          "bytes": 959,
+          "taskId": "task-1795020251868-0d5bece209d647d5-14",
+          "done": true,
+          "exitCode": 0,
+          "complete": true,
+          "wait": {
+            "elapsedMs": 290,
+            "reason": "done",
+            "requestedMs": 1000
+          },
+          "hasMore": false,
+          "stdout": "\r\nMicrosoft Windows [�汾 10.0.26300.9974]\r\nsodeck-codex-short\r\n"
+        },
+        {
+          "tool": "sodeck_exec_start",
+          "args": {
+            "targetId": "1795020251868-0d5bece209d647d5-target-1",
+            "requestId": "codex-acceptance",
+            "command": "powershell.exe -NoProfile -Command \"Start-Sleep -Seconds 2; Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors | Format-List; Write-Output ('page-line-' * 2400); Write-Output sodeck-codex-acceptance\""
+          },
+          "bytes": 860,
+          "taskId": "task-1795020251868-0d5bece209d647d5-15",
+          "done": false,
+          "complete": false,
+          "wait": {
+            "elapsedMs": 1004,
+            "reason": "timeout",
+            "requestedMs": 1000
+          },
+          "hasMore": false,
+          "stdout": ""
+        },
+        {
+          "tool": "sodeck_task_get",
+          "args": {
+            "taskId": "task-1795020251868-0d5bece209d647d5-15",
+            "outputMode": "none",
+            "waitMs": 5000,
+            "sinceRevision": "4"
+          },
+          "bytes": 772,
+          "taskId": "task-1795020251868-0d5bece209d647d5-15",
+          "done": true,
+          "exitCode": 0,
+          "complete": true,
+          "wait": {
+            "elapsedMs": 0,
+            "reason": "done",
+            "requestedMs": 5000
+          }
+        },
+        {
+          "tool": "sodeck_task_get",
+          "args": {
+            "taskId": "task-1795020251868-0d5bece209d647d5-15"
+          },
+          "bytes": 9950,
+          "taskId": "task-1795020251868-0d5bece209d647d5-15",
+          "done": true,
+          "exitCode": 0,
+          "complete": true,
+          "hasMore": true,
+          "stdout": "\r\n\r\nName                      : Intel(R) Core(TM) Ultra 5 250K Plus\r\nNumberOfCores             : 18\r\nNumberOfLogicalProcessors : 18\r\n\r\n\r\n\r\npage-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-"
+        },
+        {
+          "tool": "sodeck_task_get",
+          "args": {
+            "taskId": "task-1795020251868-0d5bece209d647d5-15",
+            "cursor": "13244"
+          },
+          "bytes": 9523,
+          "taskId": "task-1795020251868-0d5bece209d647d5-15",
+          "done": true,
+          "exitCode": 0,
+          "complete": true,
+          "hasMore": true,
+          "stdout": "page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page"
+        },
+        {
+          "tool": "sodeck_task_get",
+          "args": {
+            "taskId": "task-1795020251868-0d5bece209d647d5-15",
+            "cursor": "25022"
+          },
+          "bytes": 7191,
+          "taskId": "task-1795020251868-0d5bece209d647d5-15",
+          "done": true,
+          "exitCode": 0,
+          "complete": true,
+          "hasMore": false,
+          "stdout": "-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-page-line-\r\nsodeck-codex-acceptance\r\n"
+        },
+        {
+          "tool": "sodeck_task_get",
+          "args": {
+            "taskId": "task-1795020251868-0d5bece209d647d5-15",
+            "outputMode": "full"
+          },
+          "bytes": 14207,
+          "taskId": "task-1795020251868-0d5bece209d647d5-15",
+          "done": true,
+          "exitCode": 0,
+          "complete": true,
+          "hasMore": true
+        },
+        {
+          "tool": "sodeck_task_get",
+          "args": {
+            "taskId": "task-1795020251868-0d5bece209d647d5-15",
+            "detail": true,
+            "outputMode": "none"
+          },
+          "bytes": 1916,
+          "taskId": "task-1795020251868-0d5bece209d647d5-15",
+          "done": true,
+          "exitCode": 0,
+          "complete": true
+        }
+      ],
+      "final": "Selected `187` at `127.0.0.1:60011`.\n\n- Short query: Windows `10.0.26300.9974`; stable done, exitCode 0, evidence.complete true, and marker verified directly from `exec_start`. No short-task `task_get`.\n- CPU: Intel(R) Core(TM) Ultra 5 250K Plus — 18 cores, 18 logical processors.\n- Paging worked across three pages through the final marker.\n- Full mode returned original chunks without stdout.\n- Diagnostics returned the original command without output.\n- Long task: exitCode 0, evidence.complete true, acceptance marker verified in stdout.\n\nMCP_ACCEPTANCE_OK"
+    },
+    {
+      "name": "c-unique",
+      "calls": [
+        {
+          "tool": "sodeck_targets_list",
+          "args": {
+            "query": "187"
+          },
+          "bytes": 604,
+          "resolution": "unique",
+          "targetCount": 1
+        },
+        {
+          "tool": "sodeck_exec_start",
+          "args": {
+            "command": "cmd /c \"ver & echo sodeck-c-unique\"",
+            "requestId": "c-codex-unique",
+            "targetId": "1795020251868-0d5bece209d647d5-target-1"
+          },
+          "bytes": 959,
+          "taskId": "task-1795020251868-0d5bece209d647d5-17",
+          "done": true,
+          "exitCode": 0,
+          "complete": true,
+          "wait": {
+            "elapsedMs": 336,
+            "reason": "done",
+            "requestedMs": 1000
+          },
+          "hasMore": false,
+          "stdout": "\r\nMicrosoft Windows [�汾 10.0.26300.9974]\r\nsodeck-c-unique\r\n"
+        }
+      ],
+      "final": "C_UNIQUE_OK — Microsoft Windows, version 10.0.26300.9974."
+    },
+    {
+      "name": "c-ambiguous",
+      "calls": [
+        {
+          "tool": "sodeck_targets_list",
+          "args": {
+            "query": "1"
+          },
+          "bytes": 1453,
+          "resolution": "ambiguous",
+          "targetCount": 3
+        }
+      ],
+      "final": "Query “1” matched three ready endpoints. Which should I check?\n\n- `127.0.0.1:60011` — name `187`\n- `127.0.0.1:60013` — name `127.0.0.1`\n- `127.0.0.1:60015` — name `127.0.0.1`\n\nNothing has been executed or downloaded.\n\nC_AMBIGUOUS_OK"
+    },
+    {
+      "name": "c-recovery",
+      "calls": [
+        {
+          "tool": "sodeck_tasks_list",
+          "args": {
+            "serverId": "1795020248371-47824-1",
+            "requestId": "c-recover"
+          },
+          "bytes": 969
+        },
+        {
+          "tool": "sodeck_task_get",
+          "args": {
+            "taskId": "task-1795020251868-0d5bece209d647d5-16"
+          },
+          "bytes": 844,
+          "taskId": "task-1795020251868-0d5bece209d647d5-16",
+          "done": true,
+          "exitCode": 0,
+          "complete": true,
+          "hasMore": false,
+          "stdout": "sodeck-original-operation\"\r\n"
+        }
+      ],
+      "final": "Original-operation marker: `sodeck-original-operation`\n\nRead the original task once; exit code 0. No launch or download performed.\n\nC_RECOVERY_OK"
+    }
+  ],
+  "sourceCommit": "50062c22566eaf8d9b4378e14a82115a4416064b",
+  "originalRunId": "44349929560"
+}

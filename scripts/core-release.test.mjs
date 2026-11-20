@@ -6,11 +6,22 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { artifactMetadata, coreNames, targets, validateCoreArtifacts } from "./core-artifacts.mjs";
+import { artifactMetadata, coreNames, targets, validateCoreArtifacts, cleanupWindowsUninstaller } from "./core-artifacts.mjs";
 import { coreConfig, generate } from "./release-metadata.mjs";
 import { artifactRun, githubClient, prepareCoreRelease, releaseState } from "./core-release.mjs";
 
 const commit = "a".repeat(40), config = { id: "sodeck.core", version: "1.2.3", tag: "v1.2.3", notes: "Release notes" };
+test('Windows package cleanup accepts an already removed directory and rejects unexpected leftovers', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sodeck-uninstaller-test-'));
+  t.after(() => { assert.equal(path.dirname(root), os.tmpdir()); fs.rmSync(root, { recursive: true, force: true }); });
+  const install = path.join(root, 'SoDeck');
+  assert.doesNotThrow(() => cleanupWindowsUninstaller(install));
+  fs.mkdirSync(install); fs.writeFileSync(path.join(install, 'uninstall.exe'), 'uninstaller');
+  cleanupWindowsUninstaller(install); assert(!fs.existsSync(install));
+  fs.mkdirSync(install); fs.writeFileSync(path.join(install, 'unexpected.txt'), 'keep');
+  assert.throws(() => cleanupWindowsUninstaller(install), { code: 'ENOTEMPTY' });
+  assert.equal(fs.readFileSync(path.join(install, 'unexpected.txt'), 'utf8'), 'keep');
+});
 function fixture(t, selected = targets) {
   const input = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-core-artifact-test-"));
   t.after(() => fs.rmSync(input, { recursive: true, force: true }));

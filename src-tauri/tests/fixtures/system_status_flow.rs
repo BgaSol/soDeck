@@ -1,4 +1,23 @@
-// Actual packaged plugin on the isolated OpenSSH daemon; no browser needed for sampling.
+#[tokio::test(flavor="multi_thread",worker_threads=2)]
+async fn environment_json_limit_fails_without_another_probe(){
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    let f=Fixture::new();let target=SshServer::new().await;
+    let id=f.server("127.0.0.1",target.addr.port(),json!([]));
+    let context=connected(&f,&id).await.context.unwrap();let (view,token,_)=terminal_fixture(&f);
+    let response=format!("SODECK_ENV_1\nwindows\n{}\n{}\n",STANDARD.encode("powershell.exe"),STANDARD.encode("\u{1}".repeat(2800)));
+    assert!(response.len()<16*1024);
+    *target.state.environment_response.lock().unwrap()=Some(response.into_bytes());
+    let invoke=|method:&str,p:Value|f.core.ui_event("main",&token,json!({"rpc":method,"params":p})).unwrap();
+    let started=invoke("session.environment.start",json!({"viewId":view,"expectedContext":context,"operationId":"environment","sequence":"1","keys":["DOCKER_HOST"],"timeoutMs":3000}));
+    let task=started["taskId"].as_str().unwrap();let end=std::time::Instant::now()+Duration::from_secs(4);
+    let output=loop{let output=invoke("session.exec.poll",json!({"taskId":task,"stdoutOffset":"0","stderrOffset":"0"}));
+        if output["state"]!="running"{break output;}assert!(std::time::Instant::now()<end,"{output}");tokio::time::sleep(Duration::from_millis(25)).await;};
+    assert_eq!(output["state"],"failed","{output}");assert_eq!(output["error"]["code"],"outputLimit","{output}");
+    assert_eq!(output["stdout"]["nextOffset"],"0");assert_eq!(output["stderr"]["nextOffset"],"0");
+    assert_eq!(output["outputComplete"],true);assert_eq!(target.state.environment_probes.load(Ordering::Relaxed),1);
+    invoke("session.exec.release",json!({"taskId":task}));close_terminal_views(&f);f.core.shutdown().unwrap();
+}
+
 #[tokio::test(flavor="multi_thread",worker_threads=2)]
 #[ignore="requires isolated OpenSSH and actual status package; npm run system-status:test"]
 async fn openssh_system_status_plugin(){

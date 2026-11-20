@@ -167,6 +167,7 @@ pub struct Registered {
     pub entry: String,
     pub available: bool,
     pub ui_api_version: String,
+    pub icon_url: Option<String>,
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

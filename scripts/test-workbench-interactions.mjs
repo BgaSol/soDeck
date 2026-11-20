@@ -435,13 +435,13 @@ test('update progress preserves wheel scrolling and expanded notes',async()=>{
     await page.setViewportSize({width:1100,height:720});
     await page.evaluate(async()=>{
       await import('/style.css');
-      const {settings}=await import('/views.ts');const {updateDOM:renderUpdatesSettings}=await import('/dom-update.ts');
-      const host=document.querySelector('#chrome');host.className='settings-content';host.style.cssText='width:940px;height:560px';
+      const {maintenance}=await import('/views.ts');const {updateDOM:renderUpdatesSettings}=await import('/dom-update.ts');
+      const host=document.querySelector('#chrome');host.style.cssText='display:flex;width:940px;height:560px';
       window.updateSnapshot={version:'0.1.0',target:'x86_64-pc-windows-msvc',preferences:{},plugins:Array.from({length:12},(_,i)=>({manifest:{id:'test.'+i,name:'插件 '+i,version:'0.1.0',target:'x86_64-pc-windows-msvc',updateSource:{repository:'test/plugins'}},enabled:true}))};
-      window.updateView={section:'updates',updates:Object.fromEntries(updateSnapshot.plugins.map(p=>[p.manifest.id,{id:p.manifest.id,phase:'downloading',version:'0.2.0',notes:'# 更新说明\n\n'+Array.from({length:20},(_,i)=>'- 改进 '+i).join('\n'),downloadedBytes:1048576,totalBytes:104857600,error:null}])),excludedUpdates:new Set(),busy:new Set(),updateOverview:{busy:true,checking:false}};
-      window.refreshUpdates=()=>renderUpdatesSettings(host,settings(updateSnapshot,updateView));refreshUpdates();
+      window.updateView={updates:Object.fromEntries(updateSnapshot.plugins.map(p=>[p.manifest.id,{id:p.manifest.id,phase:'downloading',version:'0.2.0',notes:'# 更新说明\n\n'+Array.from({length:20},(_,i)=>'- 改进 '+i).join('\n'),downloadedBytes:1048576,totalBytes:104857600,error:null}])),excludedUpdates:new Set(),busy:new Set(),updateOverview:{busy:true,checking:false}};
+      window.refreshUpdates=()=>renderUpdatesSettings(host,maintenance(updateSnapshot,updateView,'updates'));refreshUpdates();
     });
-    const scroller=page.locator('.settings-page');
+    const scroller=page.locator('.maintenance-page');
     await scroller.evaluate(node=>node.scrollTop=350);
     await scroller.hover();await page.mouse.wheel(0,300);
     await page.evaluate(()=>{updateView.updates['test.0'].downloadedBytes+=1048576;refreshUpdates();});

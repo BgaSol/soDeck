@@ -1,18 +1,24 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
+import {spawnSync} from 'node:child_process';
 import {pluginPeer,context,capabilities,until,packageRoot} from './docker-process.mjs';
+const windows=process.argv.includes('--windows')||process.argv.includes('--windows-engine'),engineOs=process.argv.includes('--windows-engine')?'windows':'linux',shell=engineOs==='windows'?'cmd.exe':'/bin/sh';
+const environment=windows?{kind:'windows',launcher:'powershell.exe',exitMode:'native'}:{kind:'posix'},rootDir=engineOs==='windows'?'C:\\ProgramData\\Docker':'/srv/docker-data';
 const root=packageRoot();
 const manifest=JSON.parse(fs.readFileSync(path.join(root,'plugin.json')));
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-docker-process-'));
 const tickets=new Map(),submissions=[],streams=new Map(),streamRequests=[],streamLookups=[];let loseCommandReceipt=true,loseStreamReceipts=6;
 const id='a'.repeat(64),tasks=new Map(),commands=[],diagnostics=[];let number=0,hold=false,holdMutation=false,loseReceipt=true,malformed=false,engineId='engine',peer;
+const programs=new Map();
 const inspect={Id:id,Name:'/service-中文',Image:'sha256:'+'b'.repeat(64),Config:{Image:'demo:1',Env:['TOKEN=a=b'],Labels:{}},State:{Status:'running',Running:true,Health:{Status:'unhealthy',Log:[]}},Mounts:[],NetworkSettings:{Ports:{},Networks:{}}};
 const unusedImage='sha256:'+'d'.repeat(64),networkId='c'.repeat(64),systemNetwork='e'.repeat(64);
 let volumeExists=true,volumeCreatedAt='2026-11-16T00:00:00Z',holdPull=false,streamConfirmed=false;
 const volume=name=>({Name:name,Driver:'local',Scope:'local',CreatedAt:volumeCreatedAt,Options:null,Labels:null});
 const output=command=>{
-  if(command.includes("'version'"))return JSON.stringify({Server:{Os:'linux',Arch:'amd64',Version:'24.0.9'}});
-  if(command.includes("'info'"))return JSON.stringify({ID:engineId,Name:'fixture',Containers:1,Images:1,DockerRootDir:'/srv/docker-data',SystemTime:'2026-11-15T10:00:00.123456789Z'});
+  if(command.includes("'context' 'show'"))return 'default\n';
+  if(command.includes("'context' 'inspect'"))return JSON.stringify({Host:windows?'npipe:////./pipe/dockerDesktopLinuxEngine':'unix:///var/run/docker.sock'});
+  if(command.includes("'version'"))return JSON.stringify({Client:{Os:windows?'windows':'linux',Version:'29.9.2'},Server:{Os:engineOs,Arch:'amd64',Version:'24.0.9'}});
+  if(command.includes("'info'"))return JSON.stringify({ID:engineId,Name:'fixture',Containers:1,Images:1,DockerRootDir:rootDir,SystemTime:'2026-11-15T10:00:00.123456789Z'});
   if(command.includes("'image' 'ls'"))return [inspect.Image,unusedImage,inspect.Image].join('\n');
   if(command.includes("'network' 'ls'"))return [networkId,systemNetwork].join('\n');
   if(command.includes("'volume' 'ls'"))return volumeExists?'data\nused-data\n':'used-data\n';
@@ -32,6 +38,19 @@ const output=command=>{
   return id+'\n';
 };
 peer=pluginPeer(path.join(root,manifest.entry),async(method,p)=>{
+  if(method==='session.program.prepare'){
+    assert.deepEqual(p.expectedContext,context);
+    assert.deepEqual(p.environment,environment);
+    assert.equal(p.program.file,windows?'docker.exe':'docker');
+    if(p.program.checks.length===2)assert.match(p.program.checks[1].expectedStdout,/^[a-f0-9]{64}$/,'only a complete container ID can receive a container startup check');
+    const command=p.program.argv.map(a=>"'"+a.replaceAll("'","'\\''")+"'").join(' ')+' checks='+JSON.stringify(p.program.checks);
+    programs.set(command,p.program);
+    return {command,mode:p.mode,programOutput:p.mode==='terminal'?null:'startup-v1'};
+  }
+  if(method==='session.environment.start'){
+    const taskId=String(++number),bytes=Buffer.from(JSON.stringify({environment,values:{DOCKER_HOST:'',DOCKER_CONTEXT:'',DOCKER_CONFIG:''}}));
+    tasks.set(taskId,{id:taskId,operationId:p.operationId,bytes,command:'environment'});return {taskId,state:'running'};
+  }
   if(method==='commands.resolve')return {available:true};
   if(method==='commands.submit'){
     submissions.push(p);let receipt=tickets.get(p.requestId);
@@ -83,12 +102,12 @@ try{
   let list=(await request('ui.event','browser',{data:{action:'list',status:'abnormal',query:'中文'}})).data;
   assert.equal(list.total,1);assert.equal(list.rows[0].project,'web');
   await request('ui.createView','detail',{viewType:'container',resourceKey:JSON.stringify({id,engineId:'engine'})});await idle('detail');
-  const terminal={action:'openTerminal',requestId:'terminal-once',shell:'/bin/sh'};
+  const terminal={action:'openTerminal',requestId:'terminal-once',shell};
   await request('ui.event','detail',{data:terminal});await request('ui.event','detail',{data:terminal});
   const terminalResult=await until(async()=>(await request('ui.getView','detail')).data,v=>v.terminal?.status==='completed');
   assert.equal(terminalResult.terminal.viewId,'terminal-terminal-once');assert.equal(submissions.length,1,'lost submit receipt must query the original intent');
   assert.equal(submissions[0].name,'terminal.open.v1');assert.equal(submissions[0].sourceViewId,'detail');
-  const launch=submissions[0].payload;assert.equal(launch.directoryIntegration,'off');assert(launch.launch.command.includes('DOCKER_HOST DOCKER_CONTEXT'));assert(launch.launch.command.includes("'engine'"));assert(launch.launch.command.includes(id));assert(launch.launch.command.includes("'/bin/sh'"));
+  const launch=submissions[0].payload;assert.equal(launch.directoryIntegration,'off');assert.deepEqual(programs.get(launch.launch.command).removeEnv,['DOCKER_HOST','DOCKER_CONTEXT','DOCKER_TLS_VERIFY','DOCKER_CERT_PATH','DOCKER_API_VERSION']);assert.equal(programs.get(launch.launch.command).checks[0].expectedStdout,'engine');assert(launch.launch.command.includes(id));assert(programs.get(launch.launch.command).argv.includes(shell));
   const malformedBefore=commands.length;
   malformed=true;await request('ui.event','detail',{data:{action:'refresh'}});let failed=await idle('detail');
   assert(JSON.stringify(failed).includes('核心输出编码无效'),JSON.stringify(failed));assert.equal(tasks.size,0,'bad encoding must release the task');
@@ -112,7 +131,7 @@ try{
   assert.equal(streamRequests.length,2,'lost open receipt and repeated UI request must not rerun a command');
   assert.equal(loseStreamReceipts,0);assert.equal(new Set(streamLookups.map(r=>r.operationId)).size,2,'both lost tickets are resolved independently');
   assert(streamRequests.some(r=>r.command.includes("'--tail' '2001'")));assert(streamRequests.some(r=>r.command.includes("'--follow'")));
-  assert(streamRequests.every(r=>r.command.includes("'inspect'")&&r.command.includes("'engine'")));
+  assert(streamRequests.every(r=>programs.get(r.command).checks[1].argv.includes('inspect')&&programs.get(r.command).checks[0].expectedStdout==='engine'&&r.programOutput==='startup-v1'));
   assert.equal(logs.resources.find(r=>r.end!=null).end,1794736800,'range uses fresh Engine time');
   await assert.rejects(request('ui.event','logs',{data:{...logRequest,complete:true}}),/相同日志请求参数不同/);
   const count=streamRequests.length;await request('ui.getView','logs');assert.equal(streamRequests.length,count,'remount only describes existing captures');
@@ -124,7 +143,7 @@ try{
   await assert.rejects(request('ui.event','logs',{data:{...logRequest,requestId:'stale-log-intent'}}),/旧日志请求/);
   inspect.State.Status='running';inspect.State.Running=true;
   const env=(await request('ui.event','detail',{data:{action:'section',section:'environment'}})).data;assert.equal(env.rows[0].value,'a=b');assert.equal(env.rows[0].secret,true);
-  await assert.rejects(request('ui.event','browser',{data:{action:'setEndpoint',endpoint:'tcp://host:2375'}}),/unix/);
+  await assert.rejects(request('ui.event','browser',{data:{action:'setEndpoint',endpoint:'tcp://host:2375'}}),/Unix|npipe/);
   await request('ui.event','detail',{data:{action:'refresh'}});await idle('detail');
   holdMutation=true;await request('ui.event','detail',{data:{action:'operate',operation:'stop',requestId:'interrupted-stop',intentSequence:'4'}});
   await until(async()=>[...tasks.values()].some(t=>t.command.includes("'stop'")),Boolean);
@@ -135,10 +154,17 @@ try{
   assert.equal((await request('ui.beforeClose','detail')).metadata.busy,true);
   await assert.rejects(request('ui.event','detail',{data:{action:'refresh'}}),/关闭/);
   await request('ui.disposeView','detail');await until(async()=>tasks.size,n=>n===0);hold=false;
-  await request('ui.disposeView','logs');await until(async()=>streams.size,n=>n===0);engineId='replacement-engine';
-  await request('ui.event','browser',{data:{action:'setEndpoint',endpoint:'unix:///run/docker-test.sock'}});browser=await idle('browser');assert.equal(browser.engine.id,engineId);
-  await request('ui.event','browser',{data:{action:'setEndpoint',endpoint:'unix:///var/run/docker.sock'}});browser=await idle('browser');assert.equal(browser.state,'ready');
-  engineId='third-engine';await request('ui.event','browser',{data:{action:'refresh'}});browser=await idle('browser');assert.equal(browser.engine.id,engineId);
+  await request('ui.disposeView','logs');await until(async()=>streams.size,n=>n===0);
+  browser=await idle('browser');const oldEndpoint=browser.endpoint;
+  hold=true;await request('ui.event','browser',{data:{action:'connection.save',config:{mode:'manual',endpoint:windows?'npipe:////./pipe/candidate':'unix:///run/candidate.sock'}}});
+  await until(async()=>[...tasks.values()].some(t=>t.command==='environment'),Boolean);
+  await request('ui.createView','late-detail',{viewType:'container',resourceKey:JSON.stringify({id,engineId:'engine',endpoint:oldEndpoint})});
+  hold=false;browser=await idle('browser');assert.equal(browser.connection.test.state,'failed');assert.equal(browser.endpoint,oldEndpoint,'a new detail during discovery must prevent binding/config replacement');assert.equal(browser.connection.config.mode,'auto');
+  await request('ui.disposeView','late-detail');await until(async()=>tasks.size,n=>n===0);engineId='replacement-engine';
+  await request('ui.event','browser',{data:{action:'setEndpoint',endpoint:windows?'npipe:////./pipe/test-engine':'unix:///run/docker-test.sock'}});browser=await idle('browser');assert.equal(browser.engine.id,engineId);
+  await request('ui.event','browser',{data:{action:'setEndpoint',endpoint:windows?'npipe:////./pipe/dockerDesktopLinuxEngine':'unix:///var/run/docker.sock'}});browser=await idle('browser');assert.equal(browser.state,'ready');
+  engineId='third-engine';await request('ui.event','browser',{data:{action:'refresh'}});browser=await idle('browser');assert.equal(browser.state,'stale');assert.notEqual(browser.engine.id,engineId);
+  await request('ui.event','browser',{data:{action:'connection.identify'}});browser=await idle('browser');assert.equal(browser.engine.id,engineId);
   const target={id,engineId,endpoint:browser.endpoint,expectedContext:context};
   const browserStart={action:'operate',...target,operation:'start',requestId:'sidebar-start',intentSequence:'1'};
   await request('ui.event','browser',{data:browserStart});await request('ui.event','browser',{data:browserStart});browser=await idle('browser');
@@ -148,7 +174,7 @@ try{
   await assert.rejects(request('ui.event','browser',{data:{...browserStart,id:'b'.repeat(64)}}),/相同请求参数不同/);
   await assert.rejects(request('ui.event','browser',{data:{...browserStart,requestId:'old-engine',intentSequence:'2',engineId:'engine'}}),/身份已改变/);
   await assert.rejects(request('ui.event','browser',{data:{...browserStart,requestId:'old-context',intentSequence:'2',expectedContext:{...context,generation:2}}}),/身份已改变/);
-  const sidebarTerminal={action:'openTerminal',...target,requestId:'sidebar-terminal',shell:'/bin/sh'};
+  const sidebarTerminal={action:'openTerminal',...target,requestId:'sidebar-terminal',shell};
   const submittedBefore=submissions.length;
   await request('ui.event','browser',{data:sidebarTerminal});await request('ui.event','browser',{data:sidebarTerminal});
   await assert.rejects(request('ui.event','browser',{data:{...sidebarTerminal,shell:'/bin/bash'}}),/相同终端请求参数不同/);
@@ -168,7 +194,7 @@ try{
   await request('ui.event','browser',{data:{action:'cancel'}});browser=await idle('browser');holdMutation=false;
   assert.equal(browser.operation.state,'unknown');assert.equal(browser.operation.containerId,id);
   const unknownCount=commands.length;await request('ui.event','browser',{data:unknown});assert.equal(commands.length,unknownCount,'unknown sidebar intent must never resend');
-  await request('ui.event','browser',{data:{action:'refresh'}});browser=await idle('browser');assert.equal(browser.engine.dockerRootDir,'/srv/docker-data');
+  await request('ui.event','browser',{data:{action:'refresh'}});browser=await idle('browser');assert.equal(browser.engine.dockerRootDir,rootDir);
   const load=async(kind,resource)=>{const s=await state('browser');await request('ui.event','browser',{data:{action:'browser.load',scopeEpoch:s.scopeEpoch,branchKind:kind,resource}});if(!resource)await until(()=>state('browser'),v=>!['unloaded','loading'].includes(v.indexes[kind].phase));else await until(async()=>(await request('ui.event','browser',{data:{action:'browser.object',resource}})).data,v=>v.relation?.phase!=='loading'&&v.relation);};
   const object=async resource=>(await request('ui.event','browser',{data:{action:'browser.object',resource}})).data;
   for(const kind of ['image','network','volume'])await load(kind);
@@ -187,7 +213,7 @@ try{
   await request('ui.event','browser',{data:{action:'refresh'}});await idle('browser');await load('network');await load(null,{kind:'network',id:systemNetwork});await request('ui.event','browser',{data:await resourceInput({kind:'network',id:systemNetwork})});browser=await idle('browser');assert.equal(browser.operation.state,'failed');assert(!commands.some(c=>c.includes("'network' 'rm'")),'system networks cannot be deleted');
   await request('ui.event','browser',{data:{action:'refresh'}});browser=await idle('browser');
   const pullInput=async(view,reference)=>{const s=await state(view);return {action:'pull.start',reference,engineId:s.engine.id,endpoint:s.endpoint,expectedContext:context,scopeEpoch:s.scopeEpoch,requestId:'pull-'+view+'-'+s.nextIntent,intentSequence:s.nextIntent};};
-  loseStreamReceipts=1;const pull=await pullInput('browser','public/demo');await request('ui.event','browser',{data:pull});await request('ui.event','browser',{data:pull});browser=await until(()=>state('browser'),s=>s.pull?.state==='unknown');assert.equal(streamRequests.filter(r=>r.command.includes("'image' 'pull'")).length,1,'lost pull receipt resolves original ticket');assert(streamLookups.some(r=>r.operationId.startsWith('pull-')));await request('ui.event','browser',{data:pull});assert.equal(streamRequests.filter(r=>r.command.includes("'image' 'pull'")).length,1);
+  loseStreamReceipts=3;const pull=await pullInput('browser','public/demo');await request('ui.event','browser',{data:pull});await request('ui.event','browser',{data:pull});browser=await until(()=>state('browser'),s=>s.pull?.state==='unknown');assert.equal(streamRequests.filter(r=>r.command.includes("'image' 'pull'")).length,1,'lost pull receipt resolves original ticket');assert(streamLookups.some(r=>r.operationId.startsWith('pull-')));await request('ui.event','browser',{data:pull});assert.equal(streamRequests.filter(r=>r.command.includes("'image' 'pull'")).length,1);
   streamConfirmed=true;const successfulPull=await pullInput('browser','public/demo:stable');await request('ui.event','browser',{data:successfulPull});browser=await until(()=>state('browser'),s=>s.pull?.state==='succeeded');assert(browser.pull.streamId);await idle('browser');
   await request('ui.createView','browser2',{viewType:'browser'});await idle('browser2');await request('ui.createView','browser3',{viewType:'browser'});await idle('browser3');holdPull=true;streamConfirmed=false;
   await request('ui.event','browser',{data:await pullInput('browser','public/a')});await until(()=>state('browser'),s=>s.pull?.state==='running');await request('ui.event','browser2',{data:await pullInput('browser2','public/b')});await until(()=>state('browser2'),s=>s.pull?.state==='running');await assert.rejects(request('ui.event','browser3',{data:await pullInput('browser3','public/c')}),/两个镜像拉取/);
@@ -199,8 +225,11 @@ try{
   await until(async()=>streams.size,n=>n===0);
   await assert.rejects(state('detail'),/关闭/);
   await peer.close();assert.equal(peer.child.exitCode,0);
-  console.log('Docker native process: four resource indexes, stopped references, volume identity, native image refusal, system network protection, pull tickets/concurrency/disposal, UI v2 and existing container/log/terminal contracts passed.');
+  console.log('Docker process with mocked '+environment.kind+'/'+engineOs+': resources, references, deletion, pull tickets/concurrency/disposal, UI v2, logs and terminals passed.');
 }finally{
   if(peer.child.exitCode===null){peer.child.kill();await new Promise(r=>peer.child.once('exit',r));}
   assert.equal(path.dirname(directory),os.tmpdir());assert(path.basename(directory).startsWith('sodeck-docker-process-'));fs.rmSync(directory,{recursive:true,force:true});
+}
+if(process.argv.length===2)for(const mode of ['--windows','--windows-engine']){
+  const result=spawnSync(process.execPath,[process.argv[1],mode],{stdio:'inherit',windowsHide:true});assert.equal(result.status,0);
 }

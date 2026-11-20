@@ -1,0 +1,102 @@
+{
+  "description": "Same representative CPU fixture through archived 0.2.2 and current 0.3.0 production executables; whole serialized MCP result UTF-8 bytes, excluding JSON-RPC/HTTP envelope; not live server 187",
+  "baseline": {
+    "version": "0.2.2",
+    "source": "a54acb31dff9bd2bf3a5903f4fca876d6b4412f8",
+    "args": {
+      "taskId": "task-1795004578117-145699998fef064c-4",
+      "outputMode": "text"
+    },
+    "bytes": 3256,
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"cancelRequested\":false,\"cleanupError\":null,\"createdAt\":1795004578152,\"directory\":\"C:\\\\Users\\\\bgaso\\\\AppData\\\\Local\\\\Temp\\\\sodeck-mcp-process-V8OeSG\\\\evidence\\\\1795004578117-145699998fef064c\\\\task-1795004578117-145699998fef064c-4\",\"done\":true,\"evidence\":{\"complete\":true,\"error\":null,\"path\":\"C:\\\\Users\\\\bgaso\\\\AppData\\\\Local\\\\Temp\\\\sodeck-mcp-process-V8OeSG\\\\evidence\\\\1795004578117-145699998fef064c\\\\task-1795004578117-145699998fef064c-4\\\\output.jsonl\",\"state\":\"saved\"},\"finishedAt\":1795004578164,\"input\":{\"command\":\"collect\",\"requestId\":\"once\",\"targetId\":\"1795004578117-145699998fef064c-target-1\",\"timeoutSeconds\":300},\"kind\":\"exec\",\"native\":{\"elapsedMs\":1795004578160,\"error\":null,\"execSent\":true,\"exitCode\":0,\"finished\":true,\"outputComplete\":true,\"remoteExitConfirmed\":true,\"state\":\"completed\",\"workerFinished\":true},\"observedAt\":1795004578160,\"output\":{\"hasMore\":false,\"nextCursor\":\"328\",\"previewEncoding\":\"utf-8-lossy-per-page\",\"savedBytes\":\"328\",\"stderr\":\"\",\"stdout\":\"Architecture: x86_64\\nCPU(s): 56\\nThread(s) per core: 2\\nCore(s) per socket: 14\\nSocket(s): 2\\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\\nL3 cache: 38.5 MiB\\nVirtualization: VT-x\\n\"},\"outputInfo\":{\"savedBytes\":\"328\"},\"phase\":\"done\",\"requestId\":\"once\",\"resourceReleased\":true,\"revision\":\"8\",\"runId\":\"1795004578117-145699998fef064c\",\"target\":{\"endpoint\":\"a:22\",\"name\":\"a\",\"protocol\":\"ssh\",\"username\":\"ops\"},\"targetId\":\"1795004578117-145699998fef064c-target-1\",\"taskId\":\"task-1795004578117-145699998fef064c-4\"}"
+        }
+      ],
+      "structuredContent": {
+        "cancelRequested": false,
+        "cleanupError": null,
+        "createdAt": 1795004578152,
+        "directory": "C:\\Users\\bgaso\\AppData\\Local\\Temp\\sodeck-mcp-process-V8OeSG\\evidence\\1795004578117-145699998fef064c\\task-1795004578117-145699998fef064c-4",
+        "done": true,
+        "evidence": {
+          "complete": true,
+          "error": null,
+          "path": "C:\\Users\\bgaso\\AppData\\Local\\Temp\\sodeck-mcp-process-V8OeSG\\evidence\\1795004578117-145699998fef064c\\task-1795004578117-145699998fef064c-4\\output.jsonl",
+          "state": "saved"
+        },
+        "finishedAt": 1795004578164,
+        "input": {
+          "command": "collect",
+          "requestId": "once",
+          "targetId": "1795004578117-145699998fef064c-target-1",
+          "timeoutSeconds": 300
+        },
+        "kind": "exec",
+        "native": {
+          "elapsedMs": 1795004578160,
+          "error": null,
+          "execSent": true,
+          "exitCode": 0,
+          "finished": true,
+          "outputComplete": true,
+          "remoteExitConfirmed": true,
+          "state": "completed",
+          "workerFinished": true
+        },
+        "observedAt": 1795004578160,
+        "output": {
+          "hasMore": false,
+          "nextCursor": "328",
+          "previewEncoding": "utf-8-lossy-per-page",
+          "savedBytes": "328",
+          "stderr": "",
+          "stdout": "Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n"
+        },
+        "outputInfo": {
+          "savedBytes": "328"
+        },
+        "phase": "done",
+        "requestId": "once",
+        "resourceReleased": true,
+        "revision": "8",
+        "runId": "1795004578117-145699998fef064c",
+        "target": {
+          "endpoint": "a:22",
+          "name": "a",
+          "protocol": "ssh",
+          "username": "ops"
+        },
+        "targetId": "1795004578117-145699998fef064c-target-1",
+        "taskId": "task-1795004578117-145699998fef064c-4"
+      },
+      "isError": false
+    }
+  },
+  "candidate": {
+    "version": "0.3.0",
+    "args": {
+      "taskId": "task-1795006141902-ecea36ab53678951-4"
+    },
+    "bytes": 977,
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"cancelRequested\":false,\"done\":true,\"evidence\":{\"complete\":true,\"state\":\"saved\"},\"kind\":\"exec\",\"native\":{\"execSent\":true,\"exitCode\":0,\"outputComplete\":true,\"remoteExitConfirmed\":true,\"state\":\"completed\"},\"output\":{\"hasMore\":false,\"nextCursor\":\"328\",\"previewEncoding\":\"utf-8-lossy-per-page\",\"savedBytes\":\"328\",\"stderr\":\"\",\"stdout\":\"Architecture: x86_64\\nCPU(s): 56\\nThread(s) per core: 2\\nCore(s) per socket: 14\\nSocket(s): 2\\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\\nL3 cache: 38.5 MiB\\nVirtualization: VT-x\\n\"},\"phase\":\"done\",\"requestId\":\"once\",\"resourceReleased\":true,\"revision\":\"8\",\"runId\":\"1795006141902-ecea36ab53678951\",\"target\":{\"endpoint\":\"a:22\",\"name\":\"a\",\"protocol\":\"ssh\",\"username\":\"ops\"},\"targetId\":\"1795006141902-ecea36ab53678951-target-1\",\"taskId\":\"task-1795006141902-ecea36ab53678951-4\"}"
+        }
+      ],
+      "isError": false
+    }
+  },
+  "reductionPercent": 69.99385749385749,
+  "asserted": [
+    "identical stdout",
+    "exitCode 0",
+    "evidence.complete true",
+    "resourceReleased true",
+    "result reduction >=40%"
+  ]
+}

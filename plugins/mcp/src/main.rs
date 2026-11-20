@@ -1,6 +1,17 @@
+mod app;
+mod collector;
+mod connections;
 mod evidence;
+mod identity;
+mod input;
 mod mcp;
+mod query;
+mod response;
+mod servers;
+mod targets;
+mod task;
 mod tasks;
+mod ui;
 use serde_json::json;
 use std::{
     fs::{self, OpenOptions},
@@ -40,14 +51,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .enable_all()
         .build()?;
     let handle = runtime.handle().clone();
-    let state = Arc::new(Mutex::new(None::<Arc<tasks::App>>));
+    let state = Arc::new(Mutex::new(None::<Arc<app::App>>));
     let app_state = state.clone();
     let settings_cache = sodeck_plugin_client::settings::SettingsCache::default();
     let result = sodeck_plugin_client::run(move |client, method, p| {
         if method == "initialize" {
             for cap in [
-                "session.target.v1",
-                "session.stream.process.v1",
+                "session.target.v2",
+                "servers.read.v1",
+                "connections.v1",
+                "session.process.v1",
                 "files.pluginData.v1",
                 "files.operations.v2",
                 "ui.background.v1",
@@ -76,7 +89,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if !(1024..=65535).contains(&port) {
                 return Err("端口无效".into());
             }
-            let app = Arc::new(tasks::App::new(
+            let app = Arc::new(app::App::new(
                 client.clone(),
                 root.clone(),
                 token(&root)?,
@@ -100,32 +113,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if method == "settings.changed" {
             return settings_cache.changed(&p, &["connection"]);
         }
+        if method == "connections.changed" {
+            app.core_changes.send_modify(|n| *n += 1);
+            return Ok(json!({}));
+        }
         let view = p["viewId"].as_str().ok_or("缺少 viewId")?;
+        if matches!(method, "ui.beforeClose" | "ui.save") {
+            return Ok(json!({"allow":true}));
+        }
+        if method == "ui.disposeView" {
+            app.dispose(view, &p["context"])?;
+            return Ok(json!({}));
+        }
         match method {
             "ui.createView" => {
                 if p["viewType"] != "status" {
                     return Err("未知视图".into());
                 }
                 app.mount(view, &p["context"])?;
+                return Ok(json!({"metadata":{"title":"Agent MCP","dirty":false,"busy":false}}));
             }
-            "ui.disposeView" => {
-                app.dispose(view);
-                return Ok(json!({}));
-            }
-            "ui.beforeClose" | "ui.save" => return Ok(json!({"allow":true})),
             "ui.getView" => {}
             "ui.event" => match p["data"]["action"].as_str().unwrap_or("") {
                 "snapshot" => {}
-                "config" => return Ok(json!({"data":{"config":app.config()}})),
+                "task" => {
+                    return Ok(
+                        json!({"data":ui::task(&app,view, &p["data"]).map_err(|e| e.to_string())?}),
+                    );
+                }
+                "config" => return Ok(json!({"data":{"config":app.config(),"token":app.token}})),
                 "cancel" => {
-                    app.cancel(&p["data"]).map_err(|e| e.to_string())?;
+                    let target = app.view_target(view).map_err(|e| e.to_string())?;
+                    let result = app
+                        .cancel(&p["data"], Some(&target.id))
+                        .map_err(|e| e.to_string())?;
+                    return Ok(json!({"data":response::ui_cancel(&result)}));
                 }
                 _ => return Err("未知操作".into()),
             },
             _ => return Err("未知方法".into()),
         }
         Ok(
-            json!({"metadata":{"title":"AI 排障接入","dirty":false,"busy":false},"data":app.view(view)?}),
+            json!({"metadata":{"title":"Agent MCP","dirty":false,"busy":false},"data":ui::snapshot(&app,view).map_err(|e|e.to_string())?}),
         )
     });
     if let Some(app) = state.lock().unwrap().as_ref() {

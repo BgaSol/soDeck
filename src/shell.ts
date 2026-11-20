@@ -5,6 +5,7 @@ import type { Workspaces, Projection, Context } from './workspaces';
 import type { ConnectionsUi } from './connections';
 import { enterMotion } from './motion.js';
 import { applyTheme } from './theme';
+import { updateDOM } from './dom-update';
 
 export const consolePages = [
   ['connections', '服务器连接', 'server'], ['plugins', '插件', 'plug'],
@@ -32,14 +33,16 @@ export class Shell {
   readonly tabs: HTMLElement;
   readonly pickerButton: HTMLButtonElement;
   readonly page: HTMLElement;
+  private readonly settingsNavigation: HTMLElement;
   constructor(readonly root: HTMLElement, private main: boolean) {
     this.route = main ? {kind:'console',page:'connections'} : {kind:'workbench'};
-    root.innerHTML = `<header class="topbar" data-tauri-drag-region="deep"><button id="catalog-tab" aria-label="SoDeck 管理台" aria-selected="true">${icon('grid')}<span>SoDeck</span></button><div class="tab-navigation"><div class="server-tabs" id="server-tabs" role="tablist" aria-label="服务器工作区"></div>${tabControls('服务器标签')}</div><button id="new-workspace" class="sd-icon" aria-label="${main ? '连接服务器' : '选择服务器'}" title="${main ? '连接服务器' : '选择服务器'}" ${main ? '' : 'aria-haspopup="dialog" aria-expanded="false"'}>${icon('plus')}</button><div id="drag-region" class="drag-region" aria-hidden="true"></div><nav class="global-tools" aria-label="应用工具">${b('messages','<span id="message-count">消息</span>','bell','icon-label','id="messages-button"')}${b('settings','设置','settings','icon-label','id="settings-button"')}</nav><div id="window-controls" class="window-controls">${b('minimize','','minus','','aria-label="最小化"')}${b('maximize','','maximize','','id="maximize-button" aria-label="最大化或还原"')}${b('close-window','','close','close-window','aria-label="关闭窗口"')}</div></header><main class="workspace" id="server-workspace"><section id="management-console" class="management-console"><nav class="console-nav" aria-label="管理台">${consolePages.map(([id,label,symbol])=>`<button data-console-page="${id}" title="${label}">${icon(symbol)}<span>${label}</span>${id === 'updates' ? '<span id="console-update-count" class="console-nav-badge" hidden></span>' : id === 'messages' ? '<span id="console-message-count" class="console-nav-badge" hidden></span>' : ''}</button>`).join('')}<button id="return-workbench" class="sd-quiet" hidden>${icon('chevron-left')}<span>返回工作台</span></button></nav><div class="console-main"><div id="server-catalog"></div><section id="console-page" class="console-page" hidden><p id="layer-error" role="status" class="error-box" hidden></p><div id="layer-content" class="layer-content"></div></section></div></section><div id="workspace-content" hidden></div></main><footer id="shell-status" class="shell-status sd-edge-top"></footer><div id="toasts" class="toasts" aria-live="polite"></div>`;
+    root.innerHTML = `<header class="topbar" data-tauri-drag-region="deep"><button id="catalog-tab" aria-label="SoDeck 管理台" aria-selected="true">${icon('grid')}<span>SoDeck</span></button><div class="tab-navigation"><div class="server-tabs" id="server-tabs" role="tablist" aria-label="服务器工作区"></div>${tabControls('服务器标签')}</div><button id="new-workspace" class="sd-icon" aria-label="${main ? '连接服务器' : '选择服务器'}" title="${main ? '连接服务器' : '选择服务器'}" ${main ? '' : 'aria-haspopup="dialog" aria-expanded="false"'}>${icon('plus')}</button><div id="drag-region" class="drag-region" aria-hidden="true"></div><nav class="global-tools" aria-label="应用工具">${b('messages','<span id="message-count">消息</span>','bell','icon-label','id="messages-button"')}${b('settings','设置','settings','icon-label','id="settings-button"')}</nav><div id="window-controls" class="window-controls">${b('minimize','','minus','','aria-label="最小化"')}${b('maximize','','maximize','','id="maximize-button" aria-label="最大化或还原"')}${b('close-window','','close','close-window','aria-label="关闭窗口"')}</div></header><main class="workspace" id="server-workspace"><section id="management-console" class="management-console"><nav class="console-nav" aria-label="管理台">${consolePages.map(([id,label,symbol])=>`<button data-console-page="${id}" title="${label}" ${id === 'settings' ? 'aria-controls="console-settings-nav" aria-expanded="false"' : ''}>${icon(symbol)}<span>${label}</span>${id === 'updates' ? '<span id="console-update-count" class="console-nav-badge" hidden></span>' : id === 'messages' ? '<span id="console-message-count" class="console-nav-badge" hidden></span>' : ''}</button>${id === 'settings' ? '<ul id="console-settings-nav" class="console-settings-nav" aria-label="设置分类" hidden></ul>' : ''}`).join('')}<button id="return-workbench" class="sd-quiet" hidden>${icon('chevron-left')}<span>返回工作台</span></button></nav><div class="console-main"><div id="server-catalog"></div><section id="console-page" class="console-page" hidden><p id="layer-error" role="status" class="error-box" hidden></p><div id="layer-content" class="layer-content"></div></section></div></section><div id="workspace-content" hidden></div></main><footer id="shell-status" class="shell-status sd-edge-top"></footer><div id="toasts" class="toasts" aria-live="polite"></div>`;
     this.catalog=root.querySelector('#server-catalog')!;
     this.content=root.querySelector('#workspace-content')!;
     this.tabs=root.querySelector('#server-tabs')!;
     this.pickerButton=root.querySelector('#new-workspace')!;
     this.page=root.querySelector('#console-page')!;
+    this.settingsNavigation=root.querySelector('#console-settings-nav')!;
     root.querySelector('#catalog-tab')!.addEventListener('click',()=>this.navigate(this.consolePage));
     root.querySelector('#return-workbench')!.addEventListener('click',()=>this.showWorkbench());
     root.querySelector('.console-nav')!.addEventListener('click',event=>{
@@ -68,6 +71,7 @@ export class Shell {
     if(changed)enterMotion(page==='connections'?this.catalog:this.page,'x');
   }
   selectionChanged(){this.revision++;}
+  updateSettingsNavigation(html:string) { updateDOM(this.settingsNavigation,html); }
   showWorkbench() {
     if(this.main&&!this.projection?.window.activeWorkspace)return;
     this.revision++;this.route={kind:'workbench'};this.workspaces?.setHostVisible(true);this.paint();
@@ -79,7 +83,12 @@ export class Shell {
     const selected=this.route.kind==='console'?this.route.page:'connections';
     this.catalog.hidden=!managing||selected!=='connections';this.page.hidden=!managing||selected==='connections';
     this.root.querySelector('#catalog-tab')!.setAttribute('aria-selected',String(managing));
-    for(const node of this.root.querySelectorAll<HTMLElement>('[data-console-page]'))node.setAttribute('aria-current',node.dataset.consolePage===selected?'page':'false');
+    for(const node of this.root.querySelectorAll<HTMLElement>('[data-console-page]')) {
+      node.setAttribute('aria-current',node.dataset.consolePage===selected&&selected!=='settings'?'page':'false');
+      if(node.dataset.consolePage==='settings')node.setAttribute('aria-expanded',String(managing&&selected==='settings'));
+    }
+    this.settingsNavigation.hidden=!managing||selected!=='settings';
+    if(this.settingsNavigation.hidden)for(const node of this.settingsNavigation.querySelectorAll('[aria-current]'))node.setAttribute('aria-current','false');
     this.root.querySelector<HTMLElement>('#return-workbench')!.hidden=!this.projection?.window.activeWorkspace;
     this.renderStatus();
   }

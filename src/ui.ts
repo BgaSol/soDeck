@@ -13,7 +13,25 @@ export const statusText = {
   stopping: "正在卸载",
   failed: "失败",
 };
-export function icon(name: string) {
+export type Icon = string | {url:string};
+let iconSequence = 0;
+const loadedIcons = new Set<string>();
+const iconLoads = new Map<string,Promise<boolean>>();
+export function observePluginIcons() {
+  const load = (host: Element) => {
+    const url=host.querySelector('image')?.getAttribute('href'); if(!url)return;
+    let pending=iconLoads.get(url);
+    if(!pending){
+      pending=new Promise<boolean>(resolve=>{const image=new Image();image.onload=()=>{loadedIcons.add(url);resolve(true);};image.onerror=()=>{console.warn('插件图标无法解码',url);resolve(false);};image.src=url;});
+      iconLoads.set(url,pending);
+    }
+    void pending.then(ok=>{if(ok&&host.querySelector('image')?.getAttribute('href')===url)host.setAttribute('data-ready','true');});
+  };
+  const scan=(node:Element)=>{if(node.matches('.plugin-icon'))load(node);node.querySelectorAll('.plugin-icon').forEach(load);const host=node.closest('.plugin-icon');if(host)load(host);};
+  scan(document.documentElement);
+  new MutationObserver(records=>{for(const record of records){if(record.type==='attributes'&&record.target instanceof Element)scan(record.target);for(const node of record.addedNodes)if(node instanceof Element)scan(node);}}).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['href']});
+}
+export function icon(name: Icon) {
   const paths: Record<string, string> = {
     plus: '<path d="M12 5v14M5 12h14"/>',
     chevron: '<path d="m6 9 6 6 6-6"/>',
@@ -22,6 +40,7 @@ export function icon(name: string) {
     list: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
     more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
     terminal: '<path d="m4 6 6 6-6 6m9 0h7"/>',
+    bot: '<path d="M12 8V4H8M2 14h2M20 14h2M9 13v2M15 13v2"/><rect x="4" y="8" width="16" height="12" rx="2"/>',
     // Docker mark from Simple Icons (CC0), kept monochrome with the host theme.
     docker: '<path fill="currentColor" stroke="none" d="M13.983 11.078h2.119a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.119a.185.185 0 00-.185.185v1.888c0 .102.083.185.185.185m-2.954-5.43h2.118a.186.186 0 00.186-.186V3.574a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.888c0 .102.082.185.185.185m0 2.716h2.118a.187.187 0 00.186-.186V6.29a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.887c0 .102.082.185.185.186m-2.93 0h2.12a.186.186 0 00.184-.186V6.29a.185.185 0 00-.185-.185H8.1a.185.185 0 00-.185.185v1.887c0 .102.083.185.185.186m-2.964 0h2.119a.186.186 0 00.185-.186V6.29a.185.185 0 00-.185-.185H5.136a.186.186 0 00-.186.185v1.887c0 .102.084.185.186.186m5.893 2.715h2.118a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.118a.185.185 0 00-.185.185v1.888c0 .102.082.185.185.185m-2.93 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.185.185 0 00-.184.185v1.888c0 .102.083.185.185.185m-2.964 0h2.119a.185.185 0 00.185-.185V9.006a.185.185 0 00-.184-.186h-2.12a.186.186 0 00-.186.186v1.887c0 .102.084.185.186.185m-2.92 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.185.185 0 00-.184.185v1.888c0 .102.082.185.185.185M23.763 9.89c-.065-.051-.672-.51-1.954-.51-.338.001-.676.03-1.01.087-.248-1.7-1.653-2.53-1.716-2.566l-.344-.199-.226.327c-.284.438-.49.922-.612 1.43-.23.97-.09 1.882.403 2.661-.595.332-1.55.413-1.744.42H.751a.751.751 0 00-.75.748 11.376 11.376 0 00.692 4.062c.545 1.428 1.355 2.48 2.41 3.124 1.18.723 3.1 1.137 5.275 1.137.983.003 1.963-.086 2.93-.266a12.248 12.248 0 003.823-1.389c.98-.567 1.86-1.288 2.61-2.136 1.252-1.418 1.998-2.997 2.553-4.4h.221c1.372 0 2.215-.549 2.68-1.009.309-.293.55-.65.707-1.046l.098-.288Z"/>',
     box: '<path d="m12 3 9 5v9l-9 5-9-5V8zM3 8l9 5 9-5M12 13v9M7.5 5.5l9 5"/>',
@@ -48,12 +67,16 @@ export function icon(name: string) {
     download: '<path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5"/>',
     restart: '<path d="M20 7v5h-5M20 12a8 8 0 1 0-2 5M20 7v5"/>',
   };
-  return `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">${paths[name] ?? paths.info}</svg>`;
+  if (name && typeof name === 'object') {
+    const id = `plugin-icon-${++iconSequence}`;
+    return `<svg class="plugin-icon" ${loadedIcons.has(name.url)?'data-ready="true"':''} aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><g class="plugin-icon-fallback">${paths.plug}</g><defs><mask id="${id}" x="0" y="0" width="24" height="24" maskUnits="userSpaceOnUse" style="mask-type:alpha"><image href="${escape(name.url)}" width="24" height="24" preserveAspectRatio="xMidYMid meet"/></mask></defs><rect class="plugin-icon-image" width="24" height="24" fill="currentColor" stroke="none" mask="url(#${id})"/></svg>`;
+  }
+  return `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">${paths[name] ?? paths.plug}</svg>`;
 }
 export const button = (
   action: string,
   label: string,
-  name?: string,
+  name?: Icon,
   cls = "",
   attrs = "",
 ) =>

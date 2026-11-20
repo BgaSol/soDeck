@@ -496,6 +496,7 @@ impl Fixture {
             ),
             ("plugin/mode".into(), mode.as_bytes().to_vec()),
             ("plugin/ui.html".into(), b"settings fixture".to_vec()),
+            ("plugin/shape.svg".into(), b"new icon".to_vec()),
             (
                 "plugin/资料/说明.txt".into(),
                 "更新包的中文文件".as_bytes().to_vec(),
@@ -617,6 +618,8 @@ fn official_install_live_mirror() {
 fn settings_manifest(version: &str) -> serde_json::Value {
     let mut m = manifest(version);
     m["ui"] = json!({"apiVersion":"1","entry":"ui.html","views":[{"id":"test","title":"Test","icon":"info","container":"editor","instancePolicy":"multiple"}]});
+    m["icon"] = json!("shape");
+    m["icons"] = json!({"shape":"shape.svg"});
     let mut fields = vec![
         json!({"key":"size","title":"字号","type":"number","default":if version=="0.1.0"{14}else{16},"min":11,"max":24,"step":1,"unit":"px","apply":"live"}),
     ];
@@ -639,6 +642,7 @@ fn settings_follow_pending_activation_and_program_rollback() {
         )
         .unwrap();
         fs::write(f.external.join("ui.html"), "old UI").unwrap();
+        fs::write(f.external.join("shape.svg"), "old icon").unwrap();
         f.add();
         let core = f.open();
         core.start_enabled();
@@ -662,6 +666,15 @@ fn settings_follow_pending_activation_and_program_rollback() {
         assert_eq!(pending["definitionToken"], old["definitionToken"]);
         assert_eq!(pending["values"]["size"], 18);
         assert!(pending["values"].get("blink").is_none());
+        assert_eq!(
+            core.icon_resource("test.fixture", "0.1.0", "shape")
+                .unwrap()
+                .0,
+            b"old icon"
+        );
+        assert!(core
+            .icon_resource("test.fixture", "0.1.1", "shape")
+            .is_err());
         core.shutdown().unwrap();
         drop(core);
         let core = f.open();
@@ -669,6 +682,16 @@ fn settings_follow_pending_activation_and_program_rollback() {
         let active = core.settings_page("test.fixture", "appearance").unwrap();
         assert_eq!(active["values"]["size"], 18);
         assert_eq!(active["version"], if failed { "0.1.0" } else { "0.1.1" });
+        assert_eq!(
+            core.icon_resource(
+                "test.fixture",
+                if failed { "0.1.0" } else { "0.1.1" },
+                "shape"
+            )
+            .unwrap()
+            .0,
+            if failed { b"old icon" } else { b"new icon" }
+        );
         if failed {
             assert!(active["values"].get("blink").is_none());
         } else {
@@ -729,6 +752,59 @@ fn official_catalog_discovers_new_plugins_and_removals_without_core_changes() {
         .unwrap()
         .plugins
         .is_empty());
+}
+
+#[test]
+fn official_icons_are_pinned_to_the_catalog_tree_and_cached_independently_of_installation() {
+    use base64::Engine;
+    let f = Fixture::new();
+    let core = f.open();
+    let server = Server::new();
+    server.catalog(vec![json!({"id":"example.icon","name":"图标","tagPrefix":"icon-v","icon":"custom","icons":{"custom":"assets/shape.svg"}})]);
+    let route = "/repos/BgaSol/soDeck/git/trees/main";
+    let mut tree: serde_json::Value =
+        serde_json::from_slice(&server.routes.lock().unwrap()[route]).unwrap();
+    let sha = "a".repeat(40);
+    tree["tree"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"path":"plugins/plugin-0/assets/shape.svg","type":"blob","sha":sha}));
+    server.put(route, tree.to_string());
+    let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0 0L24 24\"/></svg>";
+    server.put(&format!("/repos/BgaSol/soDeck/git/blobs/{sha}"),json!({"encoding":"base64","size":svg.len(),"content":base64::engine::general_purpose::STANDARD.encode(svg)}).to_string());
+    let catalog = core.official_plugins(&server.client(), true).unwrap();
+    assert!(catalog.plugins[0]
+        .icon_data
+        .as_ref()
+        .unwrap()
+        .starts_with("data:image/svg+xml;base64,"));
+    assert!(server
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|url| url.contains(&sha)));
+    assert!(core.snapshot().plugins.is_empty());
+    drop(core);
+    let core = f.open();
+    server.requests.lock().unwrap().clear();
+    assert_eq!(
+        core.official_plugins(&server.client(), false)
+            .unwrap()
+            .plugins[0]
+            .icon_data,
+        catalog.plugins[0].icon_data
+    );
+    assert!(server.requests.lock().unwrap().is_empty());
+    server
+        .routes
+        .lock()
+        .unwrap()
+        .remove(&format!("/repos/BgaSol/soDeck/git/blobs/{sha}"));
+    let fallback = core.official_plugins(&server.client(), true).unwrap();
+    assert!(fallback.error.is_none());
+    assert!(fallback.plugins[0].icon_data.is_none());
+    assert_eq!(fallback.plugins[0].name, "图标");
 }
 
 #[test]

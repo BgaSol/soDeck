@@ -1,35 +1,46 @@
 @layer components {
-  .settings-nav .nav-label, .settings-nav .nav-bottom, .settings-nav .settings-nav-hint { color: var(--text); }
-  .settings-nav-hint { padding: 8px 12px; font-size: 11px; }
-  .settings-draft-dot { color: var(--accent); font-size: 9px; margin-left: auto; }
-  #component-settings-page { display: flex; flex-direction: column; overflow: hidden; }
-  .component-settings-form { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-  .settings-fields { overflow-y: auto; min-height: 0; flex: 1; display: flex; flex-direction: column; gap: 24px; }
-  .settings-commit { flex-shrink: 0; padding-top: 12px; background: var(--panel); }
+  .settings-page { flex: 1; min-width: 0; min-height: 0; width: 100%; padding: 0 28px; overflow-y: auto; scroll-padding-block: 12px 132px; }
+  .settings-page > * { max-width: 680px; }
+  .settings-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; }
+  .settings-title .hint { font-size: 11px; }
+  .component-settings-form { min-width: 0; }
+  .settings-fields { display: flex; flex-direction: column; gap: 24px; }
   .component-settings-form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
-  .component-settings-form legend { font-weight: 650; padding: 0 0 12px; }
-  .setting-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(150px, 220px); align-items: start; gap: 20px; padding: 14px 0; border-top: 1px solid var(--border); }
-  .setting-row label { font-weight: 550; line-height: 30px; }
-  .setting-row p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+  .component-settings-form legend { font-weight: 650; padding: 0 0 10px; }
+  .setting-row { display: grid; gap: 8px; padding: 16px 0; border-top: 1px solid var(--border); scroll-margin-block: 12px; }
+  .setting-row label { font-weight: 550; }
+  .setting-row p { margin: 4px 0 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
   .setting-row input, .setting-row select { min-width: 0; width: 100%; }
-  .setting-row input[type="checkbox"] { width: 18px; height: 18px; justify-self: end; margin: 6px 0; accent-color: var(--accent); }
-  .setting-number { display: flex; align-items: center; gap: 8px; }
-  .setting-number span { font-size: 12px; color: var(--muted); }
-  .setting-font { display: grid; gap: 8px; }
+  .setting-row > input, .setting-row > select { max-width: 320px; }
+  .setting-row[data-setting-type="boolean"] { grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 20px; }
+  .setting-switch { position: relative; display: inline-flex; align-items: center; min-height: 32px; padding: 6px 0 6px 8px; }
+  .setting-switch input { position: absolute; opacity: 0; width: 34px; height: 20px; right: 0; z-index: 1; margin: 0; }
+  .setting-switch span { width: 34px; height: 20px; border-radius: 10px; background: var(--muted); position: relative; }
+  .setting-switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--panel); }
+  .setting-switch input:checked + span { background: var(--accent); }
+  .setting-switch input:checked + span::after { left: 17px; }
+  .setting-switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .setting-switch input:disabled + span { opacity: .45; }
+  .setting-number { display: flex; align-items: center; gap: 8px; max-width: 180px; }
+  .setting-number span { font-size: 12px; color: var(--muted); flex-shrink: 0; }
+  .setting-font { display: grid; gap: 8px; max-width: 380px; }
   .setting-font .setting-font-sample { color: var(--text); font-size: 15px; padding: 12px; background: var(--subtle); border-radius: 8px; line-height: 1.6; overflow: hidden; }
-  .setting-font small { color: var(--muted); font-size: 11px; }
+  .setting-font small { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
   .settings-warnings { color: var(--muted); font-size: 12px; }
-  .settings-feedback { font-size: 12px; min-height: 24px; line-height: 1.6; }
-  .settings-save-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 16px 0 4px; border-top: 1px solid var(--border); }
-  .settings-save-bar > :first-child { margin-right: auto; }
-  @media (max-width: 760px) { .setting-row { grid-template-columns: minmax(90px,1fr) minmax(130px, 1.3fr); gap: 12px; } }
+  /* Keep short forms compact while long forms retain their commit actions. */
+  .settings-commit { position: sticky; bottom: 0; margin-top: 18px; padding: 12px 0 4px; background: var(--canvas); border-top: 1px solid var(--border); }
+  .settings-feedback { font-size: 12px; min-height: 24px; line-height: 1.6; overflow-wrap: anywhere; }
+  .settings-save-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-top: 8px; }
+  .settings-save-bar > :last-child { margin-left: auto; }
+  @media (max-width: 640px) { .settings-page { padding: 0 12px; } }
   @media (max-height: 600px) {
-    #component-settings-page { padding: 12px; }
-    #component-settings-page > .section-heading { flex-direction: row; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
-    .settings-commit { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding-top: 8px; border-top: 1px solid var(--border); }
-    .settings-feedback { flex: 1 1 160px; min-height: 20px; }
-    .settings-save-bar { flex: 0 0 auto; padding: 0; border: 0; }
-    .setting-row { padding: 8px 0; }
-    .setting-font .setting-font-sample { padding: 8px; }
+    .settings-page > .section-heading { align-items: flex-start; gap: 12px; margin-bottom: 18px; }
+    .setting-row { padding: 12px 0; }
+    .settings-commit { padding-top: 8px; }
+  }
+  @media (pointer: coarse) { .setting-switch { min-width: 44px; min-height: 44px; } }
+  @media (forced-colors: active) {
+    .setting-switch input { position: static; opacity: 1; width: 18px; height: 18px; }
+    .setting-switch span { display: none; }
   }
 }

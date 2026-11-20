@@ -479,7 +479,8 @@ impl BrowserState {
                     n["revision"] = json!(index.revision.to_string());
                     n["system"] = json!(
                         kind == Kind::Network
-                            && ["bridge", "host", "none"].contains(&label.as_str())
+                            && ["bridge", "host", "none", "nat", "Default Switch"]
+                                .contains(&label.as_str())
                     );
                     n["canDelete"] = json!(
                         index.complete

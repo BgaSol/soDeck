@@ -901,6 +901,9 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
     let package_only = std::env::args().any(|arg| arg == "--package-only");
     std::thread::spawn(move || {
         let validation = (|| {
+            if package_only {
+                sodeck::validation::plugin_icons_roundtrip(&handle, &core)?;
+            }
             if clipboard_test_requested {
                 tauri::async_runtime::block_on(clipboard_roundtrip(handle.clone()))?;
             }
@@ -934,7 +937,7 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
         let result = validation.and(stopped);
         if result.is_ok() {
             let status = core.snapshot();
-            let report = serde_json::json!({"completed":true,"workspaceNative":!package_only,"packageNative":true,"sshNative":ssh_test_requested,"clipboardNative":clipboard_test_requested,"desktopFilesNative":desktop_files_requested,"desktopOpenNative":desktop_open_requested,"version":status.version,"target":status.target});
+            let report = serde_json::json!({"completed":true,"workspaceNative":!package_only,"packageNative":true,"pluginIconsNative":package_only,"sshNative":ssh_test_requested,"clipboardNative":clipboard_test_requested,"desktopFilesNative":desktop_files_requested,"desktopOpenNative":desktop_open_requested,"version":status.version,"target":status.target});
             let _ = std::fs::write(
                 status.data_directory.join("smoke-result.json"),
                 report.to_string(),
@@ -1041,7 +1044,10 @@ fn main() {
             let path = request.uri().path().trim_start_matches('/');
             let result = path.split_once('/').ok_or("缺少插件资源路径".to_string()).and_then(|(plugin, relative)| {
                 let core = &context.app_handle().state::<Application>().core;
-                if let Some(path) = relative.strip_prefix("settings/") {
+                if let Some(path) = relative.strip_prefix("icons/") {
+                    let (version, name) = path.split_once('/').ok_or("缺少图标资源版本")?;
+                    core.icon_resource(plugin, version, name)
+                } else if let Some(path) = relative.strip_prefix("settings/") {
                     let (token, asset) = path.split_once('/').ok_or("缺少设置资源版本")?;
                     core.settings_resource(plugin, token, asset)
                 } else { core.ui_resource(plugin, relative) }
