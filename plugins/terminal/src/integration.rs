@@ -53,13 +53,10 @@ pub fn prepare(client: &Client, view: &str, context: &Value) -> Result<(String, 
     }
     let script = include_str!("../shell/powershell.ps1").replace("@TOKEN@", &token);
     Ok((
+        // The default shell is already known to be PowerShell; use its call operator and exact path.
         format!(
-            "{} -NoLogo -NoExit -EncodedCommand {}",
-            if shell.to_ascii_lowercase().ends_with("\\pwsh.exe") {
-                "pwsh.exe"
-            } else {
-                "powershell.exe"
-            },
+            "& '{}' -NoLogo -NoExit -EncodedCommand {}",
+            shell.replace('\'', "''"),
             encoded(&script)
         ),
         json!({"mode":"reading","token":token,"shell":shell}),

@@ -78,7 +78,7 @@
 - 阅读：[共享缓冲区观察](../../plugins/terminal/ui-src/buffer-state.js)、[协议与检查点](../../plugins/terminal/ui-src/reading/protocol.js)、[标记模型](../../plugins/terminal/ui-src/reading/model.js)、[界面编排](../../plugins/terminal/ui-src/reading/view.js)、[PowerShell hook](../../plugins/terminal/shell/powershell.ps1)。目录与阅读共用带终端 token 的 OSC 通道，分别解释事件，未知类型不互相覆盖。
 - 核心：[terminal.rs](../../src-tauri/src/terminal.rs)、[streams.rs](../../src-tauri/src/streams.rs)、[journal.rs](../../src-tauri/src/streams/journal.rs)。
 - 回归：[创建](../../plugins/terminal/tests/creation.rs)、[输入](../../scripts/test-terminal-input.mjs)、[历史](../../scripts/test-terminal-history.mjs)、[搜索 UI](../../scripts/test-terminal-search-ui.mjs)、[真实 shell](../../scripts/test-terminal-shell.py)、[真实 PTY](../../scripts/test-terminal-ui.mjs)。
-- 阅读回归：[协议/模型](../../scripts/terminal-reading.test.mjs)、[真实 xterm UI](../../scripts/test-terminal-reading-ui.mjs)、[PowerShell 5.1/7 hook](../../scripts/test-terminal-powershell.mjs)；界面回归包含在 `npm run terminal:history:test`，Windows 独立插件打包运行 hook 回归。真实 PSReadLine 系统按键与 hook 测试范围分开记录。
+- 阅读回归：[协议/模型](../../scripts/terminal-reading.test.mjs)、[真实 xterm UI](../../scripts/test-terminal-reading-ui.mjs)、[PowerShell 5.1/7 hook](../../scripts/test-terminal-powershell.mjs)、[Windows OpenSSH/PSReadLine PTY](../../scripts/test-terminal-powershell-pty.mjs)；界面回归包含在 `npm run terminal:history:test`，Windows 独立插件打包运行 hook 回归。真实 PSReadLine 系统按键与 hook 测试范围分开记录。
 - 五平台基本实际包与深度搜索性能是不同验证范围。超宽行、多终端、完整进程内存、原生 Worker/IME/DPI 专项及未补齐交互由临时计划跟进，当前不承诺全部性能目标通过；发行证据见插件 CHANGELOG。
 
 ## 操作反馈
