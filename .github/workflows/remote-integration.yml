@@ -199,9 +199,12 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $installDir = Join-Path $env:RUNNER_TEMP 'SoDeck-remote'
-          $installed = Start-Process -FilePath $env:SODECK_CORE_PACKAGE -ArgumentList '/S', "/D=$installDir" -WindowStyle Hidden -Wait -PassThru
+          $installed = Start-Process -FilePath $env:SODECK_CORE_PACKAGE -ArgumentList '/S', '/CurrentUser' -WindowStyle Hidden -Wait -PassThru
           if ($installed.ExitCode -ne 0) { throw 'Install failed' }
+          # Tauri's multi-user installer uses the selected scope's registered directory.
+          $entry = Get-ItemProperty -LiteralPath 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\SoDeck' -ErrorAction Stop
+          $installDir = $entry.InstallLocation.Trim('"')
+          "SODECK_NATIVE_CORE_EXE=$installDir/sodeck.exe" >> $env:GITHUB_ENV
           node scripts/verify-binary.mjs "$installDir/sodeck.exe" '${{ matrix.target }}'
           if ($LASTEXITCODE -ne 0) { throw 'Installed core architecture mismatch' }
           node scripts/test-openssh.mjs --packaged "$installDir/sodeck.exe"
@@ -222,8 +225,7 @@ jobs:
           if (-not ((Test-Path "$env:SODECK_TEST_FILES_PLUGIN/ui/vendor/editor.js") -or (Test-Path "$env:SODECK_TEST_FILES_PLUGIN/ui/file-editor/editor.js"))) { throw 'Select files 0.9.0 or later for editor UI automation' }
           npm ci
           if ($LASTEXITCODE -ne 0) { throw 'File editor test dependencies failed' }
-          $installDir = Join-Path $env:RUNNER_TEMP 'SoDeck-remote'
-          node scripts/test-openssh.mjs --file-editor-native --packaged "$installDir/sodeck.exe"
+          node scripts/test-openssh.mjs --file-editor-native --packaged "$env:SODECK_NATIVE_CORE_EXE"
           if ($LASTEXITCODE -ne 0) { throw 'Actual file editor test failed' }
       - name: Linux extracted package with independent plugins
         id: linux_test
