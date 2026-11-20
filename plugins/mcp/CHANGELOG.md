@@ -5,9 +5,18 @@
 - 配置收进右上角“配置”浮层；复制、端口冲突、Token 清除、连接换代、隐藏和迟到回复继续受原生命周期约束。下载详情改为文件凭据。
 - UI 内部增加无正文事实读取和输出水位投影，复用现有任务、证据与分页能力；无新增生产依赖或 MCP 对外工具。
 
-要求核心 1.10.0 的现有 MCP 能力；升级后重启 SoDeck。行为见[功能说明](../../docs/features/mcp.md)，字段见[MCP API](../../docs/mcp-api.md)。本版本发行包与验证链接在发布完成后补入本节。
 
-本地验证：插件 Rust 23 项单元、MCP 进程/连接回归、MCP UI 三主题/窄栏/长输出/分页/配置/生命周期回归、194 项工程脚本、核心类型检查、插件格式检查和 Web 构建通过。五平台独立原生包及真实 WebView 验证待本次发布工作流完成；未将本地 Chromium 结果当作平台验收。
+要求核心 1.10.0 的现有 MCP 能力；升级后重启 SoDeck。行为见[功能说明](../../docs/features/mcp.md)，字段见[MCP API](../../docs/mcp-api.md)。
+
+发行：[Agent MCP 0.8.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.8.0)，按用户要求标为仓库 Latest。包来源 [0aec2ece22ac1b401bb1711e685e43f10648e825](https://github.com/BgaSol/soDeck/commit/0aec2ece22ac1b401bb1711e685e43f10648e825)；[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/44766561773)首次通过；[原始五平台打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/44766553713)第 3 次尝试收束成功。
+
+Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五份原生归档均在第 1 次尝试完成打包；实际包启动、十一工具发现、任务查询/交互输入/连接控制进程回归、挂载、销毁与退出通过。Windows ARM64 前两次 verify 均在 30 次短命令中的默认 1000ms 启动等待 done 断言失败，确切 Runner 延迟原因未定位；只重跑失败 verify 及后续汇总，第 3 次同一原包通过，未修改等待参数或放宽断言。所有归档摘要继续匹配原生报告与草稿附件。
+
+本地最终类型/格式、194 项工程脚本、23 项插件 Rust 单元、MCP 进程与连接、正式 Web 构建通过。最终 UI 在锁定 Playwright 的 Chrome for Testing 159 上通过，覆盖三主题 220/280/390px、矮窗、24,000 行输出有界分页、冻结阅读、重试、退出信号、接纳未确认、文件交付、端口冲突、密钥清除、迟到回复与隐藏/卸载。审查发现的气泡截断、启动文案、信号退出、下载恢复与旧提示问题均已修复并补回归。
+
+来源 Check 的源码、浏览器、实际 MCP/SSH 业务和两架构网络回归通过；desktop 与 netem 为 skipped。未执行五平台真实 WebView 的可见交互、已安装核心与插件的五平台真实 SSH 组合、实际旧版升级、新的已认证 Codex CLI 或物理 IME/DPI/读屏专项。原生进程与 Chromium 回归不替代这些专项；相关限制如实保留。
+
+直接发布同一草稿的五份已验证归档，发布前只同步说明与 plugin-update.json 的 notes；未重建归档或推同版本标签再次构建。[永久发行证据](release-evidence/v0.8.0-assets.json)保留原始来源、五份报告、失败与重试、公开附件和摘要核验。
 
 # 0.7.0
 
