@@ -25,7 +25,7 @@ let settingsSnapshot={pageId:'connection',definitionToken:'test-settings',revisi
 const data={runId:'run-a',targetId:'target-a',service:'ready',endpoint:'http://127.0.0.1:19846/mcp',target:{availability:'ready',targetSource:'current',capabilities:['exec','files'],error:null,descriptor:{name:'prod-consul-01',protocol:'ssh',host:'192.0.2.11',port:22,endpoint:'192.0.2.11:22',username:'ops'}},evidenceDirectory:'/home/ops/.local/share/sodeck/plugin-data/sodeck.mcp/evidence',tasks:[{taskId:'t1',kind:'exec',requestId:'collect-consul-logs',native:{state:'running'},done:false,evidence:{complete:false}},{taskId:'t2',kind:'download',requestId:'consul-evidence',native:{state:'completed'},done:true,evidence:{complete:true}},{taskId:'t3',kind:'exec',requestId:'inspect-network',native:{state:'failed',exitCode:7},done:true,evidence:{complete:false,error:{message:'输出超出额度，请导出文件后下载。'}}}]};
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 Object.assign(data.tasks[0],{input:{command:"journalctl -u consul --since '15 minutes ago' --no-pager"},createdAt:Date.now()-12000});
-Object.assign(data.tasks[1],{input:{remotePath:'/tmp/consul-evidence.log'},createdAt:Date.now()-20000,finishedAt:Date.now()-15000,evidence:{complete:true,path:'/evidence/t2/download.bin'}});
+Object.assign(data.tasks[1],{input:{remotePath:'/tmp/consul-evidence.log'},createdAt:Date.now()-20000,finishedAt:Date.now()-15000,native:{state:'completed',result:{size:'25190'}},evidence:{complete:true,path:'/evidence/t2/download.bin'}});
 Object.assign(data.tasks[2],{input:{command:'printf "<img src=x onerror=alert(1)>"\n'+'x'.repeat(16000)},createdAt:Date.now()-40000,finishedAt:Date.now()-35000});
 for(const task of data.tasks){task.targetId=data.targetId;task.runId=data.runId;task.revision='1';task.outputInfo={savedBytes:'200'};task.target=structuredClone(data.target.descriptor);}
 function summary(task){const {input,directory,...row}=structuredClone(task);const value=input?.command??input?.remotePath??task.requestId;row.inputPreview=value.slice(0,256);row.inputTruncated=value.length>256;if(row.evidence)delete row.evidence.path;return row;}
@@ -143,6 +143,7 @@ try {
   await choose('查看下载详情 consul-evidence');await frame.locator('#file-local').filter({hasText:'/evidence/t2/download.bin'}).waitFor();
   assert(await frame.locator('#detail-output-section').isHidden());assert.equal(await frame.locator('#file-name').textContent(),'consul-evidence.log');
   assert.equal(await frame.locator('#file-path-label').textContent(),'保存位置');
+  assert((await frame.locator('#file-summary').textContent()).includes('25190 字节'),'file receipt uses the existing native copy result size');
   const beforeDownloadResume=taskReads.length;await message('visibilityChanged',{visible:false});await message('visibilityChanged',{visible:true});
   await frame.locator('#refresh').click();await page.waitForTimeout(100);
   assert(taskReads.slice(beforeDownloadResume).every(p=>p.outputMode==='none'),'download resume only reads facts');

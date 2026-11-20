@@ -14,6 +14,7 @@ test('task feedback preserves execution, saving, cancellation and cleanup facts'
   const queued=chain({...task,native:{state:'opening',execSent:true,launchQueued:true,launchAccepted:false}});
   assert.match(queued[1],/排队，等待远端确认/);assert(!queued.some(value=>value.includes('已启动')));
   assert.match(chain({...task,native:{state:'opening',execSent:true,launchAccepted:true}})[1],/已启动/);
+  const requested=chain({...task,native:{state:'opening',execSent:true,launchQueued:false,launchAccepted:false}});assert.match(requested[1],/已请求启动，等待远端确认/);assert(!requested[1].includes('已发送'));
   const signalled=facts({...task,native:{state:'completed',exitSignal:'TERM'}});assert(signalled.problem);assert.match(signalled.label,/退出信号 TERM/);
 });
 

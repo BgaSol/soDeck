@@ -22,7 +22,7 @@ export function facts(task) {
 export function chain(task) {
   const native = task.native || {}, state = native.state || native.admission;
   const started = native.launchAccepted === true || ['running','committing','completed'].includes(state) || native.remoteExitConfirmed === true || native.exitCode != null;
-  const admission = state==='unknown'?'远端接纳结果未知':native.launchQueued===true?'启动请求已排队，等待远端确认':native.execSent===true?'启动请求已发送，等待远端确认':'远端接纳待确认';
+  const admission = state==='unknown'?'远端接纳结果未知':native.launchQueued===true?'启动请求已排队，等待远端确认':native.execSent===true?'已请求启动，等待远端确认':'远端接纳待确认';
   return [
     '请求已记录 · '+time(task.createdAt),
     started ? task.kind==='download'?'远程文件传输已接纳':'远端执行已启动' : admission,
@@ -81,7 +81,7 @@ export function paintDetail(task) {
   if(download) {
     const remote=task.file?.remotePath ?? task.input?.remotePath ?? '';
     const delivered=Boolean(task.done && task.evidence?.complete && task.file?.localPath);
-    const bytes=task.native?.bytesCopied ?? task.native?.completedBytes;
+    const bytes=task.native?.result?.size;
     setText($('file-name'),remote.split(/[\\/]/).pop() || '远程文件');
     setText($('file-summary'),(delivered?'文件已保存':value.label+' · '+value.evidence)+(bytes!=null?' · '+bytes+' 字节':'')+' · '+duration(task));
     setText($('file-remote'),remote || '尚未提供');setText($('file-path-label'),delivered?'保存位置':'证据或残留位置');setText($('file-local'),delivered?task.file.localPath:task.evidence?.path || task.directory || '尚未交付完整文件');
