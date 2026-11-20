@@ -45,6 +45,8 @@ try{
   await child().evaluate(()=>window.testTerminal.scrollToLine(20));await frame.locator('.terminal-command-sticky:not([hidden])').waitFor();assert.equal(await frame.locator('.reading-command-title').textContent(),'cat app.log');
   await page.evaluate(()=>window.lifecycle('transferCancelled'));
   await emit(osc('start',2)+'\r\n'+osc('end',2,'?')+osc('prompt',3)+'$ '+osc('input',3));
+  await emit('\x1b]633;SODECK;reading-test;unavailable;fixture\x07');
+  assert.equal(await child().evaluate(()=>window.testReading.state().available),false,'Directory and reading observers both receive integration failure');
   // Live output must never load the plugin-only checkpoint channel.
   await emit('\x1b]633;SODECK-READING;1;begin\x07\x1b]633;SODECK-READING;1;part;7b7d\x07\x1b]633;SODECK-READING;1;end\x07');
   await child().evaluate(()=>window.testTerminal.scrollToLine(20));await frame.locator('.terminal-command-sticky:not([hidden])').waitFor();

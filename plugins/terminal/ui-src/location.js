@@ -24,7 +24,8 @@ export function createLocation(terminal){
   let client,mount,host='',kind='',frameOffset=0,report,latest,ready=false,busy=false,disposed=false,timer,epoch=0,integration={},observed=false,confirmed=false,handshake;
   const valid=()=>!disposed&&ready&&client?.available&&JSON.stringify(mount.context)===JSON.stringify(mount.data.openedContext);
   const handler=terminal.parser.registerOscHandler(7,text=>{if(kind==='data'&&integration.mode==='manual')report=parseOsc7(text,host)||{state:'unknown',path:null,reasonCode:'invalid-report'};return true;});
-  const automatic=terminal.parser.registerOscHandler(633,text=>{if(kind==='data'&&integration.mode==='auto'){const parsed=parseIntegration(text,integration.token);if(parsed){observed=true;if(parsed.state==='known')confirmed=true;if(parsed.activity==='unavailable')confirmed=false;clearTimeout(handshake);report=parsed;return true;}}return false;});
+  // Integration failure belongs to both observers. Let reading receive the same OSC event.
+  const automatic=terminal.parser.registerOscHandler(633,text=>{if(kind==='data'&&integration.mode==='auto'){const parsed=parseIntegration(text,integration.token);if(parsed){observed=true;if(parsed.state==='known')confirmed=true;if(parsed.activity==='unavailable')confirmed=false;clearTimeout(handshake);report=parsed;return parsed.activity!=='unavailable';}}return false;});
   function observation(value){return {...value,terminalId:mount.data.streamId,title:mount.data.title,shell:integration.shell,outputOffset:String(frameOffset),observedAt:Date.now()};}
   async function publish(){
     if(!valid()||busy||!latest)return;busy=true;const ticket=epoch,target=latest;
