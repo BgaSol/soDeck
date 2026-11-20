@@ -1,236 +1,156 @@
-const $ = id => document.getElementById(id);
-const event = data => sodeck.request('event', data);
-const unwrap = result => result.data ?? result;
-let visible = true, mounted = false, pending = false, epoch = 0, timer;
-let returnPosition, settingsSnapshot, portDirty = false, portConflict = false, settingsSaving = false, settingsTicket;
-let snapshot, active, monitorDetail, selected = null, detail, cursor = '0', nextCursor = '0', pages = [], monitorSequence = 0, detailSequence = 0;
-const rows = new Map();
-const labels = {opening:'正在启动', running:'执行中', committing:'正在提交', finalizing:'正在收尾', completed:'已结束', cancelled:'已取消', failed:'失败', unavailable:'结果不可用', unknown:'结果未知', rejected:'未接纳', pending:'等待接纳'};
-function text(id, value) { const el = $(id); if (el.textContent !== value) el.textContent = value; }
-function notice(message) { $('notice').hidden = !message; text('notice', message); }
-function theme(tokens) { for (const [key, value] of Object.entries(tokens || {})) document.documentElement.style.setProperty(key === 'color-scheme' ? key : '--' + key, value); }
-function command(task) { return task.input?.command ?? task.input?.remotePath ?? (task.inputPreview != null ? task.inputPreview + (task.inputTruncated ? '…' : '') : task.requestId); }
-function state(task) { return task.phase === 'finalizing' ? 'finalizing' : task.native?.state || task.native?.admission || 'pending'; }
-function status(task) { return `${labels[state(task)] || state(task)}${task.native?.exitCode != null ? ` · 退出码 ${task.native.exitCode}` : ''}`; }
-function stateClass(task) { return 'state' + (['failed','unavailable','unknown','rejected'].includes(state(task)) || task.native?.exitCode ? ' problem' : task.done ? ' ended' : ''); }
-function evidence(task) { return task.evidence?.complete ? '完整输出已保存' : task.done ? '证据不完整' : '正在保存'; }
-function time(value) { return value ? new Date(value).toLocaleTimeString('zh-CN', {hour12:false}) : '未提供'; }
-function duration(task) {
-  if (!task.createdAt) return '用时未提供';
-  const seconds = Math.max(0, Math.floor(((task.finishedAt || Date.now()) - task.createdAt) / 1000));
-  return `${task.done ? '用时' : '已持续'} ${seconds >= 60 ? `${Math.floor(seconds / 60)} 分 ${seconds % 60}` : seconds} 秒`;
+import {chronological,createRow,updateRow,paintDetail,mergeTask,preview,setText} from './task-view.js';
+import {createOutputReader} from './output-reader.js';
+import {createConfigPopover} from './config-popover.js';
+const $=id=>document.getElementById(id), pane=$('content');
+const event=async data=>{const value=await sodeck.request('event',data);return value.data ?? value;};
+let mounted=false,visible=false,epoch=0,timer,pending=false,again=false,snapshot,selected,returnPosition,config,observer,factSequence=0,reading=0,rotation=0,initial=true;
+const rows=new Map(),previews=new Map(),inView=new Set(),animations=new Set();
+const owner=()=>mounted && visible?epoch:null;
+function notice(value){setText($('notice'),value);$('notice').hidden=!value;}
+function animate(el,offset=4) {
+  if(owner()===null || matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  const value=el.animate([{opacity:.5,transform:'translateY('+offset+'px)'},{opacity:1,transform:'none'}],{duration:180,easing:'cubic-bezier(.16,1,.3,1)'});
+  animations.add(value);value.finished.catch(()=>{}).finally(()=>animations.delete(value));
 }
-function output(page) { return [page?.terminal, page?.stdout, page?.stderr ? `标准错误：\n${page.stderr}` : ''].filter(Boolean).join('\n') || '暂时没有输出。'; }
-function selectedTask() { return snapshot?.tasks?.find(task => task.taskId === selected); }
-function closeDetail(restore = false) {
-  detailSequence++; selected = null; detail = null; cursor = '0'; pages = []; nextCursor = '0'; $('detail').hidden = true; $('overview').hidden = false;
-  for (const row of rows.values()) row.button.setAttribute('aria-current', 'false');
-  const pane = document.querySelector('main');
-  pane.scrollTop = restore ? returnPosition?.scrollTop || 0 : 0;
-  if (restore && returnPosition?.button.isConnected && returnPosition.button.getClientRects().length) {
-    pane.scrollTop += returnPosition.button.getBoundingClientRect().top - returnPosition.top;
-    returnPosition.button.focus({preventScroll:true});
-  } else if (restore) {
-    $('refresh').focus({preventScroll:true});
-  }
-  returnPosition = null;
+function stopAnimations(){for(const value of animations)value.cancel();animations.clear();}
+function theme(tokens){for(const [key,value]of Object.entries(tokens || {}))document.documentElement.style.setProperty(key==='color-scheme'?key:'--'+key,value);}
+function belongs(task){return task && task.runId===snapshot?.runId && task.targetId===snapshot?.targetId;}
+function accept(task) {
+  if(!selected || task.taskId!==selected.taskId || !belongs(task))return;
+  selected=mergeTask(selected,task);paintDetail(selected);reader.update(selected);
 }
-function paintDetail(task) {
-  $('detail').hidden = false;
-  $('overview').hidden = true;
-  text('detail-state', status(task)); $('detail-state').className = stateClass(task);
-  text('detail-input-label', task.kind === 'exec' ? '实际命令' : '远程文件'); text('detail-command', task.input ? command(task) : '正在读取完整详情…');
-  const target = task.target;
-  text('detail-server', target ? `${target.name || target.endpoint} · ${target.endpoint} · ${target.username || '账号未提供'}` : '服务器信息不可用');
-  text('detail-created', `提交于 ${time(task.createdAt)}`); text('detail-time', duration(task));
-  text('detail-request', task.requestId); text('detail-id', task.taskId);
-  text('detail-evidence', task.kind === 'download' && task.evidence?.complete ? '文件已保存' : evidence(task));
-  text('detail-path', task.evidence?.path || task.directory || '尚未提供');
-  const errors = [task.evidence?.error, task.native?.error, task.cleanupError].filter(Boolean);
-  text('detail-error', errors.map(error => error.message || String(error)).join('\n')); $('detail-error').hidden = !errors.length;
-  $('detail-output-section').hidden = task.kind !== 'exec'; $('output-pager').hidden = task.kind !== 'exec'; $('detail-cancel').hidden = task.done || task.phase === 'finalizing';
-  $('detail-cancel').setAttribute('aria-label', `请求取消 ${task.requestId}`);
+const reader=createOutputReader({request:event,valid:()=>selected?owner():null,accept,onBusy:value=>{reading=Math.max(0,reading+(value?1:-1));}});
+function closeDetail(restore=false) {
+  factSequence++;reader.close();selected=null;$('detail').hidden=true;$('overview').hidden=false;$('evidence-details').open=false;
+  for(const row of rows.values())row.button.removeAttribute('aria-current');
+  if(restore) {
+    const row=rows.get(returnPosition?.taskId),button=row?.button;
+    pane.scrollTop=returnPosition?.scrollTop || 0;
+    if(button?.isConnected) {pane.scrollTop+=button.getBoundingClientRect().top-returnPosition.top;button.focus({preventScroll:true});}
+    else $('refresh').focus({preventScroll:true});
+    animate($('overview'),-4);
+  } else pane.scrollTop=0;
+  returnPosition=null;
+}
+function reset() {
+  epoch++;config?.close();closeDetail();previews.clear();inView.clear();observer?.disconnect();
+  for(const row of rows.values())row.li.remove();rows.clear();initial=true;$('new-tasks').hidden=true;$('directory-details').open=false;
+}
+function anchor() {
+  const top=pane.getBoundingClientRect().top;
+  for(const [id,row]of rows)if(row.li.getBoundingClientRect().bottom>top)return {id,top:row.li.getBoundingClientRect().top};
 }
 function render(data) {
-  if (typeof data?.runId !== 'string' || !data.runId || typeof data.targetId !== 'string' || !data.targetId || !data.target) throw new Error('目标状态快照无效，请刷新。');
-  const pane = document.querySelector('main'), pinned = selectedTask(), focus = document.activeElement, anchor = selected ? $('detail') : null;
-  const scrollTop = pane.scrollTop, anchorTop = anchor?.getBoundingClientRect().top;
-  const changedTarget = snapshot && (data.runId !== snapshot.runId || data.targetId !== snapshot.targetId);
-  if (changedTarget) { closeDetail(); monitorSequence++; monitorDetail = null; }
-  const tasks = [...(data.tasks || [])];
-  if (selected && !tasks.some(task => task.taskId === selected)) {
-    if (pinned && !changedTarget && data.targetId === pinned.targetId) tasks.push(pinned);
-    else closeDetail();
-  }
-  snapshot = {...data, tasks};
-  text('service', data.service === 'ready' ? '本机接入已启动' : data.service); text('endpoint', data.endpoint);
-  paintPort();
-  const target = data.target.descriptor, targetError = data.target.error;
-  const availability = {ready:'已连接',disconnected:'已断开',closing:'正在关闭',stale:'连接信息已失效',unavailable:'目标信息暂不可用'}[data.target.availability];
-  text('server', target ? target.name || target.endpoint : targetError ? '目标信息暂不可用' : '服务器未连接');
-  text('server-detail', targetError ? `目标信息读取失败（${targetError.code ?? '未知错误'}）：${targetError.message || '请稍后刷新。'}` : target ? `${target.username || '账号未提供'}@${target.endpoint} · ${availability}${data.target.targetSource === 'lastConnected' ? ' · 最后连接信息' : ''}` : data.target.availability === 'disconnected' ? '请在 SoDeck 中连接服务器。' : availability);
-  text('directory', data.evidenceDirectory);
-  const current = new Set(tasks.map(task => task.taskId));
-  for (const [id, row] of rows) if (!current.has(id)) { row.li.remove(); rows.delete(id); }
-  $('empty').hidden = Boolean(tasks.length);
-  tasks.forEach((task, index) => {
-    let row = rows.get(task.taskId);
-    if (!row) {
-      const li = document.createElement('li'), button = document.createElement('button'), heading = document.createElement('div');
-      const label = document.createElement('span'), date = document.createElement('time'), input = document.createElement('span'), meta = document.createElement('span');
-      button.type = 'button'; button.className = 'task'; button.setAttribute('aria-controls','detail');
-      heading.className = 'heading'; input.className = 'command'; meta.className = 'meta';
-      button.onclick = () => selectTask(task.taskId, button); heading.append(label, date); button.append(heading, input, meta); li.append(button);
-      row = {li, button, label, date, input, meta}; rows.set(task.taskId, row);
-    }
-    if ($('tasks').children[index] !== row.li) $('tasks').insertBefore(row.li, $('tasks').children[index] || null);
-    row.label.textContent = `${task.kind === 'exec' ? '命令' : '下载'} · ${status(task)}`; row.label.className = stateClass(task);
-    row.date.textContent = time(task.createdAt); if (task.createdAt) row.date.dateTime = new Date(task.createdAt).toISOString();
-    if (row.input.textContent !== command(task)) row.input.textContent = command(task);
-    row.meta.textContent = `${task.target?.name || task.target?.endpoint || '服务器信息待确认'} · ${duration(task)}`;
-    const preview = Array.from(command(task).replace(/\s+/g, ' ').trim());
-    row.button.setAttribute('aria-label', `查看${task.kind === 'exec' ? '命令' : '下载'}详情 ${task.requestId} · ${task.target?.name || task.target?.endpoint || '服务器信息待确认'} · ${status(task)} · ${preview.slice(0,160).join('')}${preview.length > 160 ? '…' : ''}`); row.button.setAttribute('aria-current', String(selected === task.taskId));
+  if(typeof data?.runId!=='string' || !data.runId || typeof data.targetId!=='string' || !data.targetId || !data.target)throw new Error('目标状态快照无效，请刷新。');
+  const changed=snapshot && (data.runId!==snapshot.runId || data.targetId!==snapshot.targetId);
+  if(changed)reset();
+  const previous=new Map((snapshot?.tasks || []).map(task=>[task.taskId,task]));
+  const tasks=chronological((data.tasks || []).map(task=>changed?task:mergeTask(previous.get(task.taskId),task)));
+  const position=!selected?anchor():null, scroll=pane.scrollTop, bottom=pane.scrollHeight-pane.clientHeight-scroll<48;
+  const added=tasks.some(task=>!rows.has(task.taskId));
+  snapshot={...data,tasks};config.update(data.endpoint);
+  const target=data.target.descriptor,error=data.target.error,availability={ready:'已连接',disconnected:'已断开',closing:'正在关闭',stale:'连接已失效',unavailable:'暂不可用'}[data.target.availability] || '状态未知';
+  setText($('server'),target?target.name || target.endpoint:error?'目标信息暂不可用':'服务器未连接');
+  setText($('connection'),availability);$('connection').dataset.ready=String(data.target.availability==='ready');
+  setText($('server-detail'),error?'目标信息读取失败：'+(error.message || error.code):target?(target.username || '账号未提供')+'@'+target.endpoint+(data.target.targetSource==='lastConnected'?' · 最后连接信息':''):'请在 SoDeck 中连接服务器。');
+  setText($('service'),error?'目标信息读取失败：'+(error.message || error.code):data.service==='ready'?'':data.service);$('service').hidden=!error && data.service==='ready';
+  setText($('directory'),data.evidenceDirectory);
+  const ids=new Set(tasks.map(task=>task.taskId));
+  for(const [id,row]of rows)if(!ids.has(id)){observer?.unobserve(row.li);row.li.remove();rows.delete(id);previews.delete(id);inView.delete(id);}
+  tasks.forEach((task,index)=>{
+    let row=rows.get(task.taskId);
+    if(!row){row=createRow(task,selectTask,cancel);rows.set(task.taskId,row);observer?.observe(row.li);}
+    if($('tasks').children[index]!==row.li)$('tasks').insertBefore(row.li,$('tasks').children[index] || null);
+    updateRow(row,task,previews.get(task.taskId));if(selected?.taskId===task.taskId)row.button.setAttribute('aria-current','true');
   });
-  const running = tasks.filter(task => !task.done), previous = active?.taskId;
-  active = running[0]; text('active-count', running.length ? `${running.length} 个操作` : '');
-  const total = Math.max(data.recordCount ?? tasks.length, tasks.length);
-  text('task-count', `${total > tasks.length ? `显示 ${tasks.length} / ${total} 条 · 更多记录请使用 MCP 或证据目录` : `${tasks.length} 条`}${running.length ? ` · ${running.length} 条执行中` : ''}`);
-  $('idle').hidden = Boolean(active); $('monitor-body').hidden = !active;
-  if (active) {
-    text('monitor-state', status(active)); $('monitor-state').className = stateClass(active);
-    text('monitor-time', duration(active)); text('monitor-command', command(monitorDetail?.taskId === active.taskId ? monitorDetail : active));
-    $('monitor-cancel').setAttribute('aria-label', `请求取消 ${active.requestId}`);
-    $('monitor-cancel').hidden = active.phase === 'finalizing';
-    text('monitor-progress', active.kind === 'download' ? '下载远程文件' : `提交于 ${time(active.createdAt)}`);
-    if (previous !== active.taskId) { monitorSequence++; text('monitor-output', '等待读取输出'); }
-  } else { monitorSequence++; text('monitor-output', ''); }
-  if (selectedTask()) {
-    const row = selectedTask();
-    paintDetail(detail?.taskId === row.taskId ? {...row, input:detail.input, directory:detail.directory, evidence:{...row.evidence,path:detail.evidence?.path}} : row);
-  }
-  if (focus?.isConnected && pane.contains(focus) && focus.getClientRects().length && document.activeElement !== focus) focus.focus({preventScroll:true});
-  pane.scrollTop = changedTarget ? 0 : anchor?.isConnected && !anchor.hidden ? pane.scrollTop + anchor.getBoundingClientRect().top - anchorTop : scrollTop;
-}
-async function loadMonitor() {
-  if (selected || !active || !mounted || !visible) return;
-  const id = active.taskId, sequence = ++monitorSequence, current = epoch;
-  try {
-    const task = unwrap(await event({action:'task', taskId:id, tail:true}));
-    if (current !== epoch || sequence !== monitorSequence || active?.taskId !== id) return;
-    monitorDetail = task; text('monitor-command', command(task));
-    text('monitor-output', task.kind === 'exec' ? output(task.output) : task.evidence?.complete ? '文件已保存。' : '正在下载，完成后可在详情中查看本地路径。');
-    $('monitor-output').scrollTop = $('monitor-output').scrollHeight;
-  } catch (error) { if (current === epoch && sequence === monitorSequence) text('monitor-output', `输出读取失败：${error.message || error}`); }
-}
-async function loadDetail() {
-  const task = selectedTask();
-  if (!task || !mounted || !visible) return;
-  const id = selected, start = cursor, sequence = ++detailSequence, current = epoch;
-  try {
-    const result = unwrap(await event({action:'task', taskId:id, cursor:start}));
-    if (current !== epoch || sequence !== detailSequence || selected !== id || cursor !== start) return;
-    detail = result; paintDetail(result); text('detail-output', output(result.output));
-    nextCursor = result.output?.nextCursor || start;
-    $('previous').disabled = !pages.length; $('next').disabled = !result.output?.hasMore;
-    text('page-number', `第 ${pages.length + 1} 页`);
-  } catch (error) {
-    if (current === epoch && sequence === detailSequence) { text('detail-output', `输出读取失败：${error.message || error}`); $('next').disabled = true; }
+  $('empty').hidden=Boolean(tasks.length);
+  const active=tasks.filter(task=>!task.done).length,total=Math.max(data.recordCount ?? tasks.length,tasks.length);
+  setText($('task-count'),(total>tasks.length?'显示 '+tasks.length+' / '+total+' 条':tasks.length+' 条操作')+(active?' · '+active+' 条进行中':''));
+  if(selected) {
+    const task=tasks.find(task=>task.taskId===selected.taskId);
+    if(task)selected=mergeTask(selected,task);
+    paintDetail(selected);reader.update(selected);
+  } else if(initial || bottom) {
+    pane.scrollTop=pane.scrollHeight;$('new-tasks').hidden=true;initial=false;
+  } else {
+    const row=rows.get(position?.id);pane.scrollTop=row?scroll+row.li.getBoundingClientRect().top-position.top:scroll;
+    if(added)$('new-tasks').hidden=false;
   }
 }
-function selectTask(id, button) {
-  if (selected === id) return;
-  const pane = document.querySelector('main');
-  if (!selected) returnPosition = {scrollTop:pane.scrollTop, button, top:button.getBoundingClientRect().top};
-  $('settings').open = false; clearConfig(); monitorSequence++;
-  selected = id; detail = null; cursor = '0'; pages = []; nextCursor = '0'; detailSequence++;
-  $('previous').disabled = true; $('next').disabled = true; text('page-number','第 1 页'); text('detail-output','等待读取输出');
-  render(snapshot); pane.scrollTop = 0; $('detail-close').focus({preventScroll:true}); void loadDetail();
+function selectTask(id,button) {
+  const task=snapshot?.tasks.find(value=>value.taskId===id);if(!task)return;
+  config.close();$('server-info').open=false;$('directory-details').open=false;
+  returnPosition={taskId:id,scrollTop:pane.scrollTop,top:button.getBoundingClientRect().top};
+  factSequence++;reader.close();selected=task;$('overview').hidden=true;$('detail').hidden=false;$('new-tasks').hidden=true;
+  paintDetail(task);pane.scrollTop=0;$('detail-close').focus({preventScroll:true});reader.open(task);animate($('detail'),4);
+  if(task.kind==='download')void loadFacts();
 }
-async function refresh() {
-  if (!mounted || !visible || pending) return;
-  clearTimeout(timer); pending = true; const current = epoch;
+async function loadFacts() {
+  if(!selected || owner()===null)return;
+  const context=owner(),id=selected.taskId,seq=++factSequence;
   try {
-    const result = await event({action:'snapshot'});
-    if (current === epoch) { if ($('freshness').textContent === '状态可能已过期') notice(''); render(unwrap(result)); text('freshness', time(Date.now())); await Promise.all([loadMonitor(), loadDetail()]); }
-  } catch (error) { if (current === epoch) { notice(String(error.message || error)); text('freshness','状态可能已过期'); } }
-  finally { pending = false; if (mounted && visible) timer = setTimeout(refresh, current === epoch ? 1500 : 0); }
+    const value=await event({action:'task',taskId:id,outputMode:'none'});
+    if(context===owner() && selected?.taskId===id && seq===factSequence){accept(value);if($('freshness').textContent==='任务事实可能已过期')$('freshness').hidden=true;}
+  } catch(error) {if(context===owner() && selected?.taskId===id && seq===factSequence){notice('任务状态读取失败：'+(error.message || error));setText($('freshness'),'任务事实可能已过期');$('freshness').hidden=false;}}
 }
-async function operate(button, action) {
-  const current = epoch; button.disabled = true;
-  try { await action(current); if (current === epoch) await refresh(); }
-  catch (error) { if (current === epoch) notice(String(error.message || error)); }
-  finally { button.disabled = false; }
+async function loadPreviews() {
+  const candidates=snapshot.tasks.filter(task=>task.kind==='exec' && inView.has(task.taskId) && previews.get(task.taskId)?.bytes!==task.outputInfo?.savedBytes);
+  const rotate=list=>list.length?[...list.slice(rotation%list.length),...list.slice(0,rotation%list.length)]:[];
+  const active=rotate(candidates.filter(task=>!task.done)),done=rotate(candidates.filter(task=>task.done));
+  const batch=[...active.slice(0,done.length?3:4),...done.slice(0,Math.max(1,4-active.length))].slice(0,4);rotation++;
+  for(const task of batch) {
+    if(owner()===null || selected || reading)return;
+    const context=owner();
+    try {
+      const value=await event({action:'task',taskId:task.taskId,tail:true});
+      if(context!==owner() || selected || !belongs(value) || !rows.has(task.taskId))return;
+      const cached={text:preview(value.output),bytes:value.output?.savedBytes ?? value.outputInfo?.savedBytes};
+      previews.set(task.taskId,cached);updateRow(rows.get(task.taskId),snapshot.tasks.find(t=>t.taskId===task.taskId),cached);
+    } catch(error) {
+      if(context===owner() && !selected && rows.has(task.taskId)){const cached={text:previews.get(task.taskId)?.text || '预览读取失败，请刷新重试。'};previews.set(task.taskId,cached);updateRow(rows.get(task.taskId),task,cached);}
+    }
+  }
 }
-function cancel(button, task) { if (task) return operate(button, async current => { const result = unwrap(await event({action:'cancel', taskId:task.taskId})); if (current === epoch) notice(result.cancelRequested ? '已请求取消，等待远端实际结果。' : '操作已进入收尾或结束，请查看实际结果。'); }); }
-$('monitor-cancel').onclick = () => cancel($('monitor-cancel'), active);
-$('detail-cancel').onclick = () => cancel($('detail-cancel'), selectedTask());
-$('monitor-details').onclick = () => { if (active) selectTask(active.taskId, $('monitor-details')); };
-$('detail-close').onclick = () => { closeDetail(true); void loadMonitor(); };
-$('next').onclick = () => { if (nextCursor !== cursor) { pages.push(cursor); cursor = nextCursor; $('next').disabled = true; void loadDetail(); } };
-$('previous').onclick = () => { if (pages.length) { cursor = pages.pop(); $('previous').disabled = true; void loadDetail(); } };
-$('copy').onclick = () => operate($('copy'), async current => {
-  const result = await event({action:'config'});
-  const copied = await sodeckClipboard.writeText(unwrap(result).config, () => mounted && visible && current === epoch);
-  if (copied && current === epoch) notice('配置已复制');
+async function refresh(manual=false) {
+  if(owner()===null)return;
+  if(pending){if(manual)again=true;return;}
+  clearTimeout(timer);pending=true;const context=owner();
+  try {
+    const result=await event({action:'snapshot'});
+    if(context!==owner())return;
+    render(result);$('freshness').hidden=true;
+    if(selected)await loadFacts();else await loadPreviews();
+  } catch(error) {if(context===owner()){notice(error.message || String(error));setText($('freshness'),'状态可能已过期');$('freshness').hidden=false;}}
+  finally {pending=false;if(owner()!==null){timer=setTimeout(()=>void refresh(),again || context!==owner()?0:1500);again=false;}}
+}
+async function cancel(id,button) {
+  const task=selected?.taskId===id?selected:snapshot?.tasks.find(task=>task.taskId===id);if(!task || owner()===null)return;
+  const context=owner();button.disabled=true;
+  try {const result=await event({action:'cancel',taskId:id});if(context===owner()){if(result.result)accept(result.result);notice(result.cancelRequested?'已请求取消，等待远端实际结果。':'操作已进入收尾或结束，请查看实际结果。');void refresh(true);}}
+  catch(error){if(context===owner())notice(error.message || String(error));}
+  finally {button.disabled=false;}
+}
+$('detail-close').onclick=()=>{closeDetail(true);void refresh(true);};
+$('detail-cancel').onclick=()=>cancel(selected?.taskId,$('detail-cancel'));
+$('refresh').onclick=()=>{void refresh(true);void config.readSettings();};
+$('new-tasks').onclick=()=>{pane.scrollTop=pane.scrollHeight;$('new-tasks').hidden=true;};
+pane.addEventListener('scroll',()=>{if(pane.scrollHeight-pane.clientHeight-pane.scrollTop<48)$('new-tasks').hidden=true;},{passive:true});
+$('reveal').onclick=async()=>{try{await sodeck.request('data',{op:'pluginData',action:'reveal',relative:['evidence']});}catch(error){notice(error.message || String(error));}};
+const motion=matchMedia('(prefers-reduced-motion: reduce)');motion.addEventListener('change',stopAnimations);
+addEventListener('sodeck:mount',({detail})=>{
+  epoch++;mounted=true;visible=detail.visible!==false;theme(detail.tokens);
+  config ||= createConfigPopover({request:event,host:(method,params)=>sodeck.request(method,params),owner});
+  observer=new IntersectionObserver(entries=>{for(const entry of entries){const id=entry.target.dataset.taskId;if(entry.isIntersecting)inView.add(id);else inView.delete(id);}},{root:pane});
+  for(const row of rows.values())observer.observe(row.li);
+  if(detail.data)render(detail.data);config.settings(detail.settings);sodeck.mounted();void refresh();void config.readSettings();
 });
-$('config-details').ontoggle = async () => {
-  $('config').hidden = !$('config-details').open;
-  if (!$('config-details').open) { text('config',''); return; }
-  const current = epoch;
-  try { const result = await event({action:'config'}); if (mounted && visible && current === epoch && $('config-details').open) text('config', unwrap(result).config); }
-  catch (error) { if (current === epoch) notice(String(error.message || error)); }
-};
-$('show-token').onclick = async () => {
-  const show = $('show-token').getAttribute('aria-expanded') !== 'true';
-  $('show-token').setAttribute('aria-expanded',String(show)); text('show-token', show ? '隐藏' : '显示');
-  if (!show) { text('access-token','••••••••••••••••'); return; }
-  const current = epoch;
-  try { const result = unwrap(await event({action:'config'})); if (mounted && visible && current === epoch && $('show-token').getAttribute('aria-expanded') === 'true') text('access-token', result.token); }
-  catch (error) { if (current === epoch) { text('access-token','读取失败，请重试'); notice(String(error.message || error)); } }
-};
-function settings(snapshot) {
-  if (!snapshot || (settingsSnapshot?.definitionToken === snapshot.definitionToken && BigInt(settingsSnapshot.revision) > BigInt(snapshot.revision))) return;
-  if (portDirty && settingsSnapshot && (settingsSnapshot.revision !== snapshot.revision || settingsSnapshot.definitionToken !== snapshot.definitionToken)) portConflict = true;
-  settingsSnapshot = snapshot;
-  if (!portDirty) $('port').value = snapshot.values.port;
-  paintPort();
-}
-function paintPort() {
-  $('port').disabled = !settingsSnapshot || settingsSaving;
-  $('save-port').disabled = !settingsSnapshot || !portDirty || portConflict || settingsSaving;
-  $('reload-port').disabled = settingsSaving;
-  $('reload-port').hidden = !portConflict;
-  const runtimePort = snapshot?.endpoint ? new URL(snapshot.endpoint).port : '';
-  const message = portConflict ? '其他窗口已更新端口，草稿已保留。请载入最新值后再编辑。' : settingsSnapshot && String(settingsSnapshot.values.port) !== runtimePort ? '端口已保存，重启 SoDeck 后生效；之后需重新复制客户端配置。' : '';
-  $('port-notice').hidden = !message; text('port-notice', message);
-}
-async function readSettings() {
-  if (!mounted || !visible) return;
-  const current = epoch;
-  try { const result = await sodeck.request('settings',{op:'get'}); if (current === epoch) settings(result); }
-  catch (error) { if (current === epoch) { $('port-notice').hidden = false; text('port-notice', `端口设置读取失败：${error.message || error}`); } }
-}
-$('port').oninput = () => { portDirty = Boolean(settingsSnapshot && String(settingsSnapshot.values.port) !== $('port').value); settingsTicket = null; paintPort(); };
-$('reload-port').onclick = () => { portDirty = false; portConflict = false; settingsTicket = null; if (settingsSnapshot) settings(settingsSnapshot); };
-$('save-port').onclick = () => {
-  if (!settingsSnapshot || settingsSaving || !$('port').reportValidity() || portConflict || !portDirty) return;
-  settingsTicket ??= {requestId:crypto.randomUUID(),definitionToken:settingsSnapshot.definitionToken,baseRevision:settingsSnapshot.revision,values:{...settingsSnapshot.values,port:Number($('port').value)}};
-  settingsSaving = true; paintPort();
-  void operate($('save-port'), async current => {
-    const result = await sodeck.request('settings',{op:'save',...settingsTicket});
-    if (current !== epoch) return;
-    if (result.conflict) portConflict = true;
-    else if (result.persisted) { portDirty = false; settingsTicket = null; notice('端口已保存，重启 SoDeck 后生效。'); }
-    else throw new Error('端口未保存，请重试。');
-    settings(result.snapshot);
-  }).finally(() => { settingsSaving = false; paintPort(); });
-};
-$('refresh').onclick = () => { void refresh(); void readSettings(); };
-$('reveal').onclick = () => operate($('reveal'), () => sodeck.request('data', {op:'pluginData', action:'reveal', relative:['evidence']}));
-addEventListener('sodeck:mount', ({detail}) => { epoch++; mounted = true; visible = detail.visible !== false; theme(detail.tokens); if (detail.data) render(detail.data); settings(detail.settings); sodeck.mounted(); void refresh(); void readSettings(); });
-addEventListener('sodeck:themeChanged', ({detail}) => theme(detail.tokens));
-addEventListener('sodeck:settingsChanged', ({detail}) => settings(detail.settings));
-function clearConfig() { text('config',''); $('config').hidden = true; $('config-details').open = false; text('access-token','••••••••••••••••'); text('show-token','显示'); $('show-token').setAttribute('aria-expanded','false'); }
-$('settings').ontoggle = () => { if (!$('settings').open) clearConfig(); };
-addEventListener('sodeck:visibilityChanged', ({detail}) => { epoch++; visible = detail.visible; clearTimeout(timer); if (!visible) { $('settings').open = false; clearConfig(); } else { void refresh(); void readSettings(); } });
-addEventListener('sodeck:unmount', () => { epoch++; mounted = false; clearTimeout(timer); clearConfig(); closeDetail(); });
+addEventListener('sodeck:themeChanged',({detail})=>theme(detail.tokens));
+addEventListener('sodeck:settingsChanged',({detail})=>config?.settings(detail.settings));
+addEventListener('sodeck:visibilityChanged',({detail})=>{
+  epoch++;visible=detail.visible;clearTimeout(timer);config?.stop();stopAnimations();
+  if(visible){reader.resume();void refresh(true);void config.readSettings();}else reader.suspend();
+});
+addEventListener('sodeck:unmount',()=>{
+  epoch++;mounted=visible=false;clearTimeout(timer);config?.destroy();config=null;observer?.disconnect();observer=null;inView.clear();stopAnimations();reader.close();closeDetail();
+});
+

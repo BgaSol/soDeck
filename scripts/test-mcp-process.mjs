@@ -199,12 +199,14 @@ try{
   assert(!('stdout' in original.output)&&!('stderr' in original.output)&&!('previewEncoding' in original.output));assert.deepEqual(Buffer.from(original.output.chunks[0].dataBase64,'base64'),bytes);assert.equal(original.output.nextCursor,done.output.nextCursor);
   const outputPath=path.join(diagnostic.directory,'output.jsonl');fs.renameSync(outputPath,outputPath+'.held');
   const noBody=(await tool('sodeck_task_get',{taskId:start.taskId,detail:true,outputMode:'none'})).value;assert.equal(noBody.done,true);
+  const uiFacts=(await peer.request('ui.event',{viewId:'a',data:{action:'task',taskId:start.taskId,outputMode:'none'}})).data;
+  assert.equal(uiFacts.done,true);assert(!('output' in uiFacts));assert.equal(uiFacts.outputInfo.savedBytes,done.output.savedBytes,'sidebar facts do not read the missing evidence file');
   const readFailure=await tool('sodeck_task_get',{taskId:start.taskId});assert.equal(readFailure.error,true);assert.equal(readFailure.value.error.code,'evidenceReadFailed');assert.equal(readFailure.value.task.revision,done.revision);assert(!('task' in readFailure.value.error));assert(!('input' in readFailure.value.task));
   const startReadFailure=await tool('sodeck_exec_start',{...input,waitMs:20000});assert.equal(startReadFailure.error,true);assert.equal(startReadFailure.value.task.taskId,start.taskId);assert.equal(startReadFailure.value.task.revision,done.revision);assert.equal(requests.length,interactionRequests+1);
   const detailFailure=await tool('sodeck_task_get',{taskId:start.taskId,detail:true});assert.equal(detailFailure.value.task.input.command,'collect');fs.renameSync(outputPath+'.held',outputPath);
   const detail=(await peer.request('ui.event',{viewId:'a',data:{action:'task',taskId:start.taskId,cursor:'0'}})).data;
   assert.equal(detail.output.stdout,bytes.toString());assert.equal(detail.input.command,'collect');
-  for(const options of [{outputMode:'full'},{outputMode:'none'},{waitMs:0},{sinceRevision:'1'},{detail:true},{tail:true,cursor:'0'}])await assert.rejects(peer.request('ui.event',{viewId:'a',data:{action:'task',taskId:start.taskId,...options}}),/参数无效|不能组合/);
+  for(const options of [{outputMode:'full'},{outputMode:'none',cursor:'0'},{outputMode:'none',tail:false},{waitMs:0},{sinceRevision:'1'},{detail:true},{tail:true,cursor:'0'}])await assert.rejects(peer.request('ui.event',{viewId:'a',data:{action:'task',taskId:start.taskId,...options}}),/参数无效|不能组合|仅支持/);
   await assert.rejects(peer.request('ui.event',{viewId:'b',data:{action:'task',taskId:start.taskId}}),/任务不属于当前服务器连接/);
   assert.deepEqual((await tool('sodeck_task_get',{taskId:start.taskId})).value,done,'released task evidence remains queryable');
   assert.equal((await tool('sodeck_task_get',{taskId:start.taskId,cursor:'1'})).error,true);
