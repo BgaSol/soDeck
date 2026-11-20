@@ -30,8 +30,16 @@ export class ServerManager {
   private linesTree?:HTMLElement;
   private linesObserver = new ResizeObserver(()=>this.scheduleLines());
   private selectionTimer?: ReturnType<typeof setTimeout>;
+  private route?: Element;
+  private routeObserver = new IntersectionObserver(entries => {
+    for (const entry of entries) if (entry.target === this.route) this.host.classList.toggle('route-motion-paused', !entry.isIntersecting);
+  });
+  private routeEvents = new AbortController();
   constructor(private host: HTMLElement, private notify: (message: string) => void, private api: ServerApi = serverApi) {
     this.linesObserver.observe(host);
+    const visibility = () => host.classList.toggle('route-background', document.hidden);
+    visibility();
+    document.addEventListener('visibilitychange', visibility, { signal: this.routeEvents.signal });
     host.addEventListener("keydown",event=>this.treeKey(event));
     host.addEventListener("mousedown", event => {
       if (event.detail === 2 && (event.target as Element).closest("[data-connect-server-on-double-click]")) clearTimeout(this.selectionTimer);
@@ -113,10 +121,12 @@ export class ServerManager {
     updateDOM(this.host, this.catalog ? page({...this.catalog,error:this.readError||this.catalog.error}, this.state, this.connections) : this.readError ? `<div class="error-box" role="alert">${e(this.readError)} ${action("reload", "重试")}</div>` : "", motion);
     const tree=this.host.querySelector<HTMLElement>('.connection-tree')??undefined;
     if(this.linesTree!==tree){if(this.linesTree)this.linesObserver.unobserve(this.linesTree);this.linesTree=tree;if(tree)this.linesObserver.observe(tree);}
+    const route = this.host.querySelector('.catalog-detail .route-preview') ?? undefined;
+    if (this.route !== route) { if (this.route) this.routeObserver.unobserve(this.route); this.route = route; if (route) this.routeObserver.observe(route); }
     if(this.actionMenu){this.actionMenu.anchor.setAttribute("aria-expanded","true");void this.actionMenu.position?.update();}
     this.scheduleLines();
   }
-  dispose() { this.closeMenu();this.linesObserver.disconnect();if(this.linesFrame!==undefined)cancelAnimationFrame(this.linesFrame);this.disposed = true; this.generation++; clearTimeout(this.selectionTimer); }
+  dispose() { this.closeMenu();this.linesObserver.disconnect();this.routeObserver.disconnect();this.routeEvents.abort();this.host.classList.add('route-motion-paused');if(this.linesFrame!==undefined)cancelAnimationFrame(this.linesFrame);this.disposed = true; this.generation++; clearTimeout(this.selectionTimer); }
   private top() { return this.frames.at(-1); }
   private frame(kind: Frame["kind"]): Frame {
     const dialog = document.createElement("dialog");

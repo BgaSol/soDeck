@@ -957,5 +957,5 @@
   /* Existing forms use the same appearance parameters, without theme selectors. */
   input, select, .layer, .plugin-layout, .plugin-symbol, .log-results, .toast,
   .restart-banner, .update-card, .catalog-layout, .catalog-dialog, .route-editor-step,
-  .route-number, .endpoint-symbol, .component-close-dialog, .plugin-view-dialog { border-width: var(--sd-stroke-control); }
+  .route-symbol, .endpoint-symbol, .component-close-dialog, .plugin-view-dialog { border-width: var(--sd-stroke-control); }
 }
