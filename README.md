@@ -26,7 +26,7 @@
 
 | 系统 | 架构 | 安装包 |
 | --- | --- | --- |
-| Windows | x86_64、ARM64 | EXE（系统安装，需要管理员确认） |
+| Windows | x86_64、ARM64 | EXE（[安装范围说明](docs/distribution.md#windows-安装范围与图标)） |
 | Linux | x86_64、ARM64 | DEB、AppImage |
 | macOS | Apple Silicon ARM64 | DMG |
 
