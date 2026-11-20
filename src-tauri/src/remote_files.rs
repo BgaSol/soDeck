@@ -184,7 +184,10 @@ fn eof(e: &Error) -> bool {
     matches!(e,Error::Status(s) if s.status_code==StatusCode::Eof)
 }
 fn digest(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 fn attrs(a: &FileAttributes) -> Value {
     json!({"size":a.size.map(|s|s.to_string()),"mtime":a.mtime,"permissions":a.permissions,"kind":if a.is_dir(){"directory"}else if a.is_symlink(){"link"}else if a.is_regular(){"file"}else{"other"}})

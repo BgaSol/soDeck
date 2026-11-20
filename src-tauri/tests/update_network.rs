@@ -1,6 +1,5 @@
 #![cfg(feature = "test-fixtures")]
 use serde_json::json;
-use sha2::{Digest, Sha256};
 use sodeck::update_network::{
     normalize_prefix, Error, Preferences, RequestKind, State, Transport, UpdateMirror,
 };
@@ -352,7 +351,7 @@ fn interrupted_or_corrupt_download_restarts_and_verifies_before_success() {
         &path,
         |count, _| counts.push(count),
         |_, hash| {
-            if hash == format!("{:x}", Sha256::digest(b"complete package")) {
+            if hash == "bc74f7b404c7c1b0ed98c6a3f57721e0bd2383cb7be23ba9c916214066651488" {
                 Ok(())
             } else {
                 Err(Error::remote("hash mismatch"))
@@ -402,7 +401,7 @@ fn manifest_failure_only_defers_a_node_when_other_package_routes_also_fail() {
         &path,
         |_, _| {},
         |_, hash| {
-            if hash == format!("{:x}", Sha256::digest(b"package")) {
+            if hash == "bc4a71180870f7945155fbb02f4b0a2e3faa2a62d6d31b7039013055ed19869a" {
                 Ok(())
             } else {
                 Err(Error::remote("hash mismatch"))

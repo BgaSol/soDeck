@@ -379,7 +379,10 @@ impl Server {
         }
     }
     fn release(&self, bytes: Vec<u8>, api: &str, target: &str) {
-        let hash = format!("{:x}", Sha256::digest(&bytes));
+        let hash: String = Sha256::digest(&bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
         self.put("/plugin.zip", bytes);
         self.put("/manifest.json", json!({"id":"test.fixture","version":"0.1.1","apiVersion":api,"notes":"new plugin","platforms":{target:{"url":format!("{}/plugin.zip", self.base),"sha256":hash}}}).to_string());
         self.publish("test/repo", "plugin-fixture-v", vec![
@@ -397,7 +400,7 @@ impl Server {
     fn catalog(&self, plugins: Vec<serde_json::Value>) {
         let tree: Vec<_> = plugins.into_iter().enumerate().map(|(index, plugin)| {
             let content = plugin.to_string();
-            let sha = format!("{:x}", Sha256::digest(content.as_bytes()))[..40].to_string();
+            let sha: String = Sha256::digest(content.as_bytes()).iter().take(20).map(|byte| format!("{byte:02x}")).collect();
             self.put(&format!("/repos/BgaSol/soDeck/git/blobs/{sha}"), content);
             json!({"path":format!("plugins/plugin-{index}/release.json"),"type":"blob","sha":sha})
         }).collect();

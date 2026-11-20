@@ -675,8 +675,11 @@ impl DesktopWindows {
         let token = request_id.unwrap_or_else(|| self.core.next_id());
         let target = target.unwrap_or_else(|| {
             use sha2::{Digest, Sha256};
-            let hash = Sha256::digest(token.as_bytes());
-            format!("workspace-{:x}", hash)[..30].to_owned()
+            let hash: String = Sha256::digest(token.as_bytes())
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            format!("workspace-{hash}")[..30].to_owned()
         });
         if let Some(result) = self.core.existing_workbench_move(
             &token,
