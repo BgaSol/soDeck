@@ -54,7 +54,7 @@ impl AppCore {
         expected: Option<&Context>,
         detailed_target: bool,
     ) -> Result<Value, Error> {
-        let entries = self.connections.entries.lock().unwrap();
+        let registry = self.connections.registry.lock().unwrap();
         let state = self.workbench_state();
         let view = state
             .ui
@@ -67,49 +67,65 @@ impl AppCore {
         if expected.is_some_and(|expected| expected != &context) {
             return Err(error("staleContext", "连接代次已改变"));
         }
-        let workspace = state
-            .workspaces
-            .target_workspace(&context)
-            .map_err(|e| error("staleContext", e))?;
-        let session = if workspace.connected {
-            entries
-                .get(&context.server_id)
-                .and_then(|a| a.session_for(&context))
-        } else {
-            None
-        };
-        let connected = session.is_some();
-        let target = session
-            .as_ref()
-            .map(|s| &s.target)
-            .or_else(|| {
-                detailed_target
-                    .then_some(workspace.connection_target.as_ref())
-                    .flatten()
-            })
-            .cloned();
-        let name = workspace.name.clone();
         let closing = state.ui.lifecycle.view_frozen(&view.id);
-        drop(state);
-        drop(entries);
-        let target = target.map(|t| {
+        target_context_facts(&registry, &state, &context, closing, detailed_target)
+    }
+    pub(crate) fn context_target_facts(&self, context: &Context) -> Result<Value, Error> {
+        let registry = self.connections.registry.lock().unwrap();
+        let state = self.workbench_state();
+        let closing = state.ui.frozen(&context.workspace_id);
+        target_context_facts(&registry, &state, context, closing, true)
+    }
+}
+
+fn target_context_facts(
+    registry: &crate::connections::registry::Registry,
+    state: &crate::workbench::State,
+    context: &Context,
+    closing: bool,
+    detailed_target: bool,
+) -> Result<Value, Error> {
+    let workspace = state
+        .workspaces
+        .target_workspace(&context)
+        .map_err(|e| error("staleContext", e))?;
+    let session = if workspace.connected {
+        registry
+            .current
+            .get(&context.server_id)
+            .and_then(|a| a.session_for(&context))
+    } else {
+        None
+    };
+    let connected = session.is_some();
+    let target = session
+        .as_ref()
+        .map(|s| &s.target)
+        .or_else(|| {
+            detailed_target
+                .then_some(workspace.connection_target.as_ref())
+                .flatten()
+        })
+        .cloned();
+    let name = workspace.name.clone();
+
+    let target = target.map(|t| {
             let mut value = json!({"name":name,"protocol":t.protocol,"endpoint":t.endpoint(),"username":t.username});
             if detailed_target { value["host"] = json!(t.host); value["port"] = json!(t.port); }
             value
         });
-        let mut value = json!({"context":context,"target":target,"state":if connected {"connected"}else{"disconnected"},
+    let mut value = json!({"context":context,"target":target,"state":if connected {"connected"}else{"disconnected"},
             "closing":closing,"capabilities":if connected {vec!["exec","files"]}else{vec![]}});
-        if detailed_target {
-            value["targetSource"] = json!(if value["target"].is_null() {
-                "unknown"
-            } else if connected {
-                "current"
-            } else {
-                "lastConnected"
-            });
-        }
-        Ok(value)
+    if detailed_target {
+        value["targetSource"] = json!(if value["target"].is_null() {
+            "unknown"
+        } else if connected {
+            "current"
+        } else {
+            "lastConnected"
+        });
     }
+    Ok(value)
 }
 
 #[cfg(test)]

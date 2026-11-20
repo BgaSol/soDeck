@@ -37,6 +37,10 @@ fn main() {
     for line in io::stdin().lock().lines() {
         let frame: Value = serde_json::from_str(&line.unwrap()).unwrap();
         match frame["method"].as_str() {
+            Some("connections.changed") => {
+                send(json!({"jsonrpc":"2.0","id":frame["id"],"result":{}}));
+                continue;
+            }
             Some("commands.handle") => {
                 action_count += 1;
                 let p = &frame["params"];
@@ -145,6 +149,8 @@ fn main() {
                 if method == "ui.event" {
                     if let Some(rpc) = p["data"]["rpc"].as_str().filter(|s| {
                         s.starts_with("session.")
+                            || s.starts_with("connections.")
+                            || *s == "servers.list"
                             || s.starts_with("state.")
                             || s.starts_with("commands.")
                     }) {

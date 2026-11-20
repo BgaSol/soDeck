@@ -60,6 +60,14 @@ SSH 保活间隔 30 秒，连续 3 次未响应后断开。SOCKS5 上游支持�
 
 插件只能经当前会话能力创建受管资源。关闭单个终端或命令任务不关闭共享 SSH；连接、视图和资源身份的共同规则见[架构](../architecture.md)及[插件 API](../plugin-api.md)。
 
+## 外部打开请求（核心 1.9.0）
+
+插件可通过核心读取非敏感保存资料，并按选择令牌打开或复用服务器；[Agent MCP](mcp.md)使用此能力。桌面与插件共用实际 Attempt、认证提示、路线和接纳规则，不重复保存凭据。外部打开只登记工作区，不切换用户焦点；缺少凭据或待确认主机指纹仍由用户在已有窗口处理。
+
+同一原请求重试不重复派发网络，多请求与桌面可共享同一尝试。外部取消只撤销自身未完成请求；没有其他需求时才终止未接纳尝试。已接纳会话属于工作区，目标创建失败、MCP 取消或停止均不自动断开它。桌面取消与工作区关闭仍按实际连接生命周期收尾。
+
+保存资料与在用会话地址、账号或路线不同，外部打开明确拒绝，需用户处理原会话；凭据编辑不使同一在用路线失效。完成回执固定在原 Context，断开、重连不改指向；后台 UI 创建是独立阶段，SSH 接纳不代表插件目标已经就绪。字段、额度与兼容规则由[插件 API](../plugin-api.md#serversreadv1-与-connectionsv1核心-190)维护。
+
 ## 实现与回归入口
 
 - 资料与建链：[servers.rs](../../src-tauri/src/servers.rs)、[connection_profile.rs](../../src-tauri/src/servers/connection_profile.rs)、[connections](../../src-tauri/src/connections/mod.rs)、[route.rs](../../src-tauri/src/connections/route.rs)、[ssh.rs](../../src-tauri/src/connections/ssh.rs)、[host_keys.rs](../../src-tauri/src/connections/host_keys.rs)。

@@ -34,7 +34,7 @@
     "docker:process:test": "node scripts/test-docker-process.mjs",
     "docker:ui:test": "node scripts/test-docker-ui.mjs",
     "mcp:test": "node scripts/test-mcp.mjs",
-    "mcp:process:test": "node scripts/test-mcp-process.mjs",
+    "mcp:process:test": "node scripts/test-mcp-process.mjs && node scripts/test-mcp-connections.mjs",
     "mcp:ui:test": "node scripts/test-mcp-ui.mjs",
     "test:prepare": "node scripts/prepare-test-plugins.mjs"
   },

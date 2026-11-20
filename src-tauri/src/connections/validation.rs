@@ -7,9 +7,10 @@ impl AppCore {
         command: &str,
     ) -> Result<(Vec<u8>, u32), String> {
         let session = {
-            let entries = self.connections.entries.lock().unwrap();
+            let registry = self.connections.registry.lock().unwrap();
             self.workspace_state().validate_context(context)?;
-            entries
+            registry
+                .current
                 .get(&context.server_id)
                 .filter(|a| a.view().context.as_ref() == Some(context))
                 .and_then(|a| a.session.lock().unwrap().clone())

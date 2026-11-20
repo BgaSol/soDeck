@@ -17,10 +17,11 @@ impl AppCore {
         {
             return Err(Error::new("profileChanged", "连接资料已修改，请重新连接"));
         }
-        let entries = self.connections.entries.lock().unwrap();
+        let mut registry = self.connections.registry.lock().unwrap();
         if self.is_closing()
             || a.cancel.is_cancelled()
-            || !entries
+            || !registry
+                .current
                 .get(&profile.server_id)
                 .is_some_and(|current| Arc::ptr_eq(current, a))
         {
@@ -128,8 +129,9 @@ impl AppCore {
             s.view.state = "connected".into();
             s.view.stage = "connected".into();
         }
+        registry.freeze(&a.view());
         drop(_workbench);
-        drop(entries);
+        drop(registry);
         drop(servers);
         if saved {
             self.changed();

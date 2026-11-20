@@ -14,7 +14,7 @@ assert.equal(manifest.name,'Agent MCP');assert.equal(manifest.ui.views[0].title,
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-mcp-process-'));
 const socket=net.createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r));
 const contexts=Object.fromEntries(['a','b','c'].map(view=>[view,{workspaceId:view,serverId:'server-'+view,connectionId:'connection-'+view,generation:1}]));
-const capabilities=['session.target.v2','session.stream.process.v1','files.pluginData.v1','files.operations.v2','ui.background.v1','settings.v1'];
+const capabilities=['session.target.v2','session.stream.process.v1','files.pluginData.v1','files.operations.v2','ui.background.v1','settings.v1','servers.read.v1','connections.v1'];
 const descriptions=Object.fromEntries(Object.keys(contexts).map(view=>[view,{name:view,protocol:'ssh',host:view==='a'?'10.0.0.187':view==='b'?'10.0.1.187':'db187.example.com',port:22,username:'ops'}]));
 const targetFaults=new Map(),targetStates=new Map(),targetCalls=[],targetGates=[];let gateTargets=false;
 function targetReply(view){const state=targetStates.get(view)??'connected',target=descriptions[view];return {context:contexts[view],state,closing:false,capabilities:state==='connected'?['exec','files']:[],targetSource:state==='connected'?'current':'lastConnected',target:{...target,endpoint:`${target.host.includes(':')?'['+target.host+']':target.host}:${target.port}`}};}
@@ -90,15 +90,15 @@ async function discoveryChecks(){
   const fullError=await read({targetId:b.targetId,detail:true});assert.equal(fullError.targets[0].error.details.diagnostic,'retained');
   targetFaults.set('b',{...targetReply('b'),target:null});assert.equal((await read({query:'187'})).resolution,'incomplete');targetFaults.clear();
   const before=targetCalls.length;targetFaults.set('a',Object.assign(new Error('local transport failed'),{code:-32003}));const stopped=await read({query:'187'});assert.equal(stopped.resolution,'incomplete');assert.equal(stopped.unresolved.length,3);assert.equal(targetCalls.length,before+1);assert.equal(stopped.unresolved[1].error.code,'notObserved');assert.equal((await read({targetId:b.targetId})).targets[0].availability,'ready');targetFaults.clear();
-  const savedContext={...contexts.b};contexts.b={...savedContext,serverId:contexts.a.serverId};await peer.request('ui.createView',{viewId:'b',viewType:'status',context:contexts.b});const sameServer=await read({serverId:contexts.a.serverId});assert.equal(sameServer.resolution,'ambiguous');assert.equal(sameServer.targets.length,2);assert.equal((await read({serverId:contexts.a.serverId,workspaceId:'a'})).resolution,'unique');contexts.b=savedContext;await peer.request('ui.createView',{viewId:'b',viewType:'status',context:contexts.b});
+  const savedContext={...contexts.b};contexts.b={...savedContext,serverId:contexts.a.serverId,generation:savedContext.generation+1};await peer.request('ui.createView',{viewId:'b',viewType:'status',context:contexts.b});const sameServer=await read({serverId:contexts.a.serverId});assert.equal(sameServer.resolution,'ambiguous');assert.equal(sameServer.targets.length,2);assert.equal((await read({serverId:contexts.a.serverId,workspaceId:'a'})).resolution,'unique');contexts.b={...savedContext,generation:savedContext.generation+2};await peer.request('ui.createView',{viewId:'b',viewType:'status',context:contexts.b});
   gateTargets=true;const oldSnapshot=peer.request('ui.getView',{viewId:'a'});const oldSnapshotFailure=assert.rejects(oldSnapshot,/连接代次已改变/);
   await until(async()=>targetGates.length,n=>n===1);gateTargets=false;contexts.a={...contexts.a,connectionId:'rebound-a',generation:2};
-  const rebound=await peer.request('ui.createView',{viewId:'a',viewType:'status',context:contexts.a});targetGates.shift()();await oldSnapshotFailure;
+  await peer.request('ui.createView',{viewId:'a',viewType:'status',context:contexts.a});const rebound=await peer.request('ui.getView',{viewId:'a'});targetGates.shift()();await oldSnapshotFailure;
   assert.notEqual(rebound.data.targetId,a.targetId,'old observations cannot be paired with a new local target identity');
   a.targetId=rebound.data.targetId;
   for(const relevant of [false,true]){
     gateTargets=true;const pending=read({serverId:contexts.a.serverId});await until(async()=>targetGates.length,n=>n===1);gateTargets=false;
-    contexts.d={workspaceId:'d',serverId:relevant?contexts.a.serverId:'server-d',connectionId:'connection-d',generation:1};descriptions.d={name:'d',protocol:'ssh',host:'outside.example.com',port:22,username:'ops'};await peer.request('ui.createView',{viewId:'d',viewType:'status',context:contexts.d});targetGates.shift()();const result=await pending;assert.equal(result.registryChanged,relevant);assert.equal(result.resolution,relevant?'incomplete':'unique');await peer.request('ui.disposeView',{viewId:'d'});delete contexts.d;delete descriptions.d;
+    contexts.d={workspaceId:'d',serverId:relevant?contexts.a.serverId:'server-d',connectionId:'connection-d',generation:1};descriptions.d={name:'d',protocol:'ssh',host:'outside.example.com',port:22,username:'ops'};await peer.request('ui.createView',{viewId:'d',viewType:'status',context:contexts.d});targetGates.shift()();const result=await pending;assert.equal(result.registryChanged,relevant);assert.equal(result.resolution,relevant?'incomplete':'unique');await peer.request('ui.disposeView',{viewId:'d',context:contexts.d});delete contexts.d;delete descriptions.d;
   }
   gateTargets=true;const controllers=Array.from({length:4},()=>new AbortController());const blocked=controllers.map(c=>tool('sodeck_targets_list',{targetId:a.targetId},c.signal).catch(e=>e));await until(async()=>targetGates.length,n=>n===4);for(const c of controllers)c.abort();await Promise.all(blocked);
   const occupied=await tool('sodeck_targets_list',{targetId:a.targetId});assert.equal(occupied.value.error.code,'resourceBusy','cancelled HTTP keeps physical RPC slots occupied');assert.equal(targetGates.length,4);gateTargets=false;for(const release of targetGates.splice(0))release();await until(async()=>read({targetId:a.targetId}),r=>r.resolution==='unique');
@@ -106,7 +106,7 @@ async function discoveryChecks(){
   for(let n=0;n<61;n++){const view='limit-'+n;extra.push(view);contexts[view]={workspaceId:view,serverId:'server-'+view,connectionId:'connection-'+view,generation:1};descriptions[view]={name:'\\'.repeat(1400),protocol:'ssh',host:view+'.example.com',port:22,username:'ops'};await peer.request('ui.createView',{viewId:view,viewType:'status',context:contexts[view]});}
   const over=await tool('sodeck_targets_list',{});assert.equal(over.error,true);assert.equal(over.value.error.code,'resourceLimit');assert(!('targets'in over.value));assert(over.value.error.message.includes('identity'));
   assert.equal((await read({workspaceId:extra[0]})).resolution,'unique');await assert.rejects(peer.request('ui.createView',{viewId:'overflow',viewType:'status',context:{workspaceId:'overflow',serverId:'overflow',connectionId:'overflow',generation:1}}),/目标已满/);
-  for(const view of extra){await peer.request('ui.disposeView',{viewId:view});delete contexts[view];delete descriptions[view];}
+  for(const view of extra){await peer.request('ui.disposeView',{viewId:view,context:contexts[view]});delete contexts[view];delete descriptions[view];}
   assert.equal(requests.length,0,'discovery never starts native operations');assert.equal((await tool('sodeck_tasks_list')).value.tasks.length,0);assert.deepEqual(fs.readdirSync(path.join(directory,'evidence')),[]);
 }
 try{
@@ -116,7 +116,7 @@ try{
   for(const [viewId,context]of Object.entries(contexts))assert.equal((await peer.request('ui.createView',{viewId,viewType:'status',context})).metadata.title,'Agent MCP');
   await until(async()=>(await peer.request('ui.getView',{viewId:'a'})).data,s=>s.service==='ready');
   const initialized=await call('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'sodeck-test',version:'1'}});assert(initialized.capabilities.tools);
-  const list=await call('tools/list',{});assert.equal(list.tools.length,6);assert.equal(list.tools.find(t=>t.name==='sodeck_exec_start').annotations.readOnlyHint,false);
+  const list=await call('tools/list',{});assert.equal(list.tools.length,10);assert.equal(list.tools.find(t=>t.name==='sodeck_exec_start').annotations.readOnlyHint,false);
   assert(list.tools.find(t=>t.name==='sodeck_targets_list').inputSchema.properties.query);
   await discoveryChecks();
   const targets=(await tool('sodeck_targets_list')).value.targets;assert.equal(targets.length,3);
@@ -243,7 +243,7 @@ try{
   const unknown=(await tool('sodeck_exec_start',{...input,requestId:'unknown',command:'unknown'})).value;await until(async()=>(await tool('sodeck_task_get',{taskId:unknown.taskId,outputMode:'none'})).value,s=>s.native.admission==='unknown');
   await tool('sodeck_task_cancel',{taskId:unknown.taskId});assert.equal((await tool('sodeck_exec_start',{...input,requestId:'unknown',command:'unknown'})).value.taskId,unknown.taskId);assert.equal((await tool('sodeck_exec_start',{...input,requestId:'must-not-replay',command:'collect'})).value.error.code,'resourceBusy');assert.equal(requests.filter(p=>p.command==='unknown').length,1);
   const oldContext={...contexts.a}, oldTarget=target, opensBeforeRemount=requests.length;
-  await peer.request('ui.disposeView',{viewId:'a'});contexts.a={...contexts.a,connectionId:'reconnected-a',generation:2};await peer.request('ui.createView',{viewId:'a',viewType:'status',context:contexts.a});
+  await peer.request('ui.disposeView',{viewId:'a',context:contexts.a});contexts.a={...contexts.a,connectionId:'reconnected-a',generation:2};await peer.request('ui.createView',{viewId:'a',viewType:'status',context:contexts.a});
   const moved=(await tool('sodeck_targets_list',{workspaceId:'a'})).value;assert.equal(moved.resolution,'unique');assert.notEqual(moved.targets[0].targetId,oldTarget);assert.equal((await tool('sodeck_targets_list',{targetId:oldTarget})).value.resolution,'none');
   const restoredOriginal=(await tool('sodeck_exec_start',{...input,waitMs:0})).value;assert.equal(restoredOriginal.taskId,start.taskId);assert.deepEqual((await tool('sodeck_task_get',{taskId:start.taskId,detail:true,outputMode:'none'})).value.context,oldContext);
   const unknownAgain=(await tool('sodeck_exec_start',{...input,requestId:'unknown',command:'unknown',waitMs:0})).value;assert.equal(unknownAgain.taskId,unknown.taskId);assert.equal(unknownAgain.native.admission,'unknown');assert.equal(requests.length,opensBeforeRemount,'remount never replays completed or unknown requests');
@@ -256,8 +256,8 @@ try{
   contexts.a={...contexts.a,generation:3};assert.equal((await tool('sodeck_exec_start',{...input,requestId:'stale'})).value.taskId.startsWith('task-'),true);
   const staleSidebar=(await peer.request('ui.getView',{viewId:'a'})).data;assert.equal(staleSidebar.target.availability,'stale','the sidebar does not present another connection generation as its recorded target');assert.equal(staleSidebar.targetId,target);assert.equal(staleSidebar.target.descriptor,null);
   const countBefore=requests.length;await until(async()=>(await peer.request('ui.getView',{viewId:'a'})).data,s=>s.tasks.some(t=>t.requestId==='stale'&&t.done));assert.equal(requests.length,countBefore,'stale target must not execute');
-  for(const viewId of Object.keys(contexts))await peer.request('ui.disposeView',{viewId});
+  for(const viewId of Object.keys(contexts))await peer.request('ui.disposeView',{viewId,context:contexts[viewId]});
   await peer.close();peer=null;await assert.rejects(fetch(`http://127.0.0.1:${port}/mcp`));
   if(process.env.SODECK_TEST_MCP_REPORT)fs.writeFileSync(process.env.SODECK_TEST_MCP_REPORT,JSON.stringify({version:manifest.version,fixture:'representative lscpu output and controlled core v2 facts, not a live server',stdout:bytes.toString(),samples,shortRuns,targetSamples},null,2)+'\n');
-  console.log('MCP: six tools, scopes, stable finalization, text/none, keyset paging, wait timeout/wake/disconnect quotas, unknown admission, cleanup failures and exit passed');
+  console.log('MCP: ten tools, scopes, stable finalization, text/none, keyset paging, wait timeout/wake/disconnect quotas, unknown admission, cleanup failures and exit passed');
 }finally{if(peer)await peer.kill();assert.equal(path.dirname(directory),os.tmpdir());fs.rmSync(directory,{recursive:true,force:true});}

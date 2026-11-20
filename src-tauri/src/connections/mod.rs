@@ -1,5 +1,8 @@
 //! Core-owned connection attempts. Registry locks never span network or user waits.
 mod admission;
+pub(crate) mod registry;
+pub(crate) mod rpc;
+use registry::{Binding, OpenInput, OpenRequest, RequestKey};
 pub mod desktop;
 mod host_keys;
 pub(crate) mod io;
@@ -16,7 +19,6 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
     future::Future,
     sync::{Arc, Mutex, Weak},
     time::{Duration, Instant},
@@ -32,7 +34,7 @@ pub struct Error {
     pub message: String,
 }
 impl Error {
-    fn new(code: &str, message: impl Into<String>) -> Self {
+    pub(crate) fn new(code: &str, message: impl Into<String>) -> Self {
         Self {
             code: code.into(),
             stage: String::new(),
@@ -142,6 +144,7 @@ pub struct View {
 }
 struct State {
     view: View,
+    desktop_requested: bool,
     reply: Option<oneshot::Sender<Answer>>,
     question_clock: Option<Instant>,
     paused: Duration,
@@ -150,6 +153,7 @@ struct State {
 pub(crate) struct Attempt {
     state: Mutex<State>,
     identity: String,
+    pub(crate) route_identity: String,
     source_window: String,
     expected_context: Option<Context>,
     previous_endpoint: Option<String>,
@@ -170,7 +174,7 @@ impl Attempt {
             .clone()
             .filter(|s| !s.is_closed())
     }
-    fn view(&self) -> View {
+    pub(crate) fn view(&self) -> View {
         let mut v = self.state.lock().unwrap().view.clone();
         (v.sent_bytes, v.received_bytes) = self.counters.totals();
         v
@@ -178,6 +182,7 @@ impl Attempt {
     fn changed(&self) {
         if let Some(core) = self.core.upgrade() {
             core.event("connections-changed", serde_json::Value::Null);
+            core.notify_connection_change(&self.view().server_id);
         }
     }
     fn stage(&self, stage: &str, index: usize) {
@@ -313,21 +318,22 @@ impl Attempt {
 }
 
 pub(crate) struct Connections {
-    pub(crate) entries: Mutex<HashMap<String, Arc<Attempt>>>,
+    pub(crate) registry: Mutex<registry::Registry>,
     host_keys: Arc<host_keys::HostKeys>,
 }
 impl Connections {
     pub fn open(root: &std::path::Path) -> Self {
         Self {
-            entries: Mutex::new(HashMap::new()),
+            registry: Mutex::new(registry::Registry::default()),
             host_keys: Arc::new(host_keys::HostKeys::open(root)),
         }
     }
     pub fn views(&self) -> Vec<View> {
         let mut v = self
-            .entries
+            .registry
             .lock()
             .unwrap()
+            .current
             .values()
             .map(|a| a.view())
             .collect::<Vec<_>>();
@@ -335,7 +341,7 @@ impl Connections {
         v
     }
     pub fn cancel_stale(&self, store: &crate::servers::ServerStore) {
-        for (id, a) in self.entries.lock().unwrap().iter() {
+        for (id, a) in self.registry.lock().unwrap().current.iter() {
             if a.view().state == "connecting"
                 && !store
                     .connection_snapshot(id)
@@ -346,14 +352,14 @@ impl Connections {
         }
     }
     pub fn cancel_window(&self, window: &str) {
-        for a in self.entries.lock().unwrap().values() {
+        for a in self.registry.lock().unwrap().current.values() {
             if a.source_window == window && a.view().state == "connecting" {
                 a.cancel.cancel();
             }
         }
     }
     pub fn cancel_workspace(&self, id: &str) {
-        for a in self.entries.lock().unwrap().values() {
+        for a in self.registry.lock().unwrap().current.values() {
             if a.view().context.is_some_and(|c| c.workspace_id == id)
                 || a.expected_context
                     .as_ref()
@@ -364,9 +370,10 @@ impl Connections {
         }
     }
     pub fn stop_all(&self) -> Vec<CancellationToken> {
-        self.entries
+        self.registry
             .lock()
             .unwrap()
+            .current
             .values()
             .map(|a| {
                 a.cancel.cancel();
@@ -375,9 +382,10 @@ impl Connections {
             .collect()
     }
     pub(crate) fn pending_close(&self, workspaces: &[String], window: Option<&str>) -> usize {
-        self.entries
+        self.registry
             .lock()
             .unwrap()
+            .current
             .values()
             .filter(|a| {
                 !a.done.is_cancelled()
@@ -405,9 +413,10 @@ impl AppCore {
         &self,
         context: &Context,
     ) -> Result<Arc<route::Session>, String> {
-        let entries = self.connections.entries.lock().unwrap();
+        let registry = self.connections.registry.lock().unwrap();
         self.workspace_state().validate_context(context)?;
-        entries
+        registry
+            .current
             .get(&context.server_id)
             .filter(|a| a.view().context.as_ref() == Some(context))
             .and_then(|a| a.session.lock().unwrap().clone())
@@ -432,46 +441,127 @@ impl AppCore {
         self.connections.views()
     }
     pub fn start_connection(self: &Arc<Self>, window: &str, server: &str) -> Result<View, String> {
+        self.select_connection(window, server, None)
+            .map_err(|e| e.message)
+    }
+    fn select_connection(
+        self: &Arc<Self>,
+        window: &str,
+        server: &str,
+        external: Option<(RequestKey, OpenInput, Arc<crate::plugins::Instance>)>,
+    ) -> Result<View, Error> {
         if self.is_closing() {
-            return Err("应用正在退出".into());
+            return Err(Error::new("workspaceClosing", "应用正在退出"));
         }
         // Same order as catalog edits and admission: servers -> connections -> workspaces -> UI.
         let servers = self.servers.lock().unwrap();
-        let profile = servers.connection_snapshot(server)?;
-        let mut entries = self.connections.entries.lock().unwrap();
-        if self.is_closing() {
-            return Err("应用正在退出".into());
+        if servers.error.is_some() {
+            return Err(Error::new("catalogUnavailable", "请先恢复服务器目录"));
         }
-        if self.ui_state().lifecycle.window_closing(window) {
-            return Err("窗口正在关闭".into());
-        }
-        if let Some(a) = entries.get(server) {
-            if !a.done.is_cancelled() {
-                return Ok(a.view());
+        let profile = servers
+            .connection_snapshot(server)
+            .map_err(|e| Error::new("serverNotFound", e))?;
+        let mut registry = self.connections.registry.lock().unwrap();
+        if let Some((key, input, caller)) = &external {
+            if caller.view().status != crate::model::PluginStatus::Running {
+                return Err(Error::new("staleInstance", "插件正在停止"));
+            }
+            if let Some(request) = registry.opens.get(key) {
+                if request.input.as_ref().is_some_and(|old| old != input) {
+                    return Err(Error::new(
+                        "requestConflict",
+                        "同一 requestId 的连接参数不同",
+                    ));
+                }
+                return match &request.binding {
+                    Binding::Attached { attempt_id } => registry
+                        .current
+                        .values()
+                        .find(|a| a.view().attempt_id == *attempt_id)
+                        .map(|a| a.view())
+                        .ok_or_else(|| Error::new("connectionRequestNotFound", "原连接尝试已结束")),
+                    _ => Err(Error::new("requestRecorded", "原请求已有结果")),
+                };
+            }
+            registry.check_capacity(key)?;
+            if profile.identity != input.profile {
+                return Err(Error::new(
+                    "profileChanged",
+                    "保存的连接资料已变化，请重新查询",
+                ));
             }
         }
-        if entries.values().filter(|a| !a.done.is_cancelled()).count() >= 32 {
-            return Err("同时连接数量已达上限（32）".into());
+        if self.is_closing() {
+            return Err(Error::new("workspaceClosing", "应用正在退出"));
+        }
+        if self.ui_state().lifecycle.window_closing(window) {
+            return Err(Error::new("workspaceClosing", "窗口正在关闭"));
+        }
+        if let Some(a) = registry.current.get(server).cloned() {
+            if !a.done.is_cancelled() {
+                if a.cancel.is_cancelled() {
+                    return Err(Error::new("resourceBusy", "原连接正在收尾"));
+                }
+                let view = a.view();
+                if let Some((key, input, _)) = external {
+                    if view.state == "connected" && a.route_identity != profile.route_identity() {
+                        return Err(Error::new(
+                            "existingSessionMismatch",
+                            "在用会话的地址、账号或路线与保存资料不同",
+                        ));
+                    }
+                    registry.opens.insert(
+                        key,
+                        OpenRequest {
+                            input: Some(input),
+                            binding: if let Some(context) = view.context.clone() {
+                                Binding::Accepted { context }
+                            } else {
+                                Binding::Attached {
+                                    attempt_id: view.attempt_id.clone(),
+                                }
+                            },
+                        },
+                    );
+                } else {
+                    a.state.lock().unwrap().desktop_requested = true;
+                }
+                return Ok(view);
+            }
+        }
+        if registry
+            .current
+            .values()
+            .filter(|a| !a.done.is_cancelled())
+            .count()
+            >= 32
+        {
+            return Err(Error::new("resourceBusy", "同时连接数量已达上限（32）"));
         }
         // Keep at most 64 last outcomes; sessions/attempts in progress are never evicted.
-        if entries.len() >= 64 {
-            if let Some(id) = entries
+        if registry.current.len() >= 64 {
+            if let Some(id) = registry
+                .current
                 .iter()
                 .find(|(_, a)| a.done.is_cancelled())
                 .map(|(id, _)| id.clone())
             {
-                entries.remove(&id);
+                registry.current.remove(&id);
             }
         }
         let workbench = self.workbench_state();
         let w = &workbench.workspaces;
-        w.projection(window)?;
+        w.projection(window)
+            .map_err(|e| Error::new("noWindow", e))?;
         if let Some(existing) = w.by_server(server) {
             if existing.connected {
-                return Err("此服务器已有连接，请前往工作台".into());
+                return Err(Error::new(
+                    "existingSessionMismatch",
+                    "此服务器已有连接，请前往工作台",
+                ));
             }
             if workbench.ui.frozen(&existing.context.workspace_id) {
-                return Err("工作区正在确认关闭".into());
+                return Err(Error::new("workspaceClosing", "工作区正在确认关闭"));
             }
         }
         let expected_context = w.by_server(server).map(|w| w.context.clone());
@@ -502,12 +592,14 @@ impl AppCore {
                     sent_bytes: "0".into(),
                     received_bytes: "0".into(),
                 },
+                desktop_requested: external.is_none(),
                 reply: None,
                 paused: Duration::ZERO,
                 question_clock: None,
                 question_sequence: 0,
             }),
             identity: profile.identity.clone(),
+            route_identity: profile.route_identity().into(),
             source_window: window.into(),
             expected_context,
             previous_endpoint,
@@ -517,16 +609,28 @@ impl AppCore {
             core: Arc::downgrade(self),
             session: Mutex::new(None),
         });
-        entries.insert(server.into(), a.clone());
+        registry.current.insert(server.into(), a.clone());
+        if let Some((key, input, _)) = external {
+            registry.opens.insert(
+                key,
+                OpenRequest {
+                    input: Some(input),
+                    binding: Binding::Attached {
+                        attempt_id: a.view().attempt_id,
+                    },
+                },
+            );
+        }
         self.network_metrics
             .register_transport(server, a.counters.clone());
-        drop(entries);
+        drop(registry);
         drop(servers);
         let view = a.view();
         let keys = self.connections.host_keys.clone();
         self.log(None, "info", "开始连接远程服务器", Some(serde_json::json!({"attemptId":view.attempt_id,"serverId":view.server_id,"nodeCount":view.node_count})));
         tauri::async_runtime::spawn(run(a, profile, keys));
         self.event("connections-changed", serde_json::Value::Null);
+        self.notify_connection_change(server);
         Ok(view)
     }
     pub fn answer_connection(
@@ -536,8 +640,9 @@ impl AppCore {
         question: &str,
         answer: Answer,
     ) -> Result<(), String> {
-        let entries = self.connections.entries.lock().unwrap();
-        let a = entries
+        let registry = self.connections.registry.lock().unwrap();
+        let a = registry
+            .current
             .values()
             .find(|a| a.view().attempt_id == attempt)
             .ok_or("连接尝试已失效")?;
@@ -580,8 +685,9 @@ impl AppCore {
             .map_err(|_| "连接问题已失效".into())
     }
     pub fn cancel_connection(&self, window: &str, attempt: &str) -> Result<(), String> {
-        let entries = self.connections.entries.lock().unwrap();
-        let a = entries
+        let registry = self.connections.registry.lock().unwrap();
+        let a = registry
+            .current
             .values()
             .find(|a| a.view().attempt_id == attempt)
             .ok_or("连接尝试已失效")?;
@@ -592,9 +698,10 @@ impl AppCore {
         Ok(())
     }
     pub fn disconnect_connection(&self, window: &str, context: &Context) -> Result<(), String> {
-        let entries = self.connections.entries.lock().unwrap();
+        let registry = self.connections.registry.lock().unwrap();
         self.workspace_state().validate_owned(window, context)?;
-        let a = entries
+        let a = registry
+            .current
             .get(&context.server_id)
             .filter(|a| a.view().context.as_ref() == Some(context))
             .ok_or("连接已失效")?;
@@ -697,15 +804,21 @@ async fn run(a: Arc<Attempt>, profile: Profile, keys: Arc<host_keys::HostKeys>) 
             }
             e
         });
-        a.done.cancel();
         s.view.clone()
     };
     if let Some(core) = a.core.upgrade() {
+        {
+            let mut registry = core.connections.registry.lock().unwrap();
+            registry.freeze(&view);
+            a.done.cancel();
+        }
+        core.notify_connection_change(&view.server_id);
         if view.context.is_some() {
             core.workspace_changed();
         }
         core.log(None,if view.state=="failed"{"warn"}else{"info"},if connected{"远程会话已结束"}else{"连接尝试已结束"},Some(serde_json::json!({"serverId":view.server_id,"attemptId":view.attempt_id,"code":view.error.as_ref().map(|e|&e.code),"stage":view.stage})));
     }
+    a.done.cancel();
     a.changed();
 }
 
@@ -731,12 +844,14 @@ mod cancellation_tests {
                     sent_bytes: "0".into(),
                     received_bytes: "0".into(),
                 },
+                desktop_requested: true,
                 reply: None,
                 question_clock: None,
                 paused: Duration::ZERO,
                 question_sequence: 0,
             }),
             identity: "test".into(),
+            route_identity: "test".into(),
             source_window: "main".into(),
             expected_context: None,
             previous_endpoint: None,

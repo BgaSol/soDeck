@@ -1,8 +1,9 @@
+use crate::app::App;
 use crate::{
     evidence,
     targets::State,
     task::{Kind, Task},
-    tasks::{error, failure, text, App},
+    tasks::{error, failure, text},
 };
 use serde_json::{json, Value};
 use std::{

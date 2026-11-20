@@ -1,9 +1,10 @@
 //! Sidebar composition; identity is local and does not depend on a successful observation.
+use crate::app::App;
 use crate::{
     query, response,
     targets::{self, Target},
     task::CapturedTask,
-    tasks::{failure, App},
+    tasks::failure,
 };
 use serde_json::{json, Value};
 use std::sync::Arc;

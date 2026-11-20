@@ -1,12 +1,49 @@
 # MCP API
 
-本文定义Agent MCP插件 0.5.x 的客户端契约。接入、页面操作和限制见[功能说明](features/mcp.md)；核心通用 RPC 见[插件 API](plugin-api.md)，发行证据见插件 [CHANGELOG](../plugins/mcp/CHANGELOG.md)。客户端先进行 MCP initialize 和 tools/list；新增能力以工具发现结果为准。
+本文定义Agent MCP插件 0.6.x 的客户端契约。接入、页面操作和限制见[功能说明](features/mcp.md)；核心通用 RPC 见[插件 API](plugin-api.md)，发行证据见插件 [CHANGELOG](../plugins/mcp/CHANGELOG.md)。客户端先进行 MCP initialize 和 tools/list；新增能力以工具发现结果为准。
 
 ## 传输与调用
 
 服务为带 Bearer Token 的回环 Streamable HTTP，端点 `http://127.0.0.1:<port>/mcp`。MCP 请求正文最多 32 KiB，总并发最多 32。Host 与可选 Origin 需匹配该回环地址。HTTP 401/403 为接入失败，429 为容量限制。字符串参数按 UTF-8 字节限制；未知参数或工具返回 MCP 协议 invalid_params。认证资料由核心管理。
 
-六个工具的成功与业务错误均只返回一个 JSON TextContent，缺席 structuredContent，不同时附原文副本或 outputSchema；客户端只解析一次 text。业务错误使用 isError=true 与 `{"error":{...}}`，取得任务时另以顶层 task 附一份该次事实。工具声明的只读/破坏性提示不能替代实际远端操作判断。
+十个工具的成功与业务错误均只返回一个 JSON TextContent，缺席 structuredContent，不同时附原文副本或 outputSchema；客户端只解析一次 text。业务错误使用 isError=true 与 `{"error":{...}}`，取得任务时另以顶层 task 附一份该次事实。工具声明的只读/破坏性提示不能替代实际远端操作判断。
+
+## 保存资料发现与打开（0.6.0）
+
+要求核心 1.9.0；四个新增工具与原六工具共存。调用顺序为 servers_list → 明确选择 → 复用符合保存目标的 ready target 或 connection_open → connection_get（需要时）→ exec_start/file_download。任何发现或 get 都不建连或执行命令。
+
+| 工具 | 参数 | 返回 |
+| --- | --- | --- |
+| sodeck_servers_list | query?、match?（exact 默认 / contains）、serverId?、detail?（false）、limit?（20，1–50）、cursor? | runId、catalogRevision、resolution、matchCount、servers、hasMore、nextCursor |
+| sodeck_connection_open | serverId、expectedProfileToken、requestId；waitMs?（1000，0–20000） | runId、connection、target；正等待附 wait |
+| sodeck_connection_get | connectionRequestId；detail?（false）、waitMs?（0，0–20000）、sinceRevision? | 同一原请求事实；正等待附 wait |
+| sodeck_connection_cancel | connectionRequestId | 同一事实及 cancelResult=cancelled / alreadyFinished / pending |
+
+query 与 serverId 互斥；match 仅在 query 存在时使用。匹配规则与下节 literal 规则相同，但身份范围为全部保存的 SSH 服务器。SOCKS5 跳板只出现在 detail.route，不作为可打开目标。matchCount 为整个查询范围的数量，resolution=none / unique / ambiguous，不依赖当前页数量或在线状态。游标绑定 run、目录 revision、查询和 limit；detail 可改变。资料编辑导致 catalogChanged；错误不会返回局部结果冒充 unique。
+
+每项普通字段为 serverId/profileToken/name/protocol/host/port/endpoint/username/connection/target。connection 为当前尝试/工作区事实或 null，含 state/endpoint/context/matchesSavedTarget/error；matchesSavedTarget 无法确认时为 null。target 为已完成后台登记的目标摘要或 null，结构与 targets_list 普通候选一致。detail 增加 tagIds、非敏感 route 和完整 Context。观察故障单独提供 connectionError，创建失败提供 targetError，尚未创建提供 targetState=preparing。资料与会话字段分别表示保存目标和真实在用目标；不得用前者覆盖后者。
+
+发现仅返回非敏感选择资料；密码、口令、私钥路径和整份目录不输出。profileToken 是核心既有 Profile.identity 的不透明选择令牌，不是凭据。必需 ID/token 为非空、无 NUL 的 1–256 UTF-8 字节字符串；requestId 最长 128。目录 query 最长 256、无控制字符、去除首尾空白，cursor 最长 2048。
+
+connection 包含 connectionRequestId/requestId/serverId/state/stage/revision/interaction/error。state 为 pending / needsUser / ready / failed / cancelled；stage 在 SSH 接纳后准备目标时为 preparingTarget，取消确认中为 cancelling。interaction 为原提示的 kind/name/nodeIndex/endpoint/message/windowId，否则 null。错误表示已确认失败或最近通信故障，pending 加 error 不证明没有接纳。detail 增加原 input，接纳后的准备失败保留 error.context。ready 的 target 包含 targetId/serverId/workspaceId/target/targetSource/availability/capabilities；detail 增加完整 Context。
+
+open 等待 ready、needsUser、failed、cancelled 或窗口到期，wait.reason 使用对应状态或 timeout；get 等待终态、revision 变化或到期，变化为 changed。revision 为 1 起的十进制 u64 字符串；sinceRevision 不得为未来值。waitMs=0 省略 wait，get 仍刷新本地核心事实。wait.elapsedMs 使用单调时钟；RPC 和响应准备可能超出主动等待窗口。needsUser 应交接用户，避免循环查询同一个问题。
+
+打开的 requestId 在本次插件运行内唯一，与固定 serverId/expectedProfileToken 组成原意图；waitMs 可改变。同输入重试返回原 connectionRequestId，冲突返回 requestConflict。首次接纳未知时，仅显式重试同一 open 可重提原核心请求，get 保持只读。HTTP 中断不会撤销打开。完成收据保持原 target 和 revision；当前可用性需新发现或实际操作接纳确认，重连后旧收据不会指向新 target。
+
+cancel 与 ready 发布决定先后：取消先胜后不再发布 ready，核心取消确认中返回 pending；ready/failed/cancelled 已完成时为 alreadyFinished。只在取消确认后返回 cancelled。核心已接纳会话时，本次尚未 ready 的 MCP 请求仍可取消，但共享会话保持。插件退出取消未接纳且无其他使用者的尝试，已接纳会话继续按工作区生命周期管理；重启后旧 connectionRequestId 为 connectionRequestNotFound。
+
+每运行最多 32 个未完成打开、4096 条打开收据，满时 resourceBusy，不逐出旧收据。每个未完成打开仅一个控制任务；服务器/目标发现与控制共用 4 个实际核心 RPC 位置，全插件正等待共用 16 个、每个打开最多 2 个。新正等待在登记前预留；HTTP 取消不能提前释放已发送同步 RPC 的位置。无额外连接队列或自动重放远端命令。
+
+| 打开/资料错误 | 含义 |
+| --- | --- |
+| profileChanged | 选择后的资料已变化；重查资料，用新 requestId |
+| existingSessionMismatch | 在用会话地址、账号或路线与保存资料不同；用户处理原会话 |
+| serverNotFound / catalogUnavailable / catalogChanged | 资料删除、目录故障或分页时变动；恢复或重新发现 |
+| connectionRequestNotFound | 原打开身份不属于本次运行；不可借新身份重放未知命令 |
+| targetInitializationFailed | SSH 接纳后后台目标准备失败；共享会话保留 |
+
+新客户端将默认名称/IP 发现由 targets_list 改为 servers_list。已配置的 Token、端口、插件 ID、任务 API 和证据 schemaVersion=1 沿用；旧核心缺少能力时初始化明确提示升级，不回退为插件自己的 SSH 连接。
 
 ## 目标与启动
 

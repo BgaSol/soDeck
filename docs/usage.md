@@ -23,7 +23,7 @@
 | TCP 转发、SOCKS5、实际入口与流量 | [网络隧道](features/network-proxy.md) |
 | CPU、内存、容量、网络和磁盘指标 | [系统状态](features/system-status.md) |
 | 查看容器、日志和执行单项操作 | [Docker](features/docker.md) |
-| 让本机 Codex 查询服务器、采集日志并补充调查 | [Agent MCP](features/mcp.md) |
+| 让本机 Codex 发现并连接保存的服务器、采集日志并补充调查 | [Agent MCP](features/mcp.md) |
 | 安装、启停或移除插件 | [插件管理](features/plugins.md) |
 | 更新核心/插件、管理下载备用地址 | [在线更新](features/updates.md) |
 | 外观、字体、组件偏好及系统打开 | [设置](features/settings.md) |

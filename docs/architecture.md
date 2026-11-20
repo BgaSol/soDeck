@@ -22,7 +22,9 @@
 
 非交互命令流由[session_stream.rs](../src-tauri/src/session_stream.rs)复用核心会话，[capture.rs](../src-tauri/src/streams/capture.rs)管理有界原始字节与固定阅读范围；[content_export.rs](../src-tauri/src/content_export.rs)只负责用户选择的本地字节导出。这两项可选能力从核心 1.1.0 提供，契约统一见[插件API](plugin-api.md)。Docker命令、源时间、级别、历史覆盖和采集代次属于插件后台；解析、搜索、虚拟正文、缩略导航及阅读状态属于Docker UI/Worker。核心不保存容器日志索引，不导入Docker正文样式；颜色和基础控件继续复用packages/ui。
 
-[Agent MCP插件](features/mcp.md)只负责回环 HTTP、Token、工具参数、原请求关联与证据保存；核心管理既有会话、命令流及通用复制，三项增量见[API](plugin-api.md)。后台 View 绑定完整 Context，HTTP 会话断开不改变远程任务的工作区归属。插件保留原生结果与本地保存结果，数据使用同一 JSONL 和元数据，不建立恢复数据库、第二套远程执行或业务插件调用路由。MCP 协议使用官方 rmcp SDK，HTTP 使用 SDK 服务与 axum；客户端选择调查步骤和分析结果。
+[Agent MCP插件](features/mcp.md)负责回环 HTTP、Token、字面资料发现、工具参数、原请求的目标准备与证据保存。核心负责非敏感资料投影、实际连接接纳、既有会话、命令流及通用复制，契约见[API](plugin-api.md)。桌面与外部 open 使用同一个连接注册表与实际 Attempt；原请求表保存 attached/accepted/failed/cancelled，current 索引只代表当前尝试。accept 在同一连接/工作台锁边界固定原 Context，取消先登记原身份以阻止迟到派发。凭据不进入选择令牌，路线匹配复用原 trust_scope。
+
+MCP 的打开收据表示取得准确可执行 target，核心收据表示 SSH/工作区接纳；两者承担不同阶段。每个未完成打开只有一个有界控制任务，get/事件负责重读，取消按原请求收尾。后台 View 初始化仅登记目标与返回 ACK，不在回调中反向读取核心会话；核心非阻塞观察创建 ACK，MCP 再核对完整 Context，避免 RPC 循环等待或旧代结果误发布 ready。打开终态固定，当前会话事实继续由既有目标接口读取。后台 View 绑定完整 Context，HTTP 会话断开不改变远程任务的工作区归属。插件保留原生结果与本地保存结果，数据使用同一 JSONL 和元数据，不建立恢复数据库、第二套远程执行或业务插件调用路由。MCP 协议使用官方 rmcp SDK，HTTP 使用 SDK 服务与 axum；客户端选择调查步骤和分析结果。
 
 插件内的运行注册表以任务 ID 与请求键索引同一 Task，Task 统一管理自有阶段、取消与有效 revision；原核心 native JSON 保留。有意义的原生字段在 task 中统一选择，版本变化使用未裁剪事实，普通输出在各自出口简化。目标观察统一取得经过 Context/字段校验的类型化 Observation，Task 的 Record 保存确认时的完整 Descriptor；发现、采集和侧栏不通过旧 JSON 传递内部目标。命令与下载使用两条具体采集路径，接纳域占用不跨 RPC 持锁，也不排队启动新 worker。启动解析分离实际执行参数和本次等待，新正等待先取得位置，再登记并同步完成后台派发；等待许可由接纳层持有并交接，查询层消费许可，不保存响应 JSON 或持久等待状态。启动首读与 task_get 使用同一 watch 循环，分别等待稳定完成与既有变化；等待结束释放位置，再按同次捕获读正文。调用取消不绑定 Collector 或 Task 的取消令牌。统一收尾先封闭取消修改，再保存与清理，最后发布稳定终态。Task 的私有 Record 是唯一运行状态；读取、取消与列表交接不可变身份和该次 Record，不将 JSON 投影作为内部状态。ui 模块组装侧栏，快照的本地身份独立于目标观察成败；response 分别构造 MCP 普通/诊断及 UI 输出，evidence 独立定义磁盘元数据 v1，保存时消费指定 Record，不复用展示函数。text/full 正文互斥，不建立 DTO 缓存或通用渲染框架。MCP 与 UI 查询使用同一次状态/已保存水位记录和同一证据 reader，UI 读取及取消检查实际 Context 归属；侧栏只接受文本分页和最近页，完整信封和等待属于 MCP 出口。列表与 async 等待消费既有事实。参数及资源额度只在 [MCP API](mcp-api.md)完整定义。
 

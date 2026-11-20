@@ -54,6 +54,9 @@ impl Node {
     }
 }
 impl Profile {
+    pub(crate) fn route_identity(&self) -> &str {
+        &self.nodes.last().expect("target node").trust_scope
+    }
     pub fn matches(&self, other: &Self) -> bool {
         self.identity == other.identity
             && self.nodes.len() == other.nodes.len()

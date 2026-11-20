@@ -283,10 +283,11 @@ pub fn tool_result(
     cursor: Option<&str>,
 ) -> CallToolResult {
     encode(&value,error).unwrap_or_else(|_| {
-        let message=if operation=="sodeck_targets_list"{"MCP result exceeds 256 KiB; narrow the identity filters, disable detail or inspect one targetId"}else{"MCP result exceeds 256 KiB; read bounded text/none or local evidence"};
+        let message=if operation=="sodeck_targets_list"||operation=="sodeck_servers_list"{"MCP result exceeds 256 KiB; narrow the identity filters, disable detail or reduce limit"}else if operation.starts_with("sodeck_connection_"){"MCP result exceeds 256 KiB; read the original connection receipt without detail"}else{"MCP result exceeds 256 KiB; read bounded text/none or local evidence"};
         let mut limit = json!({"error":{"code":"resourceLimit","message":message,"operation":operation}});
         if let Some(id) = task_id { limit["error"]["taskId"] = json!(id); }
         if let Some(cursor) = cursor { limit["error"]["cursor"] = json!(cursor); }
+        if let Some(id)=value["connection"]["connectionRequestId"].as_str(){limit["error"]["connectionRequestId"]=json!(id);}
         encode(&limit,true).expect("bounded resourceLimit response")
     })
 }

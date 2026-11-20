@@ -1,7 +1,8 @@
+use crate::app::App;
 use crate::{
     evidence::{self, Page, PageFormat, ReadError},
     task::{CapturedTask, Kind, Phase, Task, TaskFailure},
-    tasks::{failure, text, App, StartedTask, WaitSlots},
+    tasks::{failure, text, StartedTask, WaitSlots},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

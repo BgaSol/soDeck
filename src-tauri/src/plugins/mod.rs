@@ -123,6 +123,17 @@ impl Instance {
             true,
         )
     }
+    pub(crate) fn enqueue_connection_change(&self, params: Value) -> Result<(), String> {
+        self.enqueue_request(
+            "connections.changed",
+            params,
+            None,
+            None,
+            rpc::REQUEST_TIMEOUT,
+            true,
+        )
+        .map(|_| ())
+    }
     fn enqueue_request(
         &self,
         method: &str,

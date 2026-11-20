@@ -1,8 +1,12 @@
+mod app;
 mod collector;
+mod connections;
 mod evidence;
+mod identity;
 mod mcp;
 mod query;
 mod response;
+mod servers;
 mod targets;
 mod task;
 mod tasks;
@@ -46,13 +50,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .enable_all()
         .build()?;
     let handle = runtime.handle().clone();
-    let state = Arc::new(Mutex::new(None::<Arc<tasks::App>>));
+    let state = Arc::new(Mutex::new(None::<Arc<app::App>>));
     let app_state = state.clone();
     let settings_cache = sodeck_plugin_client::settings::SettingsCache::default();
     let result = sodeck_plugin_client::run(move |client, method, p| {
         if method == "initialize" {
             for cap in [
                 "session.target.v2",
+                "servers.read.v1",
+                "connections.v1",
                 "session.stream.process.v1",
                 "files.pluginData.v1",
                 "files.operations.v2",
@@ -82,7 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if !(1024..=65535).contains(&port) {
                 return Err("端口无效".into());
             }
-            let app = Arc::new(tasks::App::new(
+            let app = Arc::new(app::App::new(
                 client.clone(),
                 root.clone(),
                 token(&root)?,
@@ -106,12 +112,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if method == "settings.changed" {
             return settings_cache.changed(&p, &["connection"]);
         }
+        if method == "connections.changed" {
+            app.core_changes.send_modify(|n| *n += 1);
+            return Ok(json!({}));
+        }
         let view = p["viewId"].as_str().ok_or("缺少 viewId")?;
         if matches!(method, "ui.beforeClose" | "ui.save") {
             return Ok(json!({"allow":true}));
         }
         if method == "ui.disposeView" {
-            app.dispose(view);
+            app.dispose(view, &p["context"])?;
             return Ok(json!({}));
         }
         match method {
@@ -120,6 +130,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     return Err("未知视图".into());
                 }
                 app.mount(view, &p["context"])?;
+                return Ok(json!({"metadata":{"title":"Agent MCP","dirty":false,"busy":false}}));
             }
             "ui.getView" => {}
             "ui.event" => match p["data"]["action"].as_str().unwrap_or("") {

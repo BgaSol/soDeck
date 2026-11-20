@@ -296,6 +296,33 @@ startup-v1 只消费 stderr 的第一份 `SDP1 <JSON字节长度>\n<JSON>` 前�
 
 实现：[remote_program](../src-tauri/src/remote_program/)、[session_exec.rs](../src-tauri/src/session_exec.rs)、[session_stream.rs](../src-tauri/src/session_stream.rs)。
 
+### servers.read.v1 与 connections.v1（核心 1.9.0）
+
+版本化 RPC 提供非敏感保存资料、真实连接接纳和原请求读取。调用方检查两项可选能力；API 主版本仍为 1，已有桌面连接命令、session.target.v1/v2 与插件保持兼容。核心从真实插件进程附加来源，参数不能冒充 pluginId/instanceId。插件可信使用这些能力，不声明权限列表。
+
+| 方法 | 参数 | 返回 |
+| --- | --- | --- |
+| servers.list | serverId?、detail?（false）、limit?（20，1–50）、cursor?、viewType? | catalogRevision、servers、hasMore、nextCursor |
+| connections.open | requestId、serverId、expectedProfileToken、viewType? | receipt、view、current、background |
+| connections.get | requestId、viewType? | 原 receipt 及当前观察 |
+| connections.cancel | requestId | 原 receipt；尚未接纳时置 cancelled |
+
+参数拒绝未知字段、null、错误类型；ID/token 为非空、无 NUL 的 1–256 UTF-8 字节，requestId 最长 128，cursor 最长 2048。get/cancel 不接受 serverId 或 expectedProfileToken，cancel 不接受 viewType。RPC 无等待参数，不持锁等待网络。结果编码最多 48 KiB；资料页预留约 40 KiB 原始字段预算，不能容纳单项时 resourceLimit，不截断秘密或字段。
+
+servers.list 仅列 SSH 目标，保留目录顺序；显式构造 serverId/profileToken/name/protocol/host/port/endpoint/username/connection/context。detail 增加 tagIds、按实际路径展开的非敏感 route；不输出认证值、私钥路径或整份目录。current 是完整 Context 下的 session.target.v2 事实，观察失败为 {error:{code,message}}。connection 为当前尝试/保留工作区事实，含 state/endpoint/context/matchesSavedTarget/error；路线身份无法确认时 matchesSavedTarget=null。当前会话与保存资料分别表达，不相互覆盖。核心不解释 MCP 名称/IP query。
+
+catalogRevision 为十进制字符串；游标绑定目录 revision/serverId/limit 与原顺序位置。目录变动返回 catalogChanged，错范围返回 invalidCursor；游标不冻结实时连接状态。读取目录损坏返回 catalogUnavailable，不伪装 serverNotFound。profileToken 复用已有 Profile.identity，不包含认证秘密，不持久化新版本字段；新 open 检查 expectedProfileToken，相同请求重试优先恢复原记录。
+
+receipt 是 tagged union：attached 带 attemptId，accepted 带原 Context，failed 带 error，cancelled 无附加字段。view 仅 attached 提供原尝试投影，current 仅 accepted 提供原 Context 的当前会话事实。终态 receipt 固定，当前观察可变；旧请求不绑定相同 serverId 的新尝试。key=(真实 pluginId,instanceId,requestId)，同一 key 不同输入为 requestConflict。每实例最多 4096 条记录，不逐出；实例停止后清除自身记录并拒绝迟到接纳。实际新 Attempt 继续最多 32 个，历史 current 索引最多 64，清理历史不删除原回执。
+
+可选 viewType 必须为调用实例已登记的 UI v2 backgroundOnWorkspace 声明，在网络接纳前校验。background 为 waiting/running/created/failed/stale，含 viewId（未登记或失效为 null），failed 附 error。这是后台 ui.createView 的 ACK 观察，created 不代表插件自身业务目标可执行。读取用 try_lock，不等待正在创建的 RPC；返回前再次核对 View、Context 和 creation 资源身份。MCP 自行核对本地目标与原 Context 才完成打开。
+
+open 复用桌面的资料、认证、主机密钥、路线、接纳与工作区服务，不聚焦窗口或执行命令。已有在用会话按真实端点/账号/路线比较，匹配时复用；不同返回 existingSessionMismatch，不自动断开。密码或私钥配置变化只影响下次认证。同一 Attempt 可以有多个外部请求和桌面需求，实际网络只派发一次。
+
+cancel 先登记取消占位，迟到同 key open 不能建连；attached 取消仅在无其他外部请求、无桌面需求、未接纳时取消底层 Attempt。accepted/failed 保留原结果，取消不释放已接纳会话。桌面取消仍作用于实际 Attempt。实例停止同样清理其未完成请求，已接纳会话留给工作区。connections.changed({serverId}) 经现有有界插件消息队列唤醒观察，插件返回 ACK；只是重读提示，不携带终态、不要求每个阶段通知都送达。get 随时可恢复真实事实。
+
+错误沿用 JSON-RPC error.data.code：invalidParams/staleInstance/serverNotFound/catalogUnavailable/catalogChanged/invalidCursor/profileChanged/existingSessionMismatch/workspaceClosing/resourceBusy/resourceLimit/requestConflict/connectionRequestNotFound。连接阶段失败保存在 receipt.error，accepted 后当前失效保存在 current.error，两者不能混淆。插件协议与 HTTP 公共契约分别见 [MCP API](mcp-api.md)。
+
 ### session.target.v1（核心 1.5.0）
 
 `session.state({viewId})` 可选扩展返回 `target:{protocol,endpoint,username?,name?}`，来自已建立会话的不可变目标快照；name 为所属工作区当前名称。断开时 target 为 null，state/closing/Context 仍可查询。当前在线 capabilities 含 exec/files，只表示核心接口可用，不证明远端命令、软件或 SFTP 可用。摘要不含认证材料，不读取另一个插件的状态，也不提供全局凭据目录。新接纳继续由完整 Context 校验，摘要不能代替归属检查。
