@@ -86,11 +86,25 @@ pub fn parse_mcp_read(p: &Value) -> Result<(Options, bool), Value> {
 }
 pub fn parse_ui_read(p: &Value) -> Result<Options, Value> {
     if !p.as_object().is_some_and(|o| {
-        o.keys()
-            .all(|k| matches!(k.as_str(), "action" | "taskId" | "cursor" | "tail"))
+        o.keys().all(|k| {
+            matches!(
+                k.as_str(),
+                "action" | "taskId" | "cursor" | "tail" | "outputMode"
+            )
+        })
     }) {
         return Err(failure("invalidParams", "侧栏读取参数无效"));
     }
+    let format = match p.get("outputMode").map(Value::as_str) {
+        None => Some(PageFormat::Text),
+        Some(Some("none")) if p.get("cursor").is_none() && p.get("tail").is_none() => None,
+        _ => {
+            return Err(failure(
+                "invalidParams",
+                "侧栏 outputMode 仅支持无游标的 none",
+            ))
+        }
+    };
     let tail = p
         .get("tail")
         .map(|v| {
@@ -108,7 +122,7 @@ pub fn parse_ui_read(p: &Value) -> Result<Options, Value> {
         .transpose()?
         .unwrap_or(0);
     Ok(Options {
-        format: Some(PageFormat::Text),
+        format,
         cursor,
         tail,
         wait_ms: 0,
@@ -731,7 +745,8 @@ mod tests {
         assert!(parse_ui_read(&json!({"waitMs":1})).is_err());
         for p in [
             json!({"outputMode":"full"}),
-            json!({"outputMode":"none"}),
+            json!({"outputMode":"none","cursor":"0"}),
+            json!({"outputMode":"none","tail":false}),
             json!({"waitMs":0}),
             json!({"sinceRevision":"1"}),
             json!({"detail":false}),
@@ -745,6 +760,9 @@ mod tests {
         assert!(sidebar.format == Some(PageFormat::Text));
         assert_eq!(sidebar.wait_ms, 0);
         assert!(sidebar.since.is_none());
+        let facts =
+            parse_ui_read(&json!({"action":"task","taskId":"task","outputMode":"none"})).unwrap();
+        assert!(facts.format.is_none());
         assert!(parse_mcp_read(&json!({"detail":"true"})).is_err());
         assert!(parse_mcp_read(&json!({"outputMode":"none","cursor":"1"})).is_err());
     }

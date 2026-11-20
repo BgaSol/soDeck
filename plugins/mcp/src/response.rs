@@ -146,6 +146,9 @@ fn output(page: &Page) -> Value {
     }
     value
 }
+fn file(task: &Task, r: &Record) -> Value {
+    json!({"remotePath":task.start_input()["remotePath"],"localPath":if r.phase==Phase::Done && matches!(r.saved,Saved::Complete) {json!(r.path)} else {Value::Null}})
+}
 fn mcp_facts(c: &CapturedTask, detail: bool, body: bool) -> Value {
     let (task, r) = (&c.task, &c.record);
     let mut value = if detail {
@@ -157,7 +160,7 @@ fn mcp_facts(c: &CapturedTask, detail: bool, body: bool) -> Value {
         value["context"] = json!(task.target.context);
     }
     if task.kind() == Kind::Download {
-        value["file"] = json!({"remotePath":task.start_input()["remotePath"],"localPath":if r.phase==Phase::Done && matches!(r.saved,Saved::Complete) {json!(r.path)} else {Value::Null}});
+        value["file"] = file(task, r);
     } else if !body {
         value["outputInfo"] = json!({"savedBytes":r.committed.to_string()});
     }
@@ -205,6 +208,9 @@ pub fn mcp_cancel(c: &CapturedTask) -> Value {
 }
 pub fn ui_task(read: &TaskRead) -> Value {
     let mut value = diagnostic(&read.captured.task, &read.captured.record);
+    if read.captured.task.kind() == Kind::Download {
+        value["file"] = file(&read.captured.task, &read.captured.record);
+    }
     value["outputInfo"] = json!({"savedBytes":if read.captured.task.kind()==Kind::Exec {json!(read.captured.record.committed.to_string())} else {Value::Null}});
     if let Some(page) = &read.page {
         value["output"] = output(page);
@@ -224,6 +230,7 @@ pub fn ui_row(c: &CapturedTask) -> Value {
     value["cleanupError"] = brief_error(&c.record.cleanup_error);
     value["observedAt"] = json!(c.record.observed);
     value["context"] = json!(c.task.target.context);
+    value["outputInfo"] = json!({"savedBytes":if c.task.kind()==Kind::Exec {json!(c.record.committed.to_string())} else {Value::Null}});
     row_fields(&mut value, c);
     value
 }
@@ -355,6 +362,10 @@ mod tests {
         assert_eq!(value["evidence"]["complete"], true);
         assert!(value["evidence"].get("error").is_none());
         assert!(value.get("success").is_none());
+        c.record.committed = 9_007_199_254_740_993;
+        let sidebar = ui_row(&c);
+        assert_eq!(sidebar["outputInfo"]["savedBytes"], "9007199254740993");
+        assert!(sidebar.get("output").is_none());
         assert_eq!(
             c.task.snapshot().revision,
             1,
@@ -379,7 +390,19 @@ mod tests {
         c.record.path = Some("download.bin".into());
         c.record.saved = Saved::Complete;
         assert!(mcp_facts(&c, false, false)["file"]["localPath"].is_null());
+        let ui_file = |c: &CapturedTask| {
+            ui_task(&TaskRead {
+                captured: CapturedTask {
+                    task: c.task.clone(),
+                    record: c.record.clone(),
+                },
+                page: None,
+                wait: None,
+            })
+        };
+        assert!(ui_file(&c)["file"]["localPath"].is_null());
         c.record.phase = Phase::Done;
+        assert_eq!(ui_file(&c)["file"]["localPath"], "download.bin");
         assert_eq!(
             mcp_facts(&c, false, false)["file"]["localPath"],
             "download.bin"
