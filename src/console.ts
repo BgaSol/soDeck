@@ -31,8 +31,8 @@ const pageHost = shell.page;
 const componentSettings = new ComponentSettings(() => { if (["settings","plugins","updates"].includes(currentPage)) renderPage(); });
 workspaces.setCloseParticipants(async (decision,operationId)=>{await hostDrafts.flushInputs();return [...await (servers?.closeInputs(decision)??Promise.resolve([])),...await componentSettings.closeInputs(decision,operationId),...await hostDrafts.closeInputs(decision)];},blocked=>servers?.setCloseBlocked(blocked));
 let snapshot: Snapshot | undefined;
-let currentPage = 'connections';
-let settingsSection = 'appearance';
+let currentPage:ConsolePage = 'connections';
+let settingsSection:views.SettingsSection = 'appearance';
 let lastError = "";
 let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 let refreshing = false;
@@ -45,7 +45,6 @@ const state: views.ViewState = {
   officialFetchedAt: 0,
   officialLoading: false,
   officialError: "",
-  section: "appearance",
   plugin: "",
   messages: [],
   unread: false,
@@ -88,45 +87,39 @@ function content() {
   if (!snapshot)
     return `<div class="error-box">无法读取应用状态：${e(lastError)}<br>${b("refresh", "重新读取")}</div>`;
   if (currentPage === "status") return views.status(pausedStatus ?? snapshot, statusView);
-  if (["settings", "plugins", "updates"].includes(currentPage)) return views.settings(snapshot, state, componentSettings.navigation(state.section === "components"));
+  if (currentPage === "settings") return views.settings(snapshot, settingsSection);
+  if (currentPage === "plugins" || currentPage === "updates") return views.maintenance(snapshot, state, currentPage);
   if (currentPage === "logs") return views.logs(snapshot, state);
   return views.messages(state);
 }
 function renderPage(navigating = false) {
+  shell.updateSettingsNavigation(views.settingsNavigation(currentPage === "settings" ? settingsSection : null,componentSettings.navigation(currentPage === "settings" && settingsSection === "components")));
   const error = document.querySelector<HTMLElement>("#layer-error");
   if (error) { error.textContent = lastError ? `${lastError}；保留上次读取结果。` : ""; error.hidden = !lastError || !snapshot; }
   const target = document.querySelector<HTMLElement>("#layer-content");
   if (target) {
     const hadPluginDetails = !!target.querySelector("#back-plugins");
     if (["settings", "plugins", "updates"].includes(currentPage) && snapshot) {
-      const next = document.createElement("div"); next.innerHTML = content();
-      if (!target.querySelector(".settings-main")) target.innerHTML = '<aside class="settings-nav" aria-label="设置导航"></aside><div class="settings-main"></div>';
-      const navigation=target.querySelector<HTMLElement>(".settings-nav")!;
-      navigation.hidden=currentPage!=="settings";
-      updateDOM(navigation,next.querySelector(".settings-nav")!.innerHTML);
-      const main = target.querySelector<HTMLElement>(".settings-main")!;
-      const identity = state.section === "components" ? `components:${componentSettings.selected}` : state.section === "plugins" ? `plugins:${state.plugin}` : state.section;
-      if (main.dataset.page !== identity) {
+      const component=currentPage === "settings" && settingsSection === "components";
+      const identity = currentPage === "settings" ? `settings:${component ? componentSettings.selected : settingsSection}` : currentPage === "plugins" ? `plugins:${state.plugin}` : "updates";
+      if (target.dataset.page !== identity) {
         componentSettings.mount(null, false);
-        main.innerHTML = next.querySelector(".settings-main")!.innerHTML;
-        const back=main.dataset.page?.startsWith('plugins:')&&identity==='plugins:';
-        main.dataset.page = identity;if(!navigating)enterMotion(main,back?'back':'x');
-      } else if (state.section !== "components") updateDOM(main, next.querySelector(".settings-main")!.innerHTML);
-    } else updateDOM(target, content(), !navigating);
+        target.innerHTML = content();
+        const back=target.dataset.page?.startsWith('plugins:')&&identity==='plugins:';
+        target.dataset.page = identity;if(!navigating)enterMotion(target,back?'back':'x');
+      } else if (!component) updateDOM(target, content());
+    } else {componentSettings.mount(null,false);delete target.dataset.page;updateDOM(target, content(), !navigating);}
     if (!hadPluginDetails && document.activeElement === document.body)
       target.querySelector<HTMLElement>("#back-plugins")?.focus({preventScroll: true});
-    componentSettings.mount(target.querySelector("#component-settings-page"), ["settings","plugins","updates"].includes(currentPage) && state.section === "components");
+    componentSettings.mount(target.querySelector("#component-settings-page"), currentPage === "settings" && settingsSection === "components");
   }
 }
 async function showPage(next: ConsolePage) {
   shell.navigate(next);
 }
 async function enterPage(next: ConsolePage) {
-  if(currentPage==='settings' && next!=='settings')settingsSection=state.section;
   const changed=currentPage!==next;currentPage=next;
   if(next === 'connections') {componentSettings.mount(null,false);return;}
-  if(['plugins','updates'].includes(next))state.section=next;
-  else if(next==='settings')state.section=settingsSection;
   const target=pageHost.querySelector<HTMLElement>('#layer-content')!;
   target.className='layer-content '+next+'-content';
   renderPage(changed);
@@ -138,6 +131,11 @@ async function enterPage(next: ConsolePage) {
   scheduleRefresh();
 }
 shell.onPage=page=>void action(()=>enterPage(page));
+function openComponentSettings(key:string) {
+  settingsSection="components";
+  componentSettings.select(key);
+  if(currentPage!=="settings")shell.navigate("settings");
+}
 function toast(text: string, message?: Message, error = false) {
   const holder = document.querySelector("#toasts")!;
   const node = document.createElement(message ? "button" : "div");
@@ -319,7 +317,7 @@ root.addEventListener("click", (event) => {
         await refresh();
         break;
       case "section":
-        state.section = id;
+        if(id!=="appearance"&&id!=="about")break;
         settingsSection = id;
         renderPage();
         break;
@@ -328,14 +326,12 @@ root.addEventListener("click", (event) => {
         await showPage("plugins");
         break;
       case "component-settings":
-        settingsSection = "components";
-        await showPage("settings");
-        componentSettings.select(id);
+        openComponentSettings(id);
         break;
       case "plugin-component-settings": {
         await componentSettings.catalog();
         const entry = componentSettings.entries.find(p => p.pluginId === id);
-        if (entry) { settingsSection = "components"; await showPage("settings"); componentSettings.select(`${entry.pluginId}/${entry.pageId}`); }
+        if (entry) openComponentSettings(`${entry.pluginId}/${entry.pageId}`);
         break;
       }
       case "save-component-settings":
@@ -394,7 +390,7 @@ root.addEventListener("click", (event) => {
       case "install-official-plugin":
         state.pluginTab = "official";
         await pluginAction(`install:${id}`, () => core.installOfficial(id));
-        if (["settings","plugins","updates"].includes(currentPage) && state.section === "plugins" && !state.plugin && state.pluginTab === "official" && document.activeElement === document.body)
+        if (currentPage === "plugins" && !state.plugin && state.pluginTab === "official" && document.activeElement === document.body)
           document.getElementById(`official-action-${id}`)?.focus({preventScroll: true});
         break;
       case "check-update":

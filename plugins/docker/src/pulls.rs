@@ -1,4 +1,4 @@
-use crate::{commands, resources, runtime};
+use crate::{cli, commands, connection::Snapshot, resources, runtime};
 use serde_json::{json, Value};
 use sodeck_plugin_client::Client;
 use std::{
@@ -6,19 +6,23 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
+#[derive(Clone)]
 struct Pull {
-    ticket: Value,
+    ticket: Option<Value>,
+    target: Snapshot,
     id: Option<String>,
     created: Instant,
     cancelled: bool,
     finished: bool,
     epoch: u64,
     reference: String,
+    request: String,
 }
 pub struct Pulls {
     app: runtime::Shared,
     client: Client,
     items: Mutex<BTreeMap<String, Pull>>,
+    admission: Mutex<()>,
 }
 impl Pulls {
     pub fn new(app: runtime::Shared, client: Client) -> Arc<Self> {
@@ -26,6 +30,7 @@ impl Pulls {
             app,
             client,
             items: Mutex::new(BTreeMap::new()),
+            admission: Mutex::new(()),
         });
         let weak = Arc::downgrade(&service);
         std::thread::spawn(move || loop {
@@ -51,8 +56,9 @@ impl Pulls {
         }
         let reference =
             resources::pull_reference(input["reference"].as_str().ok_or("缺少镜像引用")?)?;
-        let mut items = self.items.lock().unwrap();
-        let mut a = self.app.lock().unwrap();
+        // Reserve the view and capacity together without nesting App/items locks.
+        let admission = self.admission.lock().unwrap();
+        let a = self.app.lock().unwrap();
         let v = a.views.get(view).ok_or("页面已关闭")?;
         if let Some((_, _, old)) = v.intent_receipt(input["requestId"].as_str().unwrap_or("")) {
             if *old != *input {
@@ -64,46 +70,53 @@ impl Pulls {
         if a.views[view].kind != "browser" {
             return Err("请从资源树拉取镜像".into());
         }
-        if items.get(view).is_some_and(|p| !p.finished) {
-            return Err("当前资源树已有拉取任务".into());
+        drop(a);
+        {
+            let items = self.items.lock().unwrap();
+            if items.get(view).is_some_and(|p| !p.finished) {
+                return Err("当前资源树已有拉取任务".into());
+            }
+            if items.values().filter(|p| !p.finished).count() >= 2 {
+                return Err("插件已有两个镜像拉取任务，请稍后重试".into());
+            }
         }
-        if items.values().filter(|p| !p.finished).count() >= 2 {
-            return Err("插件已有两个镜像拉取任务，请稍后重试".into());
-        }
+        let mut a = self.app.lock().unwrap();
+        a.check_scope(view, input)?;
         a.record_intent(view, input, input.clone())?;
         let v = a.views.get_mut(view).unwrap();
-        v.sequence_for_stream();
-        let check = commands::docker(&v.endpoint, &["info", "--format", "{{.ID}}"]);
-        let pull = commands::docker(&v.endpoint, &["image", "pull", &reference]);
-        let command=format!("actual=$({check}) || exit; [ \"$actual\" = {} ] || {{ printf '%s\\n' 'Docker Engine changed; pull not started' >&2; exit 1; }}; exec {pull}",commands::quote(&v.expected_engine));
-        let ticket = json!({"viewId":view,"expectedContext":v.context,"operationId":format!("pull-{}-{}",v.epoch,v.command_sequence()),"sequence":v.command_sequence().to_string(),"command":command,"maxOutputBytes":4*1024*1024,"retention":"fixed"});
+        let target = v.target.as_ref().ok_or("Docker 连接尚未识别")?.clone();
         v.pull = json!({"state":"opening","reference":reference,"context":v.context,"endpoint":v.endpoint,"engineId":v.expected_engine,"scopeEpoch":v.epoch.to_string(),"message":"正在启动公开镜像拉取","requestId":input["requestId"]});
         v.revision += 1;
         let epoch = v.epoch;
         drop(a);
-        if let Some(old) = items.remove(view) {
-            if let Some(id) = old.id {
-                let _ = self
-                    .client
-                    .call("session.stream.release", json!({"streamId":id}));
-            }
-        }
+        let mut items = self.items.lock().unwrap();
+        let old_id = items.remove(view).and_then(|p| p.id);
         items.insert(
             view.into(),
             Pull {
-                ticket,
+                ticket: None,
+                target,
                 id: None,
                 created: Instant::now(),
                 cancelled: false,
                 finished: false,
                 epoch,
                 reference,
+                request: input["requestId"].as_str().unwrap().into(),
             },
         );
+        drop(items);
+        drop(admission);
+        if let Some(id) = old_id {
+            let _ = self
+                .client
+                .call("session.stream.release", json!({"streamId":id}));
+        }
         Ok(json!({"accepted":true}))
     }
     pub fn dispose(&self, view: &str) {
-        if let Some(p) = self.items.lock().unwrap().remove(view) {
+        let removed = self.items.lock().unwrap().remove(view);
+        if let Some(p) = removed {
             if let Some(id) = p.id {
                 let _ = self
                     .client
@@ -112,32 +125,82 @@ impl Pulls {
         }
     }
     fn poll(&self) {
-        let mut items = self.items.lock().unwrap();
-        let closed = items
+        let mut items = self.items.lock().unwrap().clone();
+        let alive = self
+            .app
+            .lock()
+            .unwrap()
+            .views
             .keys()
-            .filter(|id| !self.app.lock().unwrap().views.contains_key(*id))
             .cloned()
-            .collect::<Vec<_>>();
-        for view in closed {
-            if let Some(p) = items.remove(&view) {
-                if let Some(id) = p.id {
-                    let _ = self
-                        .client
-                        .call("session.stream.release", json!({"streamId":id}));
-                }
-            }
+            .collect::<std::collections::BTreeSet<_>>();
+        for view in items
+            .keys()
+            .filter(|id| !alive.contains(*id))
+            .cloned()
+            .collect::<Vec<_>>()
+        {
+            self.dispose(&view);
+            items.remove(&view);
         }
         for (view, p) in items.iter_mut().filter(|(_, p)| !p.finished) {
             let expired = p.created.elapsed() > Duration::from_secs(15 * 60);
+            let current = self.app.lock().unwrap().views.get(view).is_some_and(|v| {
+                v.epoch == p.epoch
+                    && v.pull["requestId"] == p.request
+                    && v.target.as_ref().is_some_and(|t| t.same(&p.target))
+            });
+            if !current {
+                p.cancelled = true;
+            }
+            if p.ticket.is_none() && !p.cancelled && !expired {
+                let result = cli::prepare(
+                    &self.client,
+                    view,
+                    &p.target,
+                    &["image", "pull", &p.reference],
+                    None,
+                    false,
+                )
+                .map_err(|e| e.message)
+                .and_then(|prepared| {
+                    runtime::open_stream(
+                        &self.app,
+                        &self.client,
+                        view,
+                        &p.target,
+                        "pull",
+                        prepared,
+                        4 * 1024 * 1024,
+                        true,
+                    )
+                });
+                match result {
+                    Ok((ticket, reply)) => {
+                        p.ticket = Some(ticket);
+                        p.id = reply.and_then(|r| r["streamId"].as_str().map(str::to_string));
+                    }
+                    Err(error) => {
+                        p.finished = true;
+                        self.finish(view, p, "failed", &error);
+                        continue;
+                    }
+                }
+            }
+            if p.ticket.is_none() {
+                p.finished = true;
+                self.finish(view, p, "failed", "拉取尚未发送，已取消或目标改变");
+                continue;
+            }
             if p.id.is_none() {
                 let found = self
                     .client
-                    .call_detailed("session.stream.lookup", p.ticket.clone());
+                    .call_detailed("session.stream.lookup", p.ticket.as_ref().unwrap().clone());
                 let result = match found {
                     Ok(r) if r["known"] == true => Ok(r),
                     Ok(_) if !p.cancelled && !expired => self
                         .client
-                        .call_detailed("session.stream.open", p.ticket.clone()),
+                        .call_detailed("session.stream.open", p.ticket.as_ref().unwrap().clone()),
                     Ok(_) => {
                         p.finished = true;
                         self.finish(
@@ -173,18 +236,29 @@ impl Pulls {
                 Ok(status) => {
                     {
                         let mut a = self.app.lock().unwrap();
-                        if let Some(v) = a.views.get_mut(view) {
+                        if let Some(v) = a.views.get_mut(view).filter(|v| {
+                            v.epoch == p.epoch
+                                && v.pull["requestId"] == p.request
+                                && v.target.as_ref().is_some_and(|t| t.same(&p.target))
+                        }) {
                             v.pull["producedBytes"] = status["producedBytes"].clone();
                         }
                     }
                     if status["finished"] == true || expired {
                         p.finished = true;
+                        if let Some(message) = cli::startup_error(&status) {
+                            self.finish(view, p, "failed", &message);
+                            continue;
+                        }
                         let (state, message) = if status["finished"] == true
+                            && status["state"] == "completed"
                             && status["remoteExitConfirmed"] == true
                             && status["exitCode"] == 0
                         {
                             ("succeeded", "镜像拉取成功；资源索引待刷新")
-                        } else if status["remoteExitConfirmed"] == true {
+                        } else if status["state"] == "completed"
+                            && status["remoteExitConfirmed"] == true
+                        {
                             (
                                 "failed",
                                 "拉取失败，请查看命令输出；当前仅管理公开源，不保存 Registry 凭据",
@@ -198,7 +272,11 @@ impl Pulls {
                         self.finish(view, p, state, message);
                     } else {
                         let mut a = self.app.lock().unwrap();
-                        if let Some(v) = a.views.get_mut(view) {
+                        if let Some(v) = a.views.get_mut(view).filter(|v| {
+                            v.epoch == p.epoch
+                                && v.pull["requestId"] == p.request
+                                && v.target.as_ref().is_some_and(|t| t.same(&p.target))
+                        }) {
                             v.pull["state"] = json!("running");
                             v.pull["streamId"] = json!(id);
                             v.pull["producedBytes"] = status["producedBytes"].clone();
@@ -209,7 +287,11 @@ impl Pulls {
                 }
                 Err(error) => {
                     let mut a = self.app.lock().unwrap();
-                    if let Some(v) = a.views.get_mut(view) {
+                    if let Some(v) = a.views.get_mut(view).filter(|v| {
+                        v.epoch == p.epoch
+                            && v.pull["requestId"] == p.request
+                            && v.target.as_ref().is_some_and(|t| t.same(&p.target))
+                    }) {
                         v.pull["message"] = json!(commands::text(&error, 1024));
                         v.revision += 1;
                     }
@@ -224,25 +306,45 @@ impl Pulls {
                 p.id = None;
             }
         }
-        while items.len() > 8 {
-            let oldest = items
-                .iter()
-                .filter(|(_, p)| p.finished)
-                .min_by_key(|(_, p)| p.created)
-                .map(|(id, _)| id.clone());
-            let Some(view) = oldest else { break };
-            if let Some(p) = items.remove(&view) {
-                if let Some(id) = p.id {
-                    let _ = self
-                        .client
-                        .call("session.stream.release", json!({"streamId":id}));
+        let mut orphaned = vec![];
+        {
+            let mut registry = self.items.lock().unwrap();
+            for (view, mut p) in items {
+                if let Some(current) = registry
+                    .get_mut(&view)
+                    .filter(|old| old.created == p.created)
+                {
+                    p.cancelled |= current.cancelled;
+                    *current = p;
+                } else if let Some(id) = p.id {
+                    orphaned.push(id);
                 }
             }
+            while registry.len() > 8 {
+                let oldest = registry
+                    .iter()
+                    .filter(|(_, p)| p.finished)
+                    .min_by_key(|(_, p)| p.created)
+                    .map(|(id, _)| id.clone());
+                let Some(view) = oldest else { break };
+                if let Some(id) = registry.remove(&view).and_then(|p| p.id) {
+                    orphaned.push(id);
+                }
+            }
+        }
+        for id in orphaned {
+            let _ = self
+                .client
+                .call("session.stream.release", json!({"streamId":id}));
         }
     }
     fn finish(&self, view: &str, p: &Pull, state: &str, message: &str) {
         let mut a = self.app.lock().unwrap();
-        if let Some(v) = a.views.get_mut(view) {
+        if let Some(v) = a.views.get_mut(view).filter(|v| {
+            v.epoch == p.epoch
+                && v.pull["requestId"] == p.request
+                && v.target.as_ref().is_some_and(|t| t.same(&p.target))
+        }) {
             v.pull["state"] = json!(state);
             v.pull["streamId"] = json!(p.id);
             v.pull["message"] = json!(commands::text(message, 2048));
@@ -253,7 +355,7 @@ impl Pulls {
                 v.tasks.pop_back();
             }
             v.revision += 1;
-            if v.epoch == p.epoch && state == "succeeded" {
+            if v.epoch == p.epoch && v.pull["requestId"] == p.request && state == "succeeded" {
                 a.refresh_loaded(view);
             }
         }

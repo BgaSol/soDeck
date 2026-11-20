@@ -19,6 +19,12 @@ pub(super) fn plugin_request(
     frame: &Value,
 ) -> Result<Value, RpcError> {
     match frame["method"].as_str().unwrap_or_default() {
+        "servers.list" => core
+            .servers_read(id, instance, &frame["params"])
+            .map_err(|e| RpcError::session(&e.code, e.message)),
+        method if method.starts_with("connections.") => core
+            .connection_request(id, instance, method, &frame["params"])
+            .map_err(|e| RpcError::session(&e.code, e.message)),
         method if method.starts_with("commands.") => core
             .command_process_request(id, instance, method, &frame["params"])
             .map_err(|e| RpcError {
@@ -37,6 +43,9 @@ pub(super) fn plugin_request(
                 message: e.message,
                 data: json!({"code":e.code,"details":e.data}),
             }),
+        method if method.starts_with("session.process.") => core
+            .process_request(id, instance, method, &frame["params"])
+            .map_err(|e| RpcError::session(e.code, e.message)),
         method if method.starts_with("session.stream.") => core
             .stream_request(id, instance, method, &frame["params"])
             .map_err(RpcError::execution),

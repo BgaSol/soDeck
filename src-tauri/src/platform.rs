@@ -152,6 +152,9 @@ mod native {
 }
 
 pub use native::spawn;
+pub(crate) fn valid_data_component(name: &str) -> bool {
+    !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\', '\0', ':'])
+}
 pub(crate) fn private_directory(path: &Path) -> io::Result<()> {
     let mut builder = std::fs::DirBuilder::new();
     #[cfg(unix)]
@@ -196,5 +199,29 @@ pub(crate) fn process_exists(pid: u32) -> bool {
             CloseHandle(handle);
         }
         !known || code == 259
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn plugin_data_components_reject_both_platforms_path_syntax() {
+        for name in [
+            "",
+            ".",
+            "..",
+            "../escape",
+            "a/b",
+            "a\\b",
+            "C:\\escape",
+            "C:escape",
+            "a:b",
+            "a\0b",
+        ] {
+            assert!(!super::valid_data_component(name), "{name:?}");
+        }
+        for name in ["evidence", "output.jsonl", "服务器 日志"] {
+            assert!(super::valid_data_component(name), "{name:?}");
+        }
     }
 }

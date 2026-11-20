@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 export interface Manifest {
   id: string;
   name: string;
+  icon?: string;
+  icons?: Record<string,string>;
   version: string;
   apiVersion: string;
   target: string;
@@ -9,7 +11,7 @@ export interface Manifest {
   settings?: unknown;
   updateSource?: { repository: string; tagPrefix: string };
 }
-export interface OfficialPlugin { id: string; name: string; description: string; tagPrefix: string; icon: string; order: number }
+export interface OfficialPlugin { id: string; name: string; description: string; tagPrefix: string; icon: string; icons?:Record<string,string>; iconData?:string; order: number }
 export interface OfficialCatalog { plugins: OfficialPlugin[]; fetchedAt: number; error: string | null }
 export interface Plugin {
   directory: string;

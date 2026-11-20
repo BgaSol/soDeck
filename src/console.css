@@ -4,16 +4,24 @@
   #app > .topbar { height: var(--sd-shell-top); min-height: var(--sd-shell-top); }
   #server-workspace { flex: 1; min-height: 0; height: auto; position: relative; }
   #workspace-content, .management-console { height: 100%; min-width: 0; }
-  .management-console { display: grid; grid-template-columns: 148px minmax(0,1fr); }
+  .management-console { display: grid; grid-template-columns: 192px minmax(0,1fr); }
   .console-nav { --console-selected: var(--sd-server-selected); background: var(--panel); border-right: 1px solid color-mix(in srgb,var(--border) 30%,transparent); display: flex; flex-direction: column; gap: 3px; padding: 12px 8px; min-height: 0; overflow-y: auto; }
   :root[data-theme="dark"] .console-nav { --console-selected: var(--accent-bg); }
-  .console-nav button { justify-content: flex-start; flex-shrink: 0; min-height: 36px; border: 0; padding: 7px 10px; background: transparent; border-radius: 6px; color: var(--muted); font-weight: 500; }
-  .console-nav button svg { width: 16px; height: 16px; stroke-width: 1.75; }
-  .console-nav button:hover { background: var(--hover); color: var(--text); }
+  .console-nav button { justify-content: flex-start; flex-shrink: 0; border: 0; background: transparent; color: var(--muted); font-weight: 500; min-width: 0; }
+  .console-nav > button { min-height: 36px; padding: 7px 10px; border-radius: 6px; }
+  .console-nav > button svg { width: 16px; height: 16px; stroke-width: 1.75; }
+  .console-nav button:hover, .console-nav > button[aria-expanded="true"] { background: var(--hover); color: var(--text); }
   .console-nav button[aria-current="page"] { background: var(--console-selected); color: var(--text); font-weight: 600; box-shadow: none; }
   .console-nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .console-nav button[data-console-page="messages"] { margin-top: 14px; }
-  .console-nav button[data-console-page="settings"] { margin-top: auto; }
+  .console-nav button[data-console-page="settings"] { margin-top: 12px; }
+  .console-nav button[data-console-page="updates"] { margin-top: auto; }
+  .console-settings-nav { list-style: none; margin: 0; padding: 4px 0 8px 22px; display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
+  .console-settings-nav li { min-width: 0; }
+  .console-settings-item { width: 100%; min-height: 31px; padding: 6px 9px; font-size: 12px; border-radius: 5px; }
+  .console-settings-item svg { width: 14px; height: 14px; flex-shrink: 0; }
+  .console-settings-item > span:first-of-type { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .settings-draft-dot { color: var(--accent); font-size: 9px; margin-left: auto; flex-shrink: 0; }
   .console-nav-badge { display: inline-flex; align-items: center; justify-content: center; margin-left: auto; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 5px; background: var(--hover); color: var(--text); font-size: 10px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .console-nav [aria-current="page"] .console-nav-badge { background: var(--panel); }
   .console-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
@@ -21,27 +29,28 @@
   #server-catalog { flex: 1; min-height: 0; overflow: hidden; }
   .console-page { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   .console-page > .layer-content { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px; }
-  .console-page > .settings-content { display: grid; grid-template-columns: 160px minmax(0,1fr); padding: 0; overflow: hidden; }
+  .console-page > .settings-content { display: flex; flex-direction: column; padding: 28px 0; overflow: hidden; }
   .console-page > .plugins-content, .console-page > .updates-content { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
-  .console-page .settings-main { min-height: 0; flex: 1; }
   .shell-status { display: flex; align-items: center; gap: 9px; padding: 0 10px; min-height: var(--sd-shell-bottom); height: var(--sd-shell-bottom); background: var(--status-bg); font-size: 11px; }
   .shell-status .sd-status-action { min-height: 24px; font-size: 11px; padding: 2px 4px; }
   .shell-status .grow { flex: 1; }
   .shell-endpoint { max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   input,textarea { caret-color: var(--accent); }
   input::placeholder,textarea::placeholder { color: var(--muted); opacity: 1; }
-  @media (max-width: 900px) { .management-console { grid-template-columns: 128px minmax(0,1fr); } }
+  @media (max-width: 900px) { .management-console { grid-template-columns: 176px minmax(0,1fr); } }
   @media (max-width: 640px) {
-    .management-console { grid-template-columns: minmax(0,1fr); grid-template-rows: 42px minmax(0,1fr); }
-    .console-nav { flex-direction: row; overflow-x: auto; overflow-y: hidden; padding: 4px 7px; border-right: 0; border-bottom: 1px solid color-mix(in srgb,var(--border) 30%,transparent); gap: 2px; }
-    .console-nav button { min-height: 30px; padding: 4px 8px; flex-shrink: 0; font-size: 12px; }
+    .management-console { grid-template-columns: minmax(0,1fr); grid-template-rows: auto minmax(0,1fr); }
+    .console-nav { flex-direction: row; flex-wrap: wrap; overflow-x: hidden; overflow-y: auto; max-height: 132px; padding: 4px 7px; border-right: 0; border-bottom: 1px solid color-mix(in srgb,var(--border) 30%,transparent); gap: 2px; }
+    .console-nav > button { min-height: 30px; padding: 4px 8px; font-size: 12px; }
     .console-nav button svg { display: none; }
-    .console-nav button[data-console-page="messages"],.console-nav button[data-console-page="settings"] { margin-top: 0; }
+    .console-nav button[data-console-page="messages"],.console-nav button[data-console-page="settings"],.console-nav button[data-console-page="updates"] { margin-top: 0; }
+    .console-settings-nav { order: 1; flex-basis: 100%; flex-direction: row; padding: 3px 0; overflow-x: auto; }
+    .console-settings-nav li { flex-shrink: 0; }
+    .console-settings-item { min-height: 30px; padding: 5px 8px; }
     #return-workbench { margin-top: 0; margin-left: 8px; }
     .console-page > .layer-content { padding: 12px; }
-    .console-page > .settings-content { display: flex; flex-direction: column; padding: 0; }
-    .console-page .settings-nav { flex-direction: row; min-height: 40px; padding: 5px; overflow-x: auto; }
-    .console-page .settings-nav .nav-bottom { display: none; }
+    .console-page > .settings-content { padding: 12px 0; }
+    .console-page > .plugins-content, .console-page > .updates-content { padding: 0; }
     .shell-status { gap: 5px; }
   }
 }

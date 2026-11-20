@@ -51,11 +51,14 @@ try {
   await settle(v => v[0]?.question?.kind === "credentials");
   const dialog = page.getByRole("dialog", { name: "补充连接凭据" }); await dialog.waitFor({ state: "visible" });
   assert.equal(await dialog.locator('[name="remember"]').isChecked(), true);
+  assert.equal(await page.locator('.catalog-detail .route-symbol svg').count(),2);
+  assert.equal(await page.locator('.catalog-detail .route-edge-flow').count(),0,'Actual credential requests keep the direct path still');
   fs.mkdirSync("artifacts/connection-ui", { recursive: true }); await page.screenshot({ path: "artifacts/connection-ui/credentials.png" });
   await dialog.locator('[name="secret"]').fill("ui-ephemeral-secret"); await dialog.locator("[data-prompt-accept]").click();
   await settle(v => v[0]?.stage === "sshHandshake"); await dialog.waitFor({ state: "hidden" });
   assert.equal(credentialAnswers.at(-1).remember, true);
   assert.equal(sockets.size, 1); assert.match(await page.locator(".connection-card").textContent(), /SSH 握手/);
+  assert.equal(await page.locator('.catalog-detail .route-edge-flow').count(),1,'Actual SSH handshake drives the direct connection line');
   await progress.waitFor({state:'visible'});assert.match(await progress.textContent(),/SSH 握手/);
   await page.getByRole('button',{name:'选择服务器',exact:true}).click();
   assert(await picker.getByRole('button',{name:/隔离测试服务器/}).isDisabled());
@@ -69,6 +72,7 @@ try {
   assert(!JSON.stringify(await call("connection", { command: { op: "snapshot" } })).includes("ui-ephemeral-secret"));
   await progress.locator("[data-connection-cancel]").click(); await settle(v => v[0]?.state === "cancelled");
   await progress.waitFor({state:'hidden'});
+  assert.equal(await page.locator('.catalog-detail .route-edge-flow').count(),0,'Actual cancellation stops the line');
   for (let i = 0; sockets.size && i < 100; i++) await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(sockets.size, 0); assert.equal((await call("workspace_snapshot", { window: "main" })).workspaces.length, 0);
   assert(!fs.readFileSync(path.join(directory, "servers.json"), "utf8").includes("ui-ephemeral-secret"));
@@ -86,6 +90,8 @@ try {
   assert.match(await page.locator('.connection-card').textContent(),/SSH 握手与主机检查失败/);
   assert.match(await page.locator('.connection-card').textContent(),new RegExp(String(server.address().port)));
   assert.equal(await page.getByRole('button',{name:'编辑连接资料',exact:true}).count(),1);
+  assert.equal(await page.locator('.catalog-detail .route-edge-flow').count(),0);
+  assert.match(await page.locator('.catalog-detail .route-failed').innerText(),/连接失败/);
 
   assert.equal((await call("workspace_snapshot", { window: "main" })).workspaces.length,0);
   assert(!fs.readFileSync(path.join(directory, "servers.json"), "utf8").includes("ui-unsaved-secret"));

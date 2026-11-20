@@ -8,6 +8,8 @@ import {ServerPicker} from './server-picker';
 import {startConsole} from './console';
 import './style.css';
 import './text-menu.js';
+import {observePluginIcons} from './ui';
+observePluginIcons();
 const win=getCurrentWindow();
 document.body.classList.toggle('secondary-window',win.label!=='main');
 await invoke('close_register_host');

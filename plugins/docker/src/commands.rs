@@ -2,61 +2,12 @@ use serde_json::{json, Value};
 
 pub const SUMMARY: &str = r#"{"id":{{json .Id}},"name":{{json .Name}},"image":{{json .Config.Image}},"imageId":{{json .Image}},"status":{{json .State.Status}},"exitCode":{{json .State.ExitCode}},"health":{{with index .State "Health"}}{{json .Status}}{{else}}null{{end}},"labels":{{json .Config.Labels}},"startedAt":{{json .State.StartedAt}}}"#;
 
-pub fn endpoint(value: &str) -> Result<(), String> {
-    let path = value
-        .strip_prefix("unix://")
-        .ok_or("请填写 unix:///绝对/socket/路径")?;
-    if !path.starts_with('/')
-        || path.len() < 2
-        || value.len() > 1024
-        || value.chars().any(char::is_control)
-    {
-        return Err("Docker socket 必须是远端绝对路径".into());
-    }
-    Ok(())
-}
 pub fn id(value: &str) -> Result<(), String> {
     if value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit()) {
         Ok(())
     } else {
         Err("需要完整容器 ID".into())
     }
-}
-pub fn quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
-}
-pub fn docker(endpoint: &str, args: &[&str]) -> String {
-    let mut argv = vec!["sh", "-c", "unset DOCKER_HOST DOCKER_CONTEXT DOCKER_TLS_VERIFY DOCKER_CERT_PATH DOCKER_API_VERSION; host=$1; shift; exec docker --host \"$host\" \"$@\"", "sodeck", endpoint];
-    argv.extend_from_slice(args);
-    argv.iter().map(|s| quote(s)).collect::<Vec<_>>().join(" ")
-}
-pub fn terminal_launch(
-    endpoint_value: &str,
-    engine: &str,
-    container: &str,
-    shell: &str,
-) -> Result<String, String> {
-    endpoint(endpoint_value)?;
-    id(container)?;
-    if engine.is_empty() || engine.len() > 256 || engine.chars().any(char::is_control) {
-        return Err("Engine ID 无效".into());
-    }
-    if !shell.starts_with('/') || shell.len() > 256 || shell.chars().any(char::is_control) {
-        return Err("Shell 必须为容器内的绝对路径".into());
-    }
-    let check = docker(endpoint_value, &["info", "--format", "{{.ID}}"]);
-    let enter = docker(
-        endpoint_value,
-        &[
-            "container",
-            "exec",
-            "--interactive",
-            "--tty",
-            container,
-            shell,
-        ],
-    );
-    Ok(format!("actual=$({check}) || exit; [ \"$actual\" = {} ] || {{ printf '%s\\n' 'Docker Engine changed; terminal not started' >&2; exit 1; }}; exec {enter}",quote(engine)))
 }
 pub fn lines(bytes: &[u8]) -> Result<Vec<Value>, String> {
     let text = std::str::from_utf8(bytes).map_err(|_| "Docker 输出不是 UTF-8")?;
@@ -241,39 +192,10 @@ mod tests {
     }
     #[test]
     fn boundaries_and_shell() {
-        assert!(endpoint("unix:///run/user/1000/docker.sock").is_ok());
-        for e in ["tcp://host:2375", "unix://relative", "unix:///a\nb"] {
-            assert!(endpoint(e).is_err());
-        }
-        assert_eq!(quote("a'b;$(x)"), "'a'\\''b;$(x)'");
         assert!(id(&"a".repeat(64)).is_ok());
         assert!(id("abcdef").is_err());
         assert_eq!(unbase64("5Lit5paH").unwrap(), "中文".as_bytes());
         assert_eq!(text("中文中文", 7), "中文… [已截断]");
-    }
-    #[test]
-    fn terminal_launch_fixes_identity_and_quotes_the_shell_as_one_argument() {
-        let container = "a".repeat(64);
-        let launch = terminal_launch(
-            "unix:///run/docker.sock",
-            "engine-1",
-            &container,
-            "/a'b;$(touch nope)",
-        )
-        .unwrap();
-        assert!(launch.contains(&quote("/a'b;$(touch nope)")));
-        assert!(launch.contains(&quote(&container)));
-        assert!(launch.contains("actual=$("));
-        assert!(launch.contains("[ \"$actual\" = 'engine-1' ]"));
-        assert_eq!(launch.matches("DOCKER_CONTEXT").count(), 2);
-        for shell in ["sh", "/bin/sh\n", "", &format!("/{}", "a".repeat(256))] {
-            assert!(
-                terminal_launch("unix:///run/docker.sock", "engine-1", &container, shell).is_err()
-            );
-        }
-        assert!(terminal_launch("tcp://host", "engine-1", &container, "/bin/sh").is_err());
-        assert!(terminal_launch("unix:///run/docker.sock", "", &container, "/bin/sh").is_err());
-        assert!(terminal_launch("unix:///run/docker.sock", "engine-1", "abc", "/bin/sh").is_err());
     }
     #[test]
     fn state_is_checked_before_mutation() {

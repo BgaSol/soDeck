@@ -17,10 +17,11 @@ impl AppCore {
         {
             return Err(Error::new("profileChanged", "连接资料已修改，请重新连接"));
         }
-        let entries = self.connections.entries.lock().unwrap();
+        let mut registry = self.connections.registry.lock().unwrap();
         if self.is_closing()
             || a.cancel.is_cancelled()
-            || !entries
+            || !registry
+                .current
                 .get(&profile.server_id)
                 .is_some_and(|current| Arc::ptr_eq(current, a))
         {
@@ -61,12 +62,37 @@ impl AppCore {
             .connection_snapshot(&profile.server_id)
             .map_err(|message| Error::new("profileChanged", message))?
             .identity;
-        let node = profile.nodes.last().unwrap();
-        let endpoint = format!("{}@{}", node.username, node.endpoint());
+        let target = session.target.clone();
+        let endpoint = target.workspace_endpoint();
+        let next_context = if let Some(w) = &existing {
+            workspaces
+                .reconnect_context(&w.context, a.view().attempt_id)
+                .map_err(|message| Error::new("workspaceChanged", message))?
+        } else {
+            Context {
+                workspace_id: self.next_id(),
+                server_id: profile.server_id.clone(),
+                connection_id: a.view().attempt_id,
+                generation: 1,
+            }
+        };
+        let name = servers
+            .workspace_names()
+            .remove(&profile.server_id)
+            .ok_or_else(|| Error::new("profileChanged", "服务器资料已删除"))?;
+        // Reserve the fallible shared scope before committing the workspace/session identity.
+        self.shared_state
+            .adopt_scope(next_context.clone(), Instant::now())
+            .map_err(|e| Error::new(e.code, e.message))?;
         let context = if let Some(w) = existing {
             let context = workspaces
-                .reconnect(&w.context, a.view().attempt_id, endpoint)
-                .map_err(|_| Error::new("workspaceChanged", "重连上下文已失效"))?;
+                .reconnect(
+                    &w.context,
+                    a.view().attempt_id,
+                    endpoint,
+                    Some(target.clone()),
+                )
+                .expect("reconnect identity validated under the workbench lock");
             workspaces.set_target_identity(&context.workspace_id, identity);
             commands.invalidate_context(&w.context, "连接代次已改变");
             commands.retain_contexts(&workspaces.contexts());
@@ -74,24 +100,15 @@ impl AppCore {
             a.state.lock().unwrap().view.window_id = w.window_id;
             context
         } else {
-            let id = self.next_id();
             let (left_width, right_width) = ui.widths();
-            let context = Context {
-                workspace_id: id.clone(),
-                server_id: profile.server_id.clone(),
-                connection_id: a.view().attempt_id,
-                generation: 1,
-            };
-            let name = servers
-                .workspace_names()
-                .remove(&profile.server_id)
-                .ok_or_else(|| Error::new("profileChanged", "服务器资料已删除"))?;
+            let context = next_context;
             workspaces.adopt(Workspace {
                 context: context.clone(),
                 name,
                 endpoint,
                 connected: true,
                 target_identity: Some(identity),
+                connection_target: Some(target),
                 window_id: a.source_window.clone(),
                 layout: Layout {
                     left_width,
@@ -105,9 +122,6 @@ impl AppCore {
             context
         };
         *a.session.lock().unwrap() = Some(session);
-        self.shared_state
-            .adopt_scope(context.clone(), Instant::now())
-            .map_err(|e| Error::new(e.code, e.message))?;
         self.sync_shared_ui_locked(&ui);
         {
             let mut s = a.state.lock().unwrap();
@@ -115,8 +129,9 @@ impl AppCore {
             s.view.state = "connected".into();
             s.view.stage = "connected".into();
         }
+        registry.freeze(&a.view());
         drop(_workbench);
-        drop(entries);
+        drop(registry);
         drop(servers);
         if saved {
             self.changed();

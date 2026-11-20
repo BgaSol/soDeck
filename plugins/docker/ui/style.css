@@ -170,3 +170,4 @@ dialog .toolbar { justify-content:flex-end; margin-top:18px; }
 @container(max-width:230px) {.browser-page header {flex-wrap:wrap;gap:4px;}.browser-page header .toolbar {margin-left:auto;}}
 
 @keyframes tree-loading {to {transform:rotate(360deg);}}
+#connection-target {white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;}

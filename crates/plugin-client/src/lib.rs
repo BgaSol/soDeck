@@ -179,6 +179,7 @@ pub fn run_with_commands(
 pub mod commands;
 pub mod encoding;
 pub mod file_editor;
+pub mod program;
 pub mod settings;
 pub mod shared_state;
 

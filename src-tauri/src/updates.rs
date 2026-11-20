@@ -544,6 +544,42 @@ impl ReleaseClient {
         }
     }
 
+    pub(crate) fn official_icon_blob(&self, sha: &str) -> Result<Vec<u8>, String> {
+        use base64::Engine;
+        self.network.read(
+            &format!("{}/repos/{REPOSITORY}/git/blobs/{sha}", self.api_base),
+            crate::update_network::RequestKind::Api,
+            "application/vnd.github+json",
+            |bytes| {
+                use crate::update_network::Error;
+                let value: serde_json::Value = serde_json::from_slice(bytes)
+                    .map_err(|_| Error::remote("图标 Blob 格式无效"))?;
+                if value["encoding"] != "base64"
+                    || value["size"]
+                        .as_u64()
+                        .is_none_or(|size| size > crate::plugin_icons::MAX_BYTES)
+                {
+                    return Err(Error::remote("图标 Blob 编码或大小无效"));
+                }
+                let content: String = value["content"]
+                    .as_str()
+                    .ok_or_else(|| Error::remote("图标 Blob 内容缺失"))?
+                    .chars()
+                    .filter(|c| !c.is_ascii_whitespace())
+                    .collect();
+                let decoded = base64::engine::general_purpose::STANDARD
+                    .decode(content)
+                    .map_err(|_| Error::remote("图标 Base64 无效"))?;
+                if value["size"].as_u64() != Some(decoded.len() as u64)
+                    || decoded.len() as u64 > crate::plugin_icons::MAX_BYTES
+                {
+                    return Err(Error::remote("图标 Blob 长度不一致"));
+                }
+                Ok(decoded)
+            },
+        )
+    }
+
     fn json_with_accept<T: serde::de::DeserializeOwned>(
         &self,
         url: &str,

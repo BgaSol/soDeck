@@ -7,6 +7,40 @@
 核心 RPC 保持 API v1，可选界面支持 UI v1 和 UI v2。核心 0.17.0 起提供 UI v2，当前官方插件均使用它进行分屏、页面/标签组移窗与输入交接。旧无 UI 插件无需修改；只接受 UI v1 的旧核心不能加载 UI v2 包。
 
 
+## 插件图标（核心 1.5.3）
+
+清单可声明默认 `icon` 名称和插件内 `icons` 映射，例如 `"icon":"bot","icons":{"bot":"assets/icons/robot.svg"}`。UI 视图与设置页面的 `icon` 继续引用名称。名称限定在本插件内，同名不会跨插件共享；未映射名称沿用旧内置图标，未知名称回退为通用插件图标。已有名称已映射但资源损坏时使用通用回退，不改用同名旧图形。
+
+`icons` 最多 32 项，名称为 1–64 位 ASCII 字母、数字或短横线；路径最多 256 字节，相对于包根目录，以 `.svg` 结尾，不允许绝对路径、上级目录、反斜线、冒号、百分号、查询或片段。每文件最多 32 KiB。插件提供自包含单色 SVG，携带 viewBox 和描边/填充几何；宿主等比显示，使用当前界面颜色。SVG 作为外部图片的 alpha 遮罩，不插入宿主 DOM。加载或解码失败只影响图标，不阻止业务运行。
+
+独立打包入口保留 `icon/icons` 并按映射复制文件，缺失、越出包根目录或超限的文件使打包失败。安装时检查映射基本结构；运行时继续检查路径、实际资源大小和包版本。图标不要求插件启动、UI 或设置存在。当前生效包与插件运行版本保持一致；待重启候选不提前显示，升级与回退切换资源版本。核心读取入口复用 `sodeck-plugin/<pluginId>/icons/<version>/<name>`，仅提供已声明图标。
+
+已安装插件从自身包展示图标。官方目录预览按同一次 Git 树中的发行配置和默认 SVG blob获取，字节随既有目录缓存保存；单项图片失败使用回退，离线保留目录缓存。未安装插件的目录预览不能覆盖已安装包。旧核心忽略新增映射，按原名称显示；新核心仍支持旧插件，API/UI 主版本不变。核心内旧图形作为兼容数据冻结，不再为新插件增加图形。
+
+## 通用远端进程（核心 1.10.0）
+
+可选能力 `session.process.v1` 为插件提供同一远端执行资源的启动、原字节捕获与顺序输入。它复用核心连接与生命周期；不承担密码提示识别、业务命令生成或终端屏幕仿真。
+
+| RPC | 参数与结果 |
+| --- | --- |
+| session.process.start | viewId、expectedContext、operationId（1–128 UTF-8 字节）、sequence（u64 十进制字符串）、command（1–16 KiB，无 NUL）、maxOutputBytes（1 KiB–64 MiB）、retention（fixed/rolling）、timeoutMs?（1000–3600000 或 null）、programOutput?（startup-v1，仅 pipe）、io?；返回 processId/status |
+| session.process.lookup | 原完整启动参数；known、已知时 processId/status；只查原票据 |
+| session.process.read | processId/offset（完整信封边界的十进制字符串）；chunks/nextOffset/watermark/earliestAvailableOffset/status，每页最多 48 KiB JSONL |
+| session.process.status | processId；原执行、输入与输出水位事实 |
+| session.process.input | processId/inputSequence/action；write 带 dataBase64（解码后最多 16 KiB、编码最多 24 KiB），eof 无内容，resize 带 cols/rows；返回原 status |
+| session.process.cancel | processId；只取消原通道，返回事实，不能证明全部远端子进程退出 |
+| session.process.release | processId；封闭并取消，停止订阅，等待在途资源；releaseRequested/resourceReleased/status |
+
+io 固定为 `{kind:"pipe",stdin:"closed"|"open"}` 或 `{kind:"pty",cols,rows}`，缺省 pipe/closed；尺寸 cols 2–1000、rows 1–500。核心缺省没有总 deadline，由调用服务决定期限；启动握手仍最多 30 秒。PTY 不接受 startup-v1 前导或独立 eof，pipe 不接受 resize；未运行资源不能升级为 PTY。
+
+status 分别保留 execSent（启动发送已请求）、launchQueued（本地 SSH 库已排入消息）、launchAccepted（远端 Success）、phase（opening/running/finishing/finished）、remoteExitConfirmed、exitCode/exitSignal/error、finished、workerFinished、outputComplete。队列成功不等于服务器接受。输出同原捕获：pipe 用 v1 stdout/stderr，PTY 用 v2 terminal，数据块最多 8192 字节，Base64 保留原字节。退出尾部和写盘完成后才标 workerFinished。
+
+input 为 state/available/nextInputSequence/last；last 带 sequence/action/state/sentBytes/error。1 起的连续序号只保留最近一项操作和 oneshot 完成回执；重复相同参数先返回原事实，冲突 inputConflict、旧号 inputExpired、跳号 invalidSequence。新输入先检查原 Context、资源接纳和模式；启动未接受 inputNotReady、pending 或队列满 resourceBusy、封闭 inputClosed。参数拒绝不推进序号。接纳后结果 pending/sent/failed/unknown 固定归原序号；sent 为 SSH 写调用成功，failed 为确定未发，unknown 为开始发送后未确认。EOF 接纳即封闭后续输入，重复 EOF 仍返回原回执；取消后未发输入失败，正在发送的结果如实未知。
+
+旧 session.stream.* 由 [session_stream.rs](../src-tauri/src/session_stream.rs)适配到同一命令资源表与执行器，保留旧 ID、输出、期限、pin/read/订阅契约；不另起 worker 或第二张表。session.exec 的短结果/环境探测和 terminal 的 Surface 序号/Barrier 各保留原服务编排。活跃额度、阅读预算和三个服务的资源计数继续分别管理，不引入全局进程登记层。
+
+实现：[session_process.rs](../src-tauri/src/session_process.rs)、[remote_execution.rs](../src-tauri/src/remote_execution.rs)、[execution_output.rs](../src-tauri/src/execution_output.rs)。原始启动 RPC 去重沿用 view/Context/operationId 与完整规范化参数，release 后旧 sequence 不能重启；实例停止或工作区关闭清理原资源。
+
 ## 非交互命令流与本地内容导出
 
 以下为核心 1.1.0 新增的可选能力；插件必须检查 `session.stream.v1`、`viewData.v1` 和 `content.export.v1`，缺少时提示升级核心。旧短命令和终端接口保持兼容。
@@ -245,6 +279,8 @@ loginShell 缺省目录策略在创建时读取设置，允许 auto/manual/off�
 
 可选能力 `session.exec.v1`。系统识别、命令文本、指标和调度由插件负责；核心提供当前认证会话上的非交互任务，不暴露凭据或传输类型。
 
+结构化程序的跨平台启动见下述 `session.program.v1`；原 command 文本接口仍按原样执行。
+
 | 方法 | 参数及结果 |
 | --- | --- |
 | `session.state` | `{viewId}` → `{context,state,closing,capabilities}`；断线/关闭冻结仍可查询，在线 capabilities 包含 `exec` |
@@ -261,9 +297,69 @@ completed 表示收到远端退出状态，非零退出码仍可能 completed。
 
 方法错误沿用 JSON-RPC error，`error.data.code` 区分 invalidParams/staleContext/workspaceClosing/resourceBusy/operationConflict/operationExpired/taskExpired/invalidOffset/unsupported。任务错误位于 poll.error。SDK `call_detailed` 保留 code/message/data，原 `call` 的字符串错误接口不变。使用前检查能力，旧插件继续使用原有 API。
 
+### session.program.v1（核心 1.8.1）
+
+新增可选能力，用于当前会话的环境探测和程序参数编码。核心负责平台启动、字节与退出状态；软件发现、身份检查内容及业务解释由插件负责。依赖此能力的插件初始化检查，旧核心明确提示升级；原 exec、stream、terminal 与 API 主版本保持兼容。
+
+| 方法 | 参数及回执 |
+| --- | --- |
+| session.environment.start | `{viewId,expectedContext,operationId,sequence,timeoutMs,keys?}` → `{taskId,state}`；复用 exec 任务、水位、额度、取消和回收 |
+| session.program.prepare | `{viewId,expectedContext,environment,mode,program}` → `{command,length,mode,programOutput}`；仅编码并核对当前在线归属，不执行远端程序 |
+
+探测 keys 最多 8 个合法环境变量名，每名最多 128 ASCII 字节。只读取指定变量，不导出整个环境或执行用户 Profile；每次探测的两路原始输出合计与最终 UTF-8 JSON 结果分别受同一 16 KiB 上限约束，包含 JSON 转义后的字节。最多依次尝试固定 Windows/POSIX 探测，共享 1–30 秒期限；缺少退出状态、超限、取消或异常信号直接失败，不尝试下一方案。成功通过 exec.poll 取得 UTF-8 JSON `{environment,values}`。environment 为 `{kind:"posix"}` 或 `{kind:"windows",launcher,exitMode}`；launcher 是探测到的 PowerShell 路径，exitMode 为 native/powershell。Windows 当前需要可执行的 powershell.exe，支持 cmd 或 PowerShell 默认会话 shell。
+
+Windows 探测用固定非零退出码识别外层 shell 的退出传播方式，成功任务可能 exitCode 为 37 或 1。**环境探测以 state=completed、remoteExitConfirmed=true 及完整 JSON 判断成功，不能要求 exitCode=0。** 失败方案的输出不进入下一方案或成功结果。环境只适用于本次 Context；重连后重新探测，不从客户端系统推断。
+
+mode 为 nonInteractive/terminal。program 是 `{file,argv,removeEnv?,checks?}`：file 为程序名称或远端绝对路径，1–4096 UTF-8 字节、无控制字符；argv 最多 128 项，各项最多 4096 字节、无 NUL；removeEnv 最多 8 个合法变量名；checks 最多 2 项 `{argv,expectedStdout}`，每项 argv 同样最多 128 项，expectedStdout 最多 1024 字节、无控制字符。file 与全部主程序/检查参数合计最多 16 KiB。拒绝未知字段及错误类型；生成命令最多 16 KiB，Windows 另限 7900 UTF-16 单元，为 SSH 的外层 cmd 包装保留空间。超限为 commandTooLong，只可在尚未执行时缩小批次。
+
+检查与主程序使用同一个已定位可执行文件，先清除指定环境变量。检查必须退出 0 且 stdout 精确等于 expectedStdout，允许一个末尾 LF/CRLF；检查输出有界，失败不运行主程序。此检查不提供与远端对象变更之间的原子事务。Windows 用原生进程标准流传输字节和退出码，POSIX 用正确引用的 sh/exec；终端模式继承 PTY。
+
+nonInteractive 回执含 programOutput="startup-v1"；将 command 和 programOutput 一起固定到原 exec.start 或 stream.open/lookup 票据。terminal 的 programOutput 为 null，只将 command 用于原 terminal.launch.v1 指定命令模式。SDK [program.rs](../crates/plugin-client/src/program.rs)提供 prepare、apply 和 terminal_command，不实现另一套任务或 shell 编码。
+
+startup-v1 只消费 stderr 的第一份 `SDP1 <JSON字节长度>\n<JSON>` 前导（JSON ≤1 KiB），v=1、started 布尔值；失败附 checkFailure（1 起始 index/message）或 error.message。前导前 stdout 暂存最多 min(任务输出预算,64 KiB)；后续所有主程序字节，包括相同前缀，按原样保留。exec.poll/stream.status 增加 programStarted、checkFailure、programError。明确 started=false 是未启动失败；缺失/损坏前导、传输失败或退出未确认不能认定业务成功。错误码包含 invalidProgramStartup、missingProgramStartup、unexpectedProgramOutput、programCheckFailed、programStartFailed 和 outputLimit；stream 等待前导最多 30 秒。原未启用协议的任务保持原始字节语义。
+
+实现：[remote_program](../src-tauri/src/remote_program/)、[session_exec.rs](../src-tauri/src/session_exec.rs)、[session_stream.rs](../src-tauri/src/session_stream.rs)。
+
+### servers.read.v1 与 connections.v1（核心 1.9.0）
+
+版本化 RPC 提供非敏感保存资料、真实连接接纳和原请求读取。调用方检查两项可选能力；API 主版本仍为 1，已有桌面连接命令、session.target.v1/v2 与插件保持兼容。核心从真实插件进程附加来源，参数不能冒充 pluginId/instanceId。插件可信使用这些能力，不声明权限列表。
+
+| 方法 | 参数 | 返回 |
+| --- | --- | --- |
+| servers.list | serverId?、detail?（false）、limit?（20，1–50）、cursor?、viewType? | catalogRevision、servers、hasMore、nextCursor |
+| connections.open | requestId、serverId、expectedProfileToken、viewType? | receipt、view、current、background |
+| connections.get | requestId、viewType? | 原 receipt 及当前观察 |
+| connections.cancel | requestId | 原 receipt；尚未接纳时置 cancelled |
+
+参数拒绝未知字段、null、错误类型；ID/token 为非空、无 NUL 的 1–256 UTF-8 字节，requestId 最长 128，cursor 最长 2048。get/cancel 不接受 serverId 或 expectedProfileToken，cancel 不接受 viewType。RPC 无等待参数，不持锁等待网络。结果编码最多 48 KiB；资料页预留约 40 KiB 原始字段预算，不能容纳单项时 resourceLimit，不截断秘密或字段。
+
+servers.list 仅列 SSH 目标，保留目录顺序；显式构造 serverId/profileToken/name/protocol/host/port/endpoint/username/connection/context。detail 增加 tagIds、按实际路径展开的非敏感 route；不输出认证值、私钥路径或整份目录。current 是完整 Context 下的 session.target.v2 事实，观察失败为 {error:{code,message}}。connection 为当前尝试/保留工作区事实，含 state/endpoint/context/matchesSavedTarget/error；路线身份无法确认时 matchesSavedTarget=null。当前会话与保存资料分别表达，不相互覆盖。核心不解释 MCP 名称/IP query。
+
+catalogRevision 为十进制字符串；游标绑定目录 revision/serverId/limit 与原顺序位置。目录变动返回 catalogChanged，错范围返回 invalidCursor；游标不冻结实时连接状态。读取目录损坏返回 catalogUnavailable，不伪装 serverNotFound。profileToken 复用已有 Profile.identity，随端点、账号、路线及认证配置变化；名称、标签和密码值不改变令牌，不包含认证秘密，不持久化新版本字段；新 open 检查 expectedProfileToken，相同请求重试优先恢复原记录。
+
+receipt 是 tagged union：attached 带 attemptId，accepted 带原 Context，failed 带 error，cancelled 无附加字段。view 仅 attached 提供原尝试投影，current 仅 accepted 提供原 Context 的当前会话事实。终态 receipt 固定，当前观察可变；旧请求不绑定相同 serverId 的新尝试。key=(真实 pluginId,instanceId,requestId)，同一 key 不同输入为 requestConflict。每实例最多 4096 条记录，不逐出；实例停止后清除自身记录并拒绝迟到接纳。实际新 Attempt 继续最多 32 个，历史 current 索引最多 64，清理历史不删除原回执。
+
+可选 viewType 必须为调用实例已登记的 UI v2 backgroundOnWorkspace 声明，在网络接纳前校验。background 为 waiting/running/created/failed/stale，含 viewId（未登记或失效为 null），failed 附 error。这是后台 ui.createView 的 ACK 观察，created 不代表插件自身业务目标可执行。读取用 try_lock，不等待正在创建的 RPC；返回前再次核对 View、Context 和 creation 资源身份。MCP 自行核对本地目标与原 Context 才完成打开。
+
+open 复用桌面的资料、认证、主机密钥、路线、接纳与工作区服务，不聚焦窗口或执行命令。已有在用会话按真实端点/账号/路线比较，匹配时复用；不同返回 existingSessionMismatch，不自动断开。密码或私钥配置变化只影响下次认证。同一 Attempt 可以有多个外部请求和桌面需求，实际网络只派发一次。
+
+cancel 先登记取消占位，迟到同 key open 不能建连；attached 取消仅在无其他外部请求、无桌面需求、未接纳时取消底层 Attempt。accepted/failed 保留原结果，取消不释放已接纳会话。桌面取消仍作用于实际 Attempt。实例停止同样清理其未完成请求，已接纳会话留给工作区。connections.changed({serverId}) 经现有有界插件消息队列唤醒观察，插件返回 ACK；只是重读提示，不携带终态、不要求每个阶段通知都送达。get 随时可恢复真实事实。
+
+错误沿用 JSON-RPC error.data.code：invalidParams/staleInstance/serverNotFound/catalogUnavailable/catalogChanged/invalidCursor/profileChanged/existingSessionMismatch/workspaceClosing/resourceBusy/resourceLimit/requestConflict/connectionRequestNotFound。连接阶段失败保存在 receipt.error，accepted 后当前失效保存在 current.error，两者不能混淆。插件协议与 HTTP 公共契约分别见 [MCP API](mcp-api.md)。
+
 ### session.target.v1（核心 1.5.0）
 
 `session.state({viewId})` 可选扩展返回 `target:{protocol,endpoint,username?,name?}`，来自已建立会话的不可变目标快照；name 为所属工作区当前名称。断开时 target 为 null，state/closing/Context 仍可查询。当前在线 capabilities 含 exec/files，只表示核心接口可用，不证明远端命令、软件或 SFTP 可用。摘要不含认证材料，不读取另一个插件的状态，也不提供全局凭据目录。新接纳继续由完整 Context 校验，摘要不能代替归属检查。
+
+### session.target.v2（核心 1.6.0）
+
+能力 session.target.v2 增加只读方法 session.target.describe({viewId,expectedContext})，返回 context/state/closing/capabilities/target/targetSource。viewId 和 Context 的三个 ID 均为 1–256 UTF-8 字节、无 NUL，generation 为正 u64；拒绝未知字段和错误类型。读取前核对插件/实例、view 与完整工作区 Context，失效为 staleContext，参数错误为 invalidParams。断开和关闭冻结仍可查询。
+
+target 是 null 或 {name,protocol,host,port,endpoint,username}；host/port 来自成功接纳的实际最终会话，不解析界面 endpoint，不从编辑后的目录资料回填。名称为工作区当前名称；endpoint 是主机加端口，IPv6 包含方括号，username 不进入 endpoint。目标摘要不含密钥、口令或认证材料。
+
+targetSource=current 表示当前有效会话；断开时工作区保留最近一次真实接纳的摘要，source=lastConnected；没有可信摘要时为 unknown/target=null。摘要与 Context 同时更新，失败重连不覆盖，关闭工作区后释放；只在运行内保留。connected/disconnected 表示本地实际会话状态，closing 独立表达冻结，capabilities 在线为 exec/files、断开为空数组；不能证明远端命令、权限或 SFTP 实际可用。
+
+读取按 connections → workbench → attempt 顺序捕获本地事实，锁释放后编码；不执行网络探测、目录枚举或连接操作。v1 session.state 共用事实捕获，但继续省略结构化 host/port 与 targetSource，并在断开时返回 target=null；原插件不改变契约。v2 是可选能力，不提升 RPC/API 主版本；依赖它的插件必须初始化检查。
 
 ## 目录与清单
 
@@ -425,7 +521,7 @@ UI v1 的 `mount.capabilities.clipboard === 1` 表示宿主提供原生文本剪
 
 ### files.pluginData.v1（核心 1.5.0）
 
-`copyFile.destination` 支持 `{side:"pluginData",relative:[独立分量]}`，只允许新文件的 destinationGuard `{kind:"absent"}`。不能用作 source、inspect/list、删除或覆盖端点。relative 为 1–32 个合法本地文件名，拒绝空值、点/父目录、分隔符、绝对路径与 Windows 非法名称；所有父目录必须已经存在且为普通目录。真实根目录由调用者 Owner 的 pluginId 解析至 initialize.dataDirectory，拒绝符号链接目录和 canonicalize 后的越界。复制沿用源检查、流式写入、同目录临时文件、独占提交与原生清理，不登记用户 inputId 或保存 SSH 凭据。
+`copyFile.destination` 支持 `{side:"pluginData",relative:[独立分量]}`，只允许新文件的 destinationGuard `{kind:"absent"}`。不能用作 source、inspect/list、删除或覆盖端点。relative 为 1–32 个合法本地文件名，各平台均拒绝空值、点/父目录、正反斜杠、冒号、NUL 与绝对路径，Windows 上另检查系统不支持的文件名；所有父目录必须已经存在且为普通目录。真实根目录由调用者 Owner 的 pluginId 解析至 initialize.dataDirectory，拒绝符号链接目录和 canonicalize 后的越界。复制沿用源检查、流式写入、同目录临时文件、独占提交与原生清理，不登记用户 inputId 或保存 SSH 凭据。
 
 UI 可调用 `sodeck.request('data',{op:"pluginData",action:"reveal",relative:[目录分量]})` 打开自己已存在的数据子目录；relative 最多 32 个，可为空以打开根目录，不能传任意本地路径。核心验证当前激活 Surface、普通目录与实际根范围，然后使用既有系统目录打开适配。initialize.dataDirectory 在 Unix 由核心创建为 0700，在 Windows 沿用用户应用数据目录的系统 ACL；不提供跨插件沙箱隔离。
 

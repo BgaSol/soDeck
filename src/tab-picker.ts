@@ -1,8 +1,8 @@
-import { escape as e, icon } from './ui';
+import { escape as e, icon, type Icon } from './ui';
 import { DomRegion } from './dom-update';
 import { attachMenuPosition, type MenuPosition } from './menu-position.js';
 
-export interface TabRecord { id: string; title: string; detail: string; icon?: string; current?: boolean; status?: string; disabled?: boolean; closeLabel?: string }
+export interface TabRecord { id: string; title: string; detail: string; icon?: Icon; current?: boolean; status?: string; disabled?: boolean; closeLabel?: string }
 export class TabPicker {
   private static open?: TabPicker;
   private node = document.createElement('div');
