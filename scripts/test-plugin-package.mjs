@@ -78,7 +78,7 @@ try {
     if (method === "terminal.close" || (method === "files.request" && params.action === "close")) { assert(resources.delete(params.id)); return {}; }
     unexpected.push(method); throw new Error(`Unexpected package RPC: ${method}`);
   });
-  const capabilities = ["commands.v1", "terminal.v1", "viewData.v1", "terminal.history.v1", "files.v1", "files.directoryCursors.v1", "files.operations.v1", "files.operations.v2", "files.editor.v1", "files.localInputs.v1", "net.tcp.v1", "net.listenerLifecycle.v1", "ui.dialog.v1", "session.exec.v1", "session.program.v1", "session.stream.v1", "session.target.v1","session.target.v2","session.stream.process.v1","files.pluginData.v1","content.export.v1", "ui.background.v1", "settings.v1", "servers.read.v1", "connections.v1", "ui.workbench.v2", "ui.openView.v1"];
+  const capabilities = ["commands.v1", "terminal.v1", "viewData.v1", "terminal.history.v1", "files.v1", "files.directoryCursors.v1", "files.operations.v1", "files.operations.v2", "files.editor.v1", "files.localInputs.v1", "net.tcp.v1", "net.listenerLifecycle.v1", "ui.dialog.v1", "session.exec.v1", "session.program.v1", "session.stream.v1", "session.target.v1","session.target.v2","session.stream.process.v1","session.process.v1","files.pluginData.v1","content.export.v1", "ui.background.v1", "settings.v1", "servers.read.v1", "connections.v1", "ui.workbench.v2", "ui.openView.v1"];
   const initialized = await peer.request("initialize", { apiVersion: "1", capabilities, dataDirectory: path.join(directory, "data") });
   assert.equal(initialized.apiVersion, "1");
   if (manifest.commands) {
@@ -93,7 +93,7 @@ try {
     const token=fs.readFileSync(path.join(directory,'data/access-token'),'utf8');
     let response;for(let i=0;i<50;i++){try{response=await fetch(mcpUrl,{method:'POST',headers:{Authorization:'Bearer '+token,Accept:'application/json, text/event-stream','Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'package-check',version:'1'}}})});break;}catch{await new Promise(r=>setTimeout(r,50));}}
     assert.equal(response?.status,200);const result=await response.json();assert(result.result.capabilities.tools);
-    const listed=await fetch(mcpUrl,{method:'POST',headers:{Authorization:'Bearer '+token,Accept:'application/json, text/event-stream','Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/list',params:{}})});assert.equal(listed.status,200);assert.equal((await listed.json()).result.tools.length,/^0\.[0-5]\./.test(manifest.version)?6:10);
+    const listed=await fetch(mcpUrl,{method:'POST',headers:{Authorization:'Bearer '+token,Accept:'application/json, text/event-stream','Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/list',params:{}})});assert.equal(listed.status,200);assert.equal((await listed.json()).result.tools.length,/^0\.[0-5]\./.test(manifest.version)?6:/^0\.6\./.test(manifest.version)?10:11);
     report.mcpHttp=true;
   }
   if (plugin === "system-status") { await peer.request("ui.event", { ...view, data: { action: "pause" } }); assert.equal((await peer.request("ui.event", { ...view, data: { action: "snapshot" } })).data.paused, true); }

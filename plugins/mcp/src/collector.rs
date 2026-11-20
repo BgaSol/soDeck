@@ -2,7 +2,7 @@ use crate::app::App;
 use crate::{
     evidence,
     targets::State,
-    task::{Kind, Task},
+    task::{ExecMode, Kind, Task, TaskSpec},
     tasks::{error, failure, text},
 };
 use serde_json::{json, Value};
@@ -42,7 +42,7 @@ pub fn run(app: &App, task: &Task) {
         batch_file: None,
         admission_unknown: false,
     };
-    let result = collector.prepare().and_then(|_| match task.kind {
+    let result = collector.prepare().and_then(|_| match task.kind() {
         Kind::Exec => collector.command(),
         Kind::Download => collector.download(),
     });
@@ -54,7 +54,11 @@ pub fn run(app: &App, task: &Task) {
                 None,
             );
         }
-        task.target.release_admission(task.kind);
+        task.target.release_admission(task.kind());
+    }
+    task.seal_input();
+    while task.input_running() {
+        thread::sleep(Duration::from_millis(10));
     }
     task.finalizing(outcome.complete, outcome.error);
     // Keep the last native facts on disk before native result buffers are released.
@@ -86,7 +90,7 @@ impl Collector<'_> {
         if target.state != State::Connected || target.closing {
             return Err(error("服务器未连接或正在关闭"));
         }
-        let capability = if self.task.kind == Kind::Exec {
+        let capability = if self.task.kind() == Kind::Exec {
             "exec"
         } else {
             "files"
@@ -106,21 +110,29 @@ impl Collector<'_> {
         .map_err(error)
     }
     fn command(&mut self) -> Result<Outcome, Value> {
-        let mut output = evidence::Output::new(&self.task.directory).map_err(error)?;
-        let request = json!({
-            "viewId":self.task.target.view,"expectedContext":self.task.target.context,
-            "operationId":self.task.id,"sequence":self.task.admission_sequence.to_string(),
-            "command":self.task.input["command"],"timeoutMs":self.task.input["timeoutSeconds"].as_u64().unwrap()*1000,
-            "maxOutputBytes":16*1024*1024,"retention":"fixed",
-        });
+        let mut output =
+            evidence::Output::new(&self.task.directory, self.task.terminal()).map_err(error)?;
+        let spec = match &self.task.spec {
+            TaskSpec::Exec(spec) => spec,
+            TaskSpec::Download(_) => unreachable!(),
+        };
+        let io = match spec.mode {
+            ExecMode::Batch => json!({"kind":"pipe","stdin":"closed"}),
+            ExecMode::Pipe => json!({"kind":"pipe","stdin":"open"}),
+            ExecMode::Pty => {
+                let (cols, rows) = spec.terminal_size.unwrap();
+                json!({"kind":"pty","cols":cols,"rows":rows})
+            }
+        };
+        let request = json!({"viewId":self.task.target.view,"expectedContext":self.task.target.context,"operationId":self.task.id,"sequence":self.task.admission_sequence.to_string(),"command":spec.command,"timeoutMs":spec.timeout_seconds.map(|n|n*1000),"maxOutputBytes":16*1024*1024,"retention":"fixed","io":io});
         let accepted = self.accept(
-            "session.stream.open",
+            "session.process.start",
             request.clone(),
-            "session.stream.lookup",
+            "session.process.lookup",
             request,
-            "streamId",
+            "processId",
         )?;
-        let id = text(&accepted, "streamId", 256)?.to_owned();
+        let id = text(&accepted, "processId", 256)?.to_owned();
         self.native = Some(Native::Command(id.clone()));
         let result = self.poll_command(&id, &mut output);
         match (result, output.sync()) {
@@ -144,12 +156,12 @@ impl Collector<'_> {
             if (self.app.stopped(self.task) || !save_error.is_null()) && !cancelled {
                 cancelled = self
                     .app
-                    .rpc("session.stream.close", json!({"streamId":id}))
+                    .rpc("session.process.cancel", json!({"processId":id}))
                     .is_ok();
             }
             let polled = match self.app.rpc(
-                "session.stream.poll",
-                json!({"streamId":id,"offset":offset.to_string()}),
+                "session.process.read",
+                json!({"processId":id,"offset":offset.to_string()}),
             ) {
                 Ok(value) => value,
                 Err(e) => {
@@ -220,7 +232,7 @@ impl Collector<'_> {
         let request = json!({
             "id":file,"action":"start","protocolVersion":2,"batchId":self.task.id,"requestId":self.task.id,
             "expectedContext":self.task.target.context,"sequence":self.task.admission_sequence.to_string(),
-            "operation":{"kind":"copyFile","source":{"side":"remote","path":self.task.input["remotePath"]},
+            "operation":{"kind":"copyFile","source":{"side":"remote","path":self.task.start_input()["remotePath"]},
                 "destination":{"side":"pluginData","relative":["evidence",self.task.run,self.task.id,"download.bin"]},
                 "destinationGuard":{"kind":"absent"}},
         });
@@ -287,8 +299,15 @@ impl Collector<'_> {
         let initial = self.app.rpc(method, request);
         let unknown = match initial {
             Ok(value) if text(&value, key, 256).is_ok() => {
-                self.task.observe(value.clone(), None);
-                self.task.target.release_admission(self.task.kind);
+                if key == "processId" {
+                    self.task.set_process(
+                        text(&value, "processId", 256)?.to_owned(),
+                        value["status"].clone(),
+                    );
+                } else {
+                    self.task.observe(value.clone(), None);
+                }
+                self.task.target.release_admission(self.task.kind());
                 return Ok(value);
             }
             Ok(value) => json!({"response":value}),
@@ -308,8 +327,15 @@ impl Collector<'_> {
             if let Ok(value) = self.app.rpc(lookup_method, lookup.clone()) {
                 if text(&value, key, 256).is_ok() {
                     self.admission_unknown = false;
-                    self.task.observe(value.clone(), None);
-                    self.task.target.release_admission(self.task.kind);
+                    if key == "processId" {
+                        self.task.set_process(
+                            text(&value, "processId", 256)?.to_owned(),
+                            value["status"].clone(),
+                        );
+                    } else {
+                        self.task.observe(value.clone(), None);
+                    }
+                    self.task.target.release_admission(self.task.kind());
                     return Ok(value);
                 }
             }
@@ -337,9 +363,9 @@ impl Collector<'_> {
             let mut ready = ended;
             if !ended {
                 let cancel = match native {
-                    Native::Command(id) => {
-                        self.app.rpc("session.stream.close", json!({"streamId":id}))
-                    }
+                    Native::Command(id) => self
+                        .app
+                        .rpc("session.process.cancel", json!({"processId":id})),
                     Native::Download { file, operation } => self.app.rpc(
                         "files.operations",
                         json!({"id":file,"action":"cancel","operationId":operation}),
@@ -356,7 +382,7 @@ impl Collector<'_> {
                     let status = match native {
                         Native::Command(id) => self
                             .app
-                            .rpc("session.stream.status", json!({"streamId":id})),
+                            .rpc("session.process.status", json!({"processId":id})),
                         Native::Download { file, operation } => self.app.rpc(
                             "files.operations",
                             json!({"id":file,"action":"poll","operationId":operation}),
@@ -388,13 +414,22 @@ impl Collector<'_> {
                 let result = match native {
                     Native::Command(id) => self
                         .app
-                        .rpc("session.stream.release", json!({"streamId":id})),
+                        .rpc("session.process.release", json!({"processId":id})),
                     Native::Download { file, operation } => self.app.rpc(
                         "files.operations",
                         json!({"id":file,"action":"release","operationId":operation}),
                     ),
                 };
-                released = result.is_ok();
+                released = match &result {
+                    Ok(value) => {
+                        if matches!(native, Native::Command(_)) {
+                            value["resourceReleased"] == true
+                        } else {
+                            true
+                        }
+                    }
+                    Err(_) => false,
+                };
                 if let Err(e) = result {
                     errors.push(json!({"step":"release","error":e}));
                 }

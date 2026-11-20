@@ -138,13 +138,16 @@ pub struct ReadJob {
     format: PageFormat,
     cursor: u64,
     tail: bool,
+    terminal: bool,
     _permit: OwnedSemaphorePermit,
 }
 fn validate(c: &CapturedTask, options: &Options) -> Result<(), Value> {
     if options.since.is_some_and(|n| n > c.record.revision) {
         return Err(failure("invalidParams", "sinceRevision 超过任务当前版本"));
     }
-    if c.task.kind == Kind::Exec && options.format.is_some() && options.cursor > c.record.committed
+    if c.task.kind() == Kind::Exec
+        && options.format.is_some()
+        && options.cursor > c.record.committed
     {
         return Err(failure("invalidCursor", "cursor 超出已保存范围"));
     }
@@ -152,7 +155,7 @@ fn validate(c: &CapturedTask, options: &Options) -> Result<(), Value> {
 }
 fn prepare(app: &App, c: &CapturedTask, options: Options) -> Result<Option<ReadJob>, Value> {
     validate(c, &options)?;
-    if c.task.kind != Kind::Exec || options.format.is_none() {
+    if c.task.kind() != Kind::Exec || options.format.is_none() {
         return Ok(None);
     }
     let permit = app
@@ -166,15 +169,22 @@ fn prepare(app: &App, c: &CapturedTask, options: Options) -> Result<Option<ReadJ
         format: options.format.expect("body job has a format"),
         cursor: options.cursor,
         tail: options.tail,
+        terminal: c.task.terminal(),
         _permit: permit,
     }))
 }
 impl ReadJob {
     fn read(self) -> Result<Page, Value> {
         let result = if self.tail {
-            evidence::tail(self.path, self.committed, self.format)
+            evidence::tail(self.path, self.committed, self.format, self.terminal)
         } else {
-            evidence::page(self.path, self.committed, self.cursor, self.format)
+            evidence::page(
+                self.path,
+                self.committed,
+                self.cursor,
+                self.format,
+                self.terminal,
+            )
         };
         result.map_err(|e| match e {
             ReadError::InvalidCursor(message) => failure("invalidCursor", message),
@@ -266,7 +276,7 @@ async fn wait_task(
         let reason = if r.phase == Phase::Done {
             "done"
         } else if matches!(until, WaitUntil::Change)
-            && task.kind == Kind::Exec
+            && task.kind() == Kind::Exec
             && options.format.is_some()
             && options.cursor < r.committed
         {
@@ -492,8 +502,8 @@ pub fn list(app: &App, p: &Value) -> Result<TaskList, Value> {
             || filter
                 .request
                 .as_ref()
-                .is_some_and(|s| task.input["requestId"] != *s)
-            || (filter.kind != "all" && filter.kind != task.kind.name())
+                .is_some_and(|s| task.start_input()["requestId"] != *s)
+            || (filter.kind != "all" && filter.kind != task.kind().name())
         {
             continue;
         }
@@ -743,7 +753,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mcp-snapshot-{}", rand::random::<u64>()));
         let task = crate::task::fixture(root.clone());
         std::fs::create_dir_all(&task.directory).unwrap();
-        let mut output = evidence::Output::new(&task.directory).unwrap();
+        let mut output = evidence::Output::new(&task.directory, false).unwrap();
         let envelope = |n: u64, text: &str| json!({"v":1,"sequence":n.to_string(),"source":"stdout","receivedAt":n,"dataBase64":base64(text.as_bytes())});
         output.append(&[envelope(1, "first")]).unwrap();
         task.observe(json!({"state":"running"}), Some(output.committed));
@@ -751,6 +761,7 @@ mod tests {
         let saved = captured.record.committed;
         let pool = Arc::new(tokio::sync::Semaphore::new(1));
         let job = ReadJob {
+            terminal: false,
             path: task.directory.join("output.jsonl"),
             committed: saved,
             format: PageFormat::Text,

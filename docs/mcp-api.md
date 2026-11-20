@@ -1,12 +1,12 @@
 # MCP API
 
-本文定义Agent MCP插件 0.6.x 的客户端契约。接入、页面操作和限制见[功能说明](features/mcp.md)；核心通用 RPC 见[插件 API](plugin-api.md)，发行证据见插件 [CHANGELOG](../plugins/mcp/CHANGELOG.md)。客户端先进行 MCP initialize 和 tools/list；新增能力以工具发现结果为准。
+本文定义Agent MCP插件 0.7.x 的客户端契约。接入、页面操作和限制见[功能说明](features/mcp.md)；核心通用 RPC 见[插件 API](plugin-api.md)，发行证据见插件 [CHANGELOG](../plugins/mcp/CHANGELOG.md)。客户端先进行 MCP initialize 和 tools/list；新增能力以工具发现结果为准。
 
 ## 传输与调用
 
 服务为带 Bearer Token 的回环 Streamable HTTP，端点 `http://127.0.0.1:<port>/mcp`。MCP 请求正文最多 32 KiB，总并发最多 32。Host 与可选 Origin 需匹配该回环地址。HTTP 401/403 为接入失败，429 为容量限制。字符串参数按 UTF-8 字节限制；未知参数或工具返回 MCP 协议 invalid_params。认证资料由核心管理。
 
-十个工具的成功与业务错误均只返回一个 JSON TextContent，缺席 structuredContent，不同时附原文副本或 outputSchema；客户端只解析一次 text。业务错误使用 isError=true 与 `{"error":{...}}`，取得任务时另以顶层 task 附一份该次事实。工具声明的只读/破坏性提示不能替代实际远端操作判断。
+十一个工具的成功与业务错误均只返回一个 JSON TextContent，缺席 structuredContent，不同时附原文副本或 outputSchema；客户端只解析一次 text。业务错误使用 isError=true 与 `{"error":{...}}`，取得任务时另以顶层 task 附一份该次事实。工具声明的只读/破坏性提示不能替代实际远端操作判断。
 
 ## 保存资料发现与打开（0.6.0）
 
@@ -43,18 +43,18 @@ cancel 与 ready 发布决定先后：取消先胜后不再发布 ready，核心
 | connectionRequestNotFound | 原打开身份不属于本次运行；不可借新身份重放未知命令 |
 | targetInitializationFailed | SSH 接纳后后台目标准备失败；共享会话保留 |
 
-新客户端将默认名称/IP 发现由 targets_list 改为 servers_list。已配置的 Token、端口、插件 ID、任务 API 和证据 schemaVersion=1 沿用；旧核心缺少能力时初始化明确提示升级，不回退为插件自己的 SSH 连接。
+新客户端将默认名称/IP 发现由 targets_list 改为 servers_list。已配置的 Token、端口、插件 ID和原任务 API 沿用；本版元数据为 schemaVersion=2；旧核心缺少能力时初始化明确提示升级，不回退为插件自己的 SSH 连接。
 
 ## 目标与启动
 
 | 工具 | 参数 | 返回 |
 | --- | --- | --- |
 | sodeck_targets_list | 可选 query、match、serverId、workspaceId、targetId、detail | runId、resolution、registryChanged、targets、unresolved；完整契约见下节 |
-| sodeck_exec_start | targetId、requestId、command；可选 timeoutSeconds，默认 300，1–3600；waitMs，默认 1000，0–20000 | 普通任务事实与第一 text 页；正等待附 wait |
+| sodeck_exec_start | targetId、requestId、command；mode?（batch 默认 / pipe / pty）、timeoutSeconds?（1–3600）、cols?/rows?（PTY 80×24）、waitMs?（1000，0–20000） | 普通任务事实与第一 text 页；正等待附 wait |
 | sodeck_file_download | targetId、requestId、remotePath | runId、taskId、kind=download |
 | sodeck_task_cancel | taskId | taskId、cancelRequested、result（当时任务事实，不含正文） |
 
-targetId/taskId 最长 256 字节，requestId 最长 128，command 最长 16384，remotePath 最长 4096。必需字符串非空；命令和路径拒绝 NUL。timeoutSeconds/waitMs 为整数。命令使用远端非交互 shell；下载一个普通文件到新建本地证据，不覆盖已有目标。
+targetId/taskId 最长 256 字节，requestId 最长 128，command 最长 16384，remotePath 最长 4096。必需字符串非空；命令和路径拒绝 NUL。timeoutSeconds/waitMs 为整数。mode=batch 缺省期限 300 秒、stdin 关闭；pipe stdin 开放、pty 分配终端，两者缺省没有总期限。显式 null 期限拒绝。cols（2–1000）、rows（1–500）仅 pty 接受。规范化模式、期限和尺寸属于启动去重参数，waitMs 不属于；下载一个普通文件到新建本地证据，不覆盖已有目标。
 
 exec_start 在本次窗口内等待稳定 phase=done，出现输出、revision、取消请求或 finalizing 只重新观察，不提前结束。到期返回当前任务与已保存正文，wait.reason=timeout，远端继续；完成为 reason=done。默认普通事实与 text 页的字段同 task_get，固定 cursor="0"；不接受 detail/outputMode/分页参数。waitMs=0 不主动等待且省略 wait，同样返回任务与第一文本页。下载不接受 waitMs，继续立即返回凭据。
 
@@ -67,6 +67,34 @@ waitMs 只控制本次主动等待，timeoutSeconds 仍控制实际执行。窗�
 runId 是插件进程身份，taskId 包含运行身份并按不透明字符串使用。targetId 包含连接代次。重新连接要重新选择目标；旧任务在原插件进程中仍可查询。升级/重启后新进程不扫描恢复历史，也不接受旧短 task-N 别名。HTTP 断开和零匹配列表都不能证明远端未执行。
 
 取消只在 collecting 阶段首次记录请求。finalizing/done 返回实际既有 cancelRequested，不修改事实；ACK 不表示远端或所有子进程已退出，也不撤销副作用。
+
+## 交互输入（0.7.0）
+
+要求核心 1.10.0 的 session.process.v1，缺少时插件初始化明确失败。保留原十工具，新增 sodeck_task_input；batch 原调用方式继续使用。不会在运行中改变模式、建立新 SSH 连接或自动重跑原命令。
+
+| task_input 参数 | 范围 |
+| --- | --- |
+| taskId | 本次运行的原命令任务；下载不支持 |
+| sequence | 1 起始的十进制 u64 字符串，以 interaction.nextInputSequence 为准 |
+| action=write | text 与 dataBase64 二选一；UTF-8 或解码后原始字节最多 16 KiB，Base64 编码最多 24 KiB；不补换行 |
+| action=eof | 仅 pipe；不带内容或尺寸，关闭 stdin，输出采集继续 |
+| action=resize | 仅 pty；cols 2–1000，rows 1–500，均为整数 |
+
+未知或不适用字段拒绝。text 可含 NUL、CR、LF；Ctrl+C、Ctrl+D、方向键用实际字节发送。PTY 的 Ctrl+D 由远端终端解释，raw 模式不等于关闭 stdin。
+
+成功返回原任务普通事实与 interaction，不读取正文；错误使用 isError=true，并在取得任务时附原事实。interaction 和 detail.input（原启动参数）分别表达控制状态和启动诊断。interaction 包含 mode、state（open/closing/closed 或尚未知的 null）、available、nextInputSequence、last 和 attempt。last 为核心最近接纳的 sequence/action/state/sentBytes/error；state 为 pending/sent/failed/unknown。sent 只证明本地 SSH 通道发送调用成功，程序消费情况由输出证明。attempt 为 MCP 尚未结束或接纳不明的序号、sending/unknown 状态与通信错误，不含输入原文。
+
+同任务只允许一个未确认输入，最近已接纳序号和同一规范化字节重复返回既有事实；同序号不同内容为 inputConflict。较旧序号 inputExpired，跳号 invalidSequence，未结束输入阻止新输入并返回 resourceBusy。接纳前拒绝不推进序号；已接纳后即使发送失败或未知也保留原回执，不重新发送。原输入 RPC 回包丢失时仅查询或显式重试完全相同输入，后续 read/status 可以恢复它的接纳与完成事实。核心只保留一项最近输入，MCP 保留最近参数及最多一项未确认尝试，不建立输入历史。
+
+启动未收到远端 Success 为 inputNotReady；batch 或不适用动作 unsupported；停止、取消、EOF 或收尾为 inputClosed。陈旧原会话 staleContext，已释放资源 processNotFound，不把输入转给重连后的新会话。HTTP 中断不撤销已接纳输入；在途 RPC 完成前仍占原短 IO 额度。收尾先封闭输入并等待实际 RPC 结束，再保存最近回执和清理资源。
+
+例如启动 `{"targetId":"target","requestId":"sudo-install","command":"sudo command","mode":"pty"}`，读取原 taskId 输出及 interaction 后发送：
+
+```json
+{"taskId":"task","sequence":"1","action":"write","text":"password\r"}
+```
+
+继续读同一任务；错误密码产生的新提示使用下一序号。普通 input 参数、日志和证据不把密码作为另一种特殊执行协议。
 
 ## sodeck_targets_list
 
@@ -152,14 +180,14 @@ registryChanged=true 或 unresolved 非空时 resolution=incomplete。无 query 
 
 普通结果保留 taskId/runId/targetId/requestId/kind、接纳时实际 target、phase/done/cancelRequested/revision、native、evidence 和 resourceReleased；有清理故障时附 cleanupError。省略完整 input/Context、时间、本地目录及原生内部 ID/worker/耗时。target 未确认时为 null，不从当前连接猜历史归属。
 
-native 只投影实际存在的 state、admission、execSent、exitCode/exitSignal、remoteExitConfirmed、outputComplete、received/total 与简明 error；缺失不补 false 或 0。unavailable 可附一层 lastResult 的最后观察事实，更深内容标 lastResultDetailsAvailable=true，不把历史退出结果当当前确认。
+交互任务的普通、诊断和侧栏详情均附 interaction。native 只投影实际存在的 state、phase、admission、execSent、launchQueued、launchAccepted、exitCode/exitSignal、remoteExitConfirmed、outputComplete、received/total 与简明 error；缺失不补 false 或 0。unavailable 可附一层 lastResult 的最后观察事实，更深内容标 lastResultDetailsAvailable=true，不把历史退出结果当当前确认。
 
 detail=true 返回同一捕获中的原 input、完整 Context、时间、directory、native 原对象、evidence.path 与完整错误；不另附一份普通任务副本。detail=true、none 不检查正文文件，不能恢复上一次未持久化的临时读取错误；诊断正文故障需重读对应游标。
 
 | 模式 | output | 正文 IO |
 | --- | --- | --- |
-| text，默认 | stdout、stderr、nextCursor、savedBytes、hasMore、previewEncoding；不含 chunks | 读一页并按来源解码 |
-| full | chunks、nextCursor、savedBytes、hasMore；不含 stdout/stderr/previewEncoding | 同一 reader 校验原信封，只保存一份原字节正文 |
+| text，默认 | pipe/batch 为 stdout、stderr，PTY 为 terminal；另含 nextCursor、savedBytes、hasMore、previewEncoding；不含 chunks | 读一页并按来源解码 |
+| full | chunks、nextCursor、savedBytes、hasMore；不含 stdout/stderr/terminal/previewEncoding | 同一 reader 校验原信封，只保存一份原字节正文 |
 | none | 省略 output，命令保留 outputInfo.savedBytes；cursor 只能省略或为 "0" | 不打开、解析或校验正文 |
 
 有 output 时不重复 outputInfo.savedBytes。下载任意模式省略 output 和 outputInfo，保留 file.remotePath；file.localPath 仅 done=true、evidence.complete=true 且已提交文件时可用，其他为 null。诊断 evidence.path 可以保留残留证据路径，不能作为完整下载交付。
@@ -168,7 +196,7 @@ detail=true 返回同一捕获中的原 input、完整 Context、时间、direct
 
 一页最多约 16 KiB 原始 JSONL 完整信封。cursor 超过保存水位或不在完整行边界为 invalidCursor；继续使用 nextCursor。一次捕获 Record 的 revision、native、保存事实和 committed，output 的水位与 hasMore 使用该次记录，不混入读取中新输出。full/text、detail 可在同一 nextCursor 上切换。水位耗尽不表示任务结束。
 
-stdout/stderr 为每页有损 UTF-8，previewEncoding="utf-8-lossy-per-page"；它们不表达跨来源顺序，二进制、跨页字符和准确顺序需读取 chunks 的原字节 Base64 与 sequence 或本地证据。none 不校验证据，正文损坏不阻止状态查询，也不因此证明正文可读。
+stdout/stderr/terminal 为每页有损 UTF-8，previewEncoding="utf-8-lossy-per-page"；它们不表达跨来源顺序，二进制、跨页字符和准确顺序需读取 chunks 的原字节 Base64 与 sequence 或本地证据。none 不校验证据，正文损坏不阻止状态查询，也不因此证明正文可读。
 
 ```json
 {"taskId":"task-run-example-42","cursor":"680","outputMode":"text","waitMs":20000,"sinceRevision":"8"}
@@ -187,13 +215,15 @@ stdout/stderr 为每页有损 UTF-8，previewEncoding="utf-8-lossy-per-page"；�
 
 返回 `wait:{requestedMs,elapsedMs,reason}`，elapsedMs 使用单调时钟，包含响应准备的耗时；timeout 为正常回包，不修改 native/error。none 不以已有正文作为立即返回条件。省略 sinceRevision 时以请求初始版本为基线；显式携带上次 revision 可以发现两次请求之间的变化。输出 cursor 与 revision 各自保存，不可互换。
 
-revision 从 1 开始，以十进制字符串返回。接纳、原生运行/退出/错误、实际下载进度、成功提交的新信封、保存/清理状态、第一次取消请求和目标摘要变化会递增。observedAt、elapsedMs、读取次数、HTTP 重试和无新数据轮询不递增。多个事实可合并一次递增，客户端只比较大小。版本属于同一 runId/taskId，不是持久事件日志。
+revision 从 1 开始，以十进制字符串返回。接纳、原生运行/退出/错误、实际下载进度、成功提交的新信封、保存/清理状态、第一次取消请求和目标摘要变化会递增。observedAt、elapsedMs、读取次数、HTTP 重试和无新数据轮询不递增。多个事实可合并一次递增，客户端只比较大小。输入尝试及接纳/完成回执变化也递增；迟到旧输入回包和原生结束事实不会使控制水位倒退。版本属于同一 runId/taskId，不是持久事件日志。
 
 等待为 async 监听已有事实，不创建远端 worker 或专用核心轮询。全插件最多 16 个等待、每任务 2 个，超额 resourceBusy，不排队或悄悄降为即时查询。新正等待启动预先取得位置；已有任务即刻满足条件的读取不占等待额度。等待结束先归还等待位置，再读取正文。正文 IO 全插件最多 4 个，超额 resourceBusy；permit 随实际阻塞读取完成释放，HTTP 取消不虚假释放仍在执行的 IO。
 
 MCP 请求取消、HTTP 中断或插件 shutdown 释放等待及配额；不调用 task_cancel。正常断开取消可见后的一秒内结束等待；不能抢占已经开始的系统磁盘 IO。目标/工作区关闭按原生命周期处理，插件退出可能直接中断 HTTP，不保证最后回包。读取中断后继续查原任务。
 
 ## 状态、证据与错误
+
+output.jsonl 的 batch/pipe 信封为 v1、source=stdout/stderr；PTY 为 v2、source=terminal。读取按任务固定模式校验来源与版本，不把未知来源归为 stdout。终端文本保留 ANSI 等原字节的有损预览，不提供屏幕仿真。metadata.json schemaVersion=2 保留规范化启动 input、interaction 和原生事实。
 
 phase=collecting 表示接纳/采集，finalizing 表示最终保存和原生清理，done 表示稳定发布。evidence.state 为 collecting/finalizing/saved/incomplete/failed，complete 仅在完整捕获或下载、保存无错误且最终 metadata 保存成功时为 true。非零退出码可有完整证据；done、取消 ACK 或本地保存不能推断全部远端子进程结束。清理失败完整信息在 detail=true 的 cleanupError.details，按 step 标识 cancel/status/release/batch.end。
 
@@ -218,6 +248,6 @@ phase=collecting 表示接纳/采集，finalizing 表示最终保存和原生清
 
 0.5.0 将 targets_list 默认形状改为简明候选和 resolution；原 context/state/closing 改用 detail=true，客户端需重新发现工具并处理 ambiguous/incomplete。要求核心 1.6.0 的 session.target.v2，旧核心明确初始化失败，不用目录或缓存补出不可靠摘要。
 
-0.3.0 升级读取契约：默认由 full 改为 text，任务事实默认精简，full 不再附文本，structuredContent 删除。旧客户端需改为解析 content[0].text；原参数、路径、完整错误改用 detail=true。0.4.0 将 exec_start 从立即凭据改为默认有限等待与普通任务/第一文本页；依赖旧形状或极短回包期限的客户端需迁移，waitMs=0 保留立即交接意图但不恢复旧形状。客户端重新发现 tools/list。六工具名、启动/目标身份、task_get 的变化等待、分页、去重及证据文件 schemaVersion=1 保持。无旧版开关或重复工具。
+0.3.0 升级读取契约：默认由 full 改为 text，任务事实默认精简，full 不再附文本，structuredContent 删除。旧客户端需改为解析 content[0].text；原参数、路径、完整错误改用 detail=true。0.4.0 将 exec_start 从立即凭据改为默认有限等待与普通任务/第一文本页；依赖旧形状或极短回包期限的客户端需迁移，waitMs=0 保留立即交接意图但不恢复旧形状。客户端重新发现 tools/list。六工具名、启动/目标身份、task_get 的变化等待、分页、去重保持；0.7.0 元数据使用 schemaVersion=2，保存模式及最近输入摘要，原文件不扫描或迁移。无旧版开关或重复工具。
 
 返回[文档索引](README.md)。

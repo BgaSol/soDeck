@@ -3,6 +3,7 @@ mod collector;
 mod connections;
 mod evidence;
 mod identity;
+mod input;
 mod mcp;
 mod query;
 mod response;
@@ -59,7 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "session.target.v2",
                 "servers.read.v1",
                 "connections.v1",
-                "session.stream.process.v1",
+                "session.process.v1",
                 "files.pluginData.v1",
                 "files.operations.v2",
                 "ui.background.v1",

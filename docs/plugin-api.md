@@ -17,6 +17,30 @@
 
 已安装插件从自身包展示图标。官方目录预览按同一次 Git 树中的发行配置和默认 SVG blob获取，字节随既有目录缓存保存；单项图片失败使用回退，离线保留目录缓存。未安装插件的目录预览不能覆盖已安装包。旧核心忽略新增映射，按原名称显示；新核心仍支持旧插件，API/UI 主版本不变。核心内旧图形作为兼容数据冻结，不再为新插件增加图形。
 
+## 通用远端进程（核心 1.10.0）
+
+可选能力 `session.process.v1` 为插件提供同一远端执行资源的启动、原字节捕获与顺序输入。它复用核心连接与生命周期；不承担密码提示识别、业务命令生成或终端屏幕仿真。
+
+| RPC | 参数与结果 |
+| --- | --- |
+| session.process.start | viewId、expectedContext、operationId（1–128 UTF-8 字节）、sequence（u64 十进制字符串）、command（1–16 KiB，无 NUL）、maxOutputBytes（1 KiB–64 MiB）、retention（fixed/rolling）、timeoutMs?（1000–3600000 或 null）、programOutput?（startup-v1，仅 pipe）、io?；返回 processId/status |
+| session.process.lookup | 原完整启动参数；known、已知时 processId/status；只查原票据 |
+| session.process.read | processId/offset（完整信封边界的十进制字符串）；chunks/nextOffset/watermark/earliestAvailableOffset/status，每页最多 48 KiB JSONL |
+| session.process.status | processId；原执行、输入与输出水位事实 |
+| session.process.input | processId/inputSequence/action；write 带 dataBase64（解码后最多 16 KiB、编码最多 24 KiB），eof 无内容，resize 带 cols/rows；返回原 status |
+| session.process.cancel | processId；只取消原通道，返回事实，不能证明全部远端子进程退出 |
+| session.process.release | processId；封闭并取消，停止订阅，等待在途资源；releaseRequested/resourceReleased/status |
+
+io 固定为 `{kind:"pipe",stdin:"closed"|"open"}` 或 `{kind:"pty",cols,rows}`，缺省 pipe/closed；尺寸 cols 2–1000、rows 1–500。核心缺省没有总 deadline，由调用服务决定期限；启动握手仍最多 30 秒。PTY 不接受 startup-v1 前导或独立 eof，pipe 不接受 resize；未运行资源不能升级为 PTY。
+
+status 分别保留 execSent（启动发送已请求）、launchQueued（本地 SSH 库已排入消息）、launchAccepted（远端 Success）、phase（opening/running/finishing/finished）、remoteExitConfirmed、exitCode/exitSignal/error、finished、workerFinished、outputComplete。队列成功不等于服务器接受。输出同原捕获：pipe 用 v1 stdout/stderr，PTY 用 v2 terminal，数据块最多 8192 字节，Base64 保留原字节。退出尾部和写盘完成后才标 workerFinished。
+
+input 为 state/available/nextInputSequence/last；last 带 sequence/action/state/sentBytes/error。1 起的连续序号只保留最近一项操作和 oneshot 完成回执；重复相同参数先返回原事实，冲突 inputConflict、旧号 inputExpired、跳号 invalidSequence。新输入先检查原 Context、资源接纳和模式；启动未接受 inputNotReady、pending 或队列满 resourceBusy、封闭 inputClosed。参数拒绝不推进序号。接纳后结果 pending/sent/failed/unknown 固定归原序号；sent 为 SSH 写调用成功，failed 为确定未发，unknown 为开始发送后未确认。EOF 接纳即封闭后续输入，重复 EOF 仍返回原回执；取消后未发输入失败，正在发送的结果如实未知。
+
+旧 session.stream.* 由 [session_stream.rs](../src-tauri/src/session_stream.rs)适配到同一命令资源表与执行器，保留旧 ID、输出、期限、pin/read/订阅契约；不另起 worker 或第二张表。session.exec 的短结果/环境探测和 terminal 的 Surface 序号/Barrier 各保留原服务编排。活跃额度、阅读预算和三个服务的资源计数继续分别管理，不引入全局进程登记层。
+
+实现：[session_process.rs](../src-tauri/src/session_process.rs)、[remote_execution.rs](../src-tauri/src/remote_execution.rs)、[execution_output.rs](../src-tauri/src/execution_output.rs)。原始启动 RPC 去重沿用 view/Context/operationId 与完整规范化参数，release 后旧 sequence 不能重启；实例停止或工作区关闭清理原资源。
+
 ## 非交互命令流与本地内容导出
 
 以下为核心 1.1.0 新增的可选能力；插件必须检查 `session.stream.v1`、`viewData.v1` 和 `content.export.v1`，缺少时提示升级核心。旧短命令和终端接口保持兼容。

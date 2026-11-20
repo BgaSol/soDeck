@@ -20,6 +20,8 @@
 
 共享 [plugin-client](../crates/plugin-client/src/lib.rs) 提供 RPC、命令票据、设置、共享状态和文件编辑生命周期客户端，不保存连接凭据，也不封装插件之间的直接调用。文件编辑的标准 UI 在 [packages/file-editor](../packages/file-editor/)，随使用组件独立打包；[接入与职责](features/file-editor.md)由通用编辑功能说明维护。
 
+短命令、命令捕获和终端通过 [remote_execution.rs](../src-tauri/src/remote_execution.rs) 共用通道启动、读写、退出和取消循环；[execution_output.rs](../src-tauri/src/execution_output.rs) 只包含既有内存结果、Capture 和 Replay 三种输出。各服务仍管理自己的接纳、额度与持久结果，不设第四张全局资源表。[session_process.rs](../src-tauri/src/session_process.rs) 替代原命令流资源表，提供原进程的有界顺序输入；旧流 RPC 为同一资源的适配器。MCP 管理调查任务、调用端输入身份与本地证据；提示解释和输入内容由客户端决定。
+
 非交互命令流由[session_stream.rs](../src-tauri/src/session_stream.rs)复用核心会话，[capture.rs](../src-tauri/src/streams/capture.rs)管理有界原始字节与固定阅读范围；[content_export.rs](../src-tauri/src/content_export.rs)只负责用户选择的本地字节导出。这两项可选能力从核心 1.1.0 提供，契约统一见[插件API](plugin-api.md)。Docker命令、源时间、级别、历史覆盖和采集代次属于插件后台；解析、搜索、虚拟正文、缩略导航及阅读状态属于Docker UI/Worker。核心不保存容器日志索引，不导入Docker正文样式；颜色和基础控件继续复用packages/ui。
 
 [Agent MCP插件](features/mcp.md)负责回环 HTTP、Token、字面资料发现、工具参数、原请求的目标准备与证据保存。核心负责非敏感资料投影、实际连接接纳、既有会话、命令流及通用复制，契约见[API](plugin-api.md)。桌面与外部 open 使用同一个连接注册表与实际 Attempt；原请求表保存 attached/accepted/failed/cancelled，current 索引只代表当前尝试。accept 在同一连接/工作台锁边界固定原 Context，取消先登记原身份以阻止迟到派发。凭据不进入选择令牌，路线匹配复用原 trust_scope。

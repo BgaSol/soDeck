@@ -15,6 +15,28 @@ const sshd = process.env.SODECK_SSHD ?? (process.platform === "win32" ? path.joi
 const quote = value => `"${value.replaceAll("\\", "/")}"`;
 let daemon;
 const extraDaemons=[];
+const sudoTest = flags.mcp && process.platform === 'linux';
+const sudoUser = `sdmcp${process.pid}`;
+const sudoPassword = 'SoDeck-fixture-137';
+const sudoers = `/etc/sudoers.d/${sudoUser}`;
+let sudoAccount = false;
+function privileged(args, input) {
+  const result = spawnSync('sudo', ['-n', ...args], { input, encoding:'utf8', windowsHide:true });
+  if (result.status !== 0) throw new Error(result.stderr || `Fixture setup failed: ${args[0]}`);
+}
+function startDaemon(config) {
+  return spawn(sudoTest ? 'sudo' : sshd, sudoTest ? ['-n', sshd, '-D', '-e', '-f', config] : ['-D','-e','-f',config], { windowsHide:true,stdio:['ignore','ignore','pipe'] });
+}
+async function stopDaemon(child, pidFile) {
+  if (!child || child.exitCode !== null) return;
+  const ended = new Promise(resolve=>child.once('exit',resolve));
+  if (sudoTest && fs.existsSync(pidFile)) {
+    const pid=fs.readFileSync(pidFile,'utf8').trim();
+    if (!/^[1-9][0-9]*$/.test(pid)) throw new Error('Invalid fixture daemon pid');
+    privileged(['kill','-TERM',pid]);
+  } else child.kill();
+  await ended;
+}
 try {
   const socket = net.createServer(); await new Promise(resolve => socket.listen(0, "127.0.0.1", resolve));
   const port = socket.address().port; await new Promise(resolve => socket.close(resolve));
@@ -23,6 +45,17 @@ try {
     if (result.status !== 0) throw new Error(result.stderr || "ssh-keygen failed");
   }
   const username = os.userInfo().username;
+  if (sudoTest) {
+    privileged(['useradd','-M','-d','/tmp','-s','/bin/sh',sudoUser]);
+    sudoAccount = true;
+    privileged(['chpasswd'], `${sudoUser}:${sudoPassword}\n`);
+    const policy=path.join(directory,'sudoers');
+    fs.writeFileSync(policy,`Defaults:${sudoUser} timestamp_timeout=0,passwd_tries=3\n${sudoUser} ALL=(root) ALL\n`);
+    privileged(['visudo','-c','-f',policy]);
+    privileged(['install','-m','0440',policy,sudoers]);
+    fs.chmodSync(directory,0o755);
+    fs.chmodSync(path.join(directory,'user.pub'),0o644);
+  }
   fs.writeFileSync(path.join(directory, "sshd_config"), [
     `Port ${port}`, "ListenAddress 127.0.0.1", `HostKey ${quote(path.join(directory, "host"))}`,
     `PidFile ${quote(path.join(directory, "pid"))}`, `AuthorizedKeysFile ${quote(path.join(directory, "user.pub"))}`,
@@ -30,7 +63,7 @@ try {
     "AllowTcpForwarding yes", `Subsystem sftp ${process.env.SODECK_SFTP_SERVER ? quote(process.env.SODECK_SFTP_SERVER) : 'internal-sftp'}`, `LogLevel ${process.env.SODECK_SSHD_LOG_LEVEL ?? 'ERROR'}`, ...(process.platform === "win32" ? [] : ["UsePAM no"]), "",
   ].join("\n"));
   let diagnostic = "";
-  daemon = spawn(sshd, ["-D", "-e", "-f", path.join(directory, "sshd_config")], { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+  daemon = startDaemon(path.join(directory, "sshd_config"));
   daemon.stderr.on("data", data => { diagnostic += data; });
   let spawnError; daemon.on("error", error => { spawnError = error; });
   let ready = false;
@@ -45,7 +78,7 @@ try {
   if(flags.mcp)for(let i=0;i<2;i++){
     const extraSocket=net.createServer();await new Promise(r=>extraSocket.listen(0,'127.0.0.1',r));const extraPort=extraSocket.address().port;await new Promise(r=>extraSocket.close(r));
     const config=path.join(directory,`sshd-mcp-${i}.conf`);fs.writeFileSync(config,fs.readFileSync(path.join(directory,'sshd_config'),'utf8').replace(`Port ${port}`,`Port ${extraPort}`).replace(`PidFile ${quote(path.join(directory,'pid'))}`,`PidFile ${quote(path.join(directory,'pid-'+i))}`));
-    const child=spawn(sshd,['-D','-e','-f',config],{windowsHide:true,stdio:['ignore','ignore','pipe']});extraDaemons.push(child);child.stderr.on('data',data=>{diagnostic+=data;});let error;child.on('error',e=>{error=e;});
+    const child=startDaemon(config);extraDaemons.push(child);child.stderr.on('data',data=>{diagnostic+=data;});let error;child.on('error',e=>{error=e;});
     let listening=false;for(let n=0;n<50;n++){await delay(100);if(error||child.exitCode!==null)throw new Error('MCP SSH startup failed: '+(error??diagnostic));listening=await new Promise(r=>{const probe=net.connect({host:'127.0.0.1',port:extraPort});probe.on('connect',()=>{probe.destroy();r(true);});probe.on('error',()=>r(false));});if(listening)break;}if(!listening)throw new Error('MCP SSH daemon did not listen');mcpPorts.push(extraPort);
   }
   if (launcher) {
@@ -65,6 +98,7 @@ try {
     const status=flags['system-status']||communication;
     const uiOnly=communication||(files&&flags['files-ui-only'])||(network&&flags['network-ui-only']);
     const env={ ...process.env, SODECK_TEST_SSH_PORT: String(port), SODECK_TEST_SSH_USER: username, SODECK_TEST_SSH_KEY: path.join(directory, "user"),SODECK_TEST_MCP_PORTS:JSON.stringify(mcpPorts) };
+    if(sudoTest){env.SODECK_TEST_SUDO_USER=sudoUser;env.SODECK_TEST_SUDO_PASSWORD=sudoPassword;env.SODECK_TEST_SUDO_MARKER=path.join(directory,'sudo-marker');}
     if(flags.mcp){env.SODECK_TEST_MCP_PLUGIN=testPluginDirectory('mcp');env.SODECK_TEST_MCP_OUTPUT=path.resolve('artifacts/mcp');}
     if(network) env.SODECK_TEST_CURL=await testCurl();
     for(const plugin of [terminal||flags.docker?'terminal':null,files?'files':null,network?'network-proxy':null,status?'system-status':null,flags.docker?'docker':null].filter(Boolean)){

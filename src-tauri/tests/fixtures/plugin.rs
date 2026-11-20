@@ -169,6 +169,8 @@ fn main() {
                             || rpc == "session.exec.start"
                             || rpc == "session.stream.open"
                             || rpc == "session.stream.lookup"
+                            || rpc == "session.process.start"
+                            || rpc == "session.process.lookup"
                         {
                             params["viewId"] = json!(id);
                         }

@@ -82,8 +82,8 @@ fn native_facts(native: &Value, history: bool) -> Value {
 }
 fn identity(task: &Task, r: &Record) -> Value {
     let target=r.target.as_ref().map(|t|json!({"name":t.name,"protocol":t.protocol,"endpoint":t.endpoint,"username":t.username}));
-    json!({"taskId":task.id,"runId":task.run,"kind":task.kind.name(),"targetId":task.target.id,
-        "requestId":task.input["requestId"],"target":target,"done":r.phase==Phase::Done,
+    json!({"taskId":task.id,"runId":task.run,"kind":task.kind().name(),"targetId":task.target.id,
+        "requestId":task.start_input()["requestId"],"target":target,"done":r.phase==Phase::Done,
         "phase":match r.phase {Phase::Collecting=>"collecting",Phase::Finalizing=>"finalizing",Phase::Done=>"done"},
         "revision":r.revision.to_string(),"cancelRequested":r.cancel_requested,"resourceReleased":r.released})
 }
@@ -109,14 +109,20 @@ fn diagnostic(task: &Task, r: &Record) -> Value {
     value["createdAt"] = json!(task.created);
     value["finishedAt"] = json!(r.finished);
     value["observedAt"] = json!(r.observed);
-    value["input"] = task.input.clone();
+    value["input"] = task.start_input().clone();
     value["directory"] = json!(task.directory);
+    if let Some(interaction) = task.interaction(r) {
+        value["interaction"] = interaction;
+    }
     value
 }
 fn ordinary(task: &Task, r: &Record) -> Value {
     let mut value = identity(task, r);
     value["native"] = native_facts(&r.native, true);
     value["evidence"] = evidence(r, false);
+    if let Some(interaction) = task.interaction(r) {
+        value["interaction"] = interaction;
+    }
     if !r.cleanup_error.is_null() {
         value["cleanupError"] = brief_error(&r.cleanup_error);
     }
@@ -128,6 +134,10 @@ fn output(page: &Page) -> Value {
         PageBody::Text { stdout, stderr } => {
             value["stdout"] = json!(stdout);
             value["stderr"] = json!(stderr);
+            value["previewEncoding"] = json!("utf-8-lossy-per-page");
+        }
+        PageBody::Terminal { terminal } => {
+            value["terminal"] = json!(terminal);
             value["previewEncoding"] = json!("utf-8-lossy-per-page");
         }
         PageBody::Full { chunks } => {
@@ -146,8 +156,8 @@ fn mcp_facts(c: &CapturedTask, detail: bool, body: bool) -> Value {
     if detail {
         value["context"] = json!(task.target.context);
     }
-    if task.kind == Kind::Download {
-        value["file"] = json!({"remotePath":task.input["remotePath"],"localPath":if r.phase==Phase::Done && matches!(r.saved,Saved::Complete) {json!(r.path)} else {Value::Null}});
+    if task.kind() == Kind::Download {
+        value["file"] = json!({"remotePath":task.start_input()["remotePath"],"localPath":if r.phase==Phase::Done && matches!(r.saved,Saved::Complete) {json!(r.path)} else {Value::Null}});
     } else if !body {
         value["outputInfo"] = json!({"savedBytes":r.committed.to_string()});
     }
@@ -170,7 +180,8 @@ pub fn mcp_row(c: &CapturedTask) -> Value {
     value
 }
 fn row_fields(value: &mut Value, c: &CapturedTask) {
-    let text = c.task.input[if c.task.kind == Kind::Exec {
+    let input = c.task.start_input();
+    let text = input[if c.task.kind() == Kind::Exec {
         "command"
     } else {
         "remotePath"
@@ -186,12 +197,15 @@ fn row_fields(value: &mut Value, c: &CapturedTask) {
 pub fn mcp_list(list: TaskList) -> Value {
     json!({"runId":list.run,"tasks":list.tasks.iter().map(mcp_row).collect::<Vec<_>>(),"counts":{"active":list.active,"done":list.done},"hasMore":list.has_more,"nextCursor":list.next_cursor})
 }
+pub fn mcp_input(c: &CapturedTask) -> Value {
+    ordinary(&c.task, &c.record)
+}
 pub fn mcp_cancel(c: &CapturedTask) -> Value {
     json!({"taskId":c.task.id,"cancelRequested":c.record.cancel_requested,"result":mcp_facts(c,false,false)})
 }
 pub fn ui_task(read: &TaskRead) -> Value {
     let mut value = diagnostic(&read.captured.task, &read.captured.record);
-    value["outputInfo"] = json!({"savedBytes":if read.captured.task.kind==Kind::Exec {json!(read.captured.record.committed.to_string())} else {Value::Null}});
+    value["outputInfo"] = json!({"savedBytes":if read.captured.task.kind()==Kind::Exec {json!(read.captured.record.committed.to_string())} else {Value::Null}});
     if let Some(page) = &read.page {
         value["output"] = output(page);
     }
@@ -231,7 +245,7 @@ pub fn ui_read_error(failure: TaskFailure) -> Value {
     error
 }
 pub fn mcp_download_start(task: &Task) -> Value {
-    json!({"runId":task.run,"taskId":task.id,"kind":task.kind.name()})
+    json!({"runId":task.run,"taskId":task.id,"kind":task.kind().name()})
 }
 
 const LIMIT: usize = 256 * 1024;
@@ -354,8 +368,11 @@ mod tests {
             order: 1,
             admission_sequence: 1,
             target: captured().task.target.clone(),
-            input: json!({"requestId":"download","remotePath":"/data/中文"}),
-            kind: Kind::Download,
+            spec: crate::task::TaskSpec::Download(crate::task::DownloadSpec {
+                target_id: "target".into(),
+                request_id: "download".into(),
+                remote_path: "/data/中文".into(),
+            }),
             root: std::path::PathBuf::new(),
         }));
         let mut c = CapturedTask::new(task);

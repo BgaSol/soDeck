@@ -1,15 +1,24 @@
-//! Owned, bounded non-interactive commands on the current authenticated session.
-use crate::{resource_owner::Owner, workspaces::Context, AppCore};
+//! Legacy bounded commands and environment probes on the common remote runner.
+use crate::{
+    execution_output::{MemoryOutput, OutputTarget},
+    remote_execution::{self, Execution, ExecutionIo, Launch, Options},
+    resource_owner::Owner,
+    resource_tasks::Tasks,
+    workspaces::Context,
+    AppCore,
+};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     time::{Duration, Instant},
 };
 use tokio_util::sync::CancellationToken;
-
 #[derive(Default)]
 pub(crate) struct Executions(Mutex<Registry>);
 #[derive(Default)]
@@ -21,21 +30,15 @@ struct Task {
     owner: Owner,
     request: Start,
     cancel: CancellationToken,
-    result: Mutex<Output>,
     started: Instant,
-}
-struct Output {
-    state: &'static str,
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
-    exit_code: Option<u32>,
-    exit_signal: Option<String>,
-    error: Value,
-    confirmed: bool,
-    sent: bool,
-    finished: Option<Instant>,
-    released: bool,
-    startup: Value,
+    output: Mutex<Arc<Mutex<MemoryOutput>>>,
+    current: Mutex<Option<Arc<Execution>>>,
+    tasks: Arc<Tasks>,
+    finished: AtomicBool,
+    released: AtomicBool,
+    ended: Mutex<Option<Instant>>,
+    domain_error: Mutex<Value>,
+    environment_ready: AtomicBool,
 }
 #[derive(Clone, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -78,19 +81,67 @@ fn error(code: &'static str, message: impl Into<String>) -> Error {
         message: message.into(),
     }
 }
+
 fn watermark(owner: &Owner) -> String {
     format!(
         "{}/{}/{}/{}",
         owner.instance, owner.view, owner.context.connection_id, owner.context.generation
     )
 }
+impl Task {
+    fn stop(&self) {
+        self.cancel.cancel();
+        if let Some(ex) = self.current.lock().unwrap().as_ref() {
+            ex.cancel.cancel();
+        }
+    }
+    fn facts(&self) -> Value {
+        let mut value = self
+            .current
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|ex| ex.snapshot())
+            .unwrap_or_else(
+                || json!({"execSent":false,"launchQueued":false,"remoteExitConfirmed":false}),
+            );
+        value["execSent"] = value["launchQueued"].clone();
+        if !self.finished.load(Ordering::Acquire) {
+            value["state"] = json!("running");
+        }
+        let domain = self.domain_error.lock().unwrap().clone();
+        if !domain.is_null() {
+            value["state"] = json!(match domain["code"].as_str() {
+                Some("cancelled") => "cancelled",
+                Some("timedOut" | "deadlineExceeded") => "timedOut",
+                _ => "failed",
+            });
+            value["error"] = domain;
+        }
+        if value["error"]["code"] == "deadlineExceeded" {
+            value["error"]["code"] = json!("timedOut");
+            if self.finished.load(Ordering::Acquire) {
+                value["state"] = json!("timedOut");
+            }
+        }
+        if self.request.environment_keys.is_some()
+            && !self.environment_ready.load(Ordering::Acquire)
+        {
+            value["exitCode"] = Value::Null;
+            value["exitSignal"] = Value::Null;
+            value["remoteExitConfirmed"] = json!(false);
+        }
+        value
+    }
+}
 impl Executions {
     pub(crate) fn pending(&self, matches: impl Fn(&Owner) -> bool) -> usize {
-        let registry = self.0.lock().unwrap();
-        registry
+        self.0
+            .lock()
+            .unwrap()
             .tasks
             .values()
-            .filter(|task| matches(&task.owner) && task.result.lock().unwrap().finished.is_none())
+            .filter(|t| matches(&t.owner) && t.tasks.active() > 0)
             .count()
     }
     pub(crate) fn reap(&self) {
@@ -101,11 +152,11 @@ impl Executions {
         registry.watermarks.retain(|_, (owner, _)| !matches(owner));
         registry.tasks.retain(|_, task| {
             if matches(&task.owner) {
-                task.cancel.cancel();
-                task.result.lock().unwrap().released = true;
+                task.stop();
+                task.released.store(true, Ordering::Release);
+                task.tasks.close();
             }
-            // Running tasks keep their reserved budget until the worker exits.
-            task.result.lock().unwrap().finished.is_none() || !matches(&task.owner)
+            task.tasks.active() > 0 || !matches(&task.owner)
         });
     }
 }
@@ -117,21 +168,20 @@ impl AppCore {
         method: &str,
         p: &Value,
     ) -> Result<Value, Error> {
-        let text = |key: &str| {
-            p[key]
+        let text = |name: &str| {
+            p[name]
                 .as_str()
-                .ok_or_else(|| error("invalidParams", format!("缺少 {key}")))
+                .ok_or_else(|| error("invalidParams", format!("缺少 {name}")))
         };
-        if method == "session.state" {
-            return self.target_facts(plugin, instance, text("viewId")?, None, false);
+        match method {
+            "session.state" => {
+                return self.target_facts(plugin, instance, text("viewId")?, None, false)
+            }
+            "session.target.describe" => return self.describe_target(plugin, instance, p),
+            "session.program.prepare" => return self.prepare_program(plugin, instance, p),
+            _ => {}
         }
-        if method == "session.target.describe" {
-            return self.describe_target(plugin, instance, p);
-        }
-        if method == "session.program.prepare" {
-            return self.prepare_program(plugin, instance, p);
-        }
-        if method == "session.exec.start" || method == "session.environment.start" {
+        if matches!(method, "session.exec.start" | "session.environment.start") {
             let request: Start = if method == "session.environment.start" {
                 let r: EnvironmentStart = serde_json::from_value(p.clone())
                     .map_err(|e| error("invalidParams", e.to_string()))?;
@@ -188,7 +238,7 @@ impl AppCore {
                     if task.request != request {
                         return Err(error("operationConflict", "同一票据参数不同"));
                     }
-                    return Ok(json!({"taskId":id,"state":task.result.lock().unwrap().state}));
+                    return Ok(json!({"taskId":id,"state":task.facts()["state"]}));
                 }
             }
             if registry
@@ -198,24 +248,26 @@ impl AppCore {
             {
                 return Err(error("operationExpired", "旧任务票据已回收"));
             }
-            let tasks: Vec<_> = registry.tasks.values().collect();
-            let own: Vec<_> = tasks
-                .iter()
+            let own: Vec<_> = registry
+                .tasks
+                .values()
                 .filter(|t| t.owner.instance == instance)
                 .collect();
-            if tasks
-                .iter()
-                .filter(|t| t.result.lock().unwrap().finished.is_none())
+            if registry
+                .tasks
+                .values()
+                .filter(|t| !t.finished.load(Ordering::Acquire))
                 .count()
                 >= 8
                 || own
                     .iter()
-                    .filter(|t| t.result.lock().unwrap().finished.is_none())
+                    .filter(|t| !t.finished.load(Ordering::Acquire))
                     .count()
                     >= 4
                 || own.len() >= 64
-                || tasks
-                    .iter()
+                || registry
+                    .tasks
+                    .values()
                     .map(|t| t.request.max_output_bytes)
                     .sum::<usize>()
                     + request.max_output_bytes
@@ -232,25 +284,28 @@ impl AppCore {
             if registry.watermarks.len() >= 4096 && !registry.watermarks.contains_key(&key) {
                 return Err(error("resourceBusy", "命令视图数量已满"));
             }
+            let output = Arc::new(Mutex::new(MemoryOutput::new(
+                request.max_output_bytes,
+                request.program_output.is_some(),
+            )));
             let task = Arc::new(Task {
                 owner,
                 request,
                 cancel: CancellationToken::new(),
                 started: Instant::now(),
-                result: Mutex::new(Output {
-                    state: "running",
-                    stdout: vec![],
-                    stderr: vec![],
-                    exit_code: None,
-                    exit_signal: None,
-                    error: Value::Null,
-                    confirmed: false,
-                    sent: false,
-                    finished: None,
-                    released: false,
-                    startup: json!({}),
-                }),
+                output: Mutex::new(output),
+                current: Mutex::new(None),
+                tasks: Arc::new(Tasks::default()),
+                finished: AtomicBool::new(false),
+                released: AtomicBool::new(false),
+                ended: Mutex::new(None),
+                domain_error: Mutex::new(Value::Null),
+                environment_ready: AtomicBool::new(false),
             });
+            let guard = task
+                .tasks
+                .enter()
+                .map_err(|e| error("workspaceClosing", e))?;
             let id = self.next_id();
             registry
                 .watermarks
@@ -263,52 +318,71 @@ impl AppCore {
                 .is_err()
                 || self.connection_session(&task.owner.context).is_err()
             {
-                task.cancel.cancel();
+                task.stop();
             }
             let core = Arc::downgrade(self);
             tauri::async_runtime::spawn(async move {
-                run(core, task, session).await;
+                run_commands(core, &task, session).await;
+                *task.ended.lock().unwrap() = Some(Instant::now());
+                drop(guard);
+                task.finished.store(true, Ordering::Release);
             });
             return Ok(json!({"taskId":id,"state":"running"}));
         }
-        let mut registry = self.executions.0.lock().unwrap();
-        reap(&mut registry);
-        let id = text("taskId")?;
-        let task = registry
-            .tasks
-            .get(id)
-            .cloned()
-            .ok_or_else(|| error("taskExpired", "命令任务已回收"))?;
+        let task = {
+            let mut registry = self.executions.0.lock().unwrap();
+            reap(&mut registry);
+            registry
+                .tasks
+                .get(text("taskId")?)
+                .cloned()
+                .ok_or_else(|| error("taskExpired", "命令任务已回收"))?
+        };
         if task.owner.plugin != plugin || task.owner.instance != instance {
             return Err(error("staleContext", "任务不属于此实例"));
         }
-        let mut out = task.result.lock().unwrap();
-        if out.released {
+        if task.released.load(Ordering::Acquire) {
             return Err(error("taskExpired", "命令任务已释放"));
         }
         match method {
             "session.exec.cancel" => {
-                task.cancel.cancel();
-                Ok(json!({"state":out.state}))
+                task.stop();
+                Ok(json!({"state":task.facts()["state"]}))
             }
             "session.exec.release" => {
-                task.cancel.cancel();
-                out.released = true;
+                task.stop();
+                task.released.store(true, Ordering::Release);
                 Ok(json!({"released":true}))
             }
             "session.exec.poll" => {
                 let a = decimal(text("stdoutOffset")?)? as usize;
                 let b = decimal(text("stderrOffset")?)? as usize;
-                if a > out.stdout.len() || b > out.stderr.len() {
+                let native = task.facts();
+                let output = task.output.lock().unwrap().clone();
+                let output = output.lock().unwrap();
+                let visible = task.request.environment_keys.is_none()
+                    || task.environment_ready.load(Ordering::Acquire);
+                let stdout = if visible {
+                    output.stdout.as_slice()
+                } else {
+                    &[]
+                };
+                let stderr = if visible {
+                    output.stderr.as_slice()
+                } else {
+                    &[]
+                };
+                if a > stdout.len() || b > stderr.len() {
                     return Err(error("invalidOffset", "输出偏移无效"));
                 }
-                let ae = (a + 8192).min(out.stdout.len());
-                let be = (b + 8192).min(out.stderr.len());
-                let mut value = json!({"state":out.state,"stdout":{"dataBase64":STANDARD.encode(&out.stdout[a..ae]),"nextOffset":ae.to_string()},"stderr":{"dataBase64":STANDARD.encode(&out.stderr[b..be]),"nextOffset":be.to_string()},"outputComplete":out.finished.is_some() && ae==out.stdout.len() && be==out.stderr.len(),"exitCode":out.exit_code,"exitSignal":out.exit_signal,"error":out.error,"remoteExitConfirmed":out.confirmed,"execSent":out.sent,"elapsedMs":out.finished.unwrap_or_else(Instant::now).duration_since(task.started).as_millis() as u64,"outputLimitExceeded":out.error["code"]=="outputLimit"});
+                let ae = (a + 8192).min(stdout.len());
+                let be = (b + 8192).min(stderr.len());
+                let done = task.finished.load(Ordering::Acquire);
+                let mut value = json!({"state":native["state"],"stdout":{"dataBase64":STANDARD.encode(&stdout[a..ae]),"nextOffset":ae.to_string()},"stderr":{"dataBase64":STANDARD.encode(&stderr[b..be]),"nextOffset":be.to_string()},"outputComplete":done&&ae==stdout.len()&&be==stderr.len(),"exitCode":native["exitCode"],"exitSignal":native["exitSignal"],"error":native["error"],"remoteExitConfirmed":native["remoteExitConfirmed"],"execSent":native["execSent"],"elapsedMs":task.ended.lock().unwrap().unwrap_or_else(Instant::now).duration_since(task.started).as_millis() as u64,"outputLimitExceeded":native["error"]["code"]=="outputLimit"});
                 value
                     .as_object_mut()
                     .unwrap()
-                    .extend(out.startup.as_object().unwrap().clone());
+                    .extend(output.startup().as_object().unwrap().clone());
                 Ok(value)
             }
             _ => Err(error("unsupported", "未知会话方法")),
@@ -324,161 +398,114 @@ fn decimal(input: &str) -> Result<u64, Error> {
         .map_err(|_| error("invalidParams", "整数超出范围"))
 }
 fn reap(registry: &mut Registry) {
-    registry.tasks.retain(|_, t| {
-        let o = t.result.lock().unwrap();
-        o.finished
-            .is_none_or(|at| !o.released && at.elapsed() < Duration::from_secs(30))
+    registry.tasks.retain(|_, task| {
+        !task.finished.load(Ordering::Acquire)
+            || !task.released.load(Ordering::Acquire)
+                && task
+                    .ended
+                    .lock()
+                    .unwrap()
+                    .is_some_and(|at| at.elapsed() < Duration::from_secs(30))
     });
 }
-async fn run(
+async fn run_commands(
     core: std::sync::Weak<AppCore>,
-    task: Arc<Task>,
+    task: &Task,
     session: Arc<crate::connections::Session>,
 ) {
-    let parent = session.cancellation();
-    let deadline = tokio::time::Instant::now() + Duration::from_millis(task.request.timeout_ms);
-    let mut channel = None;
-    let result: Result<(), String> = tokio::select! {
-        _ = task.cancel.cancelled() => Err("cancelled:命令已取消".into()),
-        _ = parent.cancelled() => Err("sessionLost:服务器连接已断开".into()),
-        _ = tokio::time::sleep_until(deadline) => Err("timedOut:命令超时".into()),
-        result = async {
-            let commands = if let Some(keys) = &task.request.environment_keys {
-                vec![crate::remote_program::probe(keys, true), crate::remote_program::probe(keys, false)]
-            } else {
-                vec![task.request.command.clone()]
-            };
-            for command in commands {
-                channel = Some(session.open_channel().await.map_err(|_| "sessionLost:无法打开命令通道")?);
-                let c = channel.as_mut().unwrap();
-                c.exec(true, command.as_str()).await.map_err(|_| "execRejected:远端拒绝执行")?;
-                task.result.lock().unwrap().sent = true;
-                if let Some(core) = core.upgrade() {
-                    core.record_business(&task.owner, command.len() as u64, 0);
-                }
-                c.eof().await.map_err(|_|"sessionLost:命令输入无法关闭")?;
-                let mut decoder = crate::remote_program::Decoder::new(
-                    task.request.program_output.is_some(), task.request.max_output_bytes,
-                );
-                let mut probe_bytes = (Vec::new(), Vec::new());
-                let mut exit_code = None;
-                let mut exit_signal = None;
-                while let Some(message) = c.wait().await {
-                    match message {
-                        russh::ChannelMsg::Failure => return Err("execRejected:远端拒绝执行".into()),
-                        ref message @ (russh::ChannelMsg::Data { .. } | russh::ChannelMsg::ExtendedData { ext: 1, .. }) => {
-                            let (bytes, stderr) = match message {
-                                russh::ChannelMsg::Data { data } => (data, false),
-                                russh::ChannelMsg::ExtendedData { data, .. } => (data, true),
-                                _ => unreachable!(),
-                            };
-                            if let Some(core) = core.upgrade() {
-                                core.record_business(&task.owner, 0, bytes.len() as u64);
-                            }
-                            if task.request.environment_keys.is_some() {
-                                if probe_bytes.0.len() + probe_bytes.1.len() + bytes.len() > task.request.max_output_bytes {
-                                    return Err("outputLimit:环境探测输出超限".into());
-                                }
-                                if stderr {
-                                    probe_bytes.1.extend_from_slice(bytes);
-                                } else {
-                                    probe_bytes.0.extend_from_slice(bytes);
-                                }
-                            } else {
-                                let chunks = decoder.push(stderr, bytes)?;
-                                let mut out = task.result.lock().unwrap();
-                                out.startup = decoder.metadata();
-                                for (stderr, bytes) in chunks {
-                                    if out.stdout.len() + out.stderr.len() + bytes.len() > task.request.max_output_bytes {
-                                        return Err("outputLimit:命令输出超过预算".into());
-                                    }
-                                    if stderr {
-                                        out.stderr.extend(bytes);
-                                    } else {
-                                        out.stdout.extend(bytes);
-                                    }
-                                }
-                            }
-                        },
-                        russh::ChannelMsg::ExitStatus { exit_status } => {
-                            exit_code = Some(exit_status);
-                            if task.request.environment_keys.is_none() {
-                                let mut out = task.result.lock().unwrap();
-                                out.exit_code = exit_code;
-                                out.confirmed = true;
-                            }
-                        },
-                        russh::ChannelMsg::ExitSignal { signal_name, .. } => {
-                            exit_signal = Some(format!("{signal_name:?}"));
-                            if task.request.environment_keys.is_none() {
-                                let mut out = task.result.lock().unwrap();
-                                out.exit_signal = exit_signal.clone();
-                                out.confirmed = true;
-                            }
-                        },
-                        _ => {}
+    let commands = task
+        .request
+        .environment_keys
+        .as_ref()
+        .map(|keys| {
+            vec![
+                crate::remote_program::probe(keys, true),
+                crate::remote_program::probe(keys, false),
+            ]
+        })
+        .unwrap_or_else(|| vec![task.request.command.clone()]);
+    for command in commands {
+        if task.cancel.is_cancelled() {
+            *task.domain_error.lock().unwrap() = json!({"code":"cancelled","message":"命令已取消"});
+            break;
+        }
+        let output = Arc::new(Mutex::new(MemoryOutput::new(
+            task.request.max_output_bytes,
+            task.request.program_output.is_some(),
+        )));
+        *task.output.lock().unwrap() = output.clone();
+        let (execution, rx) = Execution::create(task.owner.clone());
+        *task.current.lock().unwrap() = Some(execution.clone());
+        if task.cancel.is_cancelled() {
+            execution.cancel.cancel();
+        }
+        let guard = match task.tasks.enter() {
+            Ok(guard) => guard,
+            Err(e) => {
+                *task.domain_error.lock().unwrap() = json!({"code":"cancelled","message":e});
+                break;
+            }
+        };
+        let options = Options {
+            launch: Launch::Command(command),
+            io: ExecutionIo::default(),
+            started: task.started,
+            deadline: Some(task.started + Duration::from_millis(task.request.timeout_ms)),
+        };
+        remote_execution::run(
+            core.clone(),
+            execution.clone(),
+            rx,
+            session.clone(),
+            options,
+            OutputTarget::Memory(output.clone()),
+            guard,
+        )
+        .await;
+        let native = execution.snapshot();
+        if !native["error"].is_null() {
+            break;
+        }
+        let Some(keys) = &task.request.environment_keys else {
+            return;
+        };
+        let mut output = output.lock().unwrap();
+        if output.stderr.is_empty() {
+            if let Some(code) = native["exitCode"].as_u64() {
+                match crate::remote_program::parse_environment(&output.stdout, keys, code as u32) {
+                    Ok(value) => {
+                        output.stdout = serde_json::to_vec(&value).unwrap();
+                        output.stderr.clear();
+                        task.environment_ready.store(true, Ordering::Release);
+                        return;
                     }
-                }
-                if exit_code.is_none() && exit_signal.is_none() {
-                    return Err("missingExitStatus:远端没有返回退出状态".into());
-                }
-                if let Some(keys) = &task.request.environment_keys {
-                    if let Some(code) = exit_code {
-                        if probe_bytes.1.is_empty() {
-                            match crate::remote_program::parse_environment(&probe_bytes.0, keys, code) {
-                                Ok(value) => {
-                                    let mut out = task.result.lock().unwrap();
-                                    out.stdout = serde_json::to_vec(&value).unwrap();
-                                    out.exit_code = exit_code;
-                                    out.confirmed = true;
-                                    return Ok(());
-                                }
-                                Err(error) if error.starts_with("outputLimit:") => return Err(error),
-                                Err(_) => {},
-                            }
-                        }
+                    Err(e) if e.starts_with("outputLimit:") => {
+                        *task.domain_error.lock().unwrap() =
+                            json!({"code":"outputLimit","message":e});
+                        return;
                     }
-                    if exit_signal.is_some() {
-                        return Err("unsupportedEnvironment:环境探测异常退出".into());
-                    }
-                    let _ = c.close().await;
-                } else {
-                    decoder.finish()?;
-                    return Ok(());
+                    Err(_) => {}
                 }
             }
-            Err("unsupportedEnvironment:远端缺少受支持的程序启动环境".into())
-        } => result,
-    };
-    if result.is_err() {
-        if let Some(channel) = channel.as_mut() {
-            let _ = tokio::time::timeout(Duration::from_secs(1), async {
-                let _ = channel.signal(russh::Sig::TERM).await;
-                let _ = channel.close().await;
-                while let Some(msg) = channel.wait().await {
-                    if matches!(
-                        msg,
-                        russh::ChannelMsg::ExitStatus { .. } | russh::ChannelMsg::ExitSignal { .. }
-                    ) {
-                        task.result.lock().unwrap().confirmed = true;
-                    }
-                }
-            })
-            .await;
+        }
+        if !native["exitSignal"].is_null() {
+            *task.domain_error.lock().unwrap() =
+                json!({"code":"unsupportedEnvironment","message":"环境探测异常退出"});
+            return;
         }
     }
-    let mut out = task.result.lock().unwrap();
-    out.state = match result {
-        Ok(()) => "completed",
-        Err(ref e) if e.starts_with("cancelled:") => "cancelled",
-        Err(ref e) if e.starts_with("timedOut:") => "timedOut",
-        _ => "failed",
-    };
-    if let Err(message) = result {
-        out.error =
-            json!({"code":message.split(':').next().unwrap_or("commandFailed"),"message":message});
+    if task.request.environment_keys.is_some()
+        && task.domain_error.lock().unwrap().is_null()
+        && task
+            .current
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|ex| ex.snapshot()["error"].is_null())
+    {
+        *task.domain_error.lock().unwrap() =
+            json!({"code":"unsupportedEnvironment","message":"远端缺少受支持的程序启动环境"});
     }
-    out.finished = Some(Instant::now());
 }
 #[cfg(test)]
 mod tests {

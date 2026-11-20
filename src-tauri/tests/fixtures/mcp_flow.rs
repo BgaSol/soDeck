@@ -4,6 +4,120 @@ async fn call(client:&reqwest::Client,url:&str,token:&str,method:&str,params:Val
 async fn tool(client:&reqwest::Client,url:&str,token:&str,name:&str,p:Value)->Value{let r=call(client,url,token,"tools/call",json!({"name":name,"arguments":p})).await;assert_ne!(r["isError"],true,"{r}");assert!(r.get("structuredContent").is_none());assert_eq!(r["content"].as_array().unwrap().len(),1);assert_eq!(r["content"][0]["type"],"text");assert!(serde_json::to_vec(&r).unwrap().len()<=256*1024);serde_json::from_str(r["content"][0]["text"].as_str().unwrap()).unwrap()}
 async fn done(client:&reqwest::Client,url:&str,token:&str,id:&Value)->Value{let end=std::time::Instant::now()+Duration::from_secs(30);let mut revision=Value::Null;loop{let mut p=json!({"taskId":id,"outputMode":"none","waitMs":2000});if !revision.is_null(){p["sinceRevision"]=revision;}let result=tool(client,url,token,"sodeck_task_get",p).await;if result["done"]==true{return tool(client,url,token,"sodeck_task_get",json!({"taskId":id,"outputMode":"text"})).await;}revision=result["revision"].clone();assert!(std::time::Instant::now()<end,"{result}");}}
 
+
+async fn interaction_until(client:&reqwest::Client,url:&str,token:&str,id:&Value,marker:&str,available:bool)->Value {
+    let end=std::time::Instant::now()+Duration::from_secs(30);
+    loop {
+        let result=tool(client,url,token,"sodeck_task_get",json!({"taskId":id})).await;
+        let output=result["output"]["terminal"].as_str().or_else(||result["output"]["stdout"].as_str()).unwrap_or("");
+        if output.contains(marker)&&(!available||result["interaction"]["available"]==true){return result;}
+        assert!(!result["done"].as_bool().unwrap_or(false),"{result}");
+        assert!(std::time::Instant::now()<end,"{result}");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+async fn interaction_send(client:&reqwest::Client,url:&str,token:&str,id:&Value,sequence:u64,action:&str,extra:Value)->Value {
+    let mut input=json!({"taskId":id,"sequence":sequence.to_string(),"action":action});
+    input.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+    let result=tool(client,url,token,"sodeck_task_input",input.clone()).await;
+    assert_eq!(result["taskId"],*id);
+    let duplicate=tool(client,url,token,"sodeck_task_input",input).await;
+    assert_eq!(duplicate["taskId"],*id);
+    result
+}
+async fn interactive_remote_checks(_f:&Fixture,client:&reqwest::Client,url:&str,token:&str,target:&Value) {
+    let command=if cfg!(windows) {
+        "powershell.exe -NoLogo -NoProfile -Command \"[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); $r=[IO.StreamReader]::new([Console]::OpenStandardInput(),[Text.Encoding]::UTF8); [Console]::Write('first?'); $a=$r.ReadLine(); [Console]::Write('second?'); $b=$r.ReadLine(); [Console]::Write(('length:'+$a.Length+';answer:'+$b)); $tail=$r.ReadToEnd(); [Console]::Write(('tail:'+$tail)); exit 7\""
+    } else {
+        "printf 'first?'; IFS= read -r a; printf 'second?'; IFS= read -r b; printf 'length:%s;answer:%s' \"${#a}\" \"$b\"; cat; printf 'tail-done'; exit 7"
+    };
+    let started=tool(client,url,token,"sodeck_exec_start",json!({"targetId":target,"requestId":"real-pipe","mode":"pipe","command":command,"waitMs":0})).await;
+    let id=&started["taskId"];
+    interaction_until(client,url,token,id,"first?",true).await;
+    let data="x".repeat(9000);
+    interaction_send(client,url,token,id,1,"write",json!({"text":data.clone()})).await;
+    // Without a newline the same process still waits for the rest of its first line.
+    interaction_until(client,url,token,id,"first?",true).await;
+    interaction_send(client,url,token,id,2,"write",json!({"text":if cfg!(windows){"\r\n"}else{"\n"}})).await;
+    interaction_until(client,url,token,id,"second?",true).await;
+    interaction_send(client,url,token,id,3,"write",json!({"text":if cfg!(windows){"yes\r\n"}else{"yes\n"}})).await;
+    interaction_until(client,url,token,id,"length:9000;answer:yes",true).await;
+    interaction_send(client,url,token,id,4,"write",json!({"text":"tail-input"})).await;
+    interaction_until(client,url,token,id,"answer:yes",true).await;
+    interaction_send(client,url,token,id,5,"eof",json!({})).await;
+    let result=done(client,url,token,id).await;
+    assert_eq!(result["native"]["exitCode"],7,"{result}");
+    assert_eq!(result["evidence"]["complete"],true);
+    assert!(result["output"]["stdout"].as_str().unwrap().contains("tail-input"));
+    assert_eq!(result["interaction"]["last"]["state"],"sent");
+    if !cfg!(windows) {
+        let command="stty -echo; printf 'confirm?'; IFS= read -r a; printf 'confirmed:%s;raw?' \"$a\"; stty raw -echo; dd bs=1 count=6 2>/dev/null | od -An -tx1; stty -raw -echo; printf 'size?'; IFS= read -r b; stty size; printf 'end'; exit 7";
+        let started=tool(client,url,token,"sodeck_exec_start",json!({"targetId":target,"requestId":"real-pty","mode":"pty","command":command})).await;
+        let id=&started["taskId"];
+        interaction_until(client,url,token,id,"confirm?",true).await;
+        interaction_send(client,url,token,id,1,"write",json!({"text":"y\r"})).await;
+        interaction_until(client,url,token,id,"confirmed:y;raw?",true).await;
+        interaction_send(client,url,token,id,2,"write",json!({"dataBase64":"AAMEG1tB"})).await;
+        interaction_until(client,url,token,id,"00 03 04 1b 5b 41",true).await;
+        interaction_send(client,url,token,id,3,"resize",json!({"cols":140,"rows":35})).await;
+        interaction_until(client,url,token,id,"size?",true).await;
+        interaction_send(client,url,token,id,4,"write",json!({"text":"\r"})).await;
+        let result=done(client,url,token,id).await;
+        assert_eq!(result["native"]["exitCode"],7,"{result}");
+        assert!(result["output"]["terminal"].as_str().unwrap().contains("35 140"));
+        assert!(result["output"].get("stdout").is_none());
+        assert_eq!(result["evidence"]["complete"],true);
+        let full=tool(client,url,token,"sodeck_task_get",json!({"taskId":id,"outputMode":"full"})).await;
+        assert!(full["output"]["chunks"].as_array().unwrap().iter().all(|c|c["v"]==2&&c["source"]=="terminal"));
+
+        let started=tool(client,url,token,"sodeck_exec_start",json!({"targetId":target,"requestId":"real-shell","mode":"pty","command":"sh -i"})).await;
+        let id=&started["taskId"];
+        let end=std::time::Instant::now()+Duration::from_secs(10);
+        loop {let r=tool(client,url,token,"sodeck_task_get",json!({"taskId":id,"outputMode":"none"})).await;if r["interaction"]["available"]==true{break;}assert!(std::time::Instant::now()<end);tokio::time::sleep(Duration::from_millis(20)).await;}
+        interaction_send(client,url,token,id,1,"write",json!({"text":"printf 'round-one\\n'\r"})).await;
+        interaction_until(client,url,token,id,"round-one",true).await;
+        interaction_send(client,url,token,id,2,"write",json!({"text":"printf 'round-two\\n'; exit 9\r"})).await;
+        let r=done(client,url,token,id).await;assert_eq!(r["native"]["exitCode"],9);assert!(r["output"]["terminal"].as_str().unwrap().contains("round-two"));
+        for (name,byte,command) in [
+            ("canonical-eof","BA==","stty -echo; printf 'eof-ready'; cat; printf 'eof-seen'"),
+            ("canonical-interrupt","Aw==","stty -echo; trap 'printf interrupt-seen; exit 6' INT; printf 'interrupt-ready'; while :; do sleep 1; done"),
+        ] {
+            let started=tool(client,url,token,"sodeck_exec_start",json!({"targetId":target,"requestId":name,"mode":"pty","command":command})).await;
+            let id=&started["taskId"];interaction_until(client,url,token,id,if name=="canonical-eof"{"eof-ready"}else{"interrupt-ready"},true).await;
+            interaction_send(client,url,token,id,1,"write",json!({"dataBase64":byte})).await;
+            let r=done(client,url,token,id).await;assert!(r["output"]["terminal"].as_str().unwrap().contains(if name=="canonical-eof"{"eof-seen"}else{"interrupt-seen"}),"{r}");
+        }
+    } else {
+        let started=tool(client,url,token,"sodeck_exec_start",json!({"targetId":target,"requestId":"real-pty","mode":"pty","command":"powershell.exe -NoLogo -NoProfile -Command \"[Console]::Write('confirm?'); $line=[Console]::ReadLine(); [Console]::Write(('confirmed:'+$line)); exit 0\""})).await;
+        let id=&started["taskId"];interaction_until(client,url,token,id,"confirm?",true).await;
+        interaction_send(client,url,token,id,1,"resize",json!({"cols":120,"rows":30})).await;
+        interaction_until(client,url,token,id,"confirm?",true).await;
+        interaction_send(client,url,token,id,2,"write",json!({"text":"y\r"})).await;
+        let result=done(client,url,token,id).await;assert!(result["output"]["terminal"].as_str().unwrap().contains("confirmed:y"));assert_eq!(result["evidence"]["complete"],true);
+    }
+    #[cfg(unix)]
+    if let Ok(username)=std::env::var("SODECK_TEST_SUDO_USER") {
+        let server=_f.server("127.0.0.1",std::env::var("SODECK_TEST_SSH_PORT").unwrap().parse().unwrap(),json!([]));
+        let mut draft=_f.core.server_catalog()["servers"].as_array().unwrap().iter().find(|s|s["id"]==server).unwrap().clone();
+        draft["username"]=json!(username);
+        draft["authentication"]=json!({"type":"privateKey","privateKeyPath":std::env::var("SODECK_TEST_SSH_KEY").unwrap(),"secret":{"action":"clear"}});
+        _f.change(json!({"op":"saveServer","draft":draft}));
+        let context=connected(_f,&server).await.context.unwrap();
+        let end=std::time::Instant::now()+Duration::from_secs(10);
+        let target=loop{let r=tool(client,url,token,"sodeck_targets_list",json!({"workspaceId":context.workspace_id})).await;if let Some(id)=r["targets"][0]["targetId"].as_str(){break id.to_owned();}assert!(std::time::Instant::now()<end);tokio::time::sleep(Duration::from_millis(30)).await;};
+        let marker=std::env::var("SODECK_TEST_SUDO_MARKER").unwrap();
+        let started=tool(client,url,token,"sodeck_exec_start",json!({"targetId":target,"requestId":"real-sudo","mode":"pty","command":format!("sudo -k -p 'sudo-password?' /usr/bin/touch '{marker}'")})).await;
+        let id=&started["taskId"];interaction_until(client,url,token,id,"sudo-password?",true).await;
+        interaction_send(client,url,token,id,1,"write",json!({"text":"incorrect-password\r"})).await;
+        interaction_until(client,url,token,id,"Sorry, try again.",true).await;
+        interaction_send(client,url,token,id,2,"write",json!({"text":format!("{}\r",std::env::var("SODECK_TEST_SUDO_PASSWORD").unwrap())})).await;
+        let result=done(client,url,token,id).await;assert_eq!(result["native"]["exitCode"],0,"{result}");assert_eq!(result["evidence"]["complete"],true);
+        use std::os::unix::fs::MetadataExt;
+        assert_eq!(std::fs::metadata(marker).unwrap().uid(),0);
+        let tasks=tool(client,url,token,"sodeck_tasks_list",json!({"targetId":target,"requestId":"real-sudo"})).await;assert_eq!(tasks["tasks"].as_array().unwrap().len(),1);
+    }
+}
+
 async fn codex_mcp_trace(codex:&str,directory:&std::path::Path,url:&str,token:&str,prompt:&str,name:&str)->(String,Vec<Value>) {
     let mut child=std::process::Command::new(codex).args(["exec","--ephemeral","--skip-git-repo-check","--json","-s","danger-full-access","-C",directory.to_str().unwrap(),"-c",&format!("mcp_servers={{sodeck={{url=\"{url}\",bearer_token_env_var=\"SODECK_MCP_TOKEN\"}}}}"),prompt]).env("SODECK_MCP_TOKEN",token).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap();
     let mut out=child.stdout.take().unwrap();let mut err=child.stderr.take().unwrap();
@@ -57,6 +171,7 @@ async fn openssh_mcp_plugin(){
     let target=targets["targets"].as_array().unwrap().iter().find(|t|t["workspaceId"]==contexts[0].workspace_id).unwrap();
     assert_eq!(attached["data"]["targetId"],target["targetId"]);assert_eq!(attached["data"]["target"]["descriptor"],target["target"]);assert_eq!(attached["data"]["target"]["availability"],"ready");assert!(attached["data"].get("token").is_none());
     assert_eq!(tool(&client,url,&token,"sodeck_targets_list",json!({})).await["targets"].as_array().unwrap().len(),3,"showing the sidebar does not duplicate background targets");
+    interactive_remote_checks(&f,&client,url,&token,&target["targetId"]).await;
     let job=tool(&client,url,&token,"sodeck_exec_start",json!({"targetId":target["targetId"],"requestId":"page-lifecycle","waitMs":0,"command":if cfg!(windows){"powershell.exe -NoProfile -Command \"Start-Sleep -Seconds 2; Write-Output sodeck-page-survived\""}else{"sleep 2; printf sodeck-page-survived"}})).await;assert!(job.get("wait").is_none());
     let detail=f.core.ui_event("main",surface,json!({"action":"task","taskId":job["taskId"],"cursor":"0"})).unwrap();assert_eq!(detail["taskId"],job["taskId"]);assert_eq!(detail["done"],false);
     f.core.ui_action("main",&contexts[0],json!({"op":"hideTool","viewId":page})).unwrap();

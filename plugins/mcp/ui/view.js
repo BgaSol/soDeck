@@ -20,7 +20,7 @@ function duration(task) {
   const seconds = Math.max(0, Math.floor(((task.finishedAt || Date.now()) - task.createdAt) / 1000));
   return `${task.done ? '用时' : '已持续'} ${seconds >= 60 ? `${Math.floor(seconds / 60)} 分 ${seconds % 60}` : seconds} 秒`;
 }
-function output(page) { return [page?.stdout, page?.stderr ? `标准错误：\n${page.stderr}` : ''].filter(Boolean).join('\n') || '暂时没有输出。'; }
+function output(page) { return [page?.terminal, page?.stdout, page?.stderr ? `标准错误：\n${page.stderr}` : ''].filter(Boolean).join('\n') || '暂时没有输出。'; }
 function selectedTask() { return snapshot?.tasks?.find(task => task.taskId === selected); }
 function closeDetail(restore = false) {
   detailSequence++; selected = null; detail = null; cursor = '0'; pages = []; nextCursor = '0'; $('detail').hidden = true; $('overview').hidden = false;

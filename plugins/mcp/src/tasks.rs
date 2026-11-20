@@ -1,7 +1,9 @@
 use crate::app::App;
 use crate::{
     collector,
-    task::{CapturedTask, Kind, NewTask, Phase, Task, TaskFailure},
+    task::{
+        CapturedTask, DownloadSpec, ExecMode, ExecSpec, NewTask, Phase, Task, TaskFailure, TaskSpec,
+    },
 };
 use serde_json::{json, Value};
 use std::{
@@ -46,7 +48,7 @@ mod tests {
             p["waitMs"] = json!(wait);
             p["timeoutSeconds"] = json!(300);
             let parsed = parse_exec_start(&p).unwrap();
-            assert_eq!(parsed.input, default.input);
+            assert_eq!(parsed.spec, default.spec);
             assert_eq!(parsed.wait_ms, wait);
         }
         for value in [
@@ -81,8 +83,7 @@ pub fn text<'a>(p: &'a Value, key: &str, max: usize) -> Result<&'a str, Value> {
         .ok_or_else(|| failure("invalidParams", format!("{key} 缺失或超限")))
 }
 pub struct StartRequest {
-    pub kind: Kind,
-    pub input: Value,
+    pub spec: TaskSpec,
     pub wait_ms: u64,
 }
 pub struct StartedTask {
@@ -96,17 +97,49 @@ pub fn parse_exec_start(p: &Value) -> Result<StartRequest, Value> {
     if command.contains('\0') {
         return Err(failure("invalidParams", "命令包含空字符"));
     }
-    let timeout = p
-        .get("timeoutSeconds")
-        .map(|v| {
-            v.as_u64()
-                .ok_or_else(|| failure("invalidParams", "期限必须为整数"))
-        })
-        .transpose()?
-        .unwrap_or(300);
-    if !(1..=3600).contains(&timeout) {
-        return Err(failure("invalidParams", "期限应为 1 至 3600 秒"));
-    }
+    let mode = match p
+        .get("mode")
+        .map(|v| v.as_str().unwrap_or(""))
+        .unwrap_or("batch")
+    {
+        "batch" => ExecMode::Batch,
+        "pipe" => ExecMode::Pipe,
+        "pty" => ExecMode::Pty,
+        _ => return Err(failure("invalidParams", "mode 无效")),
+    };
+    let timeout = match p.get("timeoutSeconds") {
+        None => {
+            if mode == ExecMode::Batch {
+                Some(300)
+            } else {
+                None
+            }
+        }
+        Some(Value::Null) if mode != ExecMode::Batch => None,
+        Some(value) => {
+            let n = value
+                .as_u64()
+                .filter(|n| (1..=3600).contains(n))
+                .ok_or_else(|| failure("invalidParams", "期限应为 1 至 3600 秒"))?;
+            Some(n)
+        }
+    };
+    let terminal_size = if mode == ExecMode::Pty {
+        let cols = p
+            .get("cols")
+            .map(|n| n.as_u64().unwrap_or(0))
+            .unwrap_or(120);
+        let rows = p.get("rows").map(|n| n.as_u64().unwrap_or(0)).unwrap_or(30);
+        if !(2..=1000).contains(&cols) || !(1..=500).contains(&rows) {
+            return Err(failure("invalidParams", "终端尺寸超出范围"));
+        }
+        Some((cols as u32, rows as u32))
+    } else {
+        if p.get("cols").is_some() || p.get("rows").is_some() {
+            return Err(failure("invalidParams", "尺寸只用于 pty"));
+        }
+        None
+    };
     let wait_ms = p
         .get("waitMs")
         .map(|v| {
@@ -119,25 +152,32 @@ pub fn parse_exec_start(p: &Value) -> Result<StartRequest, Value> {
         return Err(failure("invalidParams", "waitMs 超出范围"));
     }
     Ok(StartRequest {
-        kind: Kind::Exec,
-        input: json!({"targetId":text(p,"targetId",256)?,"requestId":text(p,"requestId",128)?,"command":command,"timeoutSeconds":timeout}),
+        spec: TaskSpec::Exec(ExecSpec {
+            target_id: text(p, "targetId", 256)?.into(),
+            request_id: text(p, "requestId", 128)?.into(),
+            command: command.into(),
+            mode,
+            timeout_seconds: timeout,
+            terminal_size,
+        }),
         wait_ms,
     })
 }
 pub fn parse_download_start(p: &Value) -> Result<StartRequest, Value> {
     let path = text(p, "remotePath", 4096)?;
     if path.contains('\0') || p.get("waitMs").is_some() {
-        return Err(failure(
-            "invalidParams",
-            "远程路径包含空字符或下载等待参数无效",
-        ));
+        return Err(failure("invalidParams", "远程路径或下载等待参数无效"));
     }
     Ok(StartRequest {
-        kind: Kind::Download,
-        input: json!({"targetId":text(p,"targetId",256)?,"requestId":text(p,"requestId",128)?,"remotePath":path}),
+        spec: TaskSpec::Download(DownloadSpec {
+            target_id: text(p, "targetId", 256)?.into(),
+            request_id: text(p, "requestId", 128)?.into(),
+            remote_path: path.into(),
+        }),
         wait_ms: 0,
     })
 }
+
 impl StartedTask {
     fn existing(app: &App, task: Arc<Task>, wait_ms: u64) -> Result<Self, TaskFailure> {
         let started = Instant::now();
@@ -177,13 +217,10 @@ impl App {
         request: StartRequest,
         ct: &CancellationToken,
     ) -> Result<StartedTask, TaskFailure> {
-        let StartRequest {
-            kind,
-            input,
-            wait_ms,
-        } = request;
-        let target_id = input["targetId"].as_str().unwrap().to_owned();
-        let request = input["requestId"].as_str().unwrap().to_owned();
+        let StartRequest { spec, wait_ms } = request;
+        let kind = spec.kind();
+        let target_id = spec.target_id().to_owned();
+        let request = spec.request_id().to_owned();
         if ct.is_cancelled() {
             return Err(failure("requestCancelled", "启动请求已取消，未接纳新任务").into());
         }
@@ -191,7 +228,7 @@ impl App {
         let mut registry = self.registry.lock().unwrap();
         if let Some(id) = registry.requests.get(&key) {
             let task = &registry.tasks[id];
-            if task.kind != kind || task.input != input {
+            if task.spec != spec {
                 return Err(failure("requestConflict", "同一 requestId 参数不同").into());
             }
             let task = task.clone();
@@ -235,8 +272,7 @@ impl App {
             order,
             admission_sequence: admission.sequence + 1,
             target: target.clone(),
-            input,
-            kind,
+            spec,
             root: self.root.clone(),
         }));
         let wait_slots = global.map(|global| {

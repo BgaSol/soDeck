@@ -7,13 +7,15 @@ use std::{
     path::{Path, PathBuf},
 };
 
-fn decode(chunk: &Value) -> Result<Vec<u8>, String> {
-    if chunk["v"] != 1
-        || !["stdout", "stderr"].contains(&chunk["source"].as_str().unwrap_or(""))
-        || chunk["sequence"]
-            .as_str()
-            .and_then(|s| s.parse::<u64>().ok())
-            .is_none()
+fn decode(chunk: &Value, terminal: bool) -> Result<Vec<u8>, String> {
+    if (if terminal {
+        chunk["v"] != 2 || chunk["source"] != "terminal"
+    } else {
+        chunk["v"] != 1 || !["stdout", "stderr"].contains(&chunk["source"].as_str().unwrap_or(""))
+    }) || chunk["sequence"]
+        .as_str()
+        .and_then(|s| s.parse::<u64>().ok())
+        .is_none()
         || !chunk["receivedAt"].is_u64()
     {
         return Err("输出信封无效".into());
@@ -21,19 +23,23 @@ fn decode(chunk: &Value) -> Result<Vec<u8>, String> {
     unbase64(chunk["dataBase64"].as_str().ok_or("输出编码缺失")?)
 }
 
-/// Disk schema v1 is independent of the MCP and sidebar presentation contracts.
+/// Disk schema v2 is independent of the MCP and sidebar presentation contracts.
 pub fn task_metadata(task: &Task, r: &Record) -> Value {
     let target = r.target.as_ref().map(|t| json!({"name":t.name,"protocol":t.protocol,"endpoint":t.endpoint,"username":t.username}));
-    json!({
-        "schemaVersion":1,"taskId":task.id,"runId":task.run,"kind":task.kind.name(),
-        "targetId":task.target.id,"requestId":task.input["requestId"],"target":target,
+    let mut value = json!({
+        "schemaVersion":2,"taskId":task.id,"runId":task.run,"kind":task.kind().name(),
+        "targetId":task.target.id,"requestId":task.start_input()["requestId"],"target":target,
         "done":r.phase==Phase::Done,"phase":match r.phase {Phase::Collecting=>"collecting",Phase::Finalizing=>"finalizing",Phase::Done=>"done"},
         "revision":r.revision.to_string(),"cancelRequested":r.cancel_requested,"resourceReleased":r.released,
         "native":r.native,"evidence":{"state":match r.saved {Saved::Collecting=>"collecting",Saved::Finalizing=>"finalizing",Saved::Complete=>"saved",Saved::Incomplete=>"incomplete",Saved::Failed=>"failed"},"complete":matches!(r.saved,Saved::Complete),"error":r.error,"path":r.path},
         "cleanupError":r.cleanup_error,"createdAt":task.created,"finishedAt":r.finished,"observedAt":r.observed,
-        "input":task.input,"directory":task.directory,"context":task.target.context,
-        "outputInfo":{"savedBytes":if task.kind==Kind::Exec {json!(r.committed.to_string())}else{Value::Null}}
-    })
+        "input":task.start_input(),"directory":task.directory,"context":task.target.context,
+        "outputInfo":{"savedBytes":if task.kind()==Kind::Exec {json!(r.committed.to_string())}else{Value::Null}}
+    });
+    if let Some(interaction) = task.interaction(r) {
+        value["interaction"] = interaction;
+    }
+    value
 }
 pub fn metadata(directory: &Path, value: &Value) -> Result<(), String> {
     let temporary = directory.join("metadata.tmp");
@@ -47,9 +53,10 @@ pub fn metadata(directory: &Path, value: &Value) -> Result<(), String> {
 pub struct Output {
     file: File,
     pub committed: u64,
+    terminal: bool,
 }
 impl Output {
-    pub fn new(directory: &Path) -> Result<Self, String> {
+    pub fn new(directory: &Path, terminal: bool) -> Result<Self, String> {
         Ok(Self {
             file: OpenOptions::new()
                 .create_new(true)
@@ -57,11 +64,12 @@ impl Output {
                 .open(directory.join("output.jsonl"))
                 .map_err(|e| e.to_string())?,
             committed: 0,
+            terminal,
         })
     }
     pub fn append(&mut self, chunks: &[Value]) -> Result<(), String> {
         for chunk in chunks {
-            decode(chunk)?;
+            decode(chunk, self.terminal)?;
             let mut bytes = serde_json::to_vec(chunk).map_err(|e| e.to_string())?;
             bytes.push(b'\n');
             if bytes.len() > 16 * 1024 {
@@ -84,6 +92,7 @@ pub enum PageFormat {
 #[derive(Debug, PartialEq)]
 pub enum PageBody {
     Text { stdout: String, stderr: String },
+    Terminal { terminal: String },
     Full { chunks: Vec<Value> },
 }
 #[derive(Debug, PartialEq)]
@@ -94,9 +103,12 @@ pub struct Page {
     pub has_more: bool,
 }
 impl Page {
-    fn empty(format: PageFormat) -> Self {
+    fn empty(format: PageFormat, terminal: bool) -> Self {
         Self {
             body: match format {
+                PageFormat::Text if terminal => PageBody::Terminal {
+                    terminal: String::new(),
+                },
                 PageFormat::Text => PageBody::Text {
                     stdout: String::new(),
                     stderr: String::new(),
@@ -134,6 +146,7 @@ pub fn page(
     committed: u64,
     offset: u64,
     format: PageFormat,
+    terminal: bool,
 ) -> Result<Page, ReadError> {
     if offset > committed {
         return Err(ReadError::InvalidCursor("cursor 超出已保存范围".into()));
@@ -141,7 +154,7 @@ pub fn page(
     let mut file = match File::open(path) {
         Ok(file) => file,
         Err(e) if committed == 0 && e.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(Page::empty(format))
+            return Ok(Page::empty(format, terminal))
         }
         Err(e) => return Err(e.into()),
     };
@@ -179,7 +192,7 @@ pub fn page(
             break;
         }
         let chunk: Value = serde_json::from_slice(&line)?;
-        let bytes = decode(&chunk)?;
+        let bytes = decode(&chunk, terminal)?;
         match format {
             PageFormat::Text => {
                 if chunk["source"] == "stderr" {
@@ -194,6 +207,9 @@ pub fn page(
     }
     Ok(Page {
         body: match format {
+            PageFormat::Text if terminal => PageBody::Terminal {
+                terminal: String::from_utf8_lossy(&stdout).into(),
+            },
             PageFormat::Text => PageBody::Text {
                 stdout: String::from_utf8_lossy(&stdout).into(),
                 stderr: String::from_utf8_lossy(&stderr).into(),
@@ -205,7 +221,12 @@ pub fn page(
         has_more: cursor < committed,
     })
 }
-pub fn tail(path: PathBuf, committed: u64, format: PageFormat) -> Result<Page, ReadError> {
+pub fn tail(
+    path: PathBuf,
+    committed: u64,
+    format: PageFormat,
+    terminal: bool,
+) -> Result<Page, ReadError> {
     let mut offset = committed.saturating_sub(16 * 1024);
     if offset > 0 {
         let mut file = File::open(&path)?;
@@ -215,7 +236,7 @@ pub fn tail(path: PathBuf, committed: u64, format: PageFormat) -> Result<Page, R
         let count = reader.read_until(b'\n', &mut skipped)?;
         offset = offset - 1 + count as u64;
     }
-    page(path, committed, offset, format)
+    page(path, committed, offset, format, terminal)
 }
 
 #[cfg(test)]
@@ -223,10 +244,10 @@ mod tests {
     use super::*;
     use serde_json::json;
     #[test]
-    fn metadata_v1_owns_its_schema_and_serializes_the_given_record() {
+    fn metadata_v2_owns_its_schema_and_serializes_the_given_record() {
         let task = crate::task::fixture(PathBuf::from("evidence-root"));
         let initial = task_metadata(&task, &task.snapshot());
-        assert_eq!(initial["schemaVersion"], 1);
+        assert_eq!(initial["schemaVersion"], 2);
         assert!(initial["target"].is_null());
         assert!(initial["finishedAt"].is_null());
         assert!(initial["evidence"]["path"].is_null());
@@ -275,18 +296,18 @@ mod tests {
         fs::create_dir(&root).unwrap();
         let path = root.join("output.jsonl");
         assert_eq!(
-            page(path.clone(), 0, 0, PageFormat::Full).unwrap(),
-            Page::empty(PageFormat::Full)
+            page(path.clone(), 0, 0, PageFormat::Full, false).unwrap(),
+            Page::empty(PageFormat::Full, false)
         );
-        let mut output = Output::new(&root).unwrap();
+        let mut output = Output::new(&root, false).unwrap();
         let raw = [0, 255, 0xe4, 0xb8];
         output.append(&[json!({"v":1,"sequence":"1","source":"stdout","receivedAt":1,"dataBase64":sodeck_plugin_client::encoding::base64(&raw)})]).unwrap();
         let committed = output.committed;
         output.file.write_all(b"partial").unwrap();
-        let a = page(path.clone(), committed, 0, PageFormat::Full).unwrap();
+        let a = page(path.clone(), committed, 0, PageFormat::Full, false).unwrap();
         assert_eq!(
             a,
-            page(path.clone(), committed, 0, PageFormat::Full).unwrap()
+            page(path.clone(), committed, 0, PageFormat::Full, false).unwrap()
         );
         let PageBody::Full { chunks } = &a.body else {
             panic!()
@@ -295,7 +316,7 @@ mod tests {
             unbase64(chunks[0]["dataBase64"].as_str().unwrap()).unwrap(),
             raw
         );
-        let text = page(path.clone(), committed, 0, PageFormat::Text).unwrap();
+        let text = page(path.clone(), committed, 0, PageFormat::Text, false).unwrap();
         let PageBody::Text { stdout, stderr } = text.body else {
             panic!()
         };
@@ -304,7 +325,7 @@ mod tests {
         assert_eq!(a.next_cursor, text.next_cursor);
         assert_eq!(a.saved_bytes, text.saved_bytes);
         assert!(matches!(
-            page(path.clone(), committed, 1, PageFormat::Text),
+            page(path.clone(), committed, 1, PageFormat::Text, false),
             Err(ReadError::InvalidCursor(_))
         ));
         metadata(&root, &json!({"done":false})).unwrap();
@@ -324,7 +345,7 @@ mod tests {
         drop(output);
         fs::write(&path, b"").unwrap();
         assert!(matches!(
-            page(path.clone(), committed, 0, PageFormat::Full),
+            page(path.clone(), committed, 0, PageFormat::Full, false),
             Err(ReadError::EvidenceReadFailed(_))
         ));
         fs::remove_dir_all(root).unwrap();
@@ -334,13 +355,13 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mcp-tail-{}", rand::random::<u64>()));
         fs::create_dir(&root).unwrap();
         let path = root.join("output.jsonl");
-        let mut output = Output::new(&root).unwrap();
+        let mut output = Output::new(&root, false).unwrap();
         for n in 1..=20 {
             let text = format!("line-{n} {}\n", "x".repeat(2000));
             output.append(&[json!({"v":1,"sequence":n.to_string(),"source":"stdout","receivedAt":n,"dataBase64":sodeck_plugin_client::encoding::base64(text.as_bytes())})]).unwrap();
         }
         output.file.write_all(b"uncommitted").unwrap();
-        let page = tail(path, output.committed, PageFormat::Text).unwrap();
+        let page = tail(path, output.committed, PageFormat::Text, false).unwrap();
         let PageBody::Text { stdout, .. } = page.body else {
             panic!()
         };

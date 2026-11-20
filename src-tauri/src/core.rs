@@ -21,7 +21,7 @@ pub struct AppCore {
     pub(crate) finalizer:
         Mutex<Option<Arc<dyn Fn(crate::lifecycle::Target) -> Result<(), String> + Send + Sync>>>,
     pub(crate) executions: crate::session_exec::Executions,
-    pub(crate) command_streams: crate::session_stream::Streams,
+    pub(crate) command_processes: crate::session_process::Processes,
     pub(crate) content_exports: crate::content_export::Exports,
     pub(crate) background_wake: Mutex<Option<std::sync::mpsc::SyncSender<()>>>,
     pub desktop_files: crate::desktop_files::DesktopFiles,
@@ -81,7 +81,7 @@ impl AppCore {
         let core = Arc::new(Self {
             finalizer: Mutex::new(None),
             executions: crate::session_exec::Executions::default(),
-            command_streams: crate::session_stream::Streams::default(),
+            command_processes: crate::session_process::Processes::default(),
             content_exports: crate::content_export::Exports::default(),
             background_wake: Mutex::new(None),
             desktop_files: crate::desktop_files::DesktopFiles::default(),
@@ -357,7 +357,7 @@ impl AppCore {
         drop(self.mutations.lock().unwrap());
         self.terminals.cancel(|_| true);
         self.executions.cancel(|_| true);
-        self.command_streams.cancel(|_| true);
+        self.command_processes.cancel(|_| true);
         self.content_exports.cancel(|_| true);
         self.network.cancel(|_| true);
         self.files.cancel(|_| true);
@@ -428,7 +428,7 @@ impl AppCore {
                 self.files.pending(&matches),
                 self.network.pending(&matches),
                 self.executions.pending(&matches),
-                self.command_streams.pending(&matches),
+                self.command_processes.pending(&matches),
                 self.content_exports.pending(&matches),
             ];
             if counts.iter().all(|n| *n == 0) {

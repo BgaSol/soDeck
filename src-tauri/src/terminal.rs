@@ -1,4 +1,10 @@
 //! Core PTY primitives. Terminal emulation and display checkpoints belong to plugins.
+use crate::execution_output::OutputTarget;
+#[cfg(test)]
+use crate::remote_execution::QueuedInput;
+use crate::remote_execution::{
+    self, Execution, ExecutionIo, InputOperation, InputOutcome, Launch, Options,
+};
 use crate::{
     resource_owner::Owner,
     streams::{Replay, Sink, BLOCK},
@@ -6,44 +12,27 @@ use crate::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::time::Instant;
 use std::{
     collections::HashMap,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc, Mutex,
-    },
+    sync::{Arc, Mutex},
 };
-use tokio::sync::{mpsc, oneshot};
+#[cfg(test)]
+use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
-enum Input {
-    Write(Vec<u8>, oneshot::Sender<Result<(), String>>),
-    Resize(u32, u32),
-    Barrier(oneshot::Sender<()>),
-}
 pub(crate) struct Terminal {
     owner: Owner,
     pub output: Arc<Replay>,
-    input: mpsc::Sender<Input>,
+    execution: Arc<Execution>,
     cancel: CancellationToken,
     tasks: Arc<crate::resource_tasks::Tasks>,
     next_input: Mutex<HashMap<String, u64>>,
-    pub sent: AtomicU64,
-    pub received: AtomicU64,
 }
 impl Terminal {
-    fn enqueue_write(
-        &self,
-        data: Vec<u8>,
-    ) -> Result<oneshot::Receiver<Result<(), String>>, String> {
-        if data.len() > BLOCK {
-            return Err("终端输入块超过 16 KiB".into());
-        }
-        let (tx, rx) = oneshot::channel();
-        self.input
-            .try_send(Input::Write(data, tx))
-            .map_err(|_| "终端输入队列已满".to_string())?;
-        Ok(rx)
+    fn enqueue_write(&self, data: Vec<u8>) -> Result<oneshot::Receiver<InputOutcome>, String> {
+        self.execution.submit(InputOperation::Write(data.into()))
     }
 
     fn enqueue_surface_write(
@@ -51,7 +40,7 @@ impl Terminal {
         token: &str,
         sequence: u64,
         data: Vec<u8>,
-    ) -> Result<oneshot::Receiver<Result<(), String>>, String> {
+    ) -> Result<oneshot::Receiver<InputOutcome>, String> {
         let mut next = self.next_input.lock().unwrap();
         let n = next.entry(token.into()).or_insert(0);
         if sequence != *n {
@@ -76,13 +65,10 @@ impl Terminals {
             .find(|t| t.owner.view == view)
             .cloned();
         if let Some(t) = terminal {
-            if t.tasks.finished() {
+            if t.execution.worker_done.is_cancelled() || t.tasks.finished() {
                 return Ok(());
             }
-            let (tx, rx) = oneshot::channel();
-            t.input
-                .try_send(Input::Barrier(tx))
-                .map_err(|_| "终端输入队列仍忙碌".to_string())?;
+            let rx = t.execution.submit(InputOperation::Barrier)?;
             tauri::async_runtime::block_on(async {
                 tokio::time::timeout(std::time::Duration::from_secs(5), rx)
                     .await
@@ -202,7 +188,7 @@ impl AppCore {
         self.workspace_state()
             .validate_context(&terminal.owner.context)?;
         let rx = terminal.enqueue_write(data)?;
-        rx.await.map_err(|_| "终端已结束".to_string())?
+        input_result(rx.await.map_err(|_| "终端已结束".to_string())?)
     }
 
     pub(crate) fn terminal_open(
@@ -223,18 +209,7 @@ impl AppCore {
         }
         let owner = self.resource_owner(plugin, instance, view)?;
         self.workspace_state().validate_context(&owner.context)?;
-        let admission = self.resource_admission(&owner)?;
-        let mut entries = self.terminals.entries.lock().unwrap();
-        entries.retain(|_, terminal| !terminal.cancel.is_cancelled() || !terminal.tasks.finished());
-        if let Some((id, _)) = entries
-            .iter()
-            .find(|(_, t)| t.owner.view == view && t.owner.instance == instance)
-        {
-            return Ok(json!({"id":id}));
-        }
-        if entries.len() >= 128 {
-            return Err("终端数量已达上限，请先关闭不用的终端".into());
-        }
+        let session = self.connection_session(&owner.context)?;
         let id = self.next_id();
         let recovery = self
             .store
@@ -249,16 +224,26 @@ impl AppCore {
                 id
             ));
         let output = Arc::new(Replay::journaled(recovery)?);
-        let (input, rx) = mpsc::channel(32);
+        let admission = self.resource_admission(&owner)?;
+        let mut entries = self.terminals.entries.lock().unwrap();
+        entries.retain(|_, terminal| !terminal.cancel.is_cancelled() || !terminal.tasks.finished());
+        if let Some((id, _)) = entries
+            .iter()
+            .find(|(_, t)| t.owner.view == view && t.owner.instance == instance)
+        {
+            return Ok(json!({"id":id}));
+        }
+        if entries.len() >= 128 {
+            return Err("终端数量已达上限，请先关闭不用的终端".into());
+        }
+        let (execution, rx) = Execution::create(owner.clone());
         let terminal = Arc::new(Terminal {
             owner,
             output,
-            input,
-            cancel: CancellationToken::new(),
+            execution: execution.clone(),
+            cancel: execution.cancel.clone(),
             tasks: Arc::new(crate::resource_tasks::Tasks::default()),
             next_input: Mutex::new(HashMap::new()),
-            sent: AtomicU64::new(0),
-            received: AtomicU64::new(0),
         });
         let task = terminal.tasks.enter()?;
         entries.insert(id.clone(), terminal.clone());
@@ -270,14 +255,22 @@ impl AppCore {
             return Err(error);
         }
         let core = Arc::downgrade(self);
-        tauri::async_runtime::spawn(async move {
-            let _task = task;
-            let result = run(core, terminal.clone(), rx, cols, rows, command).await;
-            terminal.output.finish(match result {
-                Ok(code) => json!({"exitCode":code}),
-                Err(error) => json!({"error":error}),
-            });
-        });
+        let started = Instant::now();
+        let options = Options {
+            launch: command.map(Launch::Command).unwrap_or(Launch::LoginShell),
+            io: ExecutionIo::Pty { cols, rows },
+            started,
+            deadline: None,
+        };
+        tauri::async_runtime::spawn(remote_execution::run(
+            core,
+            execution,
+            rx,
+            session,
+            options,
+            OutputTarget::Terminal(terminal.output.clone()),
+            task,
+        ));
         Ok(json!({"id":id}))
     }
     pub(crate) fn terminal_close(
@@ -371,9 +364,9 @@ impl AppCore {
                     .workspaces
                     .validate_context(&terminal.owner.context)?;
                 terminal
-                    .input
-                    .try_send(Input::Resize(cols, rows))
-                    .map_err(|_| "终端忙碌，请稍后重试".into())
+                    .execution
+                    .submit(InputOperation::Resize(cols, rows))
+                    .map(|_| ())
             }
             DataRequest::Write { sequence, data, .. } => {
                 let rx = {
@@ -386,7 +379,7 @@ impl AppCore {
                         .validate_context(&terminal.owner.context)?;
                     terminal.enqueue_surface_write(token, sequence, data)?
                 };
-                rx.await.map_err(|_| "终端已结束".to_string())?
+                input_result(rx.await.map_err(|_| "终端已结束".to_string())?)
             }
         }
     }
@@ -403,40 +396,37 @@ fn dimensions(cols: u32, rows: u32) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    fn terminal() -> (Terminal, mpsc::Receiver<Input>) {
-        let (input, rx) = mpsc::channel(32);
+    fn terminal() -> (Terminal, mpsc::Receiver<QueuedInput>) {
+        let owner = Owner {
+            plugin: "test.terminal".into(),
+            instance: "instance".into(),
+            view: "view".into(),
+            context: crate::workspaces::Context {
+                workspace_id: "workspace".into(),
+                server_id: "server".into(),
+                connection_id: "connection".into(),
+                generation: 1,
+            },
+        };
+        let (execution, rx) = Execution::create(owner.clone());
         (
             Terminal {
-                owner: Owner {
-                    plugin: "test.terminal".into(),
-                    instance: "instance".into(),
-                    view: "view".into(),
-                    context: crate::workspaces::Context {
-                        workspace_id: "workspace".into(),
-                        server_id: "server".into(),
-                        connection_id: "connection".into(),
-                        generation: 1,
-                    },
-                },
+                owner,
                 output: Arc::new(Replay::default()),
-                input,
-                cancel: CancellationToken::new(),
+                execution: execution.clone(),
+                cancel: execution.cancel.clone(),
                 tasks: Arc::new(crate::resource_tasks::Tasks::default()),
                 next_input: Mutex::new(HashMap::new()),
-                sent: AtomicU64::new(0),
-                received: AtomicU64::new(0),
             },
             rx,
         )
     }
-
-    fn receive(rx: &mut mpsc::Receiver<Input>) -> Vec<u8> {
-        match rx.try_recv().unwrap() {
-            Input::Write(bytes, _) => bytes,
-            Input::Resize(..) | Input::Barrier(..) => panic!("unexpected control message"),
+    fn receive(rx: &mut mpsc::Receiver<QueuedInput>) -> Vec<u8> {
+        match rx.try_recv().unwrap().operation {
+            InputOperation::Write(bytes) => bytes.to_vec(),
+            _ => panic!("unexpected control message"),
         }
     }
-
     #[test]
     fn validation_write_survives_surface_input_after_a_sequence_snapshot() {
         let (terminal, mut rx) = terminal();
@@ -493,61 +483,9 @@ mod tests {
             .is_err());
     }
 }
-async fn run(
-    core: std::sync::Weak<AppCore>,
-    terminal: Arc<Terminal>,
-    mut input: mpsc::Receiver<Input>,
-    cols: u32,
-    rows: u32,
-    command: Option<String>,
-) -> Result<Option<u32>, String> {
-    let session = core
-        .upgrade()
-        .ok_or("应用已退出")?
-        .connection_session(&terminal.owner.context)?;
-    let token = session.cancellation();
-    let opening = async {
-        let channel = session.open_channel().await?;
-        channel
-            .request_pty(true, "xterm-256color", cols, rows, 0, 0, &[])
-            .await
-            .map_err(|e| e.to_string())?;
-        if let Some(command) = command {
-            channel
-                .exec(true, command)
-                .await
-                .map_err(|e| e.to_string())?;
-        } else {
-            channel
-                .request_shell(true)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
-        Ok::<_, String>(channel)
-    };
-    let mut channel = tokio::select! {biased;_=terminal.cancel.cancelled()=>return Err("终端已关闭".into()),_=token.cancelled()=>return Err("服务器连接已断开".into()),v=tokio::time::timeout(std::time::Duration::from_secs(30),opening)=>v.map_err(|_|"打开终端超时".to_string())??};
-    let mut code = None;
-    let work = async {
-        loop {
-            tokio::select! {biased;
-                item=input.recv()=>match item{
-                    Some(Input::Write(data,reply))=>{let len=data.len();let result=channel.data(data.as_slice()).await.map_err(|e|e.to_string());if result.is_ok(){terminal.sent.fetch_add(len as u64,Ordering::Relaxed);if let Some(c)=core.upgrade(){c.record_business(&terminal.owner,len as u64,0);}}let _=reply.send(result);},
-                    Some(Input::Resize(cols,rows))=>channel.window_change(cols,rows,0,0).await.map_err(|e|e.to_string())?,
-                    Some(Input::Barrier(reply))=>{let _=reply.send(());},
-                    None=>break,
-                },
-                message=channel.wait()=>match message {
-                    Some(russh::ChannelMsg::Data{data})|Some(russh::ChannelMsg::ExtendedData{data,..})=>{terminal.received.fetch_add(data.len() as u64,Ordering::Relaxed);if let Some(c)=core.upgrade(){c.record_business(&terminal.owner,0,data.len() as u64);}terminal.output.push(&data,&terminal.cancel).await?;},
-                    Some(russh::ChannelMsg::ExitStatus{exit_status})=>code=Some(exit_status),
-                    Some(russh::ChannelMsg::Failure)=>return Err("服务器拒绝 PTY 或登录 shell".into()),
-                    Some(russh::ChannelMsg::Close)|None=>break,
-                    _=>{}
-                }
-            }
-        }
-        Ok(code)
-    };
-    let result = tokio::select! {biased;_=terminal.cancel.cancelled()=>Err("终端已关闭".into()),_=token.cancelled()=>Err("服务器连接已断开".into()),v=work=>v};
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(1), channel.close()).await;
-    result
+fn input_result(outcome: InputOutcome) -> Result<(), String> {
+    match outcome {
+        InputOutcome::Sent(_) => Ok(()),
+        InputOutcome::NotSent(e) | InputOutcome::Unconfirmed(e) => Err(e),
+    }
 }

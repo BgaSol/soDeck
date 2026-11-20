@@ -1,27 +1,22 @@
-//! Non-interactive owned command streams. Plugins interpret commands and output.
+//! Compatibility and display adapters for the shared command resource service.
 use crate::{
-    resource_owner::Owner,
-    resource_tasks::Tasks,
-    streams::{capture::Capture, Frame, Sink},
-    workspaces::Context,
+    session_process::{ProcessResource as Stream, Reader},
+    streams::{Frame, Sink},
     AppCore,
 };
-use base64::{engine::general_purpose::STANDARD, Engine};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex, Weak},
+    sync::{atomic::Ordering, Arc, Mutex, Weak},
     time::Duration,
 };
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
-
-#[derive(Clone, Deserialize, PartialEq)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Open {
     view_id: String,
-    expected_context: Context,
+    expected_context: crate::workspaces::Context,
     operation_id: String,
     sequence: String,
     command: String,
@@ -32,68 +27,12 @@ struct Open {
     #[serde(default)]
     program_output: Option<String>,
 }
-struct Stream {
-    owner: Owner,
-    request: Open,
-    capture: Mutex<Capture>,
-    status: Mutex<Value>,
-    cancel: CancellationToken,
-    worker_done: CancellationToken,
-    tasks: Arc<Tasks>,
-    changed: Notify,
-    readers: Mutex<HashMap<String, Arc<Reader>>>,
-    released: Mutex<bool>,
-}
-struct Reader {
-    ack: Mutex<(u64, u64)>,
-    changed: Notify,
-    cancel: CancellationToken,
-}
-#[derive(Default)]
-struct Registry {
-    streams: HashMap<String, Arc<Stream>>,
-    sequences: HashMap<String, (Owner, u64)>,
-}
-#[derive(Default)]
-pub(crate) struct Streams(Mutex<Registry>);
-fn key(owner: &Owner) -> String {
-    format!(
-        "{}/{}/{}/{}",
-        owner.instance, owner.view, owner.context.connection_id, owner.context.generation
-    )
-}
 fn integer(p: &Value, name: &str) -> Result<u64, String> {
     p[name]
         .as_str()
         .ok_or_else(|| format!("缺少{name}"))?
         .parse()
-        .map_err(|_| format!("{name}无效"))
-}
-impl Streams {
-    pub(crate) fn cancel(&self, matches: impl Fn(&Owner) -> bool) {
-        let mut r = self.0.lock().unwrap();
-        r.sequences.retain(|_, (owner, _)| !matches(owner));
-        r.streams.retain(|_, s| {
-            if matches(&s.owner) {
-                *s.released.lock().unwrap() = true;
-                s.cancel.cancel();
-                for reader in s.readers.lock().unwrap().values() {
-                    reader.cancel.cancel();
-                }
-                s.tasks.close();
-            }
-            !*s.released.lock().unwrap() || !s.tasks.finished()
-        });
-    }
-    pub(crate) fn pending(&self, matches: impl Fn(&Owner) -> bool) -> usize {
-        let mut r = self.0.lock().unwrap();
-        r.streams
-            .retain(|_, s| !*s.released.lock().unwrap() || !s.tasks.finished());
-        r.streams
-            .values()
-            .filter(|s| matches(&s.owner) && s.tasks.active() > 0)
-            .count()
-    }
+        .map_err(|_| format!("{name} 无效"))
 }
 impl AppCore {
     pub(crate) fn stream_request(
@@ -103,211 +42,55 @@ impl AppCore {
         method: &str,
         p: &Value,
     ) -> Result<Value, String> {
-        if method == "session.stream.lookup" {
+        if matches!(method, "session.stream.open" | "session.stream.lookup") {
             let request: Open = serde_json::from_value(p.clone()).map_err(|e| e.to_string())?;
-            let ui = self.ui_state();
-            let view = ui.resource_view(&request.view_id)?;
-            if view.plugin_id != plugin || view.plugin_instance_id != instance {
-                return Err("票据不属于此实例".into());
+            let value = serde_json::to_value(request).unwrap();
+            let result = self
+                .process_request(
+                    plugin,
+                    instance,
+                    if method.ends_with("open") {
+                        "session.process.start"
+                    } else {
+                        "session.process.lookup"
+                    },
+                    &value,
+                )
+                .map_err(|e| e.message)?;
+            if method.ends_with("open") {
+                return Ok(
+                    json!({"streamId":result["processId"],"state":result["status"]["state"]}),
+                );
             }
-            let registry = self.command_streams.0.lock().unwrap();
-            for (id, s) in &registry.streams {
-                if s.owner.instance == instance
-                    && s.request.view_id == request.view_id
-                    && s.request.expected_context == request.expected_context
-                    && s.request.operation_id == request.operation_id
-                {
-                    if s.request != request {
-                        return Err("operationConflict: 同一票据参数不同".into());
-                    }
-                    return Ok(json!({"known":true,"streamId":id,"status":status(s)}));
-                }
-            }
-            return Ok(json!({"known":false}));
-        }
-        if method == "session.stream.open" {
-            let request: Open = serde_json::from_value(p.clone()).map_err(|e| e.to_string())?;
-            let sequence = request.sequence.parse::<u64>().map_err(|_| "序号无效")?;
-            if request.operation_id.is_empty()
-                || request.operation_id.len() > 128
-                || request.command.is_empty()
-                || request.command.len() > 16 * 1024
-                || request.command.contains('\0')
-                || !matches!(request.retention.as_str(), "fixed" | "rolling")
-                || request
-                    .program_output
-                    .as_deref()
-                    .is_some_and(|s| s != "startup-v1")
-                || !(1024..=64 * 1024 * 1024).contains(&request.max_output_bytes)
-                || request
-                    .timeout_ms
-                    .is_some_and(|n| !(1000..=3_600_000).contains(&n))
-            {
-                return Err("流式命令参数无效".into());
-            }
-            let owner = self.resource_owner(plugin, instance, &request.view_id)?;
-            if owner.context != request.expected_context {
-                return Err("连接代次已改变".into());
-            }
-            let session = self.connection_session(&owner.context)?;
-            let admission = self.resource_admission(&owner)?;
-            let mut registry = self.command_streams.0.lock().unwrap();
-            registry
-                .streams
-                .retain(|_, s| !*s.released.lock().unwrap() || !s.tasks.finished());
-            let own_key = key(&owner);
-            for (id, s) in &registry.streams {
-                if key(&s.owner) == own_key && s.request.operation_id == request.operation_id {
-                    if s.request != request {
-                        return Err("operationConflict: 同一票据参数不同".into());
-                    }
-                    return Ok(json!({"streamId":id,"state":s.status.lock().unwrap()["state"]}));
-                }
-            }
-            if registry
-                .sequences
-                .get(&own_key)
-                .is_some_and(|(_, n)| sequence <= *n)
-            {
-                return Err("operationExpired: 旧流式命令票据".into());
-            }
-            let live = |s: &&Arc<Stream>| s.status.lock().unwrap()["finished"] != true;
-            if registry.streams.values().filter(live).count() >= 24
-                || registry
-                    .streams
-                    .values()
-                    .filter(|s| s.owner.instance == instance)
-                    .filter(live)
-                    .count()
-                    >= 12
-                || registry
-                    .streams
-                    .values()
-                    .filter(|s| s.owner.view == owner.view)
-                    .filter(live)
-                    .count()
-                    >= 3
-                || registry
-                    .streams
-                    .values()
-                    .filter(|s| s.owner.instance == instance)
-                    .count()
-                    >= 64
-                || registry.sequences.len() >= 4096 && !registry.sequences.contains_key(&own_key)
-            {
-                return Err("resourceBusy: 流式命令资源已满".into());
-            }
-            for retention in ["fixed", "rolling"] {
-                let sum: usize = registry
-                    .streams
-                    .values()
-                    .filter(|s| s.owner.view == owner.view)
-                    .map(|s| {
-                        if s.request.retention == retention {
-                            s.request.max_output_bytes
-                        } else if retention == "fixed" {
-                            s.capture.lock().unwrap().pinned_bytes() as usize
-                        } else {
-                            0
-                        }
-                    })
-                    .sum();
-                if request.retention == retention
-                    && sum + request.max_output_bytes > 64 * 1024 * 1024
-                {
-                    return Err("当前页面流式捕获额度已满".into());
-                }
-            }
-            let id = self.next_id();
-            let path = self
-                .store
-                .lock()
-                .unwrap()
-                .root
-                .join("command-output")
-                .join(format!(
-                    "{}-{}-{}",
-                    std::process::id(),
-                    crate::core::now(),
-                    id
-                ));
-            let capture = Capture::new(
-                path,
-                request.max_output_bytes,
-                request.retention == "rolling",
-            )?;
-            let s = Arc::new(Stream {
-                owner,
-                request,
-                capture: Mutex::new(capture),
-                status: Mutex::new(
-                    json!({"state":"opening","execSent":false,"remoteExitConfirmed":false,"finished":false}),
-                ),
-                cancel: CancellationToken::new(),
-                worker_done: CancellationToken::new(),
-                tasks: Arc::new(Tasks::default()),
-                changed: Notify::new(),
-                readers: Mutex::new(HashMap::new()),
-                released: Mutex::new(false),
+            return Ok(if result["known"] == true {
+                json!({"known":true,"streamId":result["processId"],"status":result["status"]})
+            } else {
+                json!({"known":false})
             });
-            let task = s.tasks.enter()?;
-            registry
-                .sequences
-                .insert(own_key, (s.owner.clone(), sequence));
-            registry.streams.insert(id.clone(), s.clone());
-            drop(registry);
-            drop(admission);
-            let core = Arc::downgrade(self);
-            tauri::async_runtime::spawn(async move {
-                run(core, s.clone(), session).await;
-                drop(task);
-                s.worker_done.cancel();
-                s.changed.notify_waiters();
-            });
-            return Ok(json!({"streamId":id,"state":"opening"}));
         }
-        let id = p["streamId"].as_str().ok_or("缺少streamId")?;
-        let s = self
-            .command_streams
-            .0
-            .lock()
-            .unwrap()
-            .streams
-            .get(id)
-            .cloned()
-            .ok_or("流式命令已释放")?;
-        if s.owner.plugin != plugin || s.owner.instance != instance {
-            return Err("资源不属于此实例".into());
-        }
-        match method {
-            "session.stream.status" => Ok(status(&s)),
+        let mut value = json!({"processId":p["streamId"]});
+        let name = match method {
+            "session.stream.status" => "session.process.status",
             "session.stream.poll" => {
-                let offset = integer(p, "offset")?;
-                let capture = s.capture.lock().unwrap();
-                let watermark = capture.produced;
-                let (chunks, next) = capture.read_blocks(offset, 48 * 1024, watermark)?;
-                let earliest = capture.earliest;
-                drop(capture);
-                Ok(
-                    json!({"chunks":chunks,"nextOffset":next.to_string(),"watermark":watermark.to_string(),"earliestAvailableOffset":earliest.to_string(),"status":status(&s)}),
-                )
+                value["offset"] = p["offset"].clone();
+                "session.process.read"
             }
-            "session.stream.close" | "session.stream.release" => {
-                s.cancel.cancel();
-                s.changed.notify_waiters();
-                if method.ends_with("release") {
-                    *s.released.lock().unwrap() = true;
-                    s.tasks.close();
-                    for r in s.readers.lock().unwrap().values() {
-                        r.cancel.cancel()
-                    }
-                }
-                Ok(
-                    json!({"accepted":true,"released":method.ends_with("release"),"state":s.status.lock().unwrap()["state"]}),
-                )
+            "session.stream.close" => "session.process.cancel",
+            "session.stream.release" => "session.process.release",
+            _ => return Err("未知流式命令方法".into()),
+        };
+        let result = self
+            .process_request(plugin, instance, name, &value)
+            .map_err(|e| e.message)?;
+        Ok(match method {
+            "session.stream.close" => {
+                json!({"accepted":true,"released":false,"state":result["state"]})
             }
-            _ => Err("未知流式命令方法".into()),
-        }
+            "session.stream.release" => {
+                json!({"accepted":true,"released":true,"state":result["status"]["state"]})
+            }
+            _ => result,
+        })
     }
     pub async fn session_stream_data(
         self: &Arc<Self>,
@@ -319,18 +102,18 @@ impl AppCore {
         let view = self.ui_data_view(window, token)?;
         let id = p["id"].as_str().ok_or("缺少id")?.to_string();
         let s = self
-            .command_streams
+            .command_processes
             .0
             .lock()
             .unwrap()
-            .streams
+            .resources
             .get(&id)
             .cloned()
             .ok_or("流式命令已关闭")?;
         if s.owner.view != view.id
             || s.owner.plugin != view.plugin_id
             || s.owner.instance != view.plugin_instance_id
-            || *s.released.lock().unwrap()
+            || s.release_requested.load(Ordering::Acquire)
         {
             return Err("数据流不属于此页面".into());
         }
@@ -340,7 +123,7 @@ impl AppCore {
                 let end = integer(&p, "watermark")?;
                 let s = s.clone();
                 let data = tauri::async_runtime::spawn_blocking(move || {
-                    s.capture.lock().unwrap().read(start, 16 * 1024, end)
+                    s.output.capture.lock().unwrap().read(start, 16 * 1024, end)
                 })
                 .await
                 .map_err(|e| e.to_string())??;
@@ -348,16 +131,16 @@ impl AppCore {
             }
             "pin" => {
                 let _admission = self.surface_write_admission(window, token)?;
-                let registry = self.command_streams.0.lock().unwrap();
+                let registry = self.command_processes.0.lock().unwrap();
                 let bytes: u64 = registry
-                    .streams
+                    .resources
                     .values()
                     .filter(|other| other.owner.view == view.id)
                     .map(|other| {
                         if other.request.retention == "fixed" {
                             other.request.max_output_bytes as u64
                         } else {
-                            other.capture.lock().unwrap().pinned_bytes()
+                            other.output.capture.lock().unwrap().pinned_bytes()
                         }
                     })
                     .sum();
@@ -371,11 +154,16 @@ impl AppCore {
                 if end <= start || bytes.saturating_add(additional) > 64 * 1024 * 1024 {
                     return Err("当前页面固定阅读窗口达到64MiB容量".into());
                 }
-                s.capture.lock().unwrap().pin(self.next_id(), start, end)
+                s.output
+                    .capture
+                    .lock()
+                    .unwrap()
+                    .pin(self.next_id(), start, end)
             }
             "unpin" => {
                 let _admission = self.surface_write_admission(window, token)?;
-                s.capture
+                s.output
+                    .capture
                     .lock()
                     .unwrap()
                     .unpin(p["pinId"].as_str().ok_or("缺少pinId")?);
@@ -419,8 +207,8 @@ impl AppCore {
                     .map(str::parse::<u64>)
                     .transpose()
                     .map_err(|_| "偏移无效")?
-                    .unwrap_or(s.capture.lock().unwrap().earliest);
-                if !s.capture.lock().unwrap().boundary(offset) {
+                    .unwrap_or(s.output.capture.lock().unwrap().earliest);
+                if !s.output.capture.lock().unwrap().boundary(offset) {
                     return Err("偏移不在完整输出块边界".into());
                 }
                 let mut readers = s.readers.lock().unwrap();
@@ -444,86 +232,7 @@ impl AppCore {
     }
 }
 fn status(s: &Stream) -> Value {
-    let mut value = s.status.lock().unwrap().clone();
-    let c = s.capture.lock().unwrap();
-    value["producedBytes"] = json!(c.produced.to_string());
-    value["earliestAvailableOffset"] = json!(c.earliest.to_string());
-    value["workerFinished"] = json!(s.worker_done.is_cancelled());
-    value
-}
-async fn run(core: Weak<AppCore>, s: Arc<Stream>, session: Arc<crate::connections::Session>) {
-    let parent = session.cancellation();
-    let mut channel = None;
-    let deadline = async {
-        match s.request.timeout_ms {
-            Some(ms) => tokio::time::sleep(Duration::from_millis(ms)).await,
-            None => std::future::pending::<()>().await,
-        }
-    };
-    let result: Result<(), String> = tokio::select! {biased;_=s.cancel.cancelled()=>Err("cancelled".into()),_=parent.cancelled()=>Err("sessionLost".into()),_=deadline=>Err("deadlineExceeded".into()),r=async{
-        let opening=async{channel=Some(session.open_channel().await?);s.status.lock().unwrap()["execSent"]=json!(true);let c=channel.as_ref().unwrap();c.exec(true,s.request.command.as_str()).await.map_err(|e|e.to_string())?;c.eof().await.map_err(|e|e.to_string())?;Ok::<_,String>(())};
-        tokio::time::timeout(Duration::from_secs(30),opening).await.map_err(|_|"打开流式命令超时")??;
-        let mut decoder=crate::remote_program::Decoder::new(s.request.program_output.is_some(),s.request.max_output_bytes);
-        let startup_deadline=tokio::time::Instant::now()+Duration::from_secs(30);
-        if decoder.ready(){s.status.lock().unwrap()["state"]=json!("running");s.changed.notify_waiters();}
-        let mut sequence=0u64;
-        loop {
-            let message=if decoder.ready(){channel.as_mut().unwrap().wait().await}else{
-                tokio::time::timeout_at(startup_deadline,channel.as_mut().unwrap().wait()).await.map_err(|_|"deadlineExceeded:程序启动超时")?
-            };
-            let Some(message)=message else{break};
-            let source=if matches!(&message,russh::ChannelMsg::ExtendedData{..}){"stderr"}else{"stdout"};
-            match message {
-                russh::ChannelMsg::Data{data}|russh::ChannelMsg::ExtendedData{data,ext:1}=>{
-                    if let Some(c)=core.upgrade(){c.record_business(&s.owner,0,data.len() as u64)}
-                    let chunks=decoder.push(source=="stderr",&data)?;
-                    {let mut status=s.status.lock().unwrap();status.as_object_mut().unwrap().extend(decoder.metadata().as_object().unwrap().clone());if decoder.ready(){status["state"]=json!("running");}}
-                    for (stderr,data) in chunks{for bytes in data.chunks(8192){sequence+=1;let mut envelope=serde_json::to_vec(&json!({"v":1,"sequence":sequence.to_string(),"source":if stderr{"stderr"}else{"stdout"},"receivedAt":crate::core::now(),"dataBase64":STANDARD.encode(bytes)})).unwrap();envelope.push(b'\n');let output=s.clone();tauri::async_runtime::spawn_blocking(move||output.capture.lock().unwrap().append(&envelope)).await.map_err(|e|e.to_string())??;s.changed.notify_waiters();}}
-                },
-                russh::ChannelMsg::Failure=>return Err("远端拒绝执行命令".into()),
-                russh::ChannelMsg::ExitStatus{exit_status}=>{let mut state=s.status.lock().unwrap();state["exitCode"]=json!(exit_status);state["remoteExitConfirmed"]=json!(true);},
-                russh::ChannelMsg::ExitSignal{signal_name,..}=>{let mut state=s.status.lock().unwrap();state["exitSignal"]=json!(format!("{signal_name:?}"));state["remoteExitConfirmed"]=json!(true);},_=>{}
-            }
-        }
-        if s.status.lock().unwrap()["remoteExitConfirmed"]!=true{return Err("missingExitStatus".into())}decoder.finish()?;Ok(())
-    }=>r};
-    if let Some(channel) = channel {
-        let _ = tokio::time::timeout(Duration::from_secs(1), async {
-            if result.is_err() {
-                let _ = channel.signal(russh::Sig::TERM).await;
-            }
-            let _ = channel.close().await;
-        })
-        .await;
-    }
-    let mut state = s.status.lock().unwrap();
-    state["state"] = json!(if result.is_ok() {
-        "completed"
-    } else if s.cancel.is_cancelled() {
-        "cancelled"
-    } else {
-        "failed"
-    });
-    state["finished"] = json!(true);
-    state["outputComplete"] = json!(result.is_ok());
-    if let Err(e) = result {
-        let code = match e.split(':').next().unwrap_or("") {
-            "cancelled" => "cancelled",
-            "sessionLost" => "sessionLost",
-            "deadlineExceeded" => "deadlineExceeded",
-            "missingExitStatus" => "missingExitStatus",
-            "outputLimit" => "outputLimit",
-            "programCheckFailed" => "programCheckFailed",
-            "programStartFailed" => "programStartFailed",
-            "invalidProgramStartup" => "invalidProgramStartup",
-            "missingProgramStartup" => "missingProgramStartup",
-            "unexpectedProgramOutput" => "unexpectedProgramOutput",
-            _ => "commandFailed",
-        };
-        state["error"] = json!({"code":code,"message":e})
-    }
-    drop(state);
-    s.changed.notify_waiters();
+    crate::session_process::status(s)
 }
 async fn subscribe(
     core: Weak<AppCore>,
@@ -535,11 +244,11 @@ async fn subscribe(
     sink: Sink,
     mut cursor: u64,
 ) {
-    let initial = s.capture.lock().unwrap().produced;
+    let initial = s.output.capture.lock().unwrap().produced;
     let mut caught = false;
     let mut first = true;
     'subscription: loop {
-        let changed = s.changed.notified();
+        let changed = s.execution.changed.notified();
         if r.cancel.is_cancelled()
             || !core
                 .upgrade()
@@ -548,10 +257,10 @@ async fn subscribe(
             break;
         }
         let (earliest, produced) = {
-            let c = s.capture.lock().unwrap();
+            let c = s.output.capture.lock().unwrap();
             (c.earliest, c.produced)
         };
-        let finished = s.status.lock().unwrap()["finished"] == true;
+        let finished = s.execution.snapshot()["finished"] == true;
         let (kind, data, metadata) = if first {
             first = false;
             (
@@ -561,6 +270,7 @@ async fn subscribe(
             )
         } else if cursor < earliest
             && !s
+                .output
                 .capture
                 .lock()
                 .unwrap()
@@ -580,6 +290,7 @@ async fn subscribe(
             let start = cursor;
             let result = tauri::async_runtime::spawn_blocking(move || {
                 output
+                    .output
                     .capture
                     .lock()
                     .unwrap()
@@ -592,7 +303,7 @@ async fn subscribe(
                     ("data", data, json!({"streamId":id}))
                 }
                 _ => {
-                    cursor = s.capture.lock().unwrap().earliest;
+                    cursor = s.output.capture.lock().unwrap().earliest;
                     (
                         "gap",
                         vec![],

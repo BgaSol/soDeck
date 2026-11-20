@@ -27,6 +27,9 @@ use tokio_util::sync::CancellationToken;
 #[derive(Clone, Default)]
 struct Ssh {
     terminal_channels: HashSet<ChannelId>,
+    input_channels: HashSet<ChannelId>,
+    input_bytes: Arc<Mutex<Vec<Vec<u8>>>>,
+    executions: Arc<Mutex<Vec<Vec<u8>>>>,
     shells: Arc<AtomicUsize>,
     sizes: Arc<Mutex<Vec<(u32, u32)>>>,
     auth: Arc<AtomicUsize>,
@@ -83,6 +86,17 @@ impl server::Handler for Ssh {
         data: &[u8],
         session: &mut Session,
     ) -> Result<(), Self::Error> {
+        if self.input_channels.contains(&id) {
+            self.input_bytes.lock().unwrap().push(data.to_vec());
+            if data == b"finish" {
+                session.exit_status_request(id, 0)?;
+                session.eof(id)?;
+                session.close(id)?;
+            } else {
+                session.data(id, data.to_vec())?;
+            }
+            return Ok(());
+        }
         if !self.terminal_channels.contains(&id) {
             return Ok(());
         }
@@ -92,6 +106,19 @@ impl server::Handler for Ssh {
             session.close(id)?;
         } else {
             session.data(id, data.to_vec())?;
+        }
+        Ok(())
+    }
+    async fn channel_eof(
+        &mut self,
+        id: ChannelId,
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        if self.input_channels.contains(&id) {
+            session.data(id, b"eof-tail".to_vec())?;
+            session.exit_status_request(id, 0)?;
+            session.eof(id)?;
+            session.close(id)?;
         }
         Ok(())
     }
@@ -134,7 +161,20 @@ impl server::Handler for Ssh {
         command: &[u8],
         session: &mut Session,
     ) -> Result<(), Self::Error> {
+        if command == b"status-test:reject" {
+            session.channel_failure(id)?;
+            return Ok(());
+        }
+        if command == b"status-test:delayed-start" {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        }
         session.channel_success(id)?;
+        self.executions.lock().unwrap().push(command.to_vec());
+        if command == b"status-test:interactive" || command == b"status-test:delayed-start" {
+            self.input_channels.insert(id);
+            session.data(id, b"prompt> ".to_vec())?;
+            return Ok(());
+        }
         let response = self.environment_response.lock().unwrap().clone();
         if let Some(response) = response {
             self.environment_probes.fetch_add(1, Ordering::Relaxed);

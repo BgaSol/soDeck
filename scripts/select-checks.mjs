@@ -123,7 +123,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
         if (file.includes('settings')) ui();
         continue;
       }
-      if (/^src-tauri\/(src|tests)\/(connections|streams|plugins|session_exec|session_target|session_stream|content_export|core|lib|main|model|lifecycle|close_lifecycle|resource_tasks|resource_owner|platform|servers|workbench)(\/|\.|_)/.test(file)) {
+      if (/^src-tauri\/(src|tests)\/(connections|streams|plugins|session_exec|session_target|session_stream|session_process|remote_execution|execution_output|content_export|core|lib|main|model|lifecycle|close_lifecycle|resource_tasks|resource_owner|platform|servers|workbench)(\/|\.|_)/.test(file)) {
         core(); ui();
         plan.ssh = plan.sharedClient = true;
         pluginNames.forEach(name => integration.add(name));

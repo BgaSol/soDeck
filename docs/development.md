@@ -195,7 +195,7 @@ Check 始终响应 main push/PR，不使用 workflow 级 `paths` 跳过。`selec
 | 单插件 Rust/清单/锁文件/构建输入 | 该插件格式与五平台原生 Rust 测试、该插件普通业务验收；其他插件不跟随 |
 | desktop_files 的 windows/linux/macos.rs | 对应系统两架构/一个 macOS 架构的核心测试、文件业务；Windows 保留系统专项，普通 UI 不跟随 |
 | network_metrics.rs、settings/declaration.rs | 一次 Linux x86_64 完整核心套件；声明变化另走前端相关回归 |
-| session_stream、content_export | 五平台原生核心、Linux UI、Windows SSH、六插件普通业务验收，与连接/流生命周期相同 |
+| session_stream、session_process、remote_execution、execution_output、content_export | 五平台原生核心、Linux UI、Windows SSH、六插件普通业务验收，与连接/流生命周期相同 |
 | 其他已映射核心系统/更新模块 | 五平台原生核心和相关 UI；网络、文件、终端服务分别追加自己的普通业务验收 |
 | 连接、流、生命周期/RPC、平台进程、服务器路由 | 五平台原生核心、Linux UI、Windows SSH、六插件普通业务验收 |
 | 共享 UI/字体/菜单 | 扩大至核心与六插件 UI/普通业务验收；不因此运行 netem 或旧版升级 |
@@ -233,6 +233,8 @@ CI 的 npm 下载缓存按任务实际使用的锁文件配置；核心打包只
 包含核心的原生测试统一声明现有核心/六插件 workspace 输入，复用同一稳定 `check-tests` 键，避免每个组件/平台范围生成大份重复核心依赖。声明缓存目录不启动对应插件测试；实际执行仍由所选范围控制。仅插件的原生 job 保留小范围 workspace，不恢复核心 target。发行缓存仍只有核心自身输入。
 
 `core-release-v2` 是一次性的缓存迁移标识，不随提交、版本或 run ID 变化。它保留固定 action 的默认工具链/环境/Cargo 输入隔离，只缓存依赖编译结果；宿主构建依赖与目标架构 release 依赖一并保留，不开启 workspace crate 或 incremental 缓存。恢复后仍执行 `npm ci`、当前前端及当前核心的正式构建。main 手动打包会保存依赖，后续适用分支和标签可恢复默认分支缓存；详见[分发文档](distribution.md)。Linux 打包依赖安装复用官方软件源修正与有限重试，不缓存系统安装状态。
+
+MCP 的真实 OpenSSH 入口继续为 `npm run mcp:test`，覆盖多轮 pipe、跨块输入、EOF 和 PTY；Linux 额外创建一次性账号与 sudoers，用真实 sudo 验证错误密码后同任务继续。该 Linux 测试要求 openssh-server、sudo、useradd/chpasswd/visudo 及无交互 sudo 夹具管理能力，退出清理账号、配置与测试副作用。其余平台验证通用输入；不把 Linux sudo 专项推定为全部远端系统验证。
 
 ## 文档与开发收束
 
