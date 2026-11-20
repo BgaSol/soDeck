@@ -97,6 +97,9 @@ jobs:
           workspaces: plugins/${{ needs.select.outputs.plugin }} -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
+      - name: Windows terminal shell hooks
+        if: needs.select.outputs.plugin == 'terminal' && runner.os == 'Windows'
+        run: node scripts/test-terminal-powershell.mjs
       - shell: bash
         env:
           PLUGIN: ${{ needs.select.outputs.plugin }}

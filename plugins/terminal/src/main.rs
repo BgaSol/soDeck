@@ -222,7 +222,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             params["command"] = json!(command);
                             json!({"mode":"off"})
                         }
-                        Launch::LoginShell if resolved.directory != DirectoryIntegration::Auto => {
+                        Launch::LoginShell
+                            if resolved.directory != DirectoryIntegration::Auto
+                                && client
+                                    .call("settings.get", json!({"pageId":"appearance"}))
+                                    .unwrap_or(Value::Null)["values"]["readingMode"]
+                                    .as_str()
+                                    .is_some_and(|v| v != "auto") =>
+                        {
                             json!({"mode":resolved.directory.name()})
                         }
                         Launch::LoginShell if !can_integrate.load(Ordering::Relaxed) => {
@@ -232,6 +239,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             match integration::prepare(client, view, &p["context"]) {
                                 Ok((command, state)) => {
                                     params["command"] = json!(command);
+                                    let mut state = state;
+                                    if resolved.directory != DirectoryIntegration::Auto {
+                                        state["mode"] = json!(resolved.directory.name());
+                                    }
                                     state
                                 }
                                 Err(reason) => json!({"mode":"unavailable","reasonCode":reason}),

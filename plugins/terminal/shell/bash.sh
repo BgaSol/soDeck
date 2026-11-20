@@ -14,10 +14,19 @@ if [[ ${BASH_VERSINFO[0]} -lt 4 || -n $(trap -p DEBUG) ]] || shopt -qo functrace
 else
   _sd_pid=$BASHPID
   _sd_at_prompt=0
+  _sd_sequence=0
+  _sd_original_ps1=$PS1
+  _sd_integrated_ps1=''
   _sd_prompt() {
     local result=$?
     if [[ $BASHPID = "$_sd_pid" ]]; then
+      if [[ $_sd_sequence -gt 0 && $_sd_at_prompt = 0 ]]; then _sd_reading end "$result"; fi
+      _sd_sequence=$((_sd_sequence + 1))
       _sd_emit ready
+      _sd_reading prompt
+      if [[ $PS1 != "$_sd_integrated_ps1" ]]; then _sd_original_ps1=$PS1; fi
+      _sd_integrated_ps1="${_sd_original_ps1}"'\[\e]633;SODECK;@TOKEN@;reading;1;input;'"$_sd_sequence"'\a\]'
+      PS1=$_sd_integrated_ps1
       _sd_at_prompt=1
     fi
     return "$result"
@@ -27,6 +36,7 @@ else
     if [[ $BASHPID = "$_sd_pid" && $_sd_at_prompt = 1 ]]; then
       _sd_at_prompt=0
       _sd_emit busy
+      _sd_reading start
     fi
     return "$result"
   }

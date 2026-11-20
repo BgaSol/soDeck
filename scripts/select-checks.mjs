@@ -155,6 +155,8 @@ export function selectChecks(files, { suite, fallback } = {}) {
       if (pluginUiTest) { plan.scripts = true; integration.add(pluginUiTest[1]); continue; }
       if (file === 'scripts/test-terminal-shell.py') { plan.scripts = true; integration.add('terminal'); continue; }
       if (file === 'scripts/test-terminal-input.mjs') { plan.scripts = plan.terminalInput = true; continue; }
+      if (/^scripts\/(terminal-reading\.test|test-terminal-reading-ui)\.mjs$/.test(file)) { plan.scripts = plan.terminalInput = true; continue; }
+      if (file === 'scripts/test-terminal-powershell.mjs') { plan.scripts = true; plugin('terminal'); continue; }
       if (/^scripts\/(test-terminal-(history|search-ui)|benchmark-terminal-history|terminal-history\.test)\.mjs$/.test(file)) { plan.scripts = plan.terminalInput = true; continue; }
       if (/^scripts\/test-(plugin-icons-ui|theme-ui|connection-ui|desktop-ui|production-ui|server-ui|settings-ui|workspace-ui|workbench-interactions|workbench-layout)\.mjs$/.test(file)) { ui(); continue; }
       plan.reasons.push(`Shared build input or unmapped path: ${file.replace(/[\r\n|`]/g, ' ')}`);

@@ -192,6 +192,47 @@
                 "apply": "live"
               }
             ]
+          },
+          {
+            "title": "历史阅读",
+            "fields": [
+              {
+                "type": "select",
+                "key": "readingMode",
+                "default": "auto",
+                "title": "历史阅读",
+                "options": [
+                  {
+                    "value": "auto",
+                    "title": "自动识别与标记"
+                  },
+                  {
+                    "value": "manual",
+                    "title": "仅手动标记"
+                  },
+                  {
+                    "value": "off",
+                    "title": "关闭"
+                  }
+                ],
+                "apply": "live"
+              },
+              {
+                "type": "boolean",
+                "title": "长输出命令吸顶",
+                "apply": "live",
+                "key": "commandSticky",
+                "default": true
+              },
+              {
+                "type": "boolean",
+                "title": "命令行淡底",
+                "apply": "live",
+                "key": "commandFill",
+                "default": false
+              }
+            ],
+            "id": "reading"
           }
         ]
       }

@@ -12,3 +12,6 @@ _sd_emit() {
   fi
   return "$result"
 }
+_sd_reading() {
+  printf '\033]633;SODECK;@TOKEN@;reading;1;%s;%s%s\007' "$1" "$_sd_sequence" "${2:+;$2}"
+}
