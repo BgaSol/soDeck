@@ -38,7 +38,7 @@ import {createReading} from './reading/view.js';
   let submitMarker;
   const controls=installTerminalInput(terminal,host,()=>({key:mountKey,canCopy:!disposed&&!restoring,canPaste:enabled&&!restoring&&!disposed&&visible}),fail,()=>search.show(),{submit(){submitMarker?.dispose();submitMarker=reading.submit();},contextActions:row=>reading.contextActions(row)});
   const appearance=createAppearance(terminal,host,()=>caughtUp&&!restoring&&visible&&!disposed,()=>enqueueSize(true),()=>controls.invalidate());
-  const location=createLocation(terminal);
+  const location=createLocation(terminal,value=>reading.location(value));
   let lastCols=0,lastRows=0;
   let sizeFrame,sizeJob,sizeDone,sizeReject,desiredSize,resizeQueued=false,sizeEpoch=0,resizeFailed=false,resizeRetries=0,retryTimer;
   const request=p=>sodeck.request('data',{id,...p});

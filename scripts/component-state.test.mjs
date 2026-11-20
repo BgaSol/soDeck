@@ -31,6 +31,13 @@ test('automatic reports bind to one shell and keep a filesystem witness',()=>{
 test('old cores without shared-state capability keep the enhancement disabled without an RPC',async()=>{
  let called=false;globalThis.sodeck={request:async()=>{called=true;throw new Error('unexpected RPC');}};const client=new SharedState({context:fixture.context,capabilities:{}});assert.equal(client.available,false);await assert.rejects(client.request('get'),error=>error.code==='unsupported');assert.equal(called,false);client.dispose();
 });
+test('local terminal directory context follows confirmed reports and invalidation without shared-state RPC',()=>{
+ const handlers=new Map(),locations=[];let called=false;globalThis.sodeck={request:async()=>{called=true;throw new Error('unexpected RPC');}};
+ const terminal={parser:{registerOscHandler:(code,handler)=>{handlers.set(code,handler);return {dispose(){}};}}};
+ const location=createLocation(terminal,value=>locations.push(value));location.mount({context:fixture.context,capabilities:{},data:{streamId:'pty',openedContext:fixture.context,integration:{mode:'auto',token:'token'}}});
+ location.frame('data',123);handlers.get(633)(`SODECK;token;ready;${Buffer.from('/cwd').toString('hex')};${Buffer.from('/tmp/witness').toString('hex')}`);assert.equal(locations.at(-1).state,'unknown');location.completed();assert.equal(locations.at(-1).path,'/cwd');assert.equal(locations.at(-1).outputOffset,'123');
+ location.input('\r');assert.equal(locations.at(-1).activity,'busy');location.invalidate();assert.equal(locations.at(-1).state,'unknown');assert.equal(called,false);location.dispose();
+});
 test('same-directory prompts after busy preserve manual browsing; explicit retry follows again',async()=>{
  let emit,count=0;const elements=[];const prior=globalThis.document;
  globalThis.document={createElement:tag=>{const element={tag,setAttribute(){},append(){},replaceChildren(){},remove(){},textContent:''};elements.push(element);return element;}};
