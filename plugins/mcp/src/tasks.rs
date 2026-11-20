@@ -47,6 +47,7 @@ mod tests {
         retry["overwrite"] = json!(false);
         assert_eq!(first.spec, parse_upload_start(&retry).unwrap().spec);
         for (field, value) in [
+            ("requestId", json!("bad\0id")),
             ("overwrite", Value::Null),
             ("overwrite", json!("true")),
             ("remotePath", json!("relative")),
