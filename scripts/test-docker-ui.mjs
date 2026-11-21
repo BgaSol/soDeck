@@ -154,6 +154,8 @@ try{
     if(mode==='logs'){
       await frame.locator('.log-map-thumb').focus();await page.keyboard.press('Home');
       await frame.locator('#log-lines').filter({hasText:'服务启动'}).waitFor();
+      // The minimap summary arrives after the body paint; drag must start from its updated position.
+      await frame.waitForFunction(()=>document.querySelector('.log-map-thumb').getAttribute('aria-valuenow')==='1');
       const initial=await frame.locator('.log-line').first().getAttribute('data-id'),thumb=await frame.locator('.log-map-thumb').boundingBox(),rail=await frame.locator('.log-minimap').boundingBox();
       await page.mouse.move(thumb.x+thumb.width/2,thumb.y+thumb.height/2);await page.mouse.down();await page.mouse.move(thumb.x+thumb.width/2,rail.y+rail.height*.7);
       capturedBytes.set('earlier',bytesFor([{stream:'stdout',text:'2026-01-01T00:00:00Z INFO earlier history'}]));logCapture.resources.push({id:'earlier',start:0,end:2000000000,tail:true,status:{state:'completed',finished:true}});
