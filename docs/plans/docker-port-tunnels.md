@@ -1,16 +1,10 @@
 # Docker 端口隧道剩余验收
 
-状态：2026-11-21，Docker 0.7.0／网络隧道 0.5.0 的功能与范围重构已实现，正在完成本次独立包交付。正常操作、失败与限制已迁入 [Docker](../features/docker.md#容器端口隧道)、[网络隧道](../features/network-proxy.md#其他插件的快捷入口)及[插件 API](../plugin-api.md#网络隧道协作契约)。实现采用既有 commands、sharedState 和后台逻辑视图，没有新增核心产品代码或生产依赖。
+状态：2026-11-21，Docker 0.7.0／网络隧道 0.5.0 已完成本次源码及五平台原生包验收并独立正式发行。正常操作、失败与限制已迁入 [Docker](../features/docker.md#容器端口隧道)、[网络隧道](../features/network-proxy.md#其他插件的快捷入口)及[插件 API](../plugin-api.md#网络隧道协作契约)。实现采用既有 commands、sharedState 和后台逻辑视图，没有新增核心产品代码或生产依赖。
 
 原功能与代码方案保存在 Git 历史提交 `7b86e65`，不保留另一份完成计划。源码与测试中已实现的规则不在本文重复定义。
 
-## 本次当前验证
-
-- Docker 21 项和网络隧道 17 项单元测试；项目格式／类型检查及 206 项脚本测试通过。
-- 真实插件进程覆盖原请求、三种模拟远端执行环境、端口重新核对、配置差异、并发复用、创建／发布回包丢失、候选选择、实际监听和端口释放。
-- Docker 端口、资源树和原详情／日志／终端浏览器回归通过，端口覆盖三主题、宽窄窗口、隐藏／恢复订阅；网络隧道原 UI 与真实 OpenSSH／SOCKS5 协议和生命周期通过。
-- 真实核心、两个实际插件、OpenSSH 与隔离 Linux Engine 已验证发布端口的 HTTP 字节、同目标复用、后台管理视图不显示、Docker 来源关闭后继续使用及工作区结束释放端口。
-- Windows OpenSSH／Docker Desktop CLI/Engine 29.9.2 已通过同一真实流程；五平台原生归档的来源和最终结果，以两个插件 CHANGELOG 的本次交付记录为准；不能用历史发行结果代替。
+本次源码、真实 OpenSSH／Linux Engine／Windows Docker Desktop 流程、五平台原生包及公开下载的实际结果、来源提交和 Release 已迁入 [Docker CHANGELOG](../../plugins/docker/CHANGELOG.md#070) 与[网络隧道 CHANGELOG](../../plugins/network-proxy/CHANGELOG.md#050)，本文仅保留尚未完成的专项。
 
 ## 尚未完成的专项范围
 

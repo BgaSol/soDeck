@@ -6,6 +6,12 @@
 
 源码验收覆盖规则修订、目标匹配、并发复用、丢失创建／状态回执、存储失败、实际监听清理，以及原有 OpenSSH、SOCKS5 协议／生命周期与 UI 回归。核心未修改产品代码，插件继续独立分发；本版独立归档的来源及平台验收见下方交付记录。
 
+包来源：[57e41f1e013cb4f0fa5f2cdd607c531115d00edc](https://github.com/BgaSol/soDeck/commit/57e41f1e013cb4f0fa5f2cdd607c531115d00edc)；[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/44875135645)；[测试器修复后复验](https://github.com/BgaSol/soDeck/actions/runs/44876235305)；[原始独立打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/44875170213)；[正式 Release](https://github.com/BgaSol/soDeck/releases/tag/plugin-network-proxy-v0.5.0)。
+
+Windows x86_64／ARM64、Linux x86_64／ARM64、macOS ARM64 五平台原生归档、架构／资源和包内程序初始化、生命周期、退出均通过；网络归档另验证协作命令、真实监听及清理。来源 Check 的五平台源码、脚本、浏览器、Windows 桌面／SSH、两种 Linux 架构网络及真实 Docker 联通通过；末尾 Docker UI 测试存在异步断言竞态。测试提交 ad0ea8f 仅修复测试等待，两个插件及共享运行／打包输入保持原树，修复后的 Docker UI、进程与真实业务复验通过。原始失败和复验任务均保留在交付证据中；netem 未运行。核心版本保持 1.11.0，仓库 Latest 保留给核心。
+
+公开匿名下载的更新清单及五份归档，其大小与 SHA-256 均已核对一致；保留原始打包附件，未重建或覆盖程序包。固定附件 ID、大小、SHA-256、来源任务及验证／跳过范围保存在[本版交付证据](release-evidence/v0.5.0-assets.json)。真实 IPv6／指定非回环网卡、rootless、Windows Server Windows Engine 及原生设备交互的剩余范围见[专项记录](../../docs/plans/docker-port-tunnels.md)。
+
 # 0.4.6
 
 - 规则进入详情与返回方向一致，状态与检查文字稳定更新；修复公共菜单的中途退出和隐藏后迟到动效。

@@ -6,6 +6,12 @@
 
 源码验收覆盖端口推导、旧绑定拒绝、三种模拟远端执行环境、原容器终端、端口 UI 三主题与窄屏，以及真实核心／OpenSSH／隔离 Linux Engine 的 HTTP 字节、复用、来源关闭与端口释放。Windows OpenSSH + Docker Desktop（CLI/Engine 29.9.2）已通过同一真实流程；Windows Engine、rootless、真实 IPv6 发布入口与原生设备交互未由这些结果替代；本版独立归档的来源及平台验收见下方交付记录。
 
+包来源：[57e41f1e013cb4f0fa5f2cdd607c531115d00edc](https://github.com/BgaSol/soDeck/commit/57e41f1e013cb4f0fa5f2cdd607c531115d00edc)；[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/44875135645)；[测试器修复后复验](https://github.com/BgaSol/soDeck/actions/runs/44876235305)；[原始独立打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/44875173595)；[正式 Release](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.7.0)。
+
+Windows x86_64／ARM64、Linux x86_64／ARM64、macOS ARM64 五平台原生归档、架构／资源和包内程序初始化、生命周期、退出均通过；网络归档另验证协作命令、真实监听及清理。来源 Check 的五平台源码、脚本、浏览器、Windows 桌面／SSH、两种 Linux 架构网络及真实 Docker 联通通过；末尾 Docker UI 测试存在异步断言竞态。测试提交 ad0ea8f 仅修复测试等待，两个插件及共享运行／打包输入保持原树，修复后的 Docker UI、进程与真实业务复验通过。原始失败和复验任务均保留在交付证据中；netem 未运行。核心版本保持 1.11.0，仓库 Latest 保留给核心。
+
+公开匿名下载的更新清单及五份归档，其大小与 SHA-256 均已核对一致；保留原始打包附件，未重建或覆盖程序包。固定附件 ID、大小、SHA-256、来源任务及验证／跳过范围保存在[本版交付证据](release-evidence/v0.7.0-assets.json)。真实 IPv6／指定非回环网卡、rootless、Windows Server Windows Engine 及原生设备交互的剩余范围见[专项记录](../../docs/plans/docker-port-tunnels.md)。
+
 # 0.6.0
 
 - Windows 远端通过当前 SSH 账号的原生 Docker CLI 访问本机命名管道；自动识别当前 Context/环境覆盖，手动设置端点及远端 CLI 路径。旧端点配置迁移为手动方式并保留备份。
