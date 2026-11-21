@@ -6,6 +6,11 @@
 - 精简信息范围，不再提供环境变量整表、全部标签及完整 inspect 字段浏览；完整 ID、运行时间、重启策略和手动指标按需查看。
 - 日志独立入口保留原正文／Worker／导出流程；修复保持阅读位置时，窗口变宽后剩余正文不足一屏导致的底部滚动限制造成的锚点偏移。
 - 无新增生产依赖、核心 API 或网络插件版本。本版独立发布的来源、五平台实际包和验证／跳过范围由下方交付记录补齐。
+包来源：[1fc1eb40123caecf0b9b6d459da0db1b6a0bb001](https://github.com/BgaSol/soDeck/commit/1fc1eb40123caecf0b9b6d459da0db1b6a0bb001)；[最终来源 Check](https://github.com/BgaSol/soDeck/actions/runs/44906968463)；[修正后 Docker UI 复验](https://github.com/BgaSol/soDeck/actions/runs/44907742085)；[原始独立打包与五平台包验收](https://github.com/BgaSol/soDeck/actions/runs/44906932529)；[正式 Release](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.8.0)。
+
+Windows x86_64／ARM64、Linux x86_64／ARM64、macOS ARM64 五平台原生归档、包内程序初始化、生命周期和退出均通过；最终 Check 的源码、浏览器、桌面、网络及 Docker 集成通过，netem 按专项范围跳过。修正后复验只等待日志缩略导航投影完成，产品代码和发行包来源保持不变。真实 Linux Engine 24.0.9／OpenSSH 完整流程通过；Windows Docker Desktop CLI/Engine 29.9.2 的信息、隧道 HTTP 数据、终端和维护流程通过，公开 Docker Hub 拉取因 TLS handshake timeout 未计为通过，直接 docker pull 复现相同外部故障。核心版本保持 1.11.0，仓库 Latest 保留给核心。
+
+公开匿名更新清单及五份归档的大小与 SHA-256 已核对一致；固定附件、来源、平台报告和跳过范围保存在[本版交付证据](release-evidence/v0.8.0-assets.json)。真实 IPv6／指定非回环网卡、rootless、Windows Server Windows Engine、原生可访问性／IME／混合 DPI 和跨窗设备交互仍由[专项计划](../../docs/plans/docker-port-tunnels.md)与[原生验收计划](../../docs/plans/native-verification.md)维护。
 
 # 0.7.0
 
