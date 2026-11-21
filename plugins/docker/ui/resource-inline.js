@@ -43,7 +43,7 @@ export class ResourceInline {
     this.region.update(tools,this.callbacks.actions(n).map(a=>`<button type="button" data-dom-key="action:${a.action}" data-inline-action="${a.action}" ${a.disabled?'disabled':''} class="${a.danger?'danger':''}">${escape(a.label)}</button>`).join(''),false);
     const field=(label,value,mono=false)=>value==null||value===''?'':`<div class="inline-field"><span class="inline-label">${label}</span><span class="inline-value ${mono?'mono':''}">${escape(value)}</span></div>`;
     let summary='';
-    if(info?.kind==='container')summary=field('镜像',info.image)+(['exited','dead'].includes(info.status)?field('状态',`${status[info.status]||info.status}${info.exitCode==null?'':' · 退出码 '+info.exitCode}`):'')+(info.health==='unhealthy'?'<p class="danger">健康检查未通过</p>':'');
+    if(info?.kind==='container')summary=(info.imageId?`<div class="inline-field"><span class="inline-label">镜像</span><button type="button" class="inline-reference" data-inline-action="locate" data-resource="${escape(JSON.stringify({kind:'image',id:info.imageId}))}">${escape(info.image)}</button></div>`:field('镜像',info.image))+(['exited','dead'].includes(info.status)?field('状态',`${status[info.status]||info.status}${info.exitCode==null?'':' · 退出码 '+info.exitCode}`):'')+(info.health==='unhealthy'?'<p class="danger">健康检查未通过</p>':'');
     if(info?.kind==='image')summary=field('大小',info.size==null?'未读取':(info.size/1024/1024).toFixed(1)+' MiB')+field('平台',info.platform);
     if(info?.kind==='network'||info?.kind==='volume')summary=field('驱动',info.driver)+field('范围',info.scope)+field('位置',info.mountpoint,true);
     if(!info)summary='<p class="muted">'+escape(o?.error||'正在读取对象信息…')+'</p>';
