@@ -34,7 +34,8 @@ impl AppCore {
         instance: &str,
         p: &Value,
     ) -> Result<Value, Error> {
-        self.connection_caller(plugin, instance)?;
+        self.plugin_instance(plugin, instance)
+            .ok_or_else(|| Error::new("staleInstance", "插件实例不可用"))?;
         let params: Params = serde_json::from_value(p.clone())
             .map_err(|e| Error::new("invalidParams", e.to_string()))?;
         if !(1..=50).contains(&params.limit)

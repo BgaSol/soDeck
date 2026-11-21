@@ -1,6 +1,7 @@
 #[tokio::test(flavor="multi_thread",worker_threads=4)]
 #[ignore="requires isolated OpenSSH servers and MCP package; npm run mcp:test"]
 async fn openssh_mcp_connections(){
+    async fn write_error(client:&reqwest::Client,url:&str,token:&str,name:&str,input:Value)->Value {let r=call(client,url,token,"tools/call",json!({"name":name,"arguments":input})).await;assert_eq!(r["isError"],true,"{r}");serde_json::from_str(r["content"][0]["text"].as_str().unwrap()).unwrap()}
     let _=rustls::crypto::ring::default_provider().install_default();
     let f=Fixture::new();let ports:Vec<u16>=serde_json::from_str(&std::env::var("SODECK_TEST_MCP_PORTS").unwrap()).unwrap();
     let mut ids=Vec::new();
@@ -14,6 +15,21 @@ async fn openssh_mcp_connections(){
     let catalog=tool(&client,&url,&token,"sodeck_servers_list",json!({})).await;assert_eq!(catalog["matchCount"],3);assert!(catalog["servers"].as_array().unwrap().iter().all(|s|s["target"].is_null()));
     assert_eq!(tool(&client,&url,&token,"sodeck_servers_list",json!({"query":"127.0.0.1","limit":1})).await["resolution"],"ambiguous");
     assert_eq!(tool(&client,&url,&token,"sodeck_servers_list",json!({"query":"187"})).await["resolution"],"unique");
+    let create_input=json!({"catalogRevision":catalog["catalogRevision"],"server":{"name":"managed-through-mcp","host":"127.0.0.1","port":1,"username":std::env::var("SODECK_TEST_SSH_USER").unwrap(),"authentication":{"type":"privateKey","privateKeyPath":std::env::var("SODECK_TEST_SSH_KEY").unwrap(),"secret":{"action":"clear"}}}});
+    let managed=tool(&client,&url,&token,"sodeck_server_create",create_input.clone()).await;assert!(managed["serverId"].is_string(),"{managed}");
+    assert_eq!(write_error(&client,&url,&token,"sodeck_server_create",create_input).await["error"]["details"]["code"],"conflict");
+    let changed=tool(&client,&url,&token,"sodeck_server_update",json!({"catalogRevision":managed["catalogRevision"],"serverId":managed["serverId"],"patch":{"port":ports[0],"name":"managed-through-mcp-updated"}})).await;assert!(changed["catalogRevision"].is_string(),"{changed}");
+    let selected=tool(&client,&url,&token,"sodeck_servers_list",json!({"serverId":managed["serverId"]})).await;assert_eq!(selected["servers"][0]["port"],ports[0]);
+    let invalid=write_error(&client,&url,&token,"sodeck_server_update",json!({"catalogRevision":changed["catalogRevision"],"serverId":managed["serverId"],"patch":{"authentication":{"type":"secret-redaction-marker","secret":{"action":"replace","remember":true,"value":"secret-redaction-marker"}}}})).await;assert!(!invalid.to_string().contains("secret-redaction-marker"));
+    let mut opened_managed=tool(&client,&url,&token,"sodeck_connection_open",json!({"serverId":managed["serverId"],"expectedProfileToken":selected["servers"][0]["profileToken"],"requestId":"managed-open","waitMs":0})).await;
+    let end=std::time::Instant::now()+Duration::from_secs(30);
+    while opened_managed["connection"]["state"]!="ready" {assert!(std::time::Instant::now()<end,"{opened_managed}");assert_ne!(opened_managed["connection"]["state"],"failed","{opened_managed}");for v in f.core.connection_views(){if v.server_id==managed["serverId"].as_str().unwrap(){if let Some(Question::HostKey{id,..})=v.question {f.core.answer_connection("main",&v.attempt_id,&id,Answer::HostKey{accept:true}).unwrap();}}}opened_managed=tool(&client,&url,&token,"sodeck_connection_get",json!({"connectionRequestId":opened_managed["connection"]["connectionRequestId"],"waitMs":1000})).await;}
+    let rev=f.core.server_catalog()["revision"].as_u64().unwrap().to_string();
+    assert_eq!(write_error(&client,&url,&token,"sodeck_server_delete",json!({"catalogRevision":rev,"serverId":managed["serverId"]})).await["error"]["details"]["code"],"inUse");
+    let context=f.core.workspace_projection("main").unwrap().workspaces.iter().find(|w|w.context.server_id==managed["serverId"].as_str().unwrap()).unwrap().context.clone();
+    let plan=f.core.ui_close_prepare("main",vec![context.workspace_id.clone()],None).unwrap();f.core.ui_close_finish(plan["token"].as_str().unwrap(),serde_json::from_value(plan["views"].clone()).unwrap(),"discard").unwrap();
+    let deleted=tool(&client,&url,&token,"sodeck_server_delete",json!({"catalogRevision":rev,"serverId":managed["serverId"]})).await;assert_eq!(deleted["serverId"],managed["serverId"],"{deleted}");assert_eq!(tool(&client,&url,&token,"sodeck_servers_list",json!({"serverId":managed["serverId"]})).await["matchCount"],0);
+    assert!(!std::fs::read_to_string(f.path.join("servers.json")).unwrap().contains("managed-through-mcp"));
     if let Ok(codex)=std::env::var("SODECK_TEST_CODEX_OPEN") {
         let command=if cfg!(windows){"cmd /c echo codex-opened-server"}else{"printf codex-opened-server"};
         let prompt=format!("Validate the SoDeck MCP connection flow using only sodeck MCP tools, no shell tools or local files. The user wants a harmless query on server 187. Discover saved servers with query 187, choose only if unique, open that exact saved server using requestId codex-open-zero and its discovered profileToken. If pending or needsUser, the test user will answer the SoDeck prompt; wait with connection_get on the same receipt until ready. Use the ready targetId directly to execute once with requestId codex-open-query: {command}. Check stable done, exitCode 0, evidence.complete and the output marker. Reply CODEX_OPEN_OK. Never guess a targetId or reconnect an unrelated server.");

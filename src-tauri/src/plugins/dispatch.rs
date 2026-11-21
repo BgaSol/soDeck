@@ -19,6 +19,14 @@ pub(super) fn plugin_request(
     frame: &Value,
 ) -> Result<Value, RpcError> {
     match frame["method"].as_str().unwrap_or_default() {
+        "servers.create" | "servers.update" | "servers.delete" => core
+            .servers_write(
+                id,
+                instance,
+                frame["method"].as_str().unwrap(),
+                &frame["params"],
+            )
+            .map_err(|e| RpcError::session(e.code, e.message)),
         "servers.list" => core
             .servers_read(id, instance, &frame["params"])
             .map_err(|e| RpcError::session(&e.code, e.message)),

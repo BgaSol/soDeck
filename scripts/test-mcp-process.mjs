@@ -14,7 +14,7 @@ assert.equal(manifest.name,'Agent MCP');assert.equal(manifest.ui.views[0].title,
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-mcp-process-'));
 const socket=net.createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r));
 const contexts=Object.fromEntries(['a','b','c'].map(view=>[view,{workspaceId:view,serverId:'server-'+view,connectionId:'connection-'+view,generation:1}]));
-const capabilities=['session.target.v2','session.process.v1','files.pluginData.v1','files.operations.v2','files.copy.v1','ui.background.v1','settings.v1','servers.read.v1','connections.v1'];
+const capabilities=['session.target.v2','session.process.v1','files.pluginData.v1','files.operations.v2','files.copy.v1','ui.background.v1','settings.v1','servers.read.v1','servers.write.v1','connections.v1'];
 const descriptions=Object.fromEntries(Object.keys(contexts).map(view=>[view,{name:view,protocol:'ssh',host:view==='a'?'10.0.0.187':view==='b'?'10.0.1.187':'db187.example.com',port:22,username:'ops'}]));
 const targetFaults=new Map(),targetStates=new Map(),targetCalls=[],targetGates=[];let gateTargets=false;
 function targetReply(view){const state=targetStates.get(view)??'connected',target=descriptions[view];return {context:contexts[view],state,closing:false,capabilities:state==='connected'?['exec','files']:[],targetSource:state==='connected'?'current':'lastConnected',target:{...target,endpoint:`${target.host.includes(':')?'['+target.host+']':target.host}:${target.port}`}};}
@@ -153,7 +153,7 @@ try{
   for(const [viewId,context]of Object.entries(contexts))assert.equal((await peer.request('ui.createView',{viewId,viewType:'status',context})).metadata.title,'Agent MCP');
   await until(async()=>(await peer.request('ui.getView',{viewId:'a'})).data,s=>s.service==='ready');
   const initialized=await call('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'sodeck-test',version:'1'}});assert(initialized.capabilities.tools);
-  const list=await call('tools/list',{});assert.equal(list.tools.length,12);assert.equal(list.tools.find(t=>t.name==='sodeck_exec_start').annotations.readOnlyHint,false);
+  const list=await call('tools/list',{});assert.equal(list.tools.length,Number(manifest.version.split('.')[1])>=11?15:12);assert.equal(list.tools.find(t=>t.name==='sodeck_exec_start').annotations.readOnlyHint,false);
   assert(list.tools.find(t=>t.name==='sodeck_targets_list').inputSchema.properties.query);
   await discoveryChecks();
   const targets=(await tool('sodeck_targets_list')).value.targets;assert.equal(targets.length,3);

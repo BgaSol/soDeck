@@ -1,12 +1,34 @@
 # MCP API
 
-本文定义Agent MCP插件 0.9.x 的客户端契约。接入、页面操作和限制见[功能说明](features/mcp.md)；核心通用 RPC 见[插件 API](plugin-api.md)，发行证据见插件 [CHANGELOG](../plugins/mcp/CHANGELOG.md)。客户端先进行 MCP initialize 和 tools/list；新增能力以工具发现结果为准。
+本文定义Agent MCP插件 0.11.x 的客户端契约。接入、页面操作和限制见[功能说明](features/mcp.md)；核心通用 RPC 见[插件 API](plugin-api.md)，发行证据见插件 [CHANGELOG](../plugins/mcp/CHANGELOG.md)。客户端先进行 MCP initialize 和 tools/list；新增能力以工具发现结果为准。
 
 ## 传输与调用
 
 服务为带 Bearer Token 的回环 Streamable HTTP，端点 `http://127.0.0.1:<port>/mcp`。MCP 请求正文最多 32 KiB，总并发最多 32。Host 与可选 Origin 需匹配该回环地址。HTTP 401/403 为接入失败，429 为容量限制。字符串参数按 UTF-8 字节限制；未知参数或工具返回 MCP 协议 invalid_params。认证资料由核心管理。
 
-十二个工具的成功与业务错误均只返回一个 JSON TextContent，缺席 structuredContent，不同时附原文副本或 outputSchema；客户端只解析一次 text。业务错误使用 isError=true 与 `{"error":{...}}`，取得任务时另以顶层 task 附一份该次事实。工具声明的只读/破坏性提示不能替代实际远端操作判断。
+十五个工具的成功与业务错误均只返回一个 JSON TextContent，缺席 structuredContent，不同时附原文副本或 outputSchema；客户端只解析一次 text。业务错误使用 isError=true 与 `{"error":{...}}`，取得任务时另以顶层 task 附一份该次事实。工具声明的只读/破坏性提示不能替代实际远端操作判断。
+
+## 服务器节点写入（0.11.0）
+
+要求核心 1.12.0 的 servers.write.v1，缺少时插件初始化提示升级。原十二工具保留，新增三个写工具；不扩展 servers_list 的现有读取投影。
+
+| 工具 | 参数 | 成功返回 |
+| --- | --- | --- |
+| sodeck_server_create | catalogRevision、server | serverId、catalogRevision |
+| sodeck_server_update | catalogRevision、serverId、patch | serverId、catalogRevision |
+| sodeck_server_delete | catalogRevision、serverId | serverId、catalogRevision |
+
+catalogRevision 是最近查询返回的十进制 u64 字符串，必须原样使用。serverId 为稳定 ID，范围沿用资料 ID；三个工具声明 readOnly=false、idempotent=false，update/delete 同时 destructive=true。成功只交付保存身份与新修订，不交付凭据、整份目录、profileToken 或远程任务。后续查询仍走 servers_list。
+
+server 支持 name、host、port、username、tagIds、route、authentication。host/username 必需，name 默认主机，port 默认 22，认证默认 password、无秘密；tagIds/route 默认空。name/host/username 和 ID 为非空、无 NUL、最多 256 UTF-8 字节，privateKeyPath 最多 4096，秘密 value 可为空、最多 16384、无 NUL。正文仍受 32 KiB 限制；不接受 protocol、id、copyFromId、newTagNames 等其他字段。
+
+route 项为 {kind:"ssh",serverId} 或 {kind:"socks5",proxyId}，顺序固定；不接受步骤 id。authentication 以 type=password/privateKey 指明完整配置，privateKeyPath 可省略；secret 可省略或为 {action:"keep",remember:boolean}、{action:"replace",value,remember:boolean}、{action:"clear"}。新增缺省 remember=true；修改省略 secret 沿用原保存选择和兼容秘密。改变认证类型或私钥路径时必须明确 replace/clear。私钥路径按 SoDeck 主机处理；不返回旧路径或秘密供客户端拼草稿。
+
+patch 只能包含以上可编辑字段，至少一项。未提供保持；tagIds/route 用空数组清空，其他数组整体替换；authentication 未提供则完整保留。未知字段、null、错误类型、非法引用和无效端口拒绝。显示名称省略不改名；新建同地址独立节点允许存在，不自动合并。凭据存储与会话影响见[节点管理](features/mcp.md#管理服务器节点)。
+
+核心业务错误放在 error.details.code，保留既有 RPC error.code：invalidParams、notFound、conflict、referenced、inUse、catalogUnavailable、persistenceFailed、staleInstance。通信超时的 code 仍可能是本地 RPC 错误，不能解释为确认未提交。所有错误不包含秘密值。
+
+写入没有 requestId 和管理回执查询。旧 catalogRevision 重试不能再次提交，但 conflict 不证明原调用已成功；结果丢失须查询并核对，不自动用新修订重建操作。写入不接受 task_get、waitMs 或 task_cancel，不承诺 HTTP 断开撤销已派发的保存。
 
 ## 保存资料发现与打开（0.6.0）
 
@@ -70,7 +92,7 @@ runId 是插件进程身份，taskId 包含运行身份并按不透明字符串�
 
 ## 单文件上传（0.9.0）
 
-要求核心 1.11.0 的 `files.copy.v1`。新增第十二个工具 `sodeck_file_upload`；行为、元数据与并发限制见[上传说明](features/mcp.md#上传文件)。沿用目标选择、固定请求去重、当前插件运行内查询与额度。
+要求核心 1.11.0 的 `files.copy.v1`。新增第十五个工具 `sodeck_file_upload`；行为、元数据与并发限制见[上传说明](features/mcp.md#上传文件)。沿用目标选择、固定请求去重、当前插件运行内查询与额度。
 
 | 参数 | 范围 |
 | --- | --- |

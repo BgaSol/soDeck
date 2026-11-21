@@ -352,6 +352,14 @@ startup-v1 只消费 stderr 的第一份 `SDP1 <JSON字节长度>\n<JSON>` 前�
 
 实现：[remote_program](../src-tauri/src/remote_program/)、[session_exec.rs](../src-tauri/src/session_exec.rs)、[session_stream.rs](../src-tauri/src/session_stream.rs)。
 
+### servers.write.v1（核心 1.12.0）
+
+新增 servers.create、servers.update、servers.delete，分别接受 catalogRevision/server、catalogRevision/serverId/patch、catalogRevision/serverId；成功返回 serverId/catalogRevision，修订为十进制 u64 字符串。节点字段、部分更新、凭据动作与恢复语义同[MCP 节点写入](mcp-api.md#服务器节点写入0110)；32 KiB 是 MCP 出口限制，核心 RPC 仍受已有 64 KiB 帧约束。
+
+核心从真实通道校验运行中的插件实例，参数不能指定来源。三个方法通过同一目录修改入口执行修订检查、合并、校验、凭据处理、原子保存和通知；不公开宿主 change_catalog、任意 CatalogChange、复制来源或恢复目录。核心能力是通用目录写入，不建立插件权限或审批系统。旧读接口、API 主版本和旧插件保持兼容；新 MCP 独立要求该能力。
+
+目录错误使用既有 RPC 形式：-32000、message 和 data.code，code 范围及客户端示例见上方链接；参数异常返回通用原因，不暴露反序列化原输入。所有控制帧和响应预算沿用既有约束。写入没有后台任务、额外回执数据库或跨运行去重；真实插件来源的成功操作写入核心日志，日志不含认证正文。
+
 ### servers.read.v1 与 connections.v1（核心 1.9.0）
 
 版本化 RPC 提供非敏感保存资料、真实连接接纳和原请求读取。调用方检查两项可选能力；API 主版本仍为 1，已有桌面连接命令、session.target.v1/v2 与插件保持兼容。核心从真实插件进程附加来源，参数不能冒充 pluginId/instanceId。插件可信使用这些能力，不声明权限列表。

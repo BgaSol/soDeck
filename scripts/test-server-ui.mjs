@@ -350,7 +350,8 @@ try {
   checks.push("内联代理保存保留父表单标签、输入和凭据草稿，取消服务器仍保留代理");
 
   await work().locator(`[data-server-action="select"][data-id="${target}"]`).click(); await action("edit", work()).click(); await field("name").fill("不可覆盖的草稿");
-  catalog = await read(); await bridge.call("change_catalog", { revision: catalog.revision, change: { op: "saveTag", id: null, name: "外部更新" } });
+  catalog = await read(); await bridge.call("change_catalog", { revision: catalog.revision, change: { op: "patchServer", id: target, patch: { name: "外部更新的节点" } } });
+  await page.evaluate(()=>manager.start());assert.equal(await field("name").inputValue(), "不可覆盖的草稿");
   await save(); await dialogs().locator(".error-box").waitFor(); assert.equal(await field("name").inputValue(), "不可覆盖的草稿");
   await page.keyboard.press("Escape"); await action("confirm-no").click(); await expectDialogs(1); assert.equal(await field("name").inputValue(), "不可覆盖的草稿");
   await closeDirty(); await action("reload", work()).click();

@@ -59,6 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             for cap in [
                 "session.target.v2",
                 "servers.read.v1",
+                "servers.write.v1",
                 "connections.v1",
                 "session.process.v1",
                 "files.pluginData.v1",

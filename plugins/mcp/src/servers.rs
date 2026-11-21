@@ -26,6 +26,59 @@ struct Params {
 fn limit() -> usize {
     20
 }
+
+pub fn patch_schema() -> Value {
+    let string = json!({"type":"string","minLength":1,"maxLength":256});
+    let route = json!({"type":"array","items":{"oneOf":[
+        {"type":"object","properties":{"kind":{"const":"ssh"},"serverId":string},"required":["kind","serverId"],"additionalProperties":false},
+        {"type":"object","properties":{"kind":{"const":"socks5"},"proxyId":string},"required":["kind","proxyId"],"additionalProperties":false}
+    ]}});
+    let secret = json!({"oneOf":[
+        {"type":"object","properties":{"action":{"const":"keep"},"remember":{"type":"boolean"}},"required":["action","remember"],"additionalProperties":false},
+        {"type":"object","properties":{"action":{"const":"replace"},"value":{"type":"string"},"remember":{"type":"boolean"}},"required":["action","value","remember"],"additionalProperties":false},
+        {"type":"object","properties":{"action":{"const":"clear"}},"required":["action"],"additionalProperties":false}
+    ]});
+    json!({"type":"object","minProperties":1,"properties":{
+        "name":string,"host":string,"port":{"type":"integer","minimum":1,"maximum":65535},"username":string,
+        "tagIds":{"type":"array","items":string},"route":route,
+        "authentication":{"type":"object","properties":{"type":{"type":"string","enum":["password","privateKey"]},"privateKeyPath":{"type":"string","minLength":1,"maxLength":4096},"secret":secret},"required":["type"],"additionalProperties":false}
+    },"additionalProperties":false})
+}
+pub fn node_schema() -> Value {
+    let mut schema = patch_schema();
+    schema["required"] = json!(["host", "username"]);
+    schema
+}
+pub async fn write(
+    app: Arc<App>,
+    name: &str,
+    p: Value,
+    ct: CancellationToken,
+) -> Result<Value, Value> {
+    let method = match name {
+        "sodeck_server_create" => "servers.create",
+        "sodeck_server_update" => "servers.update",
+        "sodeck_server_delete" => "servers.delete",
+        _ => unreachable!(),
+    };
+    let permit = app
+        .target_reads
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| failure("resourceBusy", "核心 RPC 位置已满"))?;
+    if ct.is_cancelled() || app.shutdown.is_cancelled() {
+        return Err(failure("requestCancelled", "服务器写入尚未派发"));
+    }
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        if ct.is_cancelled() || app.shutdown.is_cancelled() {
+            return Err(failure("requestCancelled", "服务器写入尚未派发"));
+        }
+        app.rpc(method, p)
+    })
+    .await
+    .map_err(|_| failure("unavailable", "服务器写入结果未知，请查询目录确认"))?
+}
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Cursor {

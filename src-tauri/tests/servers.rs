@@ -368,7 +368,7 @@ fn secret_keep_replace_clear_session_and_copy() {
     let mut d = edit(&core, &a);
     d["draft"]["host"] = json!("new.invalid");
     change(&core, d).unwrap();
-    assert!(!f.disk().to_string().contains("test-secret-2"));
+    assert!(f.disk().to_string().contains("test-secret-2"));
     let mut d = edit(&core, &a);
     d["draft"]["authentication"] = json!({"type":"privateKey","privateKeyPath":"/home/ops/.ssh/id_ed25519","secret":{"action":"replace","value":"test-passphrase","remember":true}});
     change(&core, d).unwrap();
@@ -647,4 +647,119 @@ fn invalid_copy_sources_conflicts_and_failed_writes_keep_catalog_and_secrets() {
     change(&core, valid.clone()).unwrap();
     change(&core, json!({"op":"deleteServer","id":source})).unwrap();
     assert!(change(&core, valid).is_err());
+}
+
+#[test]
+fn patch_preserves_credentials_fields_and_failure_state() {
+    let f = Fixture::new();
+    let core = f.open();
+    let tag = id(change(&core, json!({"op":"saveTag","id":null,"name":"prod"})).unwrap());
+    let gateway = id(change(&core, server("gateway.invalid")).unwrap());
+    let mut input = server("host.invalid");
+    input["draft"]["tagIds"] = json!([tag]);
+    input["draft"]["route"] = json!([{"kind":"ssh","id":"","serverId":gateway}]);
+    input["draft"]["authentication"]["secret"] =
+        json!({"action":"replace","value":"patch-secret","remember":true});
+    let saved = id(change(&core, input).unwrap());
+    let before = core.server_catalog();
+    let original = before["servers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == saved)
+        .unwrap();
+    let patch = |p: Value| json!({"op":"patchServer","id":saved,"patch":p});
+    change(
+        &core,
+        patch(json!({"port":2222,"host":"new.invalid","username":"admin"})),
+    )
+    .unwrap();
+    let after = core.server_catalog();
+    let actual = after["servers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == saved)
+        .unwrap();
+    for field in [
+        "id",
+        "name",
+        "tagIds",
+        "route",
+        "authentication",
+        "createdAt",
+    ] {
+        assert_eq!(actual[field], original[field], "{field}");
+    }
+    assert!(f.disk().to_string().contains("patch-secret"));
+    for p in [
+        json!({}),
+        json!({"port":0}),
+        json!({"tagIds":["missing"]}),
+        json!({"route":[{"kind":"ssh","serverId":saved}]}),
+        json!({"authentication":{"type":"privateKey","privateKeyPath":"/different"}}),
+    ] {
+        assert!(change(&core, patch(p)).is_err());
+        assert_eq!(core.server_catalog(), after);
+    }
+    for p in [json!({"port":null}), json!({"madeUp":1})] {
+        assert!(serde_json::from_value::<sodeck::servers::CatalogChange>(patch(p)).is_err());
+    }
+    fs::create_dir(f.0.join("servers.json.tmp")).unwrap();
+    let disk = f.disk();
+    assert!(change(&core,patch(json!({"authentication":{"type":"password","secret":{"action":"replace","value":"uncommitted","remember":false}}}))).is_err());
+    assert_eq!(f.disk(), disk);
+    assert_eq!(core.server_catalog(), after);
+    fs::remove_dir(f.0.join("servers.json.tmp")).unwrap();
+    change(&core,patch(json!({"tagIds":[],"route":[],"authentication":{"type":"password","secret":{"action":"keep","remember":false}}}))).unwrap();
+    let after = core.server_catalog();
+    let actual = after["servers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == saved)
+        .unwrap();
+    assert_eq!(actual["authentication"]["hasSessionSecret"], true);
+    assert!(!f.disk().to_string().contains("patch-secret"));
+    change(&core, patch(json!({"port":2200}))).unwrap();
+    assert!(core
+        .server_catalog()
+        .to_string()
+        .contains("\"hasSessionSecret\":true"));
+    change(&core,patch(json!({"authentication":{"type":"privateKey","privateKeyPath":"/keys/id","secret":{"action":"clear"}}}))).unwrap();
+    assert!(!core
+        .server_catalog()
+        .to_string()
+        .contains("\"hasSessionSecret\":true"));
+}
+#[test]
+fn same_catalog_revision_cannot_commit_twice() {
+    let f = Fixture::new();
+    let core = f.open();
+    let revision = core.server_catalog()["revision"].as_u64().unwrap();
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let threads: Vec<_> = (0..2)
+        .map(|i| {
+            let core = core.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                core.change_catalog(
+                    revision,
+                    serde_json::from_value(server(&format!("parallel-{i}.invalid"))).unwrap(),
+                )
+            })
+        })
+        .collect();
+    assert_eq!(
+        threads
+            .into_iter()
+            .filter_map(|t| t.join().unwrap().ok())
+            .count(),
+        1
+    );
+    assert_eq!(
+        core.server_catalog()["servers"].as_array().unwrap().len(),
+        1
+    );
 }
