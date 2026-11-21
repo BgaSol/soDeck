@@ -52,6 +52,8 @@ Shell 拥有当前管理页/工作台导航意图及应用快照、网络计量�
 
 核心掌握认证资料与真实连接。插件收到包含服务器、工作区、连接和 generation 的固定 Context；创建和提交资源时核对插件进程实例、逻辑 view 与 Context。重连产生新代次，旧请求不能写入新会话。
 
+服务器目录修改由 [change.rs](../src-tauri/src/servers/change.rs)集中编排，桌面完整保存、部分修改及插件 [rpc.rs](../src-tauri/src/servers/rpc.rs)共用同一修订检查、SSH 保存函数、凭据处理和 commit；read 保留非敏感发现投影，插件写入只返回 ID 与修订。入口持有原有修改边界，通知在目录锁释放后发出。
+
 宿主内部 `change_catalog` 的 `saveServer.draft.copyFromId` 是可选凭据来源，仅允许 `id` 为空且 `authentication.secret.action` 为 `keep` 的新增服务器使用；缺省或 null 保持普通新增/编辑行为。核心在接受的目录修订内校验来源 SSH 资料存在、认证方式与私钥路径匹配且有可用密码/口令，从来源 ID 读取后按目标 remember 复制到目标 ID 的持久或运行期存储；主机、端口、账号和路径可修改。来源不被移动或修改，后续目标凭据各自独立；目录/标签与运行期映射一次提交，失败均不提交。字段只用于本次提交，不持久化、不给插件或公开目录返回，也不提供秘密读取接口；宿主已退役立即落盘的 `copyServer`，`copyProxy` 保留。此为核心捆绑宿主命令，不改变插件 RPC 或目录 schema。
 
 Owner/Context、任务结束和 UI 输入权是不同约束：

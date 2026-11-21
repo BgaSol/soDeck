@@ -47,6 +47,7 @@
 - [核心 1.10.0](releases/v1.10.0.md)：统一远端执行器与通用进程输入；Agent MCP 0.7.0 支持 pipe/PTY 交互。
 - [核心 1.9.1](releases/v1.9.1.md)：访问路径图标、真实连接状态连线及 Windows 安装范围选择。
 - [核心 1.8.1](releases/v1.8.1.md)：通用 Windows/POSIX 远端程序启动、原始字节、启动身份检查及环境结果预算；Docker 0.6.0 独立使用此能力。
+- [核心 1.12.0](releases/v1.12.0.md)：通用服务器目录写入及 SSH 凭据保留，Agent MCP 0.11.0 提供节点增删改。
 - [核心 1.11.0](releases/v1.11.0.md)：核心后台本机来源与文件提交回执；Agent MCP 0.9.0 独立提供文件上传。
 - [核心版本记录](releases/)与 [GitHub Releases](https://github.com/BgaSol/soDeck/releases)：版本变化、原始包来源和验证范围；[核心 1.6.0](releases/v1.6.0.md)记录可靠会话目标摘要与旧接口兼容，[核心 1.5.0](releases/v1.5.0.md)记录支持 MCP 排障插件的通用会话、命令流和证据复制能力，[核心 1.4.0](releases/v1.4.0.md)记录复制服务器预填与凭据沿用，[核心 1.3.3](releases/v1.3.3.md)记录动效连续性改进，[核心 1.3.1](releases/v1.3.1.md)记录插件加载底色与默认停靠修复，[核心 1.3.0](releases/v1.3.0.md)记录工作台动效，[核心 1.2.3](releases/v1.2.3.md)记录状态总览重构，[核心 1.2.2](releases/v1.2.2.md)记录连接树箭头与连线优化，[核心 1.2.1](releases/v1.2.1.md)记录管理台侧栏样式与分组调整，[核心 1.2.0](releases/v1.2.0.md)记录连接目录交互调整，[核心 1.1.1](releases/v1.1.1.md)记录管理台导航调整，[核心 1.1.0](releases/v1.1.0.md)记录日志工作台的核心交付与实际验收。
 

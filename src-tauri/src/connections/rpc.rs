@@ -32,23 +32,6 @@ pub(crate) fn bounded(value: Value) -> Result<Value, Error> {
 }
 
 impl AppCore {
-    pub(crate) fn connection_caller(
-        &self,
-        plugin: &str,
-        instance: &str,
-    ) -> Result<Arc<crate::plugins::Instance>, Error> {
-        self.instances
-            .lock()
-            .unwrap()
-            .get(plugin)
-            .cloned()
-            .filter(|p| {
-                let v = p.view();
-                v.instance_id.as_deref() == Some(instance) && v.status == PluginStatus::Running
-            })
-            .ok_or_else(|| Error::new("staleInstance", "插件实例不可用"))
-    }
-
     pub(crate) fn connection_request(
         self: &Arc<Self>,
         plugin: &str,
@@ -56,7 +39,9 @@ impl AppCore {
         method: &str,
         p: &Value,
     ) -> Result<Value, Error> {
-        let caller = self.connection_caller(plugin, instance)?;
+        let caller = self
+            .plugin_instance(plugin, instance)
+            .ok_or_else(|| Error::new("staleInstance", "插件实例不可用"))?;
         let params: Params = serde_json::from_value(p.clone())
             .map_err(|e| Error::new("invalidParams", e.to_string()))?;
         if !valid_id(&params.request_id)
@@ -234,7 +219,7 @@ impl AppCore {
             .map(|(k, _)| (k.plugin.clone(), k.instance.clone()))
             .collect();
         for (plugin, instance) in sources {
-            if let Ok(caller) = self.connection_caller(&plugin, &instance) {
+            if let Some(caller) = self.plugin_instance(&plugin, &instance) {
                 let _ = caller.enqueue_connection_change(json!({"serverId":server}));
             }
         }

@@ -11,6 +11,8 @@ const root=testPluginDirectory('mcp'),manifest=JSON.parse(fs.readFileSync(path.j
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-mcp-open-'));
 const socket=net.createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r));
 const servers=[{id:'a',name:'187',host:'10.0.0.187'},{id:'b',name:'backup',host:'10.0.1.187'},{id:'c',name:'third',host:'node.example.com'},{id:'late',name:'late',host:'late.example.com'}];
+const management=Number(manifest.version.split('.')[1])>=11;
+const writes=[],writeGates=[];let gateWrites=false;
 let revision='1',sequence=0,created=0,cancelCalls=0,lateRelease;
 const requests=new Map(),sessions=new Map(),backgrounds=new Map();
 const descriptor=s=>({name:s.name,protocol:'ssh',host:s.host,port:22,endpoint:s.host+':22',username:'ops'});
@@ -27,7 +29,18 @@ function reply(record){
 }
 const peer=pluginPeer(path.join(root,manifest.entry),async(method,p)=>{
   if(method==='settings.get')return {values:{port}};
+  if(['servers.create','servers.update','servers.delete'].includes(method)){
+    writes.push({method,params:p});
+    if(gateWrites)await new Promise(resolve=>writeGates.push(resolve));
+    if(p.catalogRevision!==revision)throw Object.assign(new Error('catalog changed'),{code:-32000,data:{code:'conflict'}});
+    const serverId=p.serverId??'server-created';
+    if(method==='servers.create')servers.push({id:'created',name:'created',...p.server});
+    if(method==='servers.update')Object.assign(servers.find(s=>'server-'+s.id===p.serverId),p.patch);
+    if(method==='servers.delete'){const index=servers.findIndex(s=>'server-'+s.id===p.serverId);servers.splice(index,1);}
+    revision=String(BigInt(revision)+1n);return {serverId,catalogRevision:revision};
+  }
   if(method==='servers.list'){
+
     const offset=p.cursor?Number(p.cursor.split(':')[1]):0;if(p.cursor&&!p.cursor.startsWith(revision+':'))throw Object.assign(new Error('catalog changed'),{data:{code:'catalogChanged'}});
     const selected=p.serverId?servers.filter(s=>'server-'+s.id===p.serverId):servers,items=selected.slice(offset,offset+2);
     return {catalogRevision:revision,servers:items.map(s=>{const session=sessions.get(s.id);return {serverId:'server-'+s.id,profileToken:'token-'+s.id,...descriptor(s),connection:session?{state:session.accepted?'connected':'connecting',matchesSavedTarget:true}:null,context:session?.accepted?session.context:null,current:session?.accepted?reply({input:{serverId:'server-'+s.id},context:session.context}).current:null,background:backgrounds.get(s.id)??null};}),hasMore:offset+items.length<selected.length,nextCursor:offset+items.length<selected.length?revision+':'+(offset+items.length):null};
@@ -49,14 +62,30 @@ const peer=pluginPeer(path.join(root,manifest.entry),async(method,p)=>{
   throw new Error('Unexpected RPC '+method);
 });
 let token;
-async function call(method,params){const r=await fetch('http://127.0.0.1:'+port+'/mcp',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',Accept:'application/json, text/event-stream'},body:JSON.stringify({jsonrpc:'2.0',id:++sequence,method,params})});assert.equal(r.status,200,await r.clone().text());return (await r.json()).result;}
-async function tool(name,args={}){const r=await call('tools/call',{name,arguments:args});assert.equal(r.content.length,1);assert(!('structuredContent' in r));assert(Buffer.byteLength(JSON.stringify(r))<=256*1024);return {value:JSON.parse(r.content[0].text),error:r.isError};}
+async function call(method,params,signal){const r=await fetch('http://127.0.0.1:'+port+'/mcp',{method:'POST',signal,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',Accept:'application/json, text/event-stream'},body:JSON.stringify({jsonrpc:'2.0',id:++sequence,method,params})});assert.equal(r.status,200,await r.clone().text());return (await r.json()).result;}
+async function tool(name,args={},signal){const r=await call('tools/call',{name,arguments:args},signal);assert.equal(r.content.length,1);assert(!('structuredContent' in r));assert(Buffer.byteLength(JSON.stringify(r))<=256*1024);return {value:JSON.parse(r.content[0].text),error:r.isError};}
 async function until(read,check){const end=Date.now()+12000;let result;do{result=await read();if(check(result))return result;await delay(20);}while(Date.now()<end);throw new Error('Did not settle: '+JSON.stringify(result));}
 const open=(id,requestId,waitMs=0)=>tool('sodeck_connection_open',{serverId:'server-'+id,expectedProfileToken:'token-'+id,requestId,waitMs});
 try{
-  await peer.request('initialize',{capabilities:['session.target.v2','session.process.v1','files.pluginData.v1','files.operations.v2','files.copy.v1','ui.background.v1','settings.v1','servers.read.v1','connections.v1'],dataDirectory:directory});
+  await peer.request('initialize',{capabilities:['session.target.v2','session.process.v1','files.pluginData.v1','files.operations.v2','files.copy.v1','ui.background.v1','settings.v1','servers.read.v1','servers.write.v1','connections.v1'],dataDirectory:directory});
   token=fs.readFileSync(path.join(directory,'access-token'),'utf8');
   await until(()=>call('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'opening-regression',version:'1'}}).catch(()=>null),Boolean);
+  if(management){
+    const listed=await call('tools/list',{});assert.equal(listed.tools.length,15);
+    for(const name of ['create','update','delete']){const annotations=listed.tools.find(t=>t.name==='sodeck_server_'+name).annotations;assert.equal(annotations.readOnlyHint,false);assert.equal(annotations.idempotentHint,false);if(name!=='create')assert.equal(annotations.destructiveHint,true);}
+    const createdNode=(await tool('sodeck_server_create',{catalogRevision:revision,server:{host:'created.invalid',username:'ops'}})).value;assert.equal(createdNode.serverId,'server-created');
+    assert.equal((await tool('sodeck_servers_list',{serverId:createdNode.serverId})).value.matchCount,1);
+    const updated=(await tool('sodeck_server_update',{catalogRevision:createdNode.catalogRevision,serverId:createdNode.serverId,patch:{port:2222}})).value;assert.equal(writes.at(-1).params.patch.port,2222);
+    const conflict=await tool('sodeck_server_delete',{catalogRevision:createdNode.catalogRevision,serverId:createdNode.serverId});assert.equal(conflict.error,true);assert.equal(conflict.value.error.details.code,'conflict');
+    const removed=(await tool('sodeck_server_delete',{catalogRevision:updated.catalogRevision,serverId:createdNode.serverId})).value;assert.equal(removed.serverId,createdNode.serverId);assert.equal((await tool('sodeck_servers_list',{serverId:createdNode.serverId})).value.matchCount,0);
+    assert.equal(fs.existsSync(path.join(directory,'evidence'))&&fs.readdirSync(path.join(directory,'evidence')).length,0,'CRUD creates no remote tasks or evidence');
+    gateWrites=true;const controls=Array.from({length:4},()=>new AbortController());
+    const blocked=controls.map(c=>tool('sodeck_server_update',{catalogRevision:revision,serverId:'server-a',patch:{name:'187'}},c.signal).catch(e=>e));
+    await until(async()=>writeGates.length,n=>n===4);controls.forEach(c=>c.abort());await Promise.all(blocked);
+    const busy=await tool('sodeck_server_update',{catalogRevision:revision,serverId:'server-a',patch:{name:'187'}});assert.equal(busy.value.error.code,'resourceBusy','HTTP abort retains physical write RPC slots');
+    gateWrites=false;writeGates.splice(0).forEach(release=>release());await until(()=>tool('sodeck_servers_list',{serverId:'server-a'}),r=>r.value.resolution==='unique');
+    revision='1';
+  }
   const first=(await tool('sodeck_servers_list',{query:'187',limit:1})).value;
   assert.equal(first.resolution,'ambiguous');assert.equal(first.matchCount,2);assert.equal(first.servers.length,1);assert(first.hasMore);assert.equal(created,0,'discovery never connects');
   const second=(await tool('sodeck_servers_list',{query:'187',limit:1,cursor:first.nextCursor})).value;assert.equal(second.matchCount,2);assert.equal(second.servers[0].serverId,'server-b');assert(!second.hasMore);

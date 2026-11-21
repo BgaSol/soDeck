@@ -270,3 +270,22 @@ impl Instance {
         core.changed();
     }
 }
+
+impl AppCore {
+    pub(crate) fn plugin_instance(
+        &self,
+        plugin: &str,
+        instance: &str,
+    ) -> Option<Arc<crate::plugins::Instance>> {
+        self.instances
+            .lock()
+            .unwrap()
+            .get(plugin)
+            .cloned()
+            .filter(|p| {
+                let v = p.view();
+                v.instance_id.as_deref() == Some(instance)
+                    && v.status == crate::model::PluginStatus::Running
+            })
+    }
+}
