@@ -33,7 +33,12 @@ async fn openssh_docker_plugin() {
     let mount = f.core.ui_attach("main", view).unwrap();
     let token = mount["surfaceId"].as_str().unwrap();
     f.core.ui_surface_ready("main", token).unwrap();
-    let event = |token: &str, data: Value| f.core.ui_event("main", token, data.clone()).unwrap_or_else(|error|panic!("{data}: {error}"));
+    let event = |token: &str, mut data: Value| {
+        if matches!(data["action"].as_str(),Some("openLogs"|"openTerminal"|"operate"|"tunnel.create"|"tunnel.reveal"|"browser.stats")) {
+            let current=f.core.ui_event("main",token,json!({"action":"snapshot"})).unwrap();
+            data["expectedContext"]=current["context"].clone();data["scopeEpoch"]=current["scopeEpoch"].clone();data["engineId"]=current["engine"]["id"].clone();data["endpoint"]=current["endpoint"].clone();
+        }
+        f.core.ui_event("main", token, data.clone()).unwrap_or_else(|error|panic!("{data}: {error}")) };
     async fn idle(f: &Fixture, token: &str) -> Value {
         let end = std::time::Instant::now() + Duration::from_secs(40);
         loop {
@@ -53,37 +58,24 @@ async fn openssh_docker_plugin() {
     assert_eq!(browser["engine"]["dockerRootDir"],std::env::var("SODECK_TEST_DOCKER_ROOT").unwrap_or_else(|_|"/var/lib/sodeck-test-docker".into()));
     if std::env::var("SODECK_TEST_DOCKER_WINDOWS").is_ok(){assert_eq!(browser["engine"]["clientOs"],"windows");assert_eq!(browser["engine"]["os"],"linux");assert!(browser["endpoint"].as_str().unwrap().starts_with("npipe:"));}
     event(token,json!({"action":"pauseRefresh","paused":true}));
-    let list = event(token, json!({"action":"list","status":"all"}));
     let id = std::env::var("SODECK_TEST_DOCKER_CONTAINER").unwrap();
-    assert!(
-        list["rows"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|r| r["id"] == id && r["project"] == "sodeck-test"),
-        "{list}; {browser}"
-    );
-    assert!(
-        list["rows"].as_array().unwrap().iter().find(|row|row["id"]==id).unwrap()["health"].is_null(),
-        "containers without HEALTHCHECK must remain visible"
-    );
+    let list=event(token,json!({"action":"browser.page","query":id,"status":"all","group":false}));
+    assert!(list["nodes"].as_array().unwrap().iter().any(|n|n["resource"]["id"]==id&&n["health"].is_null()),"containers without HEALTHCHECK must remain visible: {list}");
+    async fn observed(f:&Fixture,token:&str,id:&str)->Value {
+        f.core.ui_event("main",token,json!({"action":"browser.load","resource":{"kind":"container","id":id}})).unwrap();
+        let end=std::time::Instant::now()+Duration::from_secs(40);
+        loop{let o=f.core.ui_event("main",token,json!({"action":"browser.object","resource":{"kind":"container","id":id}})).unwrap();if o["relation"]["phase"]=="ready"{return o;}assert!(std::time::Instant::now()<end,"{o}");tokio::time::sleep(Duration::from_millis(50)).await;}
+    }
     async fn loaded(f:&Fixture,token:&str,kind:&str)->Value {
         let end=std::time::Instant::now()+Duration::from_secs(60);
         loop {let snapshot=f.core.ui_event("main",token,json!({"action":"snapshot"})).unwrap();if snapshot["indexes"][kind]["phase"]=="unloaded"{f.core.ui_event("main",token,json!({"action":"browser.load","branchKind":kind,"scopeEpoch":snapshot["scopeEpoch"]})).unwrap();}else if snapshot["indexes"][kind]["phase"]!="loading"{assert_eq!(snapshot["indexes"][kind]["phase"],"ready","{snapshot}");return snapshot;}assert!(std::time::Instant::now()<end,"{snapshot}");tokio::time::sleep(Duration::from_millis(50)).await;}
     }
     for kind in ["image","network","volume"] {event(token,json!({"action":"browser.load","branchKind":kind,"scopeEpoch":browser["scopeEpoch"]}));loaded(&f,token,kind).await;}
-    let image_id=list["rows"].as_array().unwrap().iter().find(|r|r["id"]==id).unwrap()["imageId"].as_str().unwrap().to_string();
-    assert!(image_id.starts_with("sha256:"));
+    let observation=observed(&f,token,&id).await;
+    let image_id=observation["info"]["imageId"].as_str().unwrap().to_string();assert!(image_id.starts_with("sha256:"));
     let root_tree=event(token,json!({"action":"browser.page","query":"sodeck-test","status":"all"}));assert!(root_tree["nodes"].as_array().unwrap().iter().any(|n|n["type"]=="root"));
-    let opened = event(
-        token,
-        json!({"action":"openPorts","id":id,"requestId":"docker-detail"}),
-    );
-    let detail_id = opened["viewId"].as_str().unwrap();
-    let mounted = f.core.ui_attach("main", detail_id).unwrap();
-    let detail = mounted["surfaceId"].as_str().unwrap();
-    f.core.ui_surface_ready("main", detail).unwrap();
-    let initial_detail=idle(&f, detail).await;assert_eq!(initial_detail["status"],"running");assert_eq!(initial_detail["navigation"]["section"],"ports");
+    let detail=token;
+    assert!(!f.core.ui_snapshot("main").unwrap().to_string().contains("sodeck.docker:container"));
     async fn tunnel_http(f:&Fixture,address:SocketAddr){
         let mut socket=TcpStream::connect(address).await.unwrap();
         socket.write_all(b"GET / HTTP/1.0\r\nHost: localhost\r\n\r\n").await.unwrap();
@@ -98,7 +90,7 @@ async fn openssh_docker_plugin() {
             if shared["records"].as_array().unwrap().iter().any(|r|r["value"]["ready"]==true){break;}
             assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(50)).await;
         }
-        let ports=event(detail,json!({"action":"ports.list","offset":0}));
+        let ports=event(detail,json!({"action":"browser.collection","resource":{"kind":"container","id":id},"collection":"ports","observationRevision":observation["observationRevision"],"limit":20,"offset":0}));
         let binding=ports["rows"].as_array().unwrap().iter().find(|r|r["binding"]["containerPort"]==8080&&r["binding"]["protocol"]=="tcp").expect("actual HTTP publish binding")["binding"].clone();
         let input=json!({"action":"tunnel.create","requestId":"docker-port-once","binding":binding,"selectedRule":null,"id":id,"expectedContext":context,"engineId":browser["engine"]["id"],"endpoint":browser["endpoint"]});
         event(detail,input.clone());event(detail,input.clone());
@@ -120,15 +112,9 @@ async fn openssh_docker_plugin() {
         event(detail,json!({"action":"tunnel.create","requestId":"docker-port-reuse","binding":binding,"selectedRule":null,"id":id,"expectedContext":context,"engineId":browser["engine"]["id"],"endpoint":browser["endpoint"]}));
         let deadline=std::time::Instant::now()+Duration::from_secs(20);
         loop{let s=event(detail,json!({"action":"snapshot"}));if s["tunnel"]["status"]=="completed"{assert_eq!(s["tunnel"]["result"]["ruleId"],rule_id);assert_eq!(s["tunnel"]["result"]["disposition"],"reused");break;}assert!(std::time::Instant::now()<deadline,"{s}");tokio::time::sleep(Duration::from_millis(50)).await;}
-        let close=f.core.ui_close_prepare("main",vec![],Some(detail_id.into())).unwrap();f.core.ui_close_finish(close["token"].as_str().unwrap(),serde_json::from_value(close["views"].clone()).unwrap(),"discard").unwrap();
         tunnel_http(&f,address).await;
         Some(address)
     }else{None};
-    let reopened=event(token,json!({"action":"openContainer","id":id,"requestId":"docker-detail-after-tunnel"}));
-    let remounted=f.core.ui_attach("main",reopened["viewId"].as_str().unwrap()).unwrap();let detail=remounted["surfaceId"].as_str().unwrap();f.core.ui_surface_ready("main",detail).unwrap();idle(&f,detail).await;
-    event(detail,json!({"action":"navigation","state":{"section":"environment"}}));
-    event(token,json!({"action":"openPorts","id":id,"requestId":"docker-existing-ports"}));
-    assert_eq!(event(detail,json!({"action":"snapshot"}))["navigation"]["section"],"ports","Existing details must navigate to the ports section");
     load("TERMINAL");
     event(token,json!({"action":"openTerminal","requestId":"docker-terminal","shell":"/bin/sh","id":id,"engineId":browser["engine"]["id"],"endpoint":browser["endpoint"],"expectedContext":browser["context"]}));
     let deadline=std::time::Instant::now()+Duration::from_secs(40);
@@ -146,23 +132,16 @@ async fn openssh_docker_plugin() {
     assert_eq!(terminal["data"]["integration"]["mode"],"off");
     let close=f.core.ui_close_prepare("main",vec![],Some(view.into())).unwrap();
     f.core.ui_close_finish(close["token"].as_str().unwrap(),serde_json::from_value(close["views"].clone()).unwrap(),"discard").unwrap();
+    if let Some(address)=tunnel_address {tunnel_http(&f,address).await;}
     td(&f.core,"main",terminal_token,json!({"op":"write","id":stream,"sequence":1,"data":b"printf 'sodeck-source-closed:%s\\n' \"$SODECK_TOKEN\"\r".as_slice()})).await.unwrap();
     data_until(&f.core,"main",terminal_token,stream,&mut output,"sodeck-source-closed:a=b").await;
     let reopened=f.core.ui_action("main",&context,json!({"op":"open","key":"sodeck.docker:browser","requestId":"docker-browser-again"})).unwrap();
     let remounted=f.core.ui_attach("main",reopened["viewId"].as_str().unwrap()).unwrap();let token=remounted["surfaceId"].as_str().unwrap();f.core.ui_surface_ready("main",token).unwrap();idle(&f,token).await;
     event(token,json!({"action":"pauseRefresh","paused":true}));
-    let env = event(detail, json!({"action":"section","section":"environment"}));
-    assert!(
-        env["rows"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|r| r["key"] == "SODECK_TOKEN" && r["value"] == "a=b" && r["secret"] == true),
-        "{env}"
-    );
-    event(detail, json!({"action":"stats"}));
-    let stats = idle(&f, detail).await;
-    assert!(stats["stats"]["CPUPerc"].is_string(), "{stats}");
+    let detail=token;let observation=observed(&f,detail,&id).await;
+    assert!(f.core.ui_event("main",detail,json!({"action":"section","section":"environment"})).is_err());
+    event(detail,json!({"action":"browser.stats","resource":{"kind":"container","id":id}}));idle(&f,detail).await;
+    let stats=event(detail,json!({"action":"browser.object","resource":{"kind":"container","id":id}}));assert!(stats["stats"]["CPUPerc"].is_string(),"{stats}; {observation}");
     let opened = event(
         detail,
         json!({"action":"openLogs","id":id,"requestId":"docker-logs"}),
@@ -189,7 +168,7 @@ async fn openssh_docker_plugin() {
     assert!(!String::from_utf8_lossy(&raw).contains("INFO historical 0000000 中文"));
     assert!(watermark.parse::<u64>().unwrap()<=4*1024*1024);
     let operate=|mut data:Value| {data["id"]=json!(id);data["engineId"]=browser["engine"]["id"].clone();data["endpoint"]=browser["endpoint"].clone();data["expectedContext"]=browser["context"].clone();event(token,data)};
-    let status=||event(token,json!({"action":"list","status":"all"}))["rows"].as_array().unwrap().iter().find(|row|row["id"]==id).map(|row|row["status"].clone()).unwrap_or(Value::Null);
+    let status=||event(token,json!({"action":"browser.page","query":"","group":false,"expandedKeys":["engine","category:container"]}))["nodes"].as_array().unwrap().iter().find(|row|row["resource"]["id"]==id).map(|row|row["status"].clone()).unwrap_or(Value::Null);
     operate(
         json!({"action":"operate","requestId":"docker-pause","intentSequence":"1","operation":"pause"}),
     );
@@ -221,7 +200,7 @@ async fn openssh_docker_plugin() {
     );
     assert_eq!(idle(&f, token).await["operation"]["state"], "succeeded");
     assert!(status().is_null(),"removed container must leave the browser list");
-    assert_eq!(idle(&f,detail).await["state"],"gone","existing details reflect sidebar deletion");
+    assert_eq!(idle(&f,logs).await["state"],"gone","existing logs reflect sidebar deletion");
     async fn proof(f:&Fixture,token:&str,resource:&Value)->Value {
         let snapshot=f.core.ui_event("main",token,json!({"action":"snapshot"})).unwrap();f.core.ui_event("main",token,json!({"action":"browser.load","resource":resource,"scopeEpoch":snapshot["scopeEpoch"]})).unwrap();
         let end=std::time::Instant::now()+Duration::from_secs(60);loop {let result=f.core.ui_event("main",token,json!({"action":"browser.object","resource":resource})).unwrap();if result["relation"]["phase"]!="loading" {assert_eq!(result["relation"]["complete"],true,"{result}");return result;}assert!(std::time::Instant::now()<end,"{result}");tokio::time::sleep(Duration::from_millis(50)).await;}

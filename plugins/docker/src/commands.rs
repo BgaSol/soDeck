@@ -1,4 +1,6 @@
-use serde_json::{json, Value};
+#[cfg(test)]
+use serde_json::json;
+use serde_json::Value;
 
 pub const SUMMARY: &str = r#"{"id":{{json .Id}},"name":{{json .Name}},"image":{{json .Config.Image}},"imageId":{{json .Image}},"status":{{json .State.Status}},"exitCode":{{json .State.ExitCode}},"health":{{with index .State "Health"}}{{json .Status}}{{else}}null{{end}},"labels":{{json .Config.Labels}},"startedAt":{{json .State.StartedAt}}}"#;
 
@@ -62,121 +64,6 @@ pub fn operation_name(action: &str) -> &str {
         _ => action,
     }
 }
-pub fn fields(value: &Value) -> Value {
-    let list = |items: &Value| -> Vec<Value> {
-        items
-            .as_array()
-            .map(|a| a.iter().take(100).cloned().collect())
-            .unwrap_or_default()
-    };
-    let mut result = json!({
-        "basic": [], "state": [], "environment": [], "ports": [], "mounts": [], "networks": [], "labels": []
-    });
-    let add = |section: &mut Value, key: &str, value: &Value| {
-        let body = value
-            .as_str()
-            .map(str::to_owned)
-            .unwrap_or_else(|| value.to_string());
-        section
-            .as_array_mut()
-            .unwrap()
-            .push(json!({"key":text(key,1024),"value":text(&body,4096)}));
-    };
-    for (key, v) in [
-        ("镜像", &value["Config"]["Image"]),
-        ("镜像 ID", &value["Image"]),
-        ("创建时间", &value["Created"]),
-        ("入口", &value["Config"]["Entrypoint"]),
-        ("启动命令", &value["Config"]["Cmd"]),
-        ("实际命令", &value["Path"]),
-        ("参数", &value["Args"]),
-        ("用户", &value["Config"]["User"]),
-        ("容器工作目录", &value["Config"]["WorkingDir"]),
-        ("重启策略", &value["HostConfig"]["RestartPolicy"]),
-    ] {
-        add(&mut result["basic"], key, v);
-    }
-    for key in [
-        "Status",
-        "ExitCode",
-        "OOMKilled",
-        "Error",
-        "StartedAt",
-        "FinishedAt",
-        "Running",
-        "Paused",
-        "Restarting",
-    ] {
-        add(&mut result["state"], key, &value["State"][key]);
-    }
-    add(&mut result["state"], "重启次数", &value["RestartCount"]);
-    add(
-        &mut result["state"],
-        "健康状态",
-        &value["State"]["Health"]["Status"],
-    );
-    for entry in value["State"]["Health"]["Log"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .rev()
-        .take(4)
-    {
-        add(
-            &mut result["state"],
-            entry["End"].as_str().unwrap_or("健康检查"),
-            &entry["Output"],
-        );
-    }
-    for entry in list(&value["Config"]["Env"]) {
-        if let Some(s) = entry.as_str() {
-            let (key, val) = s.split_once('=').unwrap_or((s, ""));
-            result["environment"]
-                .as_array_mut()
-                .unwrap()
-                .push(json!({"key":text(key,1024),"value":text(val,4096),"secret":true}));
-        }
-    }
-    for (section, map) in [
-        ("ports", &value["NetworkSettings"]["Ports"]),
-        ("networks", &value["NetworkSettings"]["Networks"]),
-        ("labels", &value["Config"]["Labels"]),
-    ] {
-        if let Some(map) = map.as_object() {
-            for (key, v) in map.iter().take(100) {
-                add(&mut result[section], key, v);
-            }
-        }
-    }
-    for mount in list(&value["Mounts"]) {
-        add(
-            &mut result["mounts"],
-            mount["Destination"].as_str().unwrap_or("挂载"),
-            &mount,
-        );
-    }
-    for (section, source) in [
-        ("environment", &value["Config"]["Env"]),
-        ("ports", &value["NetworkSettings"]["Ports"]),
-        ("mounts", &value["Mounts"]),
-        ("networks", &value["NetworkSettings"]["Networks"]),
-        ("labels", &value["Config"]["Labels"]),
-    ] {
-        let count = source
-            .as_array()
-            .map(Vec::len)
-            .or_else(|| source.as_object().map(|m| m.len()))
-            .unwrap_or(0);
-        if count > 100 {
-            add(
-                &mut result[section],
-                "已截断",
-                &json!(format!("仅保留前 100 项，共 {count} 项")),
-            );
-        }
-    }
-    result
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -208,18 +95,5 @@ mod tests {
             vec!["container", "rm", &"a".repeat(64)]
         );
         assert!(action("--force", &v).is_err());
-    }
-    #[test]
-    fn inspect_fields_preserve_values_without_unbounded_output() {
-        let v = json!({"Config":{"Env":["TOKEN=a=b","EMPTY="],"Labels":{"comma":"a,b\"中"}},"State":{"Health":null},"Mounts":[{"Type":"bind","Source":"/host","Destination":"/container"}]});
-        let f = fields(&v);
-        assert_eq!(f["environment"][0]["value"], "a=b");
-        assert_eq!(f["environment"][0]["secret"], true);
-        assert_eq!(f["mounts"][0]["key"], "/container");
-        assert_eq!(f["labels"][0]["value"], "a,b\"中");
-        let limited = fields(&json!({"Config":{"Env":vec!["TOKEN=value";101]}}));
-        assert_eq!(limited["environment"].as_array().unwrap().len(), 101);
-        assert_eq!(limited["environment"][100]["key"], "已截断");
-        assert!(lines(b"{invalid}\n").is_err());
     }
 }

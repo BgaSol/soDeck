@@ -1,5 +1,6 @@
 use crate::{
     commands,
+    object::ObjectInfo,
     resources::{Kind, ResourceRef},
 };
 use serde_json::{json, Value};
@@ -31,10 +32,12 @@ impl Default for Index {
         }
     }
 }
-pub struct Relation {
+pub struct ObjectObservation {
     pub generation: u64,
     pub phase: String,
     pub items: Vec<Value>,
+    pub info: Option<ObjectInfo>,
+    pub stats: Value,
     pub observation: Value,
     pub complete: bool,
     pub error: Option<String>,
@@ -47,7 +50,7 @@ pub enum Work {
         ids: Option<Vec<String>>,
         offset: usize,
     },
-    Relation {
+    Object {
         resource: ResourceRef,
         generation: u64,
         ids: Option<Vec<String>>,
@@ -56,7 +59,7 @@ pub enum Work {
 }
 pub struct BrowserState {
     pub indexes: BTreeMap<Kind, Index>,
-    pub relations: BTreeMap<String, Relation>,
+    pub objects: BTreeMap<String, ObjectObservation>,
     pub last_page: Value,
     pub visible: bool,
     serial: u64,
@@ -68,7 +71,7 @@ impl Default for BrowserState {
                 .into_iter()
                 .map(|k| (k, Index::default()))
                 .collect(),
-            relations: BTreeMap::new(),
+            objects: BTreeMap::new(),
             last_page: json!({"nodes":[],"total":0}),
             visible: true,
             serial: 0,
@@ -76,15 +79,34 @@ impl Default for BrowserState {
     }
 }
 impl BrowserState {
+    pub fn trim_objects(&mut self, protected: &str) -> Result<(), String> {
+        while self
+            .objects
+            .values()
+            .map(|r| bytes(&json!([r.items, r.observation, r.info, r.stats])))
+            .sum::<usize>()
+            > 2 * 1024 * 1024
+        {
+            let victim = self
+                .objects
+                .iter()
+                .filter(|(key, r)| key.as_str() != protected && r.phase != "loading")
+                .min_by_key(|(_, r)| r.generation)
+                .map(|(key, _)| key.clone())
+                .ok_or("对象缓存达到 2 MiB 上限，请等待当前读取完成")?;
+            self.objects.remove(&victim);
+        }
+        Ok(())
+    }
     pub fn bytes(&self) -> usize {
         self.indexes
             .values()
             .map(|i| bytes(&json!([i.rows, i.staged])))
             .sum::<usize>()
             + self
-                .relations
+                .objects
                 .values()
-                .map(|r| bytes(&json!([r.items, r.observation])))
+                .map(|r| bytes(&json!([r.items, r.observation, r.info, r.stats])))
                 .sum::<usize>()
             + bytes(&self.last_page)
     }
@@ -98,7 +120,10 @@ impl BrowserState {
                 i.phase = "stale".into();
             }
         }
-        self.relations.clear();
+        for object in self.objects.values_mut() {
+            object.phase = "stale".into();
+            object.complete = false;
+        }
     }
     pub fn load(&mut self, kind: Kind) -> Option<Work> {
         let i = self.indexes.get_mut(&kind).unwrap();
@@ -118,31 +143,37 @@ impl BrowserState {
             offset: 0,
         })
     }
-    pub fn load_relation(&mut self, resource: ResourceRef) -> Result<Option<Work>, String> {
+    pub fn load_object(&mut self, resource: ResourceRef) -> Result<Option<Work>, String> {
         let key = resource.key();
-        if self
-            .relations
-            .get(&key)
-            .is_some_and(|r| r.phase == "loading")
-        {
+        if self.objects.get(&key).is_some_and(|r| r.phase == "loading") {
             return Ok(None);
         }
-        if self.relations.len() >= 32 && !self.relations.contains_key(&key) {
-            return Err("关系缓存已达 32 个对象，请刷新后再展开".into());
+        if self.objects.len() >= 32 && !self.objects.contains_key(&key) {
+            let victim = self
+                .objects
+                .iter()
+                .filter(|(_, r)| r.phase != "loading")
+                .min_by_key(|(_, r)| r.generation)
+                .map(|(k, _)| k.clone())
+                .ok_or("对象读取已达上限，请等待当前读取完成")?;
+            self.objects.remove(&victim);
         }
         self.serial += 1;
-        self.relations.insert(
+        let previous = self.objects.remove(&key);
+        self.objects.insert(
             key,
-            Relation {
+            ObjectObservation {
                 generation: self.serial,
                 phase: "loading".into(),
                 items: vec![],
+                info: previous.as_ref().and_then(|o| o.info.clone()),
+                stats: previous.map_or(Value::Null, |o| o.stats),
                 observation: Value::Null,
                 complete: false,
                 error: None,
             },
         );
-        Ok(Some(Work::Relation {
+        Ok(Some(Work::Object {
             resource,
             generation: self.serial,
             ids: None,
@@ -157,12 +188,12 @@ impl BrowserState {
                 self.indexes[kind].generation == *generation
                     && self.indexes[kind].phase == "loading"
             }
-            Work::Relation {
+            Work::Object {
                 resource,
                 generation,
                 ..
             } => self
-                .relations
+                .objects
                 .get(&resource.key())
                 .is_some_and(|r| r.generation == *generation && r.phase == "loading"),
         }
@@ -176,12 +207,14 @@ impl BrowserState {
                 i.complete = false;
                 i.staged.clear();
             }
-            Work::Relation { resource, .. } => {
-                if let Some(r) = self.relations.get_mut(&resource.key()) {
+            Work::Object { resource, .. } => {
+                if let Some(r) = self.objects.get_mut(&resource.key()) {
                     r.phase = "failed".into();
                     r.error = Some(commands::text(&error, 1024));
                     r.complete = false;
                     r.items.clear();
+                    r.info = None;
+                    r.stats = Value::Null;
                     r.observation = Value::Null;
                 }
             }
@@ -228,14 +261,22 @@ impl BrowserState {
         let mut size = 0;
         let mut total = 0;
         let mut filled = false;
+        let anchor_key = inline_key(state);
+        let mut inline_anchor = Value::Null;
         self.visit_nodes(engine, state, |n| {
             let position = total;
+            if n["key"] == anchor_key
+                && (state["inline"]["kind"] != "resource"
+                    || n["resource"] == state["inline"]["resource"])
+            {
+                inline_anchor = json!({"index":position,"node":n});
+            }
             total += 1;
             if position < offset || filled {
                 return;
             }
             let len = bytes(&n) + 1;
-            if size + len > budget || selected.len() >= 100 {
+            if size + len > budget.saturating_sub(2048) || selected.len() >= 100 {
                 filled = true;
                 return;
             }
@@ -248,18 +289,19 @@ impl BrowserState {
             state["anchor"] = Value::Null;
             return self.page(engine, &state, budget);
         }
-        let page = json!({"nodes":selected,"offset":offset,"total":total,"nextOffset":if offset+selected.len()<total{Some(offset+selected.len())}else{None},"revealed":state["revealTarget"],"signature":signature});
+        let page = json!({"nodes":selected,"offset":offset,"total":total,"nextOffset":if offset+selected.len()<total{Some(offset+selected.len())}else{None},"revealed":state["revealTarget"],"signature":signature,"inlineAnchor":inline_anchor});
         self.last_page = page.clone();
         page
     }
     pub fn locate(&self, engine: &Value, resource: &ResourceRef) -> Value {
         let mut path: Vec<String> = vec![];
         let mut result = None;
+        let mut position = 0;
         self.visit_nodes(engine,&json!({"query":resource.id,"status":"all","health":"all","group":true,"expandAll":true}),|n| {
             if result.is_some() {return;}
             let depth=n["depth"].as_u64().unwrap_or(0) as usize;path.truncate(depth);
-            if n["resource"]==json!(resource) && n["type"]=="resource" {result=Some(json!({"found":true,"key":n["key"],"expandedKeys":path,"resource":resource}));}
-            path.push(n["key"].as_str().unwrap_or("").into());
+            if n["resource"]==json!(resource) && n["type"]=="resource" {result=Some(json!({"found":true,"index":position,"key":n["key"],"expandedKeys":path,"resource":resource}));}
+            path.push(n["key"].as_str().unwrap_or("").into());position+=1;
         });
         result.unwrap_or_else(|| json!({"found":false,"branchKind":resource.kind.name()}))
     }
@@ -298,6 +340,11 @@ impl BrowserState {
         if !expanding("engine") {
             return;
         }
+        for (key, label) in [("tool:connection", "连接设置"), ("tool:tasks", "任务")] {
+            let mut n = node(key, "engine", 1, "tool", label, "", true, None);
+            n["expanded"] = json!(inline_key(state) == key);
+            emit(n);
+        }
         for kind in Kind::ALL {
             let index = &self.indexes[&kind];
             let category = format!("category:{}", kind.name());
@@ -330,6 +377,20 @@ impl BrowserState {
             n["expanded"] = json!(expanding(&category));
             n["loading"] = json!(index.phase == "loading");
             emit(n);
+            if kind == Kind::Image && expanding(&category) {
+                let mut n = node(
+                    "tool:pull",
+                    "category:image",
+                    2,
+                    "tool",
+                    "拉取公开镜像",
+                    "",
+                    true,
+                    None,
+                );
+                n["expanded"] = json!(inline_key(state) == "tool:pull");
+                emit(n);
+            }
             if !expanding(&category) {
                 continue;
             }
@@ -445,7 +506,7 @@ impl BrowserState {
                     } else {
                         resource.key()
                     };
-                    let relation = self.relations.get(&resource.key());
+                    let relation = self.objects.get(&resource.key());
                     let mut meta = if kind == Kind::Container {
                         status(row)
                     } else if kind == Kind::Image {
@@ -460,7 +521,7 @@ impl BrowserState {
                     }
                     let loading = relation.is_some_and(|r| r.phase == "loading");
                     if loading {
-                        meta.push_str(" · 关系加载中");
+                        meta.push_str(" · 信息更新中");
                     }
                     let mut n = node(
                         &key,
@@ -472,7 +533,9 @@ impl BrowserState {
                         true,
                         Some(&resource),
                     );
-                    n["expanded"] = json!(expanding(&key));
+                    n["expanded"] = json!(
+                        state["inline"]["kind"] == "resource" && state["inline"]["nodeKey"] == key
+                    );
                     n["status"] = row["status"].clone();
                     n["health"] = row["health"].clone();
                     n["loading"] = json!(loading);
@@ -488,91 +551,6 @@ impl BrowserState {
                             && n["system"] != true
                     );
                     emit(n);
-                    if !expanding(&key) {
-                        continue;
-                    }
-                    match relation {
-                        Some(r) if r.phase == "ready" => {
-                            let mut parents = BTreeSet::new();
-                            for (index, item) in r.items.iter().enumerate() {
-                                let (ref_parent, ref_depth) = if kind == Kind::Container {
-                                    let group = item["group"].as_str().unwrap_or("mount");
-                                    let p = format!("{key}/relation/{group}");
-                                    if parents.insert(p.clone()) {
-                                        emit(node(
-                                            &p,
-                                            &key,
-                                            depth + 1,
-                                            "relation-group",
-                                            match group {
-                                                "image" => "镜像",
-                                                "network" => "网络",
-                                                _ => "挂载",
-                                            },
-                                            "",
-                                            true,
-                                            None,
-                                        ));
-                                    }
-                                    if !expanding(&p) {
-                                        continue;
-                                    }
-                                    (p, depth + 2)
-                                } else {
-                                    (key.clone(), depth + 1)
-                                };
-                                let target = ResourceRef::read(&item["resource"]).ok();
-                                emit(node(
-                                    &format!("{key}/ref/{index}"),
-                                    &ref_parent,
-                                    ref_depth,
-                                    if target.is_some() {
-                                        "reference"
-                                    } else {
-                                        "mount"
-                                    },
-                                    item["label"].as_str().unwrap_or("引用"),
-                                    if target.is_some() {
-                                        "定位"
-                                    } else {
-                                        item["mountType"].as_str().unwrap_or("挂载")
-                                    },
-                                    false,
-                                    target.as_ref(),
-                                ));
-                            }
-                            if r.items.is_empty() {
-                                emit(node(
-                                    &format!("{key}/empty"),
-                                    &key,
-                                    depth + 1,
-                                    "hint",
-                                    "没有容器引用",
-                                    "",
-                                    false,
-                                    None,
-                                ));
-                            }
-                        }
-                        Some(r) if r.phase == "loading" => {}
-                        r => {
-                            let n = node(
-                                &format!("{key}/load"),
-                                &key,
-                                depth + 1,
-                                "load",
-                                if r.is_some_and(|r| r.phase == "failed") {
-                                    "读取失败 · 重试"
-                                } else {
-                                    "读取资源关系"
-                                },
-                                r.and_then(|r| r.error.as_deref()).unwrap_or(""),
-                                false,
-                                Some(&resource),
-                            );
-                            emit(n);
-                        }
-                    }
                 }
             }
             if index.phase != "loading" && (index.rows.is_empty() || no_matches || !index.complete)
@@ -616,7 +594,21 @@ pub fn navigation(value: &Value, old: &Value) -> Result<Value, String> {
     if v.as_object().is_none() {
         return Err("导航状态无效".into());
     }
-    v["schemaVersion"] = json!(2);
+    v["schemaVersion"] = json!(3);
+    let inline = v["inline"].clone();
+    if !inline.is_null() {
+        match inline["kind"].as_str() {
+            Some("resource") => {
+                ResourceRef::read(&inline["resource"])?;
+                if inline["nodeKey"].as_str().is_none_or(|k| k.len() > 1024) {
+                    return Err("行内对象标识无效".into());
+                }
+            }
+            Some("connection" | "pull" | "tasks") => {}
+            _ => return Err("行内区域类型无效".into()),
+        }
+    }
+    v["inline"] = inline;
     v["query"] = json!(commands::text(v["query"].as_str().unwrap_or(""), 1024));
     if ![
         "all",
@@ -646,7 +638,12 @@ pub fn navigation(value: &Value, old: &Value) -> Result<Value, String> {
     {
         return Err("展开节点超过上限或标识无效".into());
     }
-    v["expandedKeys"] = json!(expanded);
+    v["expandedKeys"] = json!(expanded
+        .into_iter()
+        .filter(|key| key.as_str().is_some_and(|k| k == "engine"
+            || k.starts_with("category:")
+            || k.starts_with("group:")))
+        .collect::<Vec<_>>());
     if v["selected"].is_null() {
         v["selected"] = old["selected"].clone();
     }
@@ -663,6 +660,15 @@ pub fn navigation(value: &Value, old: &Value) -> Result<Value, String> {
         return Err("树导航状态超过 8 KiB".into());
     }
     Ok(v)
+}
+pub fn inline_key(state: &Value) -> &str {
+    match state["inline"]["kind"].as_str() {
+        Some("resource") => state["inline"]["nodeKey"].as_str().unwrap_or(""),
+        Some("connection") => "tool:connection",
+        Some("pull") => "tool:pull",
+        Some("tasks") => "tool:tasks",
+        _ => "",
+    }
 }
 fn node(
     key: &str,
@@ -734,7 +740,7 @@ mod tests {
         index.rows = vec![json!({"id":resource.id,"name":"api","status":"running"})];
         b.load(Kind::Container);
         b.load(Kind::Volume);
-        b.load_relation(resource.clone()).unwrap();
+        b.load_object(resource.clone()).unwrap();
         let nav = json!({"expandAll":true,"group":false});
         let page = b.page(&json!({"name":"prod"}), &nav, 16000);
         let nodes = page["nodes"].as_array().unwrap();
@@ -749,7 +755,7 @@ mod tests {
         assert_eq!(category["loading"], true);
         let row = nodes.iter().find(|n| n["key"] == resource.key()).unwrap();
         assert_eq!(row["loading"], true);
-        assert!(row["meta"].as_str().unwrap().contains("关系加载中"));
+        assert!(row["meta"].as_str().unwrap().contains("信息更新中"));
         let volume = nodes
             .iter()
             .find(|n| n["key"] == "category:volume")
@@ -831,6 +837,72 @@ mod tests {
         let work = b.load(Kind::Container).unwrap();
         b.invalidate();
         assert!(!b.owns(&work));
+    }
+    #[test]
+    fn one_inline_object_keeps_the_tree_skeleton_flat_and_locates_absolute_rows() {
+        let mut b = BrowserState::default();
+        let id = "a".repeat(64);
+        let other = "b".repeat(64);
+        let index = b.indexes.get_mut(&Kind::Container).unwrap();
+        index.complete = true;
+        index.phase = "ready".into();
+        index.rows = vec![
+            json!({"id":id,"name":"first"}),
+            json!({"id":other,"name":"second"}),
+        ];
+        let nav = json!({"expandedKeys":["engine","category:container"],"group":false,"inline":{"kind":"resource","nodeKey":format!("container:{other}"),"resource":{"kind":"container","id":other}}});
+        let page = b.page(&json!({}), &nav, 16000);
+        let nodes = page["nodes"].as_array().unwrap();
+        assert_eq!(
+            nodes
+                .iter()
+                .filter(|n| n["type"] == "resource" && n["expanded"] == true)
+                .count(),
+            1
+        );
+        assert!(!nodes
+            .iter()
+            .any(|n| matches!(n["type"].as_str(), Some("relation-group" | "reference"))));
+        let found = b.locate(
+            &json!({}),
+            &ResourceRef {
+                kind: Kind::Container,
+                id: other,
+            },
+        );
+        assert_eq!(found["key"], format!("container:{}", "b".repeat(64)));
+        assert!(found["index"].as_u64().is_some());
+        assert_eq!(page["inlineAnchor"]["node"]["key"], found["key"]);
+    }
+    #[test]
+    fn old_navigation_keeps_preferences_but_discards_resource_subgroups() {
+        let nav=navigation(&json!({"schemaVersion":2,"selected":"a".repeat(64),"shell":"/bin/bash","expandedKeys":["engine","category:container","container:old/relation/network"],"query":"api"}),&Value::Null).unwrap();
+        assert_eq!(nav["schemaVersion"], 3);
+        assert_eq!(nav["shell"], "/bin/bash");
+        assert_eq!(nav["expandedKeys"].as_array().unwrap().len(), 2);
+        assert_eq!(nav["selected"], format!("container:{}", "a".repeat(64)));
+    }
+    #[test]
+    fn idle_observation_cache_is_bounded_and_generation_never_reuses_an_old_request() {
+        let mut b = BrowserState::default();
+        let first = ResourceRef {
+            kind: Kind::Volume,
+            id: "vol0".into(),
+        };
+        let old = b.load_object(first.clone()).unwrap().unwrap();
+        b.objects.get_mut(&first.key()).unwrap().phase = "ready".into();
+        for i in 1..34 {
+            let resource = ResourceRef {
+                kind: Kind::Volume,
+                id: format!("vol{i}"),
+            };
+            b.load_object(resource.clone()).unwrap();
+            b.objects.get_mut(&resource.key()).unwrap().phase = "ready".into();
+        }
+        assert_eq!(b.objects.len(), 32);
+        assert!(!b.objects.contains_key(&first.key()));
+        b.load_object(first).unwrap();
+        assert!(!b.owns(&old));
     }
     #[test]
     fn refresh_keeps_anchor_when_rows_are_inserted() {

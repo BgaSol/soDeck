@@ -27,10 +27,10 @@ export class PortController{
   unwatch(){clearInterval(this.timer);this.client?.dispose();this.client=null;this.subscription=null;this.provider=null;this.records=[];this.projection=null;}
   dispose(){this.epoch++;this.unwatch();}
   notice(message){this.message=message||'';this.render();}
-  render(){if(!this.show||!this.snapshot)return;const ready=this.available()&&this.inputEnabled,intent=this.snapshot.tunnel;const waiting=['pending','unknown'].includes(intent?.status);const writable=this.snapshot.state==='ready'&&this.snapshot.status==='running'&&!this.snapshot.busy;
+  render(){if(!this.show||!this.snapshot)return;const ready=this.available()&&this.inputEnabled,intent=this.snapshot.tunnel;const waiting=this.snapshot.blockingTunnel||['pending','unknown'].includes(intent?.status);const writable=this.snapshot.state==='ready'&&this.snapshot.status==='running'&&!this.snapshot.busy;
     const unavailable=!this.supported?'当前核心不支持隧道联动':!this.provider?'需要启用支持端口联动的网络隧道插件，重启后可用':'网络隧道状态尚未同步或已过期';
     const result=intent?.result;let feedback=this.message;
-    if(!feedback&&waiting)feedback=intent.status==='unknown'?'创建结果待确认，请查询原请求':'正在核对端口并办理隧道请求…';
+    if(!feedback&&waiting)feedback=this.snapshot.blockingTunnel?'另一个容器的隧道请求待确认，请查询原请求':intent.status==='unknown'?'创建结果待确认，请查询原请求':'正在核对端口并办理隧道请求…';
     if(!feedback&&intent?.status==='failed')feedback=intent.error?.message||'隧道请求失败';
     if(!feedback&&result?.outcome==='savedNotStarted')feedback='规则已保存，尚未启动：'+result.message;
     if(!feedback&&result?.outcome==='selectionRequired')feedback='存在多条匹配规则，请选择已有隧道';
@@ -47,9 +47,10 @@ export class PortController{
       else actions+=`<button type="button" data-port-action="create" ${common} ${reason||waiting||choices.length>1&&!selected||active(run)?'disabled':''}>${run?.snapshot?.state==='starting'?'正在启动':selected?'启动隧道':'创建隧道'}</button>`;
       if(known)actions+=`<button type="button" class="flat" data-port-action="reveal" ${common} ${waiting?'disabled':''}>查看隧道</button>`;
       const endpoint=canCopy?`<code class="port-entry">${escape(address(entry))}</code>`:'';
-      return `<li class="port-row" data-dom-key="port:${escape(row.key)}"><div class="port-identity"><strong>${escape(row.containerPort)}</strong><span>服务器 <code>${escape(target)}</code></span>${row.target?`<small>连接目标 ${escape(address(row.target))}</small>`:''}</div><div class="port-state">${endpoint}<span>${escape(reason||status)}</span>${running&&!writable?'<small>Docker 端口信息待刷新；此规则仍转发固定服务器端口。</small>':''}${choice}</div><div class="port-actions">${actions}</div></li>`;
+      return `<li class="port-row" data-dom-key="port:${escape(row.key)}"><div class="port-line"><code>${escape(target)} → <strong>${escape(row.containerPort)}</strong></code><span class="port-actions">${actions}</span></div><div class="port-state">${endpoint}${endpoint?' · ':''}${escape(reason||status)}${choice}</div></li>`;
+
     }).join('');
-    SoDeckDOM.updateDOM(this.root,`<p class="muted port-intro">通过当前服务器访问已发布的 TCP 端口。本机仅监听回环地址，端口自动分配。</p>${this.partial?'<p class="notice">端口绑定过多，仅保留前 100 条或 64 KiB 的完整条目。</p>':''}${!ready?`<p class="notice">${escape(unavailable)}</p>`:''}<p class="port-feedback" role="status" ${feedback?'':'hidden'}>${escape(feedback)}${waiting?'<button type="button" class="flat" data-port-action="query">查询状态</button>':''}</p><ul class="port-list">${content||'<li class="muted">没有可用于快捷创建的发布绑定。</li>'}</ul>`);
+    SoDeckDOM.updateDOM(this.root,`${this.partial?'<p class="notice">端口绑定过多，仅保留前 100 条或 64 KiB 的完整条目。</p>':''}${!ready?`<p class="notice">${escape(unavailable)}</p>`:''}<p class="port-feedback" role="status" ${feedback?'':'hidden'}>${escape(feedback)}${waiting?'<button type="button" class="flat" data-port-action="query">查询状态</button>':''}</p><ul class="port-list">${content||'<li class="muted">没有可用于快捷创建的发布绑定。</li>'}</ul>`);
   }
   async act(button){const action=button.dataset.portAction,epoch=this.epoch;if(action==='query'){const result=await this.send({action:'tunnel.status'});if(epoch===this.epoch&&result){this.snapshot=result;this.render();}return;}
     const row=this.rows.find(row=>row.key===button.dataset.portKey);if(!row)return;const match=candidates(this.records,row.target);const choices=match.rows||[];const selected=choices.find(item=>item.rule.id===this.selected.get(row.key))||(choices.length===1?choices[0]:match.blocked);

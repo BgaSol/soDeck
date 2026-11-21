@@ -7,7 +7,7 @@ const environment=windows?{kind:'windows',launcher:'powershell.exe',exitMode:'na
 const root=packageRoot();
 const manifest=JSON.parse(fs.readFileSync(path.join(root,'plugin.json')));
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-docker-process-'));
-const tickets=new Map(),submissions=[],streams=new Map(),streamRequests=[],streamLookups=[];let loseCommandReceipt=true,loseStreamReceipts=6;
+const tickets=new Map(),submissions=[],streams=new Map(),streamRequests=[],streamLookups=[];let loseCommandReceipt=true,loseStreamReceipts=6,tunnelOutcome='accepted';
 const id='a'.repeat(64),tasks=new Map(),commands=[],diagnostics=[];let number=0,hold=false,holdMutation=false,loseReceipt=true,malformed=false,engineId='engine',peer;
 const programs=new Map();
 const inspect={Id:id,Name:'/service-中文',Image:'sha256:'+'b'.repeat(64),Config:{Image:'demo:1',Env:['TOKEN=a=b'],Labels:{}},State:{Status:'running',Running:true,Health:{Status:'unhealthy',Log:[]}},Mounts:[],NetworkSettings:{Ports:{'80/tcp':[{HostIp:'0.0.0.0',HostPort:'8080'},{HostIp:'::',HostPort:'8080'}]},Networks:{}}};
@@ -28,7 +28,7 @@ const output=command=>{
   if(command.includes("'volume' 'rm'")){volumeExists=false;return 'data\n';}
   if(command.includes("'ls'"))return id+'\n';
   if(command.includes("'inspect'")&&command.includes('"mounts":'))return JSON.stringify({id,name:inspect.Name,imageId:inspect.Image,mounts:inspect.Mounts});
-  if(command.includes("'inspect'")&&command.includes('"Networks":'))return JSON.stringify({Id:id,Image:inspect.Image,Networks:inspect.NetworkSettings.Networks,Mounts:inspect.Mounts});
+  if(command.includes("'inspect'")&&command.includes('"HostConfig":'))return JSON.stringify(inspect);
   if(command.includes("'inspect'")&&command.includes('"id":'))return JSON.stringify({id,name:'service-中文',image:'demo:1',imageId:inspect.Image,status:inspect.State.Status,health:'unhealthy',exitCode:0,labels:{'com.docker.compose.project':'web','com.docker.compose.service':'api'}});
   if(command.includes("'inspect'"))return JSON.stringify(inspect);
   if(command.includes("'stats'"))return JSON.stringify({CPUPerc:'150.5%',MemUsage:'10MiB / 1GiB',MemPerc:'1%',NetIO:'1kB / 2kB',BlockIO:'0B / 0B',PIDs:'2'});
@@ -54,7 +54,7 @@ peer=pluginPeer(path.join(root,manifest.entry),async(method,p)=>{
   if(method==='commands.resolve')return {available:true};
   if(method==='commands.submit'){
     submissions.push(p);let receipt=tickets.get(p.requestId);
-    if(!receipt){receipt={...(p.name==='network.tcpForward.ensure.v1'?{result:{version:1,outcome:'accepted',disposition:'created',ruleId:'rule',runId:'run',state:'starting'}}:{}),status:'pending',commandId:'command-'+p.requestId,viewId:'terminal-'+p.requestId};tickets.set(p.requestId,receipt);}
+    if(!receipt){receipt={...(p.name==='network.tcpForward.ensure.v1'?{result:{version:1,outcome:tunnelOutcome,disposition:'created',ruleId:'rule',runId:'run',state:'starting'}}:{}),status:'pending',commandId:'command-'+p.requestId,viewId:'terminal-'+p.requestId};tickets.set(p.requestId,receipt);}
     if(loseCommandReceipt){loseCommandReceipt=false;throw Object.assign(new Error('lost command receipt'),{code:-32003});}
     return receipt;
   }
@@ -92,23 +92,32 @@ peer=pluginPeer(path.join(root,manifest.entry),async(method,p)=>{
   if(method==='session.exec.release'){tasks.delete(p.taskId);return {};}
   throw new Error('Unexpected core call: '+method);
 });
-const request=(method,viewId,extra={})=>peer.request(method,{viewId,context,...extra});
+const request=async(method,viewId,extra={})=>{
+   if(method==='ui.event'&&['openTerminal','operate','tunnel.create','tunnel.reveal','openLogs'].includes(extra.data?.action)){
+     const current=(await peer.request('ui.getView',{viewId,context})).data;
+     extra={...extra,data:{id,engineId:current.engine?.id,endpoint:current.endpoint,expectedContext:context,scopeEpoch:current.scopeEpoch,...extra.data}};
+   }
+   return peer.request(method,{viewId,context,...extra}).catch(error=>{error.message=method+' '+viewId+' '+(extra.data?.action||extra.viewType||'')+': '+error.message;throw error;});
+ };
 const state=id=>request('ui.getView',id).then(r=>r.data);
 const idle=id=>until(()=>state(id),s=>!s.busy&&(s.kind!=='browser'||s.state!=='ready'||!['loading','unloaded'].includes(s.indexes?.container?.phase)));
 try{
   await assert.rejects(peer.request('initialize',{dataDirectory:directory,capabilities:[]}),/核心缺少/);
   await peer.request('initialize',{dataDirectory:directory,capabilities});
   await request('ui.createView','browser',{viewType:'browser'});let browser=await idle('browser');assert.equal(browser.state,'ready');
-  let list=(await request('ui.event','browser',{data:{action:'list',status:'abnormal',query:'中文'}})).data;
-  assert.equal(list.total,1);assert.equal(list.rows[0].project,'web');
-  await request('ui.createView','detail',{viewType:'container',resourceKey:JSON.stringify({id,engineId:'engine'})});await idle('detail');
+  const initialPage=(await request('ui.event','browser',{data:{action:'browser.page',status:'abnormal',query:'中文'}})).data;
+  assert(initialPage.nodes.some(n=>n.resource?.id===id));
+  await assert.rejects(request('ui.createView','removed',{viewType:'container',resourceKey:JSON.stringify({id})}),/未知 Docker 视图/);
+  await request('ui.createView','detail',{viewType:'browser'});await idle('detail');
   const terminal={action:'openTerminal',requestId:'terminal-once',shell};
   await request('ui.event','detail',{data:terminal});await request('ui.event','detail',{data:terminal});
   const terminalResult=await until(async()=>(await request('ui.getView','detail')).data,v=>v.terminal?.status==='completed');
   assert.equal(terminalResult.terminal.viewId,'terminal-terminal-once');assert.equal(submissions.length,1,'lost submit receipt must query the original intent');
   assert.equal(submissions[0].name,'terminal.open.v1');assert.equal(submissions[0].sourceViewId,'detail');
   const launch=submissions[0].payload;assert.equal(launch.directoryIntegration,'off');assert.deepEqual(programs.get(launch.launch.command).removeEnv,['DOCKER_HOST','DOCKER_CONTEXT','DOCKER_TLS_VERIFY','DOCKER_CERT_PATH','DOCKER_API_VERSION']);assert.equal(programs.get(launch.launch.command).checks[0].expectedStdout,'engine');assert(launch.launch.command.includes(id));assert(programs.get(launch.launch.command).argv.includes(shell));
-  const ports=(await request('ui.event','detail',{data:{action:'ports.list',offset:0}})).data;
+  await request('ui.event','detail',{data:{action:'browser.load',resource:{kind:'container',id}}});
+  const observed=await until(async()=>(await request('ui.event','detail',{data:{action:'browser.object',resource:{kind:'container',id}}})).data,o=>o.relation?.phase==='ready');
+  const ports=(await request('ui.event','detail',{data:{action:'browser.collection',resource:{kind:'container',id},collection:'ports',observationRevision:observed.observationRevision,offset:0}})).data;
   assert.equal(ports.rows.length,2);assert.deepEqual(ports.rows.map(r=>r.target.host),['127.0.0.1','::1']);
   const tunnel={action:'tunnel.create',requestId:'tunnel-once',binding:ports.rows[0].binding,selectedRule:null,expectedContext:context,engineId:'engine',endpoint:terminalResult.endpoint};
   loseCommandReceipt=true;const tunnelBefore=submissions.length;
@@ -120,6 +129,14 @@ try{
   await request('ui.event','detail',{data:{...tunnel,requestId:'tunnel-stale'}});
   const stale=await until(()=>state('detail'),s=>s.tunnel?.status==='failed');assert.match(stale.tunnel.error.message,/端口绑定已变化/);assert.equal(submissions.length,tunnelBefore+1,'Changed binding must not submit a tunnel command');
   inspect.NetworkSettings.Ports['80/tcp']=[{HostIp:'0.0.0.0',HostPort:'8080'},{HostIp:'::',HostPort:'8080'}];
+  for(tunnelOutcome of ['selectionRequired','savedNotStarted']){
+    const requestId='tunnel-'+tunnelOutcome;
+    await request('ui.event','detail',{data:{...tunnel,requestId}});
+    await until(()=>state('detail'),s=>s.tunnel?.status==='completed');
+    const page=(await request('ui.event','detail',{data:{action:'browser.tasks',offset:0}})).data;
+    assert.equal(page.rows.find(t=>t.requestId===requestId)?.state,'skipped','a completed receipt must not imply a tunnel was started');
+  }
+  tunnelOutcome='accepted';
   const malformedBefore=commands.length;
   malformed=true;await request('ui.event','detail',{data:{action:'refresh'}});let failed=await idle('detail');
   assert(JSON.stringify(failed).includes('核心输出编码无效'),JSON.stringify(failed));assert.equal(tasks.size,0,'bad encoding must release the task');
@@ -128,12 +145,12 @@ try{
   const before=commands.length;for(let i=0;i<3;i++)await request('ui.getView','detail');assert.equal(commands.length,before,'mount/getView must not create commands');
   const mutation={action:'operate',requestId:'stop-once',intentSequence:'1',operation:'stop'};
   await request('ui.event','detail',{data:mutation});await request('ui.event','detail',{data:mutation});
-  let detail=await idle('detail');assert.equal(detail.status,'exited');assert.equal(detail.operation.state,'succeeded');
+  let detail=await idle('detail');assert.equal(detail.operation.containerId,id);assert.equal(detail.operation.state,'succeeded');
   assert.equal(commands.filter(c=>c.includes("'stop'")).length,1);
   await assert.rejects(request('ui.event','detail',{data:{...mutation,operation:'restart'}}),/相同请求参数不同/);
-  await request('ui.event','detail',{data:{action:'stats'}});await idle('detail');
+  await request('ui.event','detail',{data:{action:'browser.stats',resource:{kind:'container',id},engineId,endpoint:(await state('detail')).endpoint,expectedContext:context,scopeEpoch:(await state('detail')).scopeEpoch}});await idle('detail');
   await request('ui.event','detail',{data:{action:'operate',operation:'start',requestId:'start-once',intentSequence:'2'}});await idle('detail');
-  await request('ui.event','detail',{data:{action:'stats'}});detail=await idle('detail');assert.equal(detail.stats.CPUPerc,'150.5%');
+  await request('ui.event','detail',{data:{action:'browser.stats',resource:{kind:'container',id},engineId,endpoint:(await state('detail')).endpoint,expectedContext:context,scopeEpoch:(await state('detail')).scopeEpoch}});detail=await idle('detail');assert.equal((await request('ui.event','detail',{data:{action:'browser.object',resource:{kind:'container',id}}})).data.stats.CPUPerc,'150.5%');
   await request('ui.event','detail',{data:{action:'operate',operation:'remove',requestId:'reject-running-remove',intentSequence:'3'}});detail=await idle('detail');
   assert.equal(detail.operation.state,'failed','preflight rejection must not claim a sent mutation');assert.equal(commands.filter(c=>c.includes("'rm'")).length,0);
   await request('ui.createView','logs',{viewType:'logs',resourceKey:JSON.stringify({id,engineId:'engine'})});await idle('logs');
@@ -154,7 +171,7 @@ try{
   assert.equal(stoppedLogs.resources.length,1);assert.equal(stoppedLogs.resources[0].start,0,'stopped container shows its latest retained tail even if it stopped long ago');
   await assert.rejects(request('ui.event','logs',{data:{...logRequest,requestId:'stale-log-intent'}}),/旧日志请求/);
   inspect.State.Status='running';inspect.State.Running=true;
-  const env=(await request('ui.event','detail',{data:{action:'section',section:'environment'}})).data;assert.equal(env.rows[0].value,'a=b');assert.equal(env.rows[0].secret,true);
+  await assert.rejects(request('ui.event','detail',{data:{action:'section',section:'environment'}}),/未知 Docker 操作/);
   await assert.rejects(request('ui.event','browser',{data:{action:'setEndpoint',endpoint:'tcp://host:2375'}}),/Unix|npipe/);
   await request('ui.event','detail',{data:{action:'refresh'}});await idle('detail');
   holdMutation=true;await request('ui.event','detail',{data:{action:'operate',operation:'stop',requestId:'interrupted-stop',intentSequence:'4'}});
@@ -170,7 +187,7 @@ try{
   browser=await idle('browser');const oldEndpoint=browser.endpoint;
   hold=true;await request('ui.event','browser',{data:{action:'connection.save',config:{mode:'manual',endpoint:windows?'npipe:////./pipe/candidate':'unix:///run/candidate.sock'}}});
   await until(async()=>[...tasks.values()].some(t=>t.command==='environment'),Boolean);
-  await request('ui.createView','late-detail',{viewType:'container',resourceKey:JSON.stringify({id,engineId:'engine',endpoint:oldEndpoint})});
+  await request('ui.createView','late-detail',{viewType:'logs',resourceKey:JSON.stringify({id,engineId:'engine',endpoint:oldEndpoint})});
   hold=false;browser=await idle('browser');assert.equal(browser.connection.test.state,'failed');assert.equal(browser.endpoint,oldEndpoint,'a new detail during discovery must prevent binding/config replacement');assert.equal(browser.connection.config.mode,'auto');
   await request('ui.disposeView','late-detail');await until(async()=>tasks.size,n=>n===0);engineId='replacement-engine';
   await request('ui.event','browser',{data:{action:'setEndpoint',endpoint:windows?'npipe:////./pipe/test-engine':'unix:///run/docker-test.sock'}});browser=await idle('browser');assert.equal(browser.engine.id,engineId);
@@ -182,7 +199,7 @@ try{
   await request('ui.event','browser',{data:browserStart});await request('ui.event','browser',{data:browserStart});browser=await idle('browser');
   assert.equal(browser.count,1,'sidebar operation must preserve the container list');
   assert.equal(browser.operation.containerId,id);
-  assert.equal((await request('ui.event','browser',{data:{action:'list',status:'all'}})).data.rows[0].status,'running');
+  assert.equal((await request('ui.event','browser',{data:{action:'browser.page',status:'all',query:'',group:false,expandedKeys:['engine','category:container']}})).data.nodes.find(n=>n.resource?.id===id).status,'running');
   await assert.rejects(request('ui.event','browser',{data:{...browserStart,id:'b'.repeat(64)}}),/相同请求参数不同/);
   await assert.rejects(request('ui.event','browser',{data:{...browserStart,requestId:'old-engine',intentSequence:'2',engineId:'engine'}}),/身份已改变/);
   await assert.rejects(request('ui.event','browser',{data:{...browserStart,requestId:'old-context',intentSequence:'2',expectedContext:{...context,generation:2}}}),/身份已改变/);
@@ -199,7 +216,7 @@ try{
   await request('ui.event','browser',{data:browserStop});await request('ui.event','browser',{data:browserStop});browser=await idle('browser');
   assert.equal(commands.filter(c=>c.includes("'stop'")).length,stopsBefore+1);
   assert.equal(browser.operation.state,'succeeded');
-  assert.equal((await request('ui.event','browser',{data:{action:'list',status:'all'}})).data.rows[0].status,'exited');
+  assert.equal((await request('ui.event','browser',{data:{action:'browser.page',status:'all',query:'',group:false,expandedKeys:['engine','category:container']}})).data.nodes.find(n=>n.resource?.id===id).status,'exited');
   await request('ui.event','browser',{data:{...browserStart,requestId:'sidebar-start-again',intentSequence:'3'}});await idle('browser');
   holdMutation=true;const unknown={...browserStop,requestId:'sidebar-unknown',intentSequence:'4'};
   await request('ui.event','browser',{data:unknown});await until(async()=>[...tasks.values()].some(t=>t.command.includes("'stop'")),Boolean);
@@ -219,8 +236,8 @@ try{
   await assert.rejects(request('ui.event','browser',{data:await resourceInput(usedVolume)}),/仍有容器引用/);
   await load(null,freeVolume);const oldVolume=await resourceInput(freeVolume);volumeCreatedAt='2026-11-16T01:00:00Z';await request('ui.event','browser',{data:oldVolume});browser=await idle('browser');assert.equal(browser.operation.state,'failed');assert(!commands.some(c=>c.includes("'volume' 'rm'")),'same-name volume rebuild invalidates confirmation');
   await request('ui.event','browser',{data:{action:'refresh'}});await idle('browser');await load('volume');await load(null,freeVolume);
-  await request('ui.createView','volume-detail',{viewType:'resource',resourceKey:JSON.stringify({...freeVolume,engineId,endpoint:browser.endpoint})});await idle('volume-detail');
-  const deletion=await resourceInput(freeVolume);await request('ui.event','browser',{data:deletion});await request('ui.event','browser',{data:deletion});browser=await idle('browser');assert.equal(browser.operation.state,'succeeded');assert.equal(commands.filter(c=>c.includes("'volume' 'rm'")).length,1);assert.equal(browser.indexes.volume.count,1);assert.equal((await state('volume-detail')).state,'gone','matching resource details are marked deleted');await request('ui.disposeView','volume-detail');
+
+  const deletion=await resourceInput(freeVolume);await request('ui.event','browser',{data:deletion});await request('ui.event','browser',{data:deletion});browser=await idle('browser');assert.equal(browser.operation.state,'succeeded');assert.equal(commands.filter(c=>c.includes("'volume' 'rm'")).length,1);assert.equal(browser.indexes.volume.count,1);
   await load('image');await load(null,{kind:'image',id:unusedImage});const imageDeletion=await resourceInput({kind:'image',id:unusedImage});await request('ui.event','browser',{data:imageDeletion});browser=await idle('browser');assert.equal(browser.operation.state,'failed');assert(browser.operation.message.includes('multiple repositories'));assert(commands.some(c=>c.includes("'image' 'rm' '--no-prune'")));assert(!commands.some(c=>c.includes("'--force'")||c.includes("'prune'")));
   await request('ui.event','browser',{data:{action:'refresh'}});await idle('browser');await load('network');await load(null,{kind:'network',id:systemNetwork});await request('ui.event','browser',{data:await resourceInput({kind:'network',id:systemNetwork})});browser=await idle('browser');assert.equal(browser.operation.state,'failed');assert(!commands.some(c=>c.includes("'network' 'rm'")),'system networks cannot be deleted');
   await request('ui.event','browser',{data:{action:'refresh'}});browser=await idle('browser');

@@ -10,7 +10,7 @@ import {readTestThemeTokens} from './test-theme-tokens.mjs';
 const root=packageRoot(),id='a'.repeat(64),second='b'.repeat(64),requests=[];
 const rows=[{id,name:'prod-api-中文',image:'api:2026.11',status:'running',health:'unhealthy',project:'shop',service:'api'},
   {id:second,name:'worker',image:'worker:1',status:'exited',health:null,project:'shop',service:'worker'}];
-let snapshot={kind:'container',context,containerId:id,endpoint:'unix:///var/run/docker.sock',engine:{id:'engine',name:'prod-engine-01',version:'24.0.9',arch:'amd64'},revision:'1',nextIntent:'1',state:'ready',status:'running',observedAt:Date.now(),busy:false,paused:false,tail:200,navigation:{}};
+let snapshot={kind:'logs',context,containerId:id,endpoint:'unix:///var/run/docker.sock',engine:{id:'engine',name:'prod-engine-01',version:'24.0.9',arch:'amd64'},revision:'1',nextIntent:'1',state:'ready',status:'running',observedAt:Date.now(),busy:false,paused:false,tail:200,navigation:{}};
 const env=[{key:'TOKEN',value:'a=b=c',secret:true},{key:'EMPTY',value:'',secret:true}];
 const logs=[{stream:'stdout',text:new Date(Date.now()-90000).toISOString()+' INFO 服务启动成功'},{stream:'stderr',text:new Date(Date.now()-89000).toISOString()+' ERROR connection refused <script>boom()</script>'},{stream:'stdout',text:'repeat'},{stream:'stdout',text:'repeat'}];
 let logCapture={generation:1,loading:false,navigation:{},resources:[{id:'history',start:0,end:2000000000,tail:true,status:{state:'completed',finished:true}},{id:'live',start:0,end:null,tail:false,status:{state:'running',finished:false}}]};
@@ -20,7 +20,7 @@ const capturedBytes=new Map([['history',bytesFor(logs)],['live',Buffer.alloc(0)]
 async function sendFrame(id,kind,bytes=Buffer.alloc(0)) {const s=subscriptions.get(id);if(!s)return;s.packet++;s.offset+=bytes.length;await page.evaluate(frame=>window.post('data',{data:frame}),{kind,packet:s.packet,offset:s.offset,data:[...bytes],metadata:{streamId:id}});}
 async function appendLive(rows) {const bytes=bytesFor(rows);capturedBytes.set('live',Buffer.concat([capturedBytes.get('live'),bytes]));await sendFrame('live','data',bytes);}
 const server=createServer((req,res)=>{
-  if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><html><body style="margin:0"><iframe title="Docker 测试" style="border:0;width:100vw;height:100vh" src="/ui/index.html"></iframe></body></html>');return;}
+  if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><html><body style="margin:0"><iframe title="Docker 测试" style="border:0;width:100vw;height:100vh" src="/ui/logs.html"></iframe></body></html>');return;}
   const file=path.resolve(root,'.'+decodeURIComponent(req.url.split('?')[0]));
   if(!file.startsWith(root+path.sep)||!fs.existsSync(file)){res.statusCode=404;res.end();return;}
   res.setHeader('Content-Type',{'.html':'text/html','.js':'text/javascript','.css':'text/css'}[path.extname(file)]||'application/octet-stream');res.end(fs.readFileSync(file));
@@ -91,30 +91,11 @@ const url='http://127.0.0.1:'+server.address().port;
 try{
   await page.goto(url);await page.waitForFunction(()=>window.prepared>0);let frame=page.frames()[1];
   fs.mkdirSync('artifacts/docker-ui',{recursive:true});
-  for(const mode of ['container','logs']){
+  for(const mode of ['logs']){
     snapshot={...snapshot,kind:mode,name:'prod-api-中文',status:'running',terminal:null,operation:null,revision:String(Number(snapshot.revision)+1)};
     await page.evaluate(s=>{window.mount=s;window.post('mount',{data:s,tokens:window.tokens,readOnly:false,capabilities:{clipboard:1}});},snapshot);
     await frame.locator('#'+mode).waitFor({state:'visible'});
     const opsBefore=requests.filter(r=>r.action==='operate').length,terminalsBefore=requests.filter(r=>r.action==='openTerminal').length;
-    if(mode==='container'){
-      await frame.locator('#terminal-shell').fill('/bin/bash');
-      await frame.locator('#open-terminal').click();
-      assert(await frame.locator('#open-terminal').isDisabled());
-      assert(await frame.locator('#terminal-shell').isDisabled());
-      await frame.locator('#open-terminal').dispatchEvent('click');
-      await frame.locator('#terminal-result').filter({hasText:'终端请求待确认'}).waitFor();
-      assert.equal(requests.filter(r=>r.action==='openTerminal').length,terminalsBefore+1);
-      assert.equal(requests.filter(r=>r.action==='openTerminal').at(-1).shell,'/bin/bash');
-      snapshot={...snapshot,revision:String(Number(snapshot.revision)+1),terminal:{status:'completed',viewId:'terminal-page'}};
-      await frame.locator('#terminal-result').filter({hasText:'终端页面已创建'}).waitFor();
-      await frame.getByRole('button',{name:'环境变量',exact:true}).click();await frame.locator('#fields').filter({hasText:'TOKEN'}).waitFor();assert(!(await frame.locator('#fields').innerText()).includes('a=b=c'));
-      await frame.locator('#show-env').check();assert((await frame.locator('#fields').innerText()).includes('a=b=c'));
-      await frame.getByRole('button',{name:'停止',exact:true}).click();await frame.locator('#confirm').waitFor({state:'visible'});await page.keyboard.press('Escape');
-      assert.equal(requests.filter(r=>r.action==='operate').length,opsBefore);
-      await frame.getByRole('button',{name:'停止',exact:true}).click();await frame.locator('#confirm-submit').click();
-      await frame.locator('#operation').filter({hasText:'命令成功'}).waitFor();assert.equal(requests.filter(r=>r.action==='operate').length,opsBefore+1);
-      await frame.locator('#read-stats').click();await frame.locator('#stats').filter({hasText:'150.5%'}).waitFor();
-    }
     if(mode==='logs'){
       await frame.locator('#log-lines').filter({hasText:'服务启动'}).waitFor();
       for(const label of ['更多','显示','筛选']){await frame.locator('.log-tools').getByText(label,{exact:true}).click();assert.equal(await frame.locator('.log-tools details[open]').count(),1,'log popovers never overlap');}await frame.locator('.log-tools').getByText('筛选',{exact:true}).click();
@@ -193,5 +174,5 @@ try{
   const frozen=requests.length;await new Promise(r=>setTimeout(r,1200));assert.equal(requests.length,frozen,'Frozen surface must not keep polling: '+JSON.stringify(requests.slice(frozen)));
   await page.evaluate(()=>window.post('transferCancelled'));await new Promise(r=>setTimeout(r,1200));assert(requests.length>frozen);
   snapshot={...snapshot,containerId:second,name:'other-container',logCapture:{...logCapture,generation:2,navigation:{}}};logCapture=snapshot.logCapture;await page.evaluate(s=>window.post('mount',{data:s,tokens:window.tokens,readOnly:false}),snapshot);await frame.locator('#title').filter({hasText:'other-container'}).waitFor();assert.equal(await frame.locator('#log-query').inputValue(),'');assert.equal(await frame.locator('#log-range').inputValue(),'latest');assert(!(await frame.locator('#log-only').isChecked()),'another container starts without prior filters');
-  assert.deepEqual(errors,[]);console.log('Docker UI: inline maintenance, terminal, refresh focus, filters, keyboard, confirmation, environment visibility, logs, stats, themes, narrow layouts and transfer passed.');
-}finally{await browser.close();await new Promise(r=>server.close(r));}
+  assert.deepEqual(errors,[]);console.log('Docker UI: inline tree, ports, log reading anchors, history, queries, export, themes, narrow layouts and transfer passed.');
+}catch(error){await page.screenshot({path:'artifacts/docker-ui/logs-failure.png'});console.error('Log page errors:',errors);console.error('Log layout:',await page.frames()[1].locator('#log-viewport').evaluate(e=>({height:e.clientHeight,width:e.clientWidth,scroll:e.scrollTop,notice:document.querySelector('#log-notice').textContent})));throw error;}finally{await browser.close();await new Promise(r=>server.close(r));}

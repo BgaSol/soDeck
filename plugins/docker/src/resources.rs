@@ -150,14 +150,17 @@ pub fn normalize(kind: Kind, mut row: Value) -> Result<Value, String> {
     Ok(row)
 }
 pub const MOUNTS: &str = r#"{"id":{{json .Id}},"name":{{json .Name}},"imageId":{{json .Image}},"mounts":{{json .Mounts}}}"#;
-pub const CONTAINER_RELATIONS: &str = r#"{"Id":{{json .Id}},"Image":{{json .Image}},"Networks":{{json .NetworkSettings.Networks}},"Mounts":{{json .Mounts}}}"#;
 pub fn relation(kind: Kind, value: &Value) -> Value {
     match kind {
         Kind::Container => {
             let mut refs = vec![
                 json!({"group":"image","label":value["Image"],"resource":{"kind":"image","id":value["Image"]}}),
             ];
-            for (name, v) in value["Networks"].as_object().into_iter().flatten() {
+            for (name, v) in value["NetworkSettings"]["Networks"]
+                .as_object()
+                .into_iter()
+                .flatten()
+            {
                 if let Some(id) = v["NetworkID"]
                     .as_str()
                     .filter(|id| Kind::Network.validate(id).is_ok())
@@ -282,44 +285,6 @@ pub fn pull_reference(input: &str) -> Result<String, String> {
     } else {
         Ok(format!("{text}:latest"))
     }
-}
-pub fn fields(kind: Kind, value: &Value) -> Value {
-    let keys: &[&str] = match kind {
-        Kind::Image => &[
-            "Id",
-            "RepoTags",
-            "RepoDigests",
-            "Created",
-            "Size",
-            "Architecture",
-            "Os",
-        ],
-        Kind::Network => &[
-            "Id",
-            "Name",
-            "Driver",
-            "Scope",
-            "Created",
-            "Internal",
-            "Attachable",
-            "IPAM",
-            "Options",
-            "Labels",
-            "Containers",
-        ],
-        Kind::Volume => &[
-            "Name",
-            "Driver",
-            "Scope",
-            "CreatedAt",
-            "Mountpoint",
-            "Options",
-            "Labels",
-            "Status",
-        ],
-        Kind::Container => &[],
-    };
-    json!({"basic":keys.iter().filter(|k|!value[**k].is_null()).map(|k|json!({"key":k,"value":commands::text(&value[*k].to_string(),4096)})).collect::<Vec<_>>()})
 }
 #[cfg(test)]
 mod tests {

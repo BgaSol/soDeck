@@ -88,7 +88,7 @@ try{
   inside(['network','rm',portNetwork]);inside(['volume','inspect',appVolume]);inside(['rm','-f','-v',registryName]);assert.equal(inside(['container','ls','--all','--quiet']).length,0,'test containers should have been explicitly removed');
   fs.mkdirSync('artifacts/docker-integration',{recursive:true});
   fs.writeFileSync('artifacts/docker-integration/result.json',JSON.stringify({engine:'24.0.9',clientTarget:JSON.parse(fs.readFileSync(path.join(packageRoot(),'plugin.json'),'utf8')).target,actualCore:true,actualPlugin:true,ssh:true,terminalCommand:true,sourceCloseKeepsTerminal:true,portTunnel:true,sourceCloseKeepsTunnel:true,historyLines:1000001,historyGenerationMs:historyMs,initialTailLines:2001,initialCaptureLimitBytes:4*1024*1024,containerRemoved:true,volumePreserved:true},null,2)+'\n');
-  console.log('Actual core/native Docker plugin/OpenSSH/isolated Engine: list, details, container terminal through commands, terminal survives source close, logs, stats, pause/unpause/stop/start/restart/remove, retained logs on disconnect and volume preservation passed.');
+  console.log('Actual core/native Docker plugin/OpenSSH/isolated Engine: inline resource observations, container terminal through commands, terminal survives source close, logs, stats, pause/unpause/stop/start/restart/remove, retained logs on disconnect and volume preservation passed.');
   }
 }finally{
   for(const resource of created.reverse()){assert(resource.startsWith(name+'-'));spawnSync('docker',['rm','-f','-v',resource],{windowsHide:true,stdio:'ignore'});}

@@ -95,8 +95,8 @@ cargo test --manifest-path src-tauri/Cargo.toml --features test-fixtures --lib -
 | `npm run system-status:ui:test` | 固定数据 UI、概览用量条、CPU/内存趋势切换与重挂载、三主题 160/200/240/280/320/400/480px；`SODECK_TEST_SYSTEM_STATUS_PLUGIN` 可指向实际包 |
 | `npm run docker:test` | 本机原生插件、真实核心与隔离 Linux Docker Engine/OpenSSH；验证单容器操作、日志、资源、断线保留及删容器保留卷 |
 | `npm run docker:windows:test` | Windows 本机 OpenSSH 与 Docker Desktop Linux Engine，验证原生 CLI/npipe、完整容器/资源/日志/PTY/拉取流程；使用独立标记测试资源并清理 |
-| `npm run docker:process:test` | 实际插件进程与假核心；验证查询复用、跨页搜索、操作去重、丢失回执、失败/中断状态、关闭与资源释放 |
-| `npm run docker:ui:test` | 固定数据 UI、维护/环境变量、日志持续接收与固定阅读、搜索/筛选/详情、缩略拖动取消、候选原捕获恢复、三主题与 200/320/400/900px 布局 |
+| `npm run docker:process:test` | 实际插件进程与假核心；验证树内对象／集合、查询复用、搜索、操作去重、丢失回执、失败/中断状态、关闭与资源释放 |
+| `npm run docker:ui:test` | 单层资源树、树内连接／维护／拉取／任务、端口协作；日志持续接收、固定阅读、搜索／筛选／详情、缩略拖动取消、候选原捕获恢复；三主题与 280/320/400/900px 布局 |
 
 源码业务测试先运行 `npm run test:prepare -- <插件名称...>`，例如 `npm run test:prepare -- terminal files system-status docker network-proxy`，一次准备 `artifacts/test-fixtures/<插件>`，再执行所需测试。准备入口编译 dev 程序与 UI，不生成发行归档；测试入口只消费目录，缺少时明确失败。可用对应 `SODECK_TEST_*_PLUGIN` 指定显式目录。源码修改后重新准备。Docker 的进程和真实业务测试均使用该目录，不隐式打包。真实联调需要本机 Docker CLI、支持 privileged 容器的 Linux daemon、`ssh-keygen` 和可下载 Docker/Alpine 镜像的软件源。脚本创建独立 Docker-in-Docker daemon，只共享其测试 Unix socket，不使用宿主 Docker socket；测试结束清理自身容器和测试卷。可用 `SODECK_TEST_ALPINE_MIRROR` 指定测试镜像构建所用的 HTTPS Alpine 仓库根地址。此变量只用于测试，不影响产品。
 

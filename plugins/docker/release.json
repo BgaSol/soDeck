@@ -11,21 +11,76 @@
     "apiVersion": "2",
     "entry": "ui/index.html",
     "views": [
-      {"id":"browser","title":"Docker","icon":"docker","container":"sidebar","instancePolicy":"perWorkspace","defaultSide":"right","defaultPinned":true,"openOnWorkspace":"none"},
-      {"id":"container","title":"容器","icon":"box","container":"editor","instancePolicy":"perResource"},
-      {"id":"logs","title":"容器日志","icon":"log","container":"editor","instancePolicy":"perResource"},
-      {"id":"resource","title":"Docker 资源","icon":"docker","container":"editor","instancePolicy":"perResource"}
+      {
+        "id": "browser",
+        "title": "Docker",
+        "icon": "docker",
+        "container": "sidebar",
+        "instancePolicy": "perWorkspace",
+        "defaultSide": "right",
+        "defaultPinned": true,
+        "openOnWorkspace": "none"
+      },
+      {
+        "id": "logs",
+        "title": "容器日志",
+        "icon": "log",
+        "container": "editor",
+        "instancePolicy": "perResource",
+        "entry": "ui/logs.html"
+      }
     ]
   },
   "settings": {
     "apiVersion": "1",
     "schemaVersion": 2,
-    "pages": [{
-      "id":"display","title":"Docker","icon":"docker","viewTypes":["browser","container","logs","resource"],"order":500,
-      "groups":[{"id":"refresh","title":"读取偏好","fields":[
-        {"key":"refreshSeconds","title":"资源树刷新间隔","type":"select","default":"5","options":[{"value":"5","title":"5 秒"},{"value":"10","title":"10 秒"},{"value":"30","title":"30 秒"}],"apply":"live"},
-        {"key":"showLogMinimap","title":"默认显示日志缩略","type":"boolean","default":true,"apply":"live"}
-      ]}]
-    }]
+    "pages": [
+      {
+        "id": "display",
+        "title": "Docker",
+        "icon": "docker",
+        "viewTypes": [
+          "browser",
+          "logs"
+        ],
+        "order": 500,
+        "groups": [
+          {
+            "id": "refresh",
+            "title": "读取偏好",
+            "fields": [
+              {
+                "key": "refreshSeconds",
+                "title": "资源树刷新间隔",
+                "type": "select",
+                "default": "5",
+                "options": [
+                  {
+                    "value": "5",
+                    "title": "5 秒"
+                  },
+                  {
+                    "value": "10",
+                    "title": "10 秒"
+                  },
+                  {
+                    "value": "30",
+                    "title": "30 秒"
+                  }
+                ],
+                "apply": "live"
+              },
+              {
+                "key": "showLogMinimap",
+                "title": "默认显示日志缩略",
+                "type": "boolean",
+                "default": true,
+                "apply": "live"
+              }
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

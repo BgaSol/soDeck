@@ -4,6 +4,7 @@ use crate::{
     collaboration::{self, Intent, Kind as CommandKind, Work as CommandWork},
     commands,
     connection::{self, Config, EngineOs, Snapshot, Target},
+    object::ObjectInfo,
     ports,
     resources::{self, Kind, ResourceRef},
 };
@@ -32,7 +33,6 @@ pub struct App {
 }
 pub struct View {
     pub browser: Option<BrowserState>,
-    pub resource: Option<ResourceRef>,
     pub epoch: u64,
     pub pull: Value,
     pub tasks: VecDeque<Value>,
@@ -283,7 +283,7 @@ impl App {
             .filter(|s| !s.is_empty() && s.len() <= 128)
             .ok_or("视图 ID 无效")?;
         let kind = p["viewType"].as_str().ok_or("缺少视图类型")?;
-        if !["browser", "container", "logs", "resource"].contains(&kind) {
+        if !["browser", "logs"].contains(&kind) {
             return Err("未知 Docker 视图".into());
         }
         if self.views.contains_key(id) {
@@ -310,16 +310,7 @@ impl App {
             .map_err(|_| "资源标识无效")?
             .unwrap_or(Value::Null);
         let container = resource["id"].as_str().unwrap_or("").to_string();
-        let resource_ref = if kind == "resource" {
-            let reference = ResourceRef::read(&resource)?;
-            if reference.kind == Kind::Container {
-                return Err("容器请使用容器详情入口".into());
-            }
-            Some(reference)
-        } else {
-            None
-        };
-        if kind != "browser" && kind != "resource" {
+        if kind == "logs" {
             commands::id(&container)?;
         }
         let target = self.bindings.get(&context.to_string()).cloned();
@@ -347,7 +338,6 @@ impl App {
             } else {
                 None
             },
-            resource: resource_ref,
             epoch: 1,
             pull: Value::Null,
             tasks: VecDeque::new(),
@@ -369,15 +359,11 @@ impl App {
             target,
             connection_test: Value::Null,
             revision: 1,
-            data: json!({"state":"loading","error":null,"engine":null,"rows":[],"sections":{},"stats":null,"operation":null}),
+            data: json!({"state":"loading","error":null,"engine":null,"rows":[],"stats":null,"operation":null}),
             navigation: if kind == "browser" {
                 browser::navigation(&json!({}), &Value::Null)?
             } else {
-                if p["params"]["section"] == "ports" {
-                    json!({"section":"ports","intent":p["params"]["intent"]})
-                } else {
-                    json!({})
-                }
+                json!({})
             },
             busy: false,
             frozen: false,
@@ -411,7 +397,7 @@ impl App {
             "state":v.data["state"],"error":v.data["error"],"engine":v.data["engine"],"name":v.data["name"],"status":v.data["status"],
             "health":v.data["health"],"observedAt":v.data["observedAt"],"partial":v.data["partial"],"operation":v.data["operation"],
             "tty":v.data["tty"],"stats":v.data["stats"],"count":v.data["rows"].as_array().map_or(0,Vec::len),
-            "sections":v.data["sections"].as_object().map(|m|m.keys().collect::<Vec<_>>()),"showLogMinimap":self.show_log_minimap});
+            "showLogMinimap":self.show_log_minimap});
         data["connection"] = json!({"config":self.configs.get(v.context["serverId"].as_str().unwrap()).cloned().unwrap_or_default(),"target":v.target.as_ref().map(|t|t.info()),"test":v.connection_test});
         data["defaultShell"] = v
             .target
@@ -419,7 +405,6 @@ impl App {
             .and_then(|t| t.os.shell())
             .map_or(Value::Null, |s| json!(s));
         data["scopeEpoch"] = json!(v.epoch.to_string());
-        data["resource"] = json!(v.resource);
         data["pull"] = v.pull.clone();
         if let Some(b) = &v.browser {
             data["indexes"] = b.metadata();
@@ -472,7 +457,7 @@ impl App {
             });
         self.jobs.push_back(Job {
             epoch: v.epoch,
-            resource: v.resource.clone(),
+            resource: None,
             view: id.into(),
             context: v.context.clone(),
             endpoint: v.endpoint.clone(),
@@ -498,19 +483,16 @@ impl App {
     }
     fn target_input(&self, id: &str, d: &Value) -> Result<Value, String> {
         let v = self.views.get(id).ok_or("视图已关闭")?;
-        if !["browser", "container"].contains(&v.kind.as_str()) {
+        if v.kind != "browser" {
             return Err("当前页面不能操作容器".into());
         }
-        let browser = v.kind == "browser";
-        let container = d["id"]
-            .as_str()
-            .unwrap_or(if browser { "" } else { &v.container });
+        let container = d["id"].as_str().ok_or("缺少完整容器 ID")?;
         commands::id(container)?;
-        Ok(json!({"id":container,
-            "engineId":d.get("engineId").cloned().unwrap_or_else(||if browser {Value::Null}else{json!(v.expected_engine)}),
-            "endpoint":d.get("endpoint").cloned().unwrap_or_else(||if browser {Value::Null}else{json!(v.endpoint)}),
-            "expectedContext":d.get("expectedContext").cloned().unwrap_or_else(||if browser {Value::Null}else{v.context.clone()})}))
+        Ok(
+            json!({"id":container,"engineId":d["engineId"],"endpoint":d["endpoint"],"expectedContext":d["expectedContext"],"scopeEpoch":d["scopeEpoch"]}),
+        )
     }
+
     fn target(&self, id: &str, input: &Value) -> Result<Value, String> {
         let v = self.views.get(id).ok_or("视图已关闭")?;
         if v.data["state"] != "ready"
@@ -518,20 +500,15 @@ impl App {
             || input["engineId"] != v.expected_engine
             || input["endpoint"] != v.endpoint
             || input["expectedContext"] != v.context
+            || input["scopeEpoch"] != v.epoch.to_string()
         {
             return Err("容器连接身份已改变或数据待刷新，请重新选择".into());
         }
-        let row = if v.kind == "browser" {
-            v.container_rows()
-                .iter()
-                .find(|row| row["id"] == input["id"])
-                .ok_or("容器已不在列表中，请刷新后重新选择")?
-        } else {
-            if input["id"] != v.container {
-                return Err("容器身份已改变".into());
-            }
-            &v.data
-        };
+        let row = v
+            .container_rows()
+            .iter()
+            .find(|row| row["id"] == input["id"])
+            .ok_or("容器已不在列表中，请刷新后重新选择")?;
         Ok(json!({"name":row["name"],"status":row["status"]}))
     }
     pub fn check_scope(&self, id: &str, d: &Value) -> Result<(), String> {
@@ -711,10 +688,50 @@ impl App {
                 size += alias.len();
                 shown.push(alias);
             }
-            let relation = b.relations.get(&resource.key());
+            let relation = b.objects.get(&resource.key());
             return Ok(
-                json!({"resource":resource,"revision":b.indexes[&resource.kind].revision.to_string(),"complete":b.indexes[&resource.kind].complete,"aliases":shown,"aliasesTotal":aliases.len(),"aliasesTruncated":shown.len()<aliases.len(),"relation":relation.map(|r|json!({"phase":r.phase,"complete":r.complete,"count":r.items.len()}))}),
+                json!({"resource":resource,"revision":b.indexes[&resource.kind].revision.to_string(),"complete":b.indexes[&resource.kind].complete,"aliases":shown,"aliasesTotal":aliases.len(),"aliasesTruncated":shown.len()<aliases.len(),"relation":relation.map(|r|json!({"phase":r.phase,"complete":r.complete,"count":r.items.len()})),"scopeEpoch":v.epoch.to_string(),"observationRevision":relation.map(|r|r.generation.to_string()),"info":relation.and_then(|r|r.info.as_ref()).map(ObjectInfo::summary),"stats":relation.map(|r|&r.stats),"error":relation.and_then(|r|r.error.as_ref())}),
             );
+        }
+        if action == "browser.collection" {
+            let resource = ResourceRef::read(&d["resource"])?;
+            let object = v
+                .browser
+                .as_ref()
+                .unwrap()
+                .objects
+                .get(&resource.key())
+                .ok_or("对象尚未读取")?;
+            if d["observationRevision"] != object.generation.to_string() {
+                return Err("对象观察已更新，请重新读取".into());
+            }
+            let name = d["collection"].as_str().ok_or("缺少集合名称")?;
+            let rows = if name == "references" {
+                object.items.clone()
+            } else {
+                object
+                    .info
+                    .as_ref()
+                    .ok_or("对象尚未读取")?
+                    .collection(name)?
+            };
+            let mut result = page(&json!(rows), d["offset"].as_u64().unwrap_or(0) as usize, 20);
+            result["resource"] = json!(resource);
+            result["scopeEpoch"] = json!(v.epoch.to_string());
+            result["observationRevision"] = json!(object.generation.to_string());
+            return Ok(result);
+        }
+        if action == "browser.stats" {
+            self.check_scope(id, d)?;
+            let resource = ResourceRef::read(&d["resource"])?;
+            if resource.kind != Kind::Container {
+                return Err("只有容器支持指标".into());
+            }
+            let mut input = d.clone();
+            input["id"] = json!(resource.id);
+            self.target(id, &self.target_input(id, &input)?)?;
+            self.enqueue_target(id, "stats", Some(&input))?;
+            return self.snapshot(id);
         }
         if action == "browser.page" {
             let state = browser::navigation(d, &v.navigation)?;
@@ -762,7 +779,7 @@ impl App {
         let work = if d["resource"].is_null() {
             b.load(Kind::parse(d["branchKind"].as_str().ok_or("缺少分类")?)?)
         } else {
-            b.load_relation(ResourceRef::read(&d["resource"])?)?
+            b.load_object(ResourceRef::read(&d["resource"])?)?
         };
         if let Some(work) = work {
             self.enqueue_browser(id, work)?;
@@ -794,7 +811,7 @@ impl App {
         let observation = row["observation"].clone();
         let name = row["name"].clone();
         let proof = b
-            .relations
+            .objects
             .get(&resource.key())
             .filter(|r| r.complete && r.phase == "ready")
             .ok_or("请先展开资源并完整读取引用")?;
@@ -838,7 +855,7 @@ impl App {
             .filter(|s| !s.is_empty() && s.len() <= 128)
             .ok_or("请求 ID 无效")?;
         let v = self.views.get(id).ok_or("视图已关闭")?;
-        if v.kind != "container" || v.frozen {
+        if v.kind != "browser" || v.frozen {
             return Err("当前页面不能创建端口隧道".into());
         }
         if v.tunnel.input["requestId"] == request {
@@ -859,8 +876,16 @@ impl App {
             let binding: ports::Binding =
                 serde_json::from_value(d["binding"].clone()).map_err(|_| "端口绑定身份无效")?;
             binding.target()?;
-            if !v.data["ports"]["rows"]
-                .as_array()
+            if !v
+                .browser
+                .as_ref()
+                .and_then(|b| {
+                    b.objects
+                        .get(&format!("container:{}", input["id"].as_str().unwrap()))
+                })
+                .filter(|o| o.phase == "ready")
+                .and_then(|o| o.info.as_ref())
+                .and_then(|info| info.collection("ports").ok())
                 .is_some_and(|rows| rows.iter().any(|row| row["binding"] == d["binding"]))
             {
                 return Err("端口绑定已变化，请刷新".into());
@@ -868,10 +893,11 @@ impl App {
         } else if d["action"] != "tunnel.reveal" || !d["revealRule"].is_string() {
             return Err("未知端口隧道操作".into());
         }
+        self.check_scope(id, d)?;
         let v = self.views.get_mut(id).unwrap();
         v.tunnel.input = d.clone();
-        v.tunnel.receipt = json!({"status":"pending","message":"核对端口并请求网络隧道"});
-        if let Err(error) = self.enqueue(id, "tunnel") {
+        v.tunnel.receipt = json!({"status":"pending","containerId":d["id"],"binding":d["binding"],"message":"核对端口并请求网络隧道"});
+        if let Err(error) = self.enqueue_target(id, "tunnel", Some(d)) {
             self.views.get_mut(id).unwrap().tunnel.clear();
             return Err(error);
         }
@@ -882,84 +908,8 @@ impl App {
         if action == "snapshot" {
             return self.snapshot(id);
         }
-        if action == "ports.list" {
-            let v = self.views.get(id).ok_or("视图已关闭")?;
-            let mut result = page(
-                &v.data["ports"]["rows"],
-                d["offset"].as_u64().unwrap_or(0) as usize,
-                20,
-            );
-            result["partial"] = v.data["ports"]["partial"].clone();
-            return Ok(result);
-        }
         if action.starts_with("tunnel.") {
             return self.tunnel_event(id, d);
-        }
-        if matches!(action, "list" | "section") {
-            let v = self.views.get(id).ok_or("视图已关闭")?;
-            let items = match action {
-                "list" => &v.data["rows"],
-                _ => {
-                    let section = d["section"].as_str().ok_or("缺少详情分区")?;
-                    if ![
-                        "basic",
-                        "state",
-                        "environment",
-                        "ports",
-                        "mounts",
-                        "networks",
-                        "labels",
-                    ]
-                    .contains(&section)
-                    {
-                        return Err("未知分区".into());
-                    }
-                    &v.data["sections"][section]
-                }
-            };
-            if action == "list" {
-                let query = commands::text(d["query"].as_str().unwrap_or(""), 1024).to_lowercase();
-                let status = d["status"].as_str().unwrap_or("all");
-                let health = d["health"].as_str().unwrap_or("all");
-                let mut filtered = v
-                    .container_rows()
-                    .iter()
-                    .filter(|r| {
-                        let state = r["status"].as_str().unwrap_or("");
-                        let abnormal = state == "restarting"
-                            || state == "dead"
-                            || r["health"] == "unhealthy"
-                            || (state == "exited"
-                                && r["exitCode"].as_u64().is_some_and(|n| n != 0));
-                        (status == "all" || (status == "abnormal" && abnormal) || status == state)
-                            && (health == "all"
-                                || (health == "none" && r["health"].is_null())
-                                || r["health"] == health)
-                            && (query.is_empty()
-                                || ["name", "id", "image", "search"].iter().any(|key| {
-                                    r[*key]
-                                        .as_str()
-                                        .unwrap_or("")
-                                        .to_lowercase()
-                                        .contains(&query)
-                                }))
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>();
-                if d["group"] == true {
-                    filtered.sort_by_key(|r| r["project"].as_str().unwrap_or("").to_string());
-                }
-                return Ok(page(
-                    &json!(filtered),
-                    d["offset"].as_u64().unwrap_or(0) as usize,
-                    50,
-                ));
-            }
-            return Ok(page(
-                items,
-                d["offset"].as_u64().unwrap_or(0) as usize,
-                d["limit"].as_u64().unwrap_or(50).min(100) as usize,
-            ));
         }
         if action.starts_with("browser.") {
             return self.browser_event(id, d);
@@ -1118,7 +1068,7 @@ pub fn page(items: &Value, offset: usize, limit: usize) -> Value {
     let mut bytes = 0;
     for v in values.iter().skip(offset).take(limit.max(1)) {
         let size = serde_json::to_vec(v).unwrap().len();
-        if bytes + size > 20 * 1024 {
+        if bytes + size > 16 * 1024 {
             break;
         }
         rows.push(v.clone());
@@ -1620,7 +1570,7 @@ fn collaboration_request(app: &Shared, job: &Job, client: &Client) -> Result<Val
                     256 * 1024,
                 )?)?)?;
                 if info["ID"] != job.engine {
-                    return Err("Engine 已改变，请重新打开容器详情".into());
+                    return Err("Engine 已改变，请从资源树重新选择容器".into());
                 }
                 let container = inspect(app, job, client)?;
                 collaboration::prepare(
@@ -1691,33 +1641,6 @@ fn collect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
             json!({"engine":engine,"rows":[],"partial":false,"observedAt":now(),"state":"ready","error":null}),
         );
     }
-    if kind == "resource" {
-        let resource = job.resource.as_ref().ok_or("资源身份缺失")?;
-        let value = commands::object(&checked(execute(
-            app,
-            job,
-            client,
-            &[
-                resource.kind.name(),
-                "inspect",
-                "--format",
-                "{{json .}}",
-                &resource.id,
-            ],
-            256 * 1024,
-        )?)?)?;
-        if value[if resource.kind == Kind::Volume {
-            "Name"
-        } else {
-            "Id"
-        }] != resource.id
-        {
-            return Err("资源身份已改变".into());
-        }
-        return Ok(
-            json!({"engine":engine,"name":value["Name"].as_str().unwrap_or(&resource.id),"sections":resources::fields(resource.kind,&value),"state":"ready","observedAt":now(),"partial":false,"error":null}),
-        );
-    }
     let container = inspect(app, job, client)?;
     let name = commands::text(
         container["Name"]
@@ -1727,10 +1650,9 @@ fn collect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
         256,
     );
     let mut data = json!({"engine":engine,"name":name,"status":container["State"]["Status"],"health":container["State"]["Health"]["Status"],
-        "ports":ports::catalog(&container),"sections":commands::fields(&container),"observedAt":now(),"state":"ready","error":null,"partial":false});
+        "observedAt":now(),"state":"ready","error":null,"partial":false});
     if kind == "logs" {
         data["tty"] = container["Config"]["Tty"].clone();
-        data["sections"] = json!({});
     } else if job.action.as_str() == "stats" {
         if container["State"]["Running"] != true {
             data["stats"] = json!({"unavailable":"容器未运行"});
@@ -1796,8 +1718,6 @@ fn collect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
                     Ok(after) => {
                         data["status"] = after["State"]["Status"].clone();
                         data["health"] = after["State"]["Health"]["Status"].clone();
-                        data["sections"] = commands::fields(&after);
-                        data["ports"] = ports::catalog(&after);
                         data["operation"]["message"] = json!("命令成功；已刷新当前观测状态");
                     }
                     Err(_) if job.action.as_str() == "remove" => {
@@ -2007,7 +1927,7 @@ fn browser_read(app: &Shared, job: &Job, client: &Client) -> Result<Option<Work>
             }
             Ok(None)
         }
-        Work::Relation {
+        Work::Object {
             resource,
             generation,
             ids,
@@ -2016,7 +1936,7 @@ fn browser_read(app: &Shared, job: &Job, client: &Client) -> Result<Option<Work>
             if ids.is_none() {
                 engine_check(app, job, client)?;
                 let format = if resource.kind == Kind::Container {
-                    resources::CONTAINER_RELATIONS
+                    crate::object::CONTAINER
                 } else {
                     "{{json .}}"
                 };
@@ -2060,35 +1980,31 @@ fn browser_read(app: &Shared, job: &Job, client: &Client) -> Result<Option<Work>
                 if !b.owns(work) {
                     return Ok(None);
                 }
-                let r = b.relations.get_mut(&resource.key()).unwrap();
+                let r = b.objects.get_mut(&resource.key()).unwrap();
                 r.observation = if resource.kind == Kind::Volume {
                     resources::volume_observation(&current)
                 } else {
                     json!({"id":resource.id})
                 };
+                r.info = Some(ObjectInfo::read(resource.kind, &current));
                 r.complete = !partial;
                 if direct {
                     r.items = resources::relation(resource.kind, &current)
                         .as_array()
                         .cloned()
                         .unwrap_or_default();
-                    if browser::bytes(&json!([r.items, r.observation])) > browser::RELATION_LIMIT {
+                    if browser::bytes(&json!([r.items, r.observation, r.info, r.stats]))
+                        > browser::RELATION_LIMIT
+                    {
                         return Err("此对象关系超过 256 KiB，引用不完整".into());
                     }
-                    if b.relations
-                        .values()
-                        .map(|r| browser::bytes(&json!([r.items, r.observation])))
-                        .sum::<usize>()
-                        > 2 * 1024 * 1024
-                    {
-                        return Err("关系缓存超过 2 MiB".into());
-                    }
-                    let r = b.relations.get_mut(&resource.key()).unwrap();
+                    b.trim_objects(&resource.key())?;
+                    let r = b.objects.get_mut(&resource.key()).unwrap();
                     r.phase = "ready".into();
                     v.revision += 1;
                     return Ok(None);
                 }
-                return Ok(Some(Work::Relation {
+                return Ok(Some(Work::Object {
                     resource: resource.clone(),
                     generation: *generation,
                     ids: Some(scan),
@@ -2126,26 +2042,21 @@ fn browser_read(app: &Shared, job: &Job, client: &Client) -> Result<Option<Work>
             if !b.owns(work) {
                 return Ok(None);
             }
-            let r = b.relations.get_mut(&resource.key()).unwrap();
+            let r = b.objects.get_mut(&resource.key()).unwrap();
             r.items.extend(refs);
-            if browser::bytes(&json!([r.items, r.observation])) > browser::RELATION_LIMIT {
+            if browser::bytes(&json!([r.items, r.observation, r.info, r.stats]))
+                > browser::RELATION_LIMIT
+            {
                 return Err("此对象关系超过 256 KiB，引用不完整".into());
             }
-            if b.relations
-                .values()
-                .map(|r| browser::bytes(&json!([r.items, r.observation])))
-                .sum::<usize>()
-                > 2 * 1024 * 1024
-            {
-                return Err("关系缓存超过 2 MiB".into());
-            }
-            let r = b.relations.get_mut(&resource.key()).unwrap();
+            b.trim_objects(&resource.key())?;
+            let r = b.objects.get_mut(&resource.key()).unwrap();
             v.revision += 1;
             if end >= ids.len() {
                 r.phase = "ready".into();
                 Ok(None)
             } else {
-                Ok(Some(Work::Relation {
+                Ok(Some(Work::Object {
                     resource: resource.clone(),
                     generation: *generation,
                     ids: Some(ids.clone()),
@@ -2450,6 +2361,44 @@ pub fn start(app: Shared, client: Client) {
                         if !intent.unresolved() {
                             intent.ticket = None;
                         }
+                        let receipt = intent.receipt.clone();
+                        let request = intent.input["requestId"].clone();
+                        let outcome = receipt["result"]["outcome"].as_str();
+                        let state = match receipt["status"].as_str() {
+                            Some("completed")
+                                if matches!(
+                                    outcome,
+                                    Some("selectionRequired" | "savedNotStarted")
+                                ) =>
+                            {
+                                "skipped"
+                            }
+                            Some("completed") => "succeeded",
+                            Some("failed" | "invalidated") => "failed",
+                            Some("unknown") => "unknown",
+                            _ => "checking",
+                        };
+                        let message = match outcome {
+                            Some("selectionRequired") => "存在多条匹配规则，请在端口中选择已有隧道",
+                            Some("savedNotStarted") => "规则已保存，尚未启动；请在网络隧道中检查",
+                            _ => receipt["error"]["message"]
+                                .as_str()
+                                .or(receipt["message"].as_str())
+                                .unwrap_or(if work.kind == CommandKind::Tunnel {
+                                    "办理结果已更新；实际监听及 TCP 状态见端口"
+                                } else {
+                                    "终端页面办理结果已更新"
+                                }),
+                        };
+                        let task = json!({"action":if work.kind==CommandKind::Tunnel{"tunnel"}else{"terminal"},"requestId":request,"containerId":receipt["containerId"],"name":receipt["name"],"state":state,"message":message,"result":receipt["result"]});
+                        if let Some(old) = v.tasks.iter_mut().find(|t| t["requestId"] == request) {
+                            *old = task;
+                        } else {
+                            v.tasks.push_front(task);
+                            if v.tasks.len() > 64 {
+                                v.tasks.pop_back();
+                            }
+                        }
                     }
                     continue;
                 }
@@ -2486,10 +2435,21 @@ pub fn start(app: Shared, client: Client) {
                             data["name"].clone()
                         };
                     }
-                    let a = app.lock().unwrap();
-                    if let Some(v) = a.views.get(&job.view).filter(|v| {
-                        v.kind == "browser" && (!job.container.is_empty() || job.resource.is_some())
+                    let mut a = app.lock().unwrap();
+                    if let Some(v) = a.views.get_mut(&job.view).filter(|v| {
+                        v.epoch == job.epoch
+                            && v.context == job.context
+                            && v.endpoint == job.endpoint
+                            && v.kind == "browser"
+                            && (!job.container.is_empty() || job.resource.is_some())
                     }) {
+                        if job.action.as_str() == "stats" {
+                            if let Some(o) = v.browser.as_mut().and_then(|b| {
+                                b.objects.get_mut(&format!("container:{}", job.container))
+                            }) {
+                                o.stats = data["stats"].clone();
+                            }
+                        }
                         let mut rows = v.container_rows().to_vec();
                         if data["state"] == "gone" {
                             rows.retain(|row| row["id"] != job.container);
@@ -2519,7 +2479,7 @@ pub fn start(app: Shared, client: Client) {
                     let fields = json!({"viewId":job.view,"serverId":job.context["serverId"],"containerId":job.container,"resource":job.resource,"engineId":job.engine,"action":job.action,"result":state});
                     let _ = client.call("logging.write", json!({"level":if ["failed","unknown"].contains(&state){"warn"}else{"info"},"message":"Docker 资源操作完成","fields":fields}));
                     if ["failed", "unknown"].contains(&state) {
-                        let _ = client.call("messages.publish", json!({"title":"Docker 资源操作未完成","body":format!("{} · {}：请在 Docker 侧栏或详情查看结果并刷新状态",commands::operation_name(job.action.as_str()),job.container.get(..12).unwrap_or(&job.container)),"level":"warning","notify":false}));
+                        let _ = client.call("messages.publish", json!({"title":"Docker 资源操作未完成","body":format!("{} · {}：请在 Docker 资源树查看结果并刷新状态",commands::operation_name(job.action.as_str()),job.container.get(..12).unwrap_or(&job.container)),"level":"warning","notify":false}));
                     }
                 }
                 let removed = ["remove", "resource.remove"].contains(&job.action.as_str())
@@ -2534,9 +2494,11 @@ pub fn start(app: Shared, client: Client) {
                                 && v.expected_engine == job.engine
                                 && v.endpoint == job.endpoint
                                 && if let Some(resource) = &job.resource {
-                                    v.resource.as_ref() == Some(resource)
+                                    v.kind == "logs"
+                                        && resource.kind == Kind::Container
+                                        && v.container == resource.id
                                 } else {
-                                    v.container == job.container && v.resource.is_none()
+                                    v.kind == "logs" && v.container == job.container
                                 }
                                 && !v.busy
                         }) {
@@ -2646,6 +2608,28 @@ pub fn start(app: Shared, client: Client) {
                             .and_then(|v| v.browser.as_mut())
                             .and_then(|b| b.load(kind));
                         if let Some(work) = work {
+                            let _ = a.enqueue_browser(&job.view, work);
+                        }
+                    }
+                    let resource = a
+                        .views
+                        .get(&job.view)
+                        .filter(|v| {
+                            v.kind == "browser"
+                                && v.data["state"] == "ready"
+                                && v.browser.as_ref().is_some_and(|b| b.visible)
+                        })
+                        .and_then(|v| ResourceRef::read(&v.navigation["inline"]["resource"]).ok());
+                    if let Some(resource) = resource {
+                        if let Ok(Some(work)) = a
+                            .views
+                            .get_mut(&job.view)
+                            .unwrap()
+                            .browser
+                            .as_mut()
+                            .unwrap()
+                            .load_object(resource)
+                        {
                             let _ = a.enqueue_browser(&job.view, work);
                         }
                     }

@@ -147,7 +147,8 @@ export function selectChecks(files, { suite, fallback } = {}) {
       if (/^scripts\/test-network-netem\.mjs$/.test(file)) { plan.scripts = true; integration.add('network-proxy'); continue; }
       if (/^scripts\/(network-tools|test-network-(ui|process|commands))\.mjs$/.test(file)) { plan.scripts = true; integration.add('network-proxy'); continue; }
       if (/^scripts\/test-system-status-(ui|package)\.mjs$/.test(file)) { plan.scripts = true; integration.add('system-status'); continue; }
-      if (/^scripts\/(docker-process|test-docker(?:-(ui|process|package|ports-ui))?)\.mjs$/.test(file)) { plan.scripts = true; integration.add('docker'); continue; }
+      if (/^scripts\/docker-(presentation|logs|tree-layout)\.test\.mjs$/.test(file)) { plan.scripts = true; integration.add('docker'); continue; }
+      if (/^scripts\/(docker-process|test-docker(?:-(ui|process|package|ports-ui|tree-ui|native))?)\.mjs$/.test(file)) { plan.scripts = true; integration.add('docker'); continue; }
       if (/^scripts\/test-mcp(?:-(ui|process))?\.mjs$/.test(file) || file === 'src-tauri/tests/fixtures/mcp_flow.rs') { plan.scripts = true; core(['linux-x86_64']); integration.add('mcp'); continue; }
       if (file === 'src-tauri/tests/fixtures/docker_flow.rs') { core(['linux-x86_64']); integration.add('docker'); continue; }
       if (file === 'src-tauri/tests/fixtures/session_stream_flow.rs') { core(); integration.add('docker'); integration.add('terminal'); continue; }

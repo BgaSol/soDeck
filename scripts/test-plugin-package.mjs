@@ -56,13 +56,12 @@ try {
   }
   if (plugin === "docker") {
     const [major,minor]=manifest.version.split('.').map(Number);if(major>0||minor>=7)for(const file of ["ports.js","state.js"])assert(fs.statSync(path.join(checked.root,"ui",file)).size>0);
-    assert.equal(manifest.ui.views.length, 4);
-    const browser = manifest.ui.views.find(view => view.id === "browser");
-    assert.equal(browser.defaultSide, "right"); assert.equal(browser.defaultPinned, true);
-    assert.equal(browser.openOnWorkspace, "none"); assert.equal(browser.icon, "docker");
-    const resource = manifest.ui.views.find(view => view.id === "resource");
-    assert(resource && resource.container === "editor");
-    for (const file of ["style.css", "bridge.js", "view.js", "browser.js", "connection.js", "tree.js", "tree-menu.js", "dom-update.js", "licenses/morphdom.LICENSE"]) assert(fs.statSync(path.join(checked.root, "ui", file)).size > 0);
+    const treeOnly=major>0||minor>=8;
+    assert.equal(manifest.ui.views.length,treeOnly?2:4);
+    const browser=manifest.ui.views.find(view=>view.id==='browser');assert.equal(browser.defaultSide,'right');assert.equal(browser.defaultPinned,true);assert.equal(browser.openOnWorkspace,'none');
+    if(treeOnly){assert.deepEqual(manifest.ui.views.map(v=>v.id),['browser','logs']);assert.equal(manifest.ui.views.find(v=>v.id==='logs').entry,'ui/logs.html');}
+    for(const file of ['style.css','bridge.js','browser.js','connection.js','tree.js','tree-menu.js','dom-update.js',...(treeOnly?['logs.html','logs-page.js','resource-inline.js','tree-layout.js']:['view.js'])])assert(fs.statSync(path.join(checked.root,'ui',file)).size>0);
+
   }
   if (plugin === "system-status") {
     assert.equal(manifest.ui.views[0].backgroundOnWorkspace, true);

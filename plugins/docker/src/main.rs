@@ -4,6 +4,7 @@ mod collaboration;
 mod commands;
 mod connection;
 mod logs;
+mod object;
 mod ports;
 mod pulls;
 mod resources;
@@ -114,69 +115,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let result = service.event(id, target, &p["data"])?;
             return app.lock().unwrap().response(id, result);
         }
-        if method == "ui.event"
-            && matches!(
-                p["data"]["action"].as_str(),
-                Some("openContainer" | "openPorts" | "openLogs" | "openResource")
-            )
-        {
+        if method == "ui.event" && p["data"]["action"] == "openLogs" {
             let d = &p["data"];
             let (context, resource) = {
                 let a = app.lock().unwrap();
+                a.check_scope(id, d)?;
                 let v = a.views.get(id).ok_or("视图已关闭")?;
-                if v.frozen {
-                    return Err("页面正在关闭".into());
-                }
-                let container = d["id"].as_str().unwrap_or("");
-                let resource_ref = if d["action"] == "openResource" {
-                    a.check_scope(id, d)?;
-                    let resource = resources::ResourceRef::read(&d["resource"])?;
-                    if resource.kind == resources::Kind::Container {
-                        return Err("容器请使用容器详情入口".into());
-                    }
-                    Some(resource)
-                } else {
-                    commands::id(container)?;
-                    None
-                };
-                if v.expected_engine.is_empty() {
-                    return Err("请先刷新 Docker 状态".into());
-                }
-                for (key, expected) in [
-                    ("engineId", json!(v.expected_engine)),
-                    ("endpoint", json!(v.endpoint)),
-                    ("expectedContext", v.context.clone()),
-                ] {
-                    if d.get(key).is_some_and(|value| value != &expected) {
-                        return Err("容器连接身份已改变，请刷新后重新选择".into());
-                    }
+                let container = d["id"].as_str().ok_or("缺少容器 ID")?;
+                commands::id(container)?;
+                if v.kind != "browser" || !v.container_rows().iter().any(|r| r["id"] == container) {
+                    return Err("请从资源树选择容器".into());
                 }
                 (
                     v.context.clone(),
-                    if let Some(r) = resource_ref {
-                        json!({"kind":r.kind,"id":r.id,"engineId":v.expected_engine,"endpoint":v.endpoint}).to_string()
-                    } else {
-                        json!({"id":container,"engineId":v.expected_engine,"endpoint":v.endpoint})
-                            .to_string()
-                    },
+                    json!({"id":container,"engineId":v.expected_engine,"endpoint":v.endpoint})
+                        .to_string(),
                 )
             };
             let request = d["requestId"]
                 .as_str()
                 .filter(|s| !s.is_empty() && s.len() <= 128)
                 .ok_or("请求 ID 无效")?;
-            let result=client.call("ui.openView",json!({"expectedContext":context,"requestId":request,
-                "viewType":if d["action"]=="openLogs"{"logs"}else if d["action"]=="openResource"{"resource"}else{"container"},"resourceKey":resource,"sourceViewId":id,"params":if d["action"]=="openPorts"{json!({"section":"ports","intent":request})}else{Value::Null}}))?;
-            if d["action"] == "openPorts" {
-                if let Some(view) = result["viewId"].as_str() {
-                    let mut a = app.lock().unwrap();
-                    if let Some(v) = a.views.get_mut(view) {
-                        v.navigation["section"] = json!("ports");
-                        v.navigation["intent"] = json!(request);
-                        v.revision += 1;
-                    }
-                }
-            }
+            let result=client.call("ui.openView",json!({"expectedContext":context,"requestId":request,"viewType":"logs","resourceKey":resource,"sourceViewId":id}))?;
             return app.lock().unwrap().response(id, result);
         }
         let mut a = app.lock().unwrap();
