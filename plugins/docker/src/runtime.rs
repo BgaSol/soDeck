@@ -1,7 +1,10 @@
 use crate::{
     browser::{self, BrowserState, Work},
-    cli, commands,
+    cli,
+    collaboration::{self, Intent, Kind as CommandKind, Work as CommandWork},
+    commands,
     connection::{self, Config, EngineOs, Snapshot, Target},
+    ports,
     resources::{self, Kind, ResourceRef},
 };
 use serde_json::{json, Value};
@@ -33,9 +36,8 @@ pub struct View {
     pub epoch: u64,
     pub pull: Value,
     pub tasks: VecDeque<Value>,
-    terminal_ticket: Option<sodeck_plugin_client::commands::Ticket>,
-    terminal_receipt: Value,
-    terminal_input: Value,
+    pub terminal: Intent,
+    pub tunnel: Intent,
     pub kind: String,
     pub context: Value,
     pub container: String,
@@ -56,22 +58,128 @@ pub struct View {
     due: Instant,
 }
 #[derive(Clone)]
+enum ConnectionAction {
+    Test,
+    Save,
+    Identify,
+    SetEndpoint,
+}
+#[derive(Clone)]
+enum ContainerAction {
+    Start,
+    Stop,
+    Restart,
+    Pause,
+    Unpause,
+    Remove,
+}
+#[derive(Clone)]
+enum JobAction {
+    Refresh,
+    Stats,
+    Logs,
+    Connection(ConnectionAction),
+    Container(ContainerAction),
+    Browser(Work),
+    ResourceRemove {
+        observation: Value,
+        scan: Option<DeleteScan>,
+    },
+    Collaboration(CommandWork),
+}
+impl JobAction {
+    fn parse(name: &str, view: &View) -> Result<Self, String> {
+        Ok(match name {
+            "refresh" => Self::Refresh,
+            "stats" => Self::Stats,
+            "connection.test" => Self::Connection(ConnectionAction::Test),
+            "connection.save" => Self::Connection(ConnectionAction::Save),
+            "connection.identify" => Self::Connection(ConnectionAction::Identify),
+            "setEndpoint" => Self::Connection(ConnectionAction::SetEndpoint),
+            "start" => Self::Container(ContainerAction::Start),
+            "stop" => Self::Container(ContainerAction::Stop),
+            "restart" => Self::Container(ContainerAction::Restart),
+            "pause" => Self::Container(ContainerAction::Pause),
+            "unpause" => Self::Container(ContainerAction::Unpause),
+            "remove" => Self::Container(ContainerAction::Remove),
+            "resource.remove" => Self::ResourceRemove {
+                observation: Value::Null,
+                scan: None,
+            },
+            "terminal" | "terminalStatus" => Self::Collaboration(CommandWork {
+                kind: CommandKind::Terminal,
+                intent: view.terminal.clone(),
+                submit: name == "terminal",
+            }),
+            "tunnel" | "tunnelStatus" => Self::Collaboration(CommandWork {
+                kind: CommandKind::Tunnel,
+                intent: view.tunnel.clone(),
+                submit: name == "tunnel",
+            }),
+            _ => return Err("未知 Docker 后台任务".into()),
+        })
+    }
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Refresh => "refresh",
+            Self::Stats => "stats",
+            Self::Logs => "logs",
+            Self::Browser(_) => "browser.read",
+            Self::ResourceRemove { .. } => "resource.remove",
+            Self::Connection(kind) => match kind {
+                ConnectionAction::Test => "connection.test",
+                ConnectionAction::Save => "connection.save",
+                ConnectionAction::Identify => "connection.identify",
+                ConnectionAction::SetEndpoint => "setEndpoint",
+            },
+            Self::Container(kind) => match kind {
+                ContainerAction::Start => "start",
+                ContainerAction::Stop => "stop",
+                ContainerAction::Restart => "restart",
+                ContainerAction::Pause => "pause",
+                ContainerAction::Unpause => "unpause",
+                ContainerAction::Remove => "remove",
+            },
+            Self::Collaboration(work) => match (work.kind, work.submit) {
+                (CommandKind::Terminal, true) => "terminal",
+                (CommandKind::Terminal, false) => "terminalStatus",
+                (CommandKind::Tunnel, true) => "tunnel",
+                (CommandKind::Tunnel, false) => "tunnelStatus",
+            },
+        }
+    }
+    fn browser(&self) -> Option<&Work> {
+        if let Self::Browser(work) = self {
+            Some(work)
+        } else {
+            None
+        }
+    }
+    fn command(&self) -> Option<&CommandWork> {
+        if let Self::Collaboration(work) = self {
+            Some(work)
+        } else {
+            None
+        }
+    }
+}
+impl serde::Serialize for JobAction {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+#[derive(Clone)]
 struct Job {
-    delete_scan: Option<DeleteScan>,
     epoch: u64,
-    browser: Option<Work>,
     resource: Option<ResourceRef>,
-    observation: Value,
-    terminal: Option<sodeck_plugin_client::commands::Ticket>,
     view: String,
     context: Value,
     endpoint: String,
     container: String,
     engine: String,
-    action: String,
+    action: JobAction,
     target: Option<Snapshot>,
     config: Config,
-    terminal_input: Value,
     deadline: Option<Instant>,
 }
 struct Exec {
@@ -112,12 +220,37 @@ impl View {
             + self.browser.as_ref().map_or(0, BrowserState::bytes)
             + browser::bytes(&self.navigation)
             + browser::bytes(&self.pull)
-            + browser::bytes(&json!([self.tasks, self.receipts]))
+            + browser::bytes(&json!([
+                self.tasks,
+                self.receipts,
+                self.terminal.input,
+                self.terminal.receipt,
+                self.tunnel.input,
+                self.tunnel.receipt
+            ]))
+            + self
+                .terminal
+                .ticket
+                .as_ref()
+                .map_or(0, |t| browser::bytes(&t.payload))
+            + self
+                .tunnel
+                .ticket
+                .as_ref()
+                .map_or(0, |t| browser::bytes(&t.payload))
+    }
+    pub fn command_mut(&mut self, kind: CommandKind) -> &mut Intent {
+        match kind {
+            CommandKind::Terminal => &mut self.terminal,
+            CommandKind::Tunnel => &mut self.tunnel,
+        }
+    }
+    pub fn clear_commands(&mut self) {
+        self.terminal.clear();
+        self.tunnel.clear();
     }
     pub fn clear_terminal(&mut self) {
-        self.terminal_ticket = None;
-        self.terminal_receipt = Value::Null;
-        self.terminal_input = Value::Null;
+        self.terminal.clear();
     }
 }
 fn now() -> u64 {
@@ -218,9 +351,8 @@ impl App {
             epoch: 1,
             pull: Value::Null,
             tasks: VecDeque::new(),
-            terminal_ticket: None,
-            terminal_receipt: Value::Null,
-            terminal_input: Value::Null,
+            terminal: Intent::default(),
+            tunnel: Intent::default(),
             kind: kind.into(),
             context,
             container,
@@ -241,7 +373,11 @@ impl App {
             navigation: if kind == "browser" {
                 browser::navigation(&json!({}), &Value::Null)?
             } else {
-                json!({})
+                if p["params"]["section"] == "ports" {
+                    json!({"section":"ports","intent":p["params"]["intent"]})
+                } else {
+                    json!({})
+                }
             },
             busy: false,
             frozen: false,
@@ -270,7 +406,7 @@ impl App {
     }
     pub fn snapshot(&self, id: &str) -> Result<Value, String> {
         let v = self.views.get(id).ok_or("视图已关闭")?;
-        let mut data = json!({"terminal":v.terminal_receipt,"kind":v.kind,"context":v.context,"containerId":v.container,"endpoint":v.endpoint,"revision":v.revision.to_string(),
+        let mut data = json!({"terminal":v.terminal.receipt,"tunnel":v.tunnel.receipt,"kind":v.kind,"context":v.context,"containerId":v.container,"endpoint":v.endpoint,"revision":v.revision.to_string(),
             "busy":v.busy,"paused":v.paused,"nextIntent":(v.intent+1).to_string(),"navigation":v.navigation,
             "state":v.data["state"],"error":v.data["error"],"engine":v.data["engine"],"name":v.data["name"],"status":v.data["status"],
             "health":v.data["health"],"observedAt":v.data["observedAt"],"partial":v.data["partial"],"operation":v.data["operation"],
@@ -324,22 +460,19 @@ impl App {
         if v.busy {
             return Err("当前页面仍有请求运行，请等待或取消".into());
         }
+        let job_action = JobAction::parse(action, v)?;
         v.busy = true;
         v.cancelled = false;
         v.revision += 1;
         v.due = Instant::now()
-            + Duration::from_secs(if v.terminal_receipt["status"] == "pending" {
+            + Duration::from_secs(if v.terminal.receipt["status"] == "pending" {
                 1
             } else {
                 self.refresh_seconds
             });
         self.jobs.push_back(Job {
-            delete_scan: None,
             epoch: v.epoch,
-            browser: None,
             resource: v.resource.clone(),
-            observation: Value::Null,
-            terminal: v.terminal_ticket.clone(),
             view: id.into(),
             context: v.context.clone(),
             endpoint: v.endpoint.clone(),
@@ -352,14 +485,13 @@ impl App {
             } else {
                 v.expected_engine.clone()
             },
-            action: action.into(),
+            action: job_action,
             target: v.target.clone(),
             config: self
                 .configs
                 .get(v.context["serverId"].as_str().unwrap())
                 .cloned()
                 .unwrap_or_default(),
-            terminal_input: v.terminal_input.clone(),
             deadline: None,
         });
         Ok(())
@@ -424,7 +556,8 @@ impl App {
                     && (other.frozen
                         || (other_id != id && other.busy)
                         || other.kind != "browser"
-                        || other.terminal_receipt["status"] == "pending"
+                        || other.terminal.unresolved()
+                        || other.tunnel.unresolved()
                         || matches!(other.pull["state"].as_str(), Some("opening" | "running"))
                         || other
                             .browser
@@ -476,25 +609,20 @@ impl App {
         v.cancelled = false;
         v.revision += 1;
         self.jobs.push_back(Job {
-            delete_scan: None,
             epoch: v.epoch,
-            browser: Some(work),
             resource: None,
-            observation: Value::Null,
-            terminal: None,
             view: id.into(),
             context: v.context.clone(),
             endpoint: v.endpoint.clone(),
             container: String::new(),
             engine: v.expected_engine.clone(),
-            action: "browser.read".into(),
+            action: JobAction::Browser(work),
             target: v.target.clone(),
             config: self
                 .configs
                 .get(v.context["serverId"].as_str().unwrap())
                 .cloned()
                 .unwrap_or_default(),
-            terminal_input: Value::Null,
             deadline: None,
         });
         Ok(())
@@ -680,16 +808,92 @@ impl App {
         self.enqueue(id, "resource.remove")?;
         let job = self.jobs.back_mut().unwrap();
         job.resource = Some(resource.clone());
-        job.observation = observation;
+        if let JobAction::ResourceRemove {
+            observation: fixed, ..
+        } = &mut job.action
+        {
+            *fixed = observation;
+        }
         let v = self.views.get_mut(id).unwrap();
         v.browser.as_mut().unwrap().invalidate();
         v.data["operation"] = json!({"action":"resource.remove","resource":resource,"name":name,"state":"checking","message":"重新检查身份和完整引用","submittedAt":now()});
         self.snapshot(id)
     }
+    fn tunnel_event(&mut self, id: &str, d: &Value) -> Result<Value, String> {
+        if d["action"] == "tunnel.status" {
+            if self
+                .views
+                .get(id)
+                .ok_or("视图已关闭")?
+                .tunnel
+                .ticket
+                .is_some()
+            {
+                self.enqueue(id, "tunnelStatus")?;
+            }
+            return self.snapshot(id);
+        }
+        let request = d["requestId"]
+            .as_str()
+            .filter(|s| !s.is_empty() && s.len() <= 128)
+            .ok_or("请求 ID 无效")?;
+        let v = self.views.get(id).ok_or("视图已关闭")?;
+        if v.kind != "container" || v.frozen {
+            return Err("当前页面不能创建端口隧道".into());
+        }
+        if v.tunnel.input["requestId"] == request {
+            if v.tunnel.input != *d {
+                return Err("相同请求参数不同".into());
+            }
+            return self.snapshot(id);
+        }
+        if v.tunnel.unresolved() {
+            return Err("已有隧道请求待确认，请查询原请求".into());
+        }
+        if d["action"] == "tunnel.create" {
+            let input = self.target_input(id, d)?;
+            let target = self.target(id, &input)?;
+            if target["status"] != "running" {
+                return Err("请先刷新并选择运行中的容器".into());
+            }
+            let binding: ports::Binding =
+                serde_json::from_value(d["binding"].clone()).map_err(|_| "端口绑定身份无效")?;
+            binding.target()?;
+            if !v.data["ports"]["rows"]
+                .as_array()
+                .is_some_and(|rows| rows.iter().any(|row| row["binding"] == d["binding"]))
+            {
+                return Err("端口绑定已变化，请刷新".into());
+            }
+        } else if d["action"] != "tunnel.reveal" || !d["revealRule"].is_string() {
+            return Err("未知端口隧道操作".into());
+        }
+        let v = self.views.get_mut(id).unwrap();
+        v.tunnel.input = d.clone();
+        v.tunnel.receipt = json!({"status":"pending","message":"核对端口并请求网络隧道"});
+        if let Err(error) = self.enqueue(id, "tunnel") {
+            self.views.get_mut(id).unwrap().tunnel.clear();
+            return Err(error);
+        }
+        Ok(self.snapshot(id)?)
+    }
     pub fn event(&mut self, id: &str, d: &Value) -> Result<Value, String> {
         let action = d["action"].as_str().ok_or("缺少操作")?;
         if action == "snapshot" {
             return self.snapshot(id);
+        }
+        if action == "ports.list" {
+            let v = self.views.get(id).ok_or("视图已关闭")?;
+            let mut result = page(
+                &v.data["ports"]["rows"],
+                d["offset"].as_u64().unwrap_or(0) as usize,
+                20,
+            );
+            result["partial"] = v.data["ports"]["partial"].clone();
+            return Ok(result);
+        }
+        if action.starts_with("tunnel.") {
+            return self.tunnel_event(id, d);
         }
         if matches!(action, "list" | "section") {
             let v = self.views.get(id).ok_or("视图已关闭")?;
@@ -781,13 +985,13 @@ impl App {
             input["requestId"] = json!(request);
             input["shell"] = json!(shell);
             let v = self.views.get(id).unwrap();
-            if v.terminal_input["requestId"] == request {
-                if v.terminal_input != input {
+            if v.terminal.input["requestId"] == request {
+                if v.terminal.input != input {
                     return Err("相同终端请求参数不同".into());
                 }
                 return self.snapshot(id);
             }
-            if v.terminal_receipt["status"] == "pending" {
+            if v.terminal.receipt["status"] == "pending" {
                 return Err("已有终端请求待确认，请等待原请求结果".into());
             }
             let target = self.target(id, &input)?;
@@ -800,13 +1004,13 @@ impl App {
                 shell,
             )?;
             let v = self.views.get_mut(id).unwrap();
-            v.terminal_input = input.clone();
-            v.terminal_receipt = json!({"status":"pending","containerId":input["id"],"name":target["name"],"message":"检查容器并请求终端页面"});
+            v.terminal.input = input.clone();
+            v.terminal.receipt = json!({"status":"pending","containerId":input["id"],"name":target["name"],"message":"检查容器并请求终端页面"});
             if let Err(error) = self.enqueue_target(id, "terminal", Some(&input)) {
                 self.views.get_mut(id).unwrap().clear_terminal();
                 return Err(error);
             }
-            self.views.get_mut(id).unwrap().terminal_input = input;
+            self.views.get_mut(id).unwrap().terminal.input = input;
         } else if action == "navigation" {
             if serde_json::to_vec(&d["state"]).unwrap().len() > 4096 {
                 return Err("页面状态过大".into());
@@ -1188,7 +1392,7 @@ fn connection_request(app: &Shared, job: &Job, client: &Client) {
         v.revision += 1;
         return;
     }
-    let test = job.action == "connection.test";
+    let test = job.action.as_str() == "connection.test";
     let result = result.and_then(|target| {
         if !test {
             a.check_connection_change(&job.view)?;
@@ -1196,7 +1400,7 @@ fn connection_request(app: &Shared, job: &Job, client: &Client) {
             let server = job.context["serverId"].as_str().unwrap();
             let mut configs = a.configs.clone();
             configs.insert(server.into(), job.config.clone());
-            if job.action != "connection.identify" {
+            if job.action.as_str() != "connection.identify" {
                 connection::save(&a.directory, &configs)?;
                 a.configs = configs;
             }
@@ -1279,25 +1483,20 @@ pub fn log_target(
             return Err("日志目标上下文已改变，请刷新后重新读取".into());
         }
         Job {
-            delete_scan: None,
             epoch: v.epoch,
-            browser: None,
             resource: None,
-            observation: Value::Null,
-            terminal: None,
             view: view.into(),
             context: v.context.clone(),
             endpoint: v.endpoint.clone(),
             container: v.container.clone(),
             engine: v.expected_engine.clone(),
-            action: "logs".into(),
+            action: JobAction::Logs,
             target: v.target.clone(),
             config: a
                 .configs
                 .get(v.context["serverId"].as_str().unwrap())
                 .cloned()
                 .unwrap_or_default(),
-            terminal_input: Value::Null,
             deadline: None,
         }
     };
@@ -1393,84 +1592,56 @@ fn inspect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
     }
     Ok(v)
 }
-fn terminal_request(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
-    let ticket = if let Some(ticket) = &job.terminal {
+fn collaboration_request(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
+    let work = job.action.command().ok_or("协作任务缺少载荷")?;
+    let ticket = if let Some(ticket) = &work.intent.ticket {
         ticket.clone()
     } else {
-        if job.action != "terminal" {
-            return Err("终端票据已失效".into());
+        if !work.submit {
+            return Err("协作票据已失效".into());
         }
-        let info = commands::object(&checked(execute(
-            app,
-            job,
-            client,
-            &["info", "--format", "{{json .}}"],
-            256 * 1024,
-        )?)?)?;
-        if info["ID"] != job.engine {
-            return Err("Engine 已改变，请重新打开容器详情".into());
-        }
-        let container = inspect(app, job, client)?;
-        if container["State"]["Running"] != true || container["State"]["Paused"] == true {
-            return Err("容器当前不能接受交互终端，请刷新状态".into());
-        }
-        let target = job.target.as_ref().ok_or("Docker 连接尚未识别")?;
-        let args = cli::terminal_args(
-            target,
-            &job.container,
-            job.terminal_input["shell"].as_str().ok_or("缺少容器程序")?,
-        )?;
-        let prepared = cli::prepare(
-            client,
-            &job.view,
-            target,
-            &args.iter().map(String::as_str).collect::<Vec<_>>(),
-            Some(&job.container),
-            true,
-        )
-        .map_err(|e| e.message)?;
-        let ticket = sodeck_plugin_client::commands::Ticket::new(
-            job.context.clone(),
-            &job.view,
-            job.terminal_input["requestId"]
-                .as_str()
-                .ok_or("缺少终端请求 ID")?,
-            "terminal.open.v1",
-            json!({"version":1,"title":format!("{} · 容器",commands::text(container["Name"].as_str().unwrap_or("Docker").trim_start_matches('/'),100)),"launch":{"kind":"command","command":prepared.terminal_command()?},"directoryIntegration":"off"}),
-        );
+        let ticket =
+            if work.kind == CommandKind::Tunnel && work.intent.input["revealRule"].is_string() {
+                sodeck_plugin_client::commands::Ticket::new(
+                    job.context.clone(),
+                    &job.view,
+                    work.intent.input["requestId"]
+                        .as_str()
+                        .ok_or("缺少请求 ID")?,
+                    "network.rule.reveal.v1",
+                    json!({"version":1,"ruleId":work.intent.input["revealRule"]}),
+                )
+            } else {
+                let info = commands::object(&checked(execute(
+                    app,
+                    job,
+                    client,
+                    &["info", "--format", "{{json .}}"],
+                    256 * 1024,
+                )?)?)?;
+                if info["ID"] != job.engine {
+                    return Err("Engine 已改变，请重新打开容器详情".into());
+                }
+                let container = inspect(app, job, client)?;
+                collaboration::prepare(
+                    client,
+                    &job.view,
+                    &job.context,
+                    job.target.as_ref().ok_or("Docker 连接尚未识别")?,
+                    &container,
+                    work.kind,
+                    &work.intent.input,
+                )?
+            };
         let mut a = app.lock().unwrap();
         let v = a.views.get_mut(&job.view).ok_or("页面已关闭")?;
         if v.context != job.context || v.epoch != job.epoch || v.cancelled || v.frozen {
-            return Err("终端请求已取消或连接改变".into());
+            return Err("协作请求已取消或连接改变".into());
         }
-        v.terminal_ticket = Some(ticket.clone());
+        v.command_mut(work.kind).ticket = Some(ticket.clone());
         ticket
     };
-    if job.action == "terminal" {
-        ticket.resolve(client).map_err(|e| e.message)?;
-    }
-    let reply = if job.action == "terminal" {
-        ticket.submit(client)
-    } else {
-        ticket.get(client)
-    };
-    match reply {
-        Ok(receipt) => Ok(receipt),
-        Err(e) if e.code == -32003 => {
-            Ok(json!({"status":"pending","message":"请求回执待确认，保留原编号继续查询"}))
-        }
-        Err(e) if e.data["code"] == "notFound" => ticket
-            .submit(client)
-            .or_else(|e| {
-                if e.code == -32003 {
-                    Ok(json!({"status":"pending"}))
-                } else {
-                    Err(e)
-                }
-            })
-            .map_err(|e| e.message),
-        Err(e) => Err(e.message),
-    }
+    collaboration::dispatch(client, &ticket, work.submit)
 }
 fn collect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
     let session = client.call("session.state", json!({"viewId":job.view}))?;
@@ -1556,11 +1727,11 @@ fn collect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
         256,
     );
     let mut data = json!({"engine":engine,"name":name,"status":container["State"]["Status"],"health":container["State"]["Health"]["Status"],
-        "sections":commands::fields(&container),"observedAt":now(),"state":"ready","error":null,"partial":false});
+        "ports":ports::catalog(&container),"sections":commands::fields(&container),"observedAt":now(),"state":"ready","error":null,"partial":false});
     if kind == "logs" {
         data["tty"] = container["Config"]["Tty"].clone();
         data["sections"] = json!({});
-    } else if job.action == "stats" {
+    } else if job.action.as_str() == "stats" {
         if container["State"]["Running"] != true {
             data["stats"] = json!({"unavailable":"容器未运行"});
         } else {
@@ -1589,7 +1760,7 @@ fn collect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
             }
             data["stats"] = stats;
         }
-    } else if job.action != "refresh" {
+    } else if job.action.as_str() != "refresh" {
         data["stats"] = json!({"unavailable":"容器操作后，请重新读取资源快照"});
         if job
             .target
@@ -1599,7 +1770,7 @@ fn collect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
         {
             return Err("Windows Engine 不支持暂停与恢复容器".into());
         }
-        let args = commands::action(&job.action, &container)?;
+        let args = commands::action(job.action.as_str(), &container)?;
         if let Some(args) = args {
             {
                 let mut a = app.lock().unwrap();
@@ -1626,9 +1797,10 @@ fn collect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
                         data["status"] = after["State"]["Status"].clone();
                         data["health"] = after["State"]["Health"]["Status"].clone();
                         data["sections"] = commands::fields(&after);
+                        data["ports"] = ports::catalog(&after);
                         data["operation"]["message"] = json!("命令成功；已刷新当前观测状态");
                     }
-                    Err(_) if job.action == "remove" => {
+                    Err(_) if job.action.as_str() == "remove" => {
                         data["state"] = json!("gone");
                         data["operation"]["message"] = json!("删除命令成功；原容器页面保留");
                     }
@@ -1734,7 +1906,7 @@ fn batch(
     }
 }
 fn browser_read(app: &Shared, job: &Job, client: &Client) -> Result<Option<Work>, String> {
-    let work = job.browser.as_ref().ok_or("缺少树读取任务")?;
+    let work = job.action.browser().ok_or("缺少树读取任务")?;
     let owned = || {
         app.lock().unwrap().views.get(&job.view).is_some_and(|v| {
             v.epoch == job.epoch
@@ -2007,7 +2179,11 @@ fn resource_remove(app: &Shared, job: &Job, client: &Client) -> Result<DeleteRes
             256 * 1024,
         )?)
     };
-    let mut scan = if let Some(scan) = &job.delete_scan {
+    let (observation, previous) = match &job.action {
+        JobAction::ResourceRemove { observation, scan } => (observation, scan),
+        _ => return Err("缺少删除任务".into()),
+    };
+    let mut scan = if let Some(scan) = previous {
         scan.clone()
     } else {
         engine_check(app, job, client)?;
@@ -2059,7 +2235,7 @@ fn resource_remove(app: &Shared, job: &Job, client: &Client) -> Result<DeleteRes
     } else {
         scan.refs
     };
-    let args = resources::verify_delete(resource, &current, &job.observation, &refs, true)?;
+    let args = resources::verify_delete(resource, &current, observation, &refs, true)?;
     {
         let mut a = app.lock().unwrap();
         let v = a.views.get_mut(&job.view).ok_or("页面已关闭")?;
@@ -2081,6 +2257,7 @@ fn resource_remove(app: &Shared, job: &Job, client: &Client) -> Result<DeleteRes
 }
 pub fn start(app: Shared, client: Client) {
     std::thread::spawn(move || {
+        let mut foreground_streak = 0u8;
         while !client.is_closed() {
             let job = {
                 let mut a = app.lock().unwrap();
@@ -2092,7 +2269,8 @@ pub fn start(app: Shared, client: Client) {
                             && v.browser.as_ref().is_some_and(|b| {
                                 b.visible && !b.indexes.values().any(|i| i.phase == "loading")
                             })
-                            && v.terminal_receipt["status"] != "pending"
+                            && !v.terminal.pending()
+                            && !v.tunnel.pending()
                             && !v.busy
                             && !v.frozen
                             && !v.paused
@@ -2106,26 +2284,49 @@ pub fn start(app: Shared, client: Client) {
                 let commands = a
                     .views
                     .iter()
-                    .filter(|(_, v)| {
-                        v.terminal_receipt["status"] == "pending"
-                            && !v.busy
-                            && !v.frozen
-                            && v.due <= Instant::now()
+                    .filter(|(_, v)| !v.busy && !v.frozen && v.due <= Instant::now())
+                    .filter_map(|(id, v)| {
+                        if v.terminal.pending() {
+                            Some((id.clone(), "terminalStatus"))
+                        } else if v.tunnel.pending() {
+                            Some((id.clone(), "tunnelStatus"))
+                        } else {
+                            None
+                        }
                     })
-                    .map(|(id, _)| id.clone())
                     .collect::<Vec<_>>();
-                for id in commands {
-                    let _ = a.enqueue(&id, "terminalStatus");
+                for (id, action) in commands {
+                    let _ = a.enqueue(&id, action);
                 }
-                let index = a.jobs.iter().position(|j| j.browser.is_none()).unwrap_or(0);
-                a.jobs.remove(index)
+                let index = if foreground_streak >= 3 {
+                    0
+                } else {
+                    a.jobs
+                        .iter()
+                        .position(|j| j.action.browser().is_none())
+                        .unwrap_or(0)
+                };
+                let job = a.jobs.remove(index);
+                foreground_streak = if job.as_ref().is_some_and(|j| j.action.browser().is_some()) {
+                    0
+                } else {
+                    foreground_streak.saturating_add(1).min(3)
+                };
+                job
             };
             if let Some(mut job) = job {
-                if job.action.starts_with("connection.") || job.action == "setEndpoint" {
+                if job.action.as_str().starts_with("connection.")
+                    || job.action.as_str() == "setEndpoint"
+                {
                     connection_request(&app, &job, &client);
                     continue;
                 }
-                if job.target.is_none() {
+                if job.target.is_none()
+                    && !job
+                        .action
+                        .command()
+                        .is_some_and(|w| w.intent.input["revealRule"].is_string())
+                {
                     match discover_target(&app, &job, &client) {
                         Ok(target) => {
                             let mut a = app.lock().unwrap();
@@ -2187,7 +2388,7 @@ pub fn start(app: Shared, client: Client) {
                         }
                     }
                 }
-                if let Some(work) = &job.browser {
+                if let Some(work) = job.action.browser() {
                     let result = browser_read(&app, &job, &client);
                     let mut a = app.lock().unwrap();
                     let owns = a.views.get(&job.view).is_some_and(|v| {
@@ -2228,8 +2429,8 @@ pub fn start(app: Shared, client: Client) {
                     }
                     continue;
                 }
-                if job.action.starts_with("terminal") {
-                    let result = terminal_request(&app, &job, &client);
+                if let Some(work) = job.action.command() {
+                    let result = collaboration_request(&app, &job, &client);
                     let mut a = app.lock().unwrap();
                     if let Some(v) = a.views.get_mut(&job.view).filter(|v| {
                         v.context == job.context
@@ -2239,23 +2440,29 @@ pub fn start(app: Shared, client: Client) {
                         v.busy = false;
                         v.due = Instant::now() + Duration::from_secs(1);
                         v.revision += 1;
+                        let intent = v.command_mut(work.kind);
                         let mut receipt = result.unwrap_or_else(
                             |message| json!({"status":"failed","error":{"message":message}}),
                         );
-                        receipt["containerId"] = v.terminal_input["id"].clone();
-                        receipt["name"] = v.terminal_receipt["name"].clone();
-                        v.terminal_receipt = receipt;
-                        if v.terminal_receipt["status"] != "pending" {
-                            v.terminal_ticket = None;
+                        receipt["containerId"] = intent.input["id"].clone();
+                        receipt["name"] = intent.receipt["name"].clone();
+                        intent.receipt = receipt;
+                        if !intent.unresolved() {
+                            intent.ticket = None;
                         }
                     }
                     continue;
                 }
-                let mut result = if job.action == "resource.remove" {
+                let mut result = if job.action.as_str() == "resource.remove" {
                     match resource_remove(&app, &job, &client) {
                         Ok(DeleteResult::More(scan)) => {
                             let mut next = job.clone();
-                            next.delete_scan = Some(scan);
+                            if let JobAction::ResourceRemove {
+                                scan: next_scan, ..
+                            } = &mut next.action
+                            {
+                                *next_scan = Some(scan);
+                            }
                             app.lock().unwrap().jobs.push_back(next);
                             continue;
                         }
@@ -2312,7 +2519,7 @@ pub fn start(app: Shared, client: Client) {
                     let fields = json!({"viewId":job.view,"serverId":job.context["serverId"],"containerId":job.container,"resource":job.resource,"engineId":job.engine,"action":job.action,"result":state});
                     let _ = client.call("logging.write", json!({"level":if ["failed","unknown"].contains(&state){"warn"}else{"info"},"message":"Docker 资源操作完成","fields":fields}));
                     if ["failed", "unknown"].contains(&state) {
-                        let _ = client.call("messages.publish", json!({"title":"Docker 资源操作未完成","body":format!("{} · {}：请在 Docker 侧栏或详情查看结果并刷新状态",commands::operation_name(&job.action),job.container.get(..12).unwrap_or(&job.container)),"level":"warning","notify":false}));
+                        let _ = client.call("messages.publish", json!({"title":"Docker 资源操作未完成","body":format!("{} · {}：请在 Docker 侧栏或详情查看结果并刷新状态",commands::operation_name(job.action.as_str()),job.container.get(..12).unwrap_or(&job.container)),"level":"warning","notify":false}));
                     }
                 }
                 let removed = ["remove", "resource.remove"].contains(&job.action.as_str())
@@ -2369,7 +2576,7 @@ pub fn start(app: Shared, client: Client) {
                                             data["rows"].as_array().cloned().unwrap_or_default();
                                     }
                                     data["rows"] = json!([]);
-                                    if job.action == "resource.remove"
+                                    if job.action.as_str() == "resource.remove"
                                         && data["operation"]["state"] == "succeeded"
                                     {
                                         if let Some(r) = &job.resource {

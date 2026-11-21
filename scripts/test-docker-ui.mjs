@@ -1,3 +1,5 @@
+import {verifyDockerPortsUI} from './test-docker-ports-ui.mjs';
+await verifyDockerPortsUI();
 import assert from 'node:assert/strict';
 import fs from 'node:fs';import path from 'node:path';import {createServer} from 'node:http';
 import {chromium} from 'playwright';

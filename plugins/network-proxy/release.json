@@ -20,7 +20,8 @@
         "defaultSide": "right",
         "defaultPinned": true,
         "openOnWorkspace": "none",
-        "startupOrder": 30
+        "startupOrder": 30,
+        "backgroundOnWorkspace": true
       },
       {
         "id": "rule-editor",
@@ -103,6 +104,13 @@
           }
         ]
       }
+    ]
+  },
+  "commands": {
+    "apiVersion": "1",
+    "handlers": [
+      "network.tcpForward.ensure.v1",
+      "network.rule.reveal.v1"
     ]
   }
 }

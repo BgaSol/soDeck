@@ -1,8 +1,10 @@
 mod browser;
 mod cli;
+mod collaboration;
 mod commands;
 mod connection;
 mod logs;
+mod ports;
 mod pulls;
 mod resources;
 mod runtime;
@@ -115,7 +117,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if method == "ui.event"
             && matches!(
                 p["data"]["action"].as_str(),
-                Some("openContainer" | "openLogs" | "openResource")
+                Some("openContainer" | "openPorts" | "openLogs" | "openResource")
             )
         {
             let d = &p["data"];
@@ -164,7 +166,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .filter(|s| !s.is_empty() && s.len() <= 128)
                 .ok_or("请求 ID 无效")?;
             let result=client.call("ui.openView",json!({"expectedContext":context,"requestId":request,
-                "viewType":if d["action"]=="openLogs"{"logs"}else if d["action"]=="openResource"{"resource"}else{"container"},"resourceKey":resource,"sourceViewId":id}))?;
+                "viewType":if d["action"]=="openLogs"{"logs"}else if d["action"]=="openResource"{"resource"}else{"container"},"resourceKey":resource,"sourceViewId":id,"params":if d["action"]=="openPorts"{json!({"section":"ports","intent":request})}else{Value::Null}}))?;
+            if d["action"] == "openPorts" {
+                if let Some(view) = result["viewId"].as_str() {
+                    let mut a = app.lock().unwrap();
+                    if let Some(v) = a.views.get_mut(view) {
+                        v.navigation["section"] = json!("ports");
+                        v.navigation["intent"] = json!(request);
+                        v.revision += 1;
+                    }
+                }
+            }
             return app.lock().unwrap().response(id, result);
         }
         let mut a = app.lock().unwrap();
@@ -181,7 +193,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .get_mut(id)
                     .filter(|v| !p["context"].is_null() && v.context != p["context"])
                 {
-                    v.clear_terminal();
+                    v.clear_commands();
                     v.target = None;
                     v.epoch += 1;
                     if let Some(b) = &mut v.browser {

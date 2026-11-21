@@ -10,7 +10,7 @@ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-docker-process-'));
 const tickets=new Map(),submissions=[],streams=new Map(),streamRequests=[],streamLookups=[];let loseCommandReceipt=true,loseStreamReceipts=6;
 const id='a'.repeat(64),tasks=new Map(),commands=[],diagnostics=[];let number=0,hold=false,holdMutation=false,loseReceipt=true,malformed=false,engineId='engine',peer;
 const programs=new Map();
-const inspect={Id:id,Name:'/service-中文',Image:'sha256:'+'b'.repeat(64),Config:{Image:'demo:1',Env:['TOKEN=a=b'],Labels:{}},State:{Status:'running',Running:true,Health:{Status:'unhealthy',Log:[]}},Mounts:[],NetworkSettings:{Ports:{},Networks:{}}};
+const inspect={Id:id,Name:'/service-中文',Image:'sha256:'+'b'.repeat(64),Config:{Image:'demo:1',Env:['TOKEN=a=b'],Labels:{}},State:{Status:'running',Running:true,Health:{Status:'unhealthy',Log:[]}},Mounts:[],NetworkSettings:{Ports:{'80/tcp':[{HostIp:'0.0.0.0',HostPort:'8080'},{HostIp:'::',HostPort:'8080'}]},Networks:{}}};
 const unusedImage='sha256:'+'d'.repeat(64),networkId='c'.repeat(64),systemNetwork='e'.repeat(64);
 let volumeExists=true,volumeCreatedAt='2026-11-16T00:00:00Z',holdPull=false,streamConfirmed=false;
 const volume=name=>({Name:name,Driver:'local',Scope:'local',CreatedAt:volumeCreatedAt,Options:null,Labels:null});
@@ -54,7 +54,7 @@ peer=pluginPeer(path.join(root,manifest.entry),async(method,p)=>{
   if(method==='commands.resolve')return {available:true};
   if(method==='commands.submit'){
     submissions.push(p);let receipt=tickets.get(p.requestId);
-    if(!receipt){receipt={status:'pending',commandId:'command-'+p.requestId,viewId:'terminal-'+p.requestId};tickets.set(p.requestId,receipt);}
+    if(!receipt){receipt={...(p.name==='network.tcpForward.ensure.v1'?{result:{version:1,outcome:'accepted',disposition:'created',ruleId:'rule',runId:'run',state:'starting'}}:{}),status:'pending',commandId:'command-'+p.requestId,viewId:'terminal-'+p.requestId};tickets.set(p.requestId,receipt);}
     if(loseCommandReceipt){loseCommandReceipt=false;throw Object.assign(new Error('lost command receipt'),{code:-32003});}
     return receipt;
   }
@@ -108,6 +108,18 @@ try{
   assert.equal(terminalResult.terminal.viewId,'terminal-terminal-once');assert.equal(submissions.length,1,'lost submit receipt must query the original intent');
   assert.equal(submissions[0].name,'terminal.open.v1');assert.equal(submissions[0].sourceViewId,'detail');
   const launch=submissions[0].payload;assert.equal(launch.directoryIntegration,'off');assert.deepEqual(programs.get(launch.launch.command).removeEnv,['DOCKER_HOST','DOCKER_CONTEXT','DOCKER_TLS_VERIFY','DOCKER_CERT_PATH','DOCKER_API_VERSION']);assert.equal(programs.get(launch.launch.command).checks[0].expectedStdout,'engine');assert(launch.launch.command.includes(id));assert(programs.get(launch.launch.command).argv.includes(shell));
+  const ports=(await request('ui.event','detail',{data:{action:'ports.list',offset:0}})).data;
+  assert.equal(ports.rows.length,2);assert.deepEqual(ports.rows.map(r=>r.target.host),['127.0.0.1','::1']);
+  const tunnel={action:'tunnel.create',requestId:'tunnel-once',binding:ports.rows[0].binding,selectedRule:null,expectedContext:context,engineId:'engine',endpoint:terminalResult.endpoint};
+  loseCommandReceipt=true;const tunnelBefore=submissions.length;
+  await request('ui.event','detail',{data:tunnel});await request('ui.event','detail',{data:tunnel});
+  const tunnelResult=await until(()=>state('detail'),s=>s.tunnel?.status==='completed');
+  assert.equal(tunnelResult.tunnel.result.ruleId,'rule');assert.equal(submissions.length,tunnelBefore+1);assert.equal(submissions.at(-1).name,'network.tcpForward.ensure.v1');assert.deepEqual(submissions.at(-1).payload.target,{host:'127.0.0.1',port:8080});
+  await assert.rejects(request('ui.event','detail',{data:{...tunnel,binding:ports.rows[1].binding}}),/相同请求参数不同/);
+  inspect.NetworkSettings.Ports['80/tcp']=[];
+  await request('ui.event','detail',{data:{...tunnel,requestId:'tunnel-stale'}});
+  const stale=await until(()=>state('detail'),s=>s.tunnel?.status==='failed');assert.match(stale.tunnel.error.message,/端口绑定已变化/);assert.equal(submissions.length,tunnelBefore+1,'Changed binding must not submit a tunnel command');
+  inspect.NetworkSettings.Ports['80/tcp']=[{HostIp:'0.0.0.0',HostPort:'8080'},{HostIp:'::',HostPort:'8080'}];
   const malformedBefore=commands.length;
   malformed=true;await request('ui.event','detail',{data:{action:'refresh'}});let failed=await idle('detail');
   assert(JSON.stringify(failed).includes('核心输出编码无效'),JSON.stringify(failed));assert.equal(tasks.size,0,'bad encoding must release the task');

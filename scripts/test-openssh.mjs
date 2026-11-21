@@ -105,7 +105,7 @@ try {
     if(sudoTest){env.SODECK_TEST_SUDO_USER=sudoUser;env.SODECK_TEST_SUDO_PASSWORD=sudoPassword;env.SODECK_TEST_SUDO_MARKER=path.join(directory,'sudo-marker');}
     if(flags.mcp){env.SODECK_TEST_MCP_PLUGIN=testPluginDirectory('mcp');env.SODECK_TEST_MCP_OUTPUT=path.resolve('artifacts/mcp');}
     if(network) env.SODECK_TEST_CURL=await testCurl();
-    for(const plugin of [terminal||flags.docker?'terminal':null,files?'files':null,network?'network-proxy':null,status?'system-status':null,flags.docker?'docker':null].filter(Boolean)){
+    for(const plugin of [terminal||flags.docker?'terminal':null,files?'files':null,network||flags.docker?'network-proxy':null,status?'system-status':null,flags.docker?'docker':null].filter(Boolean)){
       env[`SODECK_TEST_${(plugin==='network-proxy'?'NETWORK':plugin.toUpperCase().replaceAll('-','_'))}_PLUGIN`]=testPluginDirectory(plugin);
     }
     if(files){const root=env.SODECK_TEST_FILES_PLUGIN;const manifest=JSON.parse(fs.readFileSync(path.join(root,'plugin.json'),'utf8'));const test=spawnSync(process.execPath,['scripts/test-files-process.mjs'],{stdio:'inherit',windowsHide:true,env:{...env,SODECK_TEST_FILES_EXECUTABLE:path.join(root,manifest.entry)}});if(test.status!==0)throw new Error('File process regressions failed');}

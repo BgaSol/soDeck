@@ -55,6 +55,7 @@ try {
     assert(fs.readdirSync(vendor, { recursive: true }).some(file => /worker.*\.js$/.test(file)), "Editor worker missing");
   }
   if (plugin === "docker") {
+    const [major,minor]=manifest.version.split('.').map(Number);if(major>0||minor>=7)for(const file of ["ports.js","state.js"])assert(fs.statSync(path.join(checked.root,"ui",file)).size>0);
     assert.equal(manifest.ui.views.length, 4);
     const browser = manifest.ui.views.find(view => view.id === "browser");
     assert.equal(browser.defaultSide, "right"); assert.equal(browser.defaultPinned, true);
@@ -76,9 +77,13 @@ try {
     if (["logging.write", "messages.publish", "ui.updateView"].includes(method)) return {};
     if (method === "terminal.open" || (method === "files.request" && params.action === "open")) { resources.add("fixture"); return { id: "fixture" }; }
     if (method === "terminal.close" || (method === "files.request" && params.action === "close")) { assert(resources.delete(params.id)); return {}; }
+    if (plugin === "network-proxy" && method === "net.poll") return {items:[]};
+    if (plugin === "network-proxy" && method === "state.put") return {revision:"1"};
+    if (plugin === "network-proxy" && method === "state.get") return {record:{revision:"0",present:false}};
+    if (plugin === "network-proxy" && method === "state.remove") return {};
     unexpected.push(method); throw new Error(`Unexpected package RPC: ${method}`);
   });
-  const capabilities = ["commands.v1", "terminal.v1", "viewData.v1", "terminal.history.v1", "files.v1", "files.directoryCursors.v1", "files.operations.v1", "files.operations.v2", "files.copy.v1", "files.editor.v1", "files.localInputs.v1", "net.tcp.v1", "net.listenerLifecycle.v1", "ui.dialog.v1", "session.exec.v1", "session.program.v1", "session.stream.v1", "session.target.v1","session.target.v2","session.stream.process.v1","session.process.v1","files.pluginData.v1","content.export.v1", "ui.background.v1", "settings.v1", "servers.read.v1", "connections.v1", "ui.workbench.v2", "ui.openView.v1"];
+  const capabilities = ["sharedState.v1", "commands.v1", "terminal.v1", "viewData.v1", "terminal.history.v1", "files.v1", "files.directoryCursors.v1", "files.operations.v1", "files.operations.v2", "files.copy.v1", "files.editor.v1", "files.localInputs.v1", "net.tcp.v1", "net.listenerLifecycle.v1", "ui.dialog.v1", "session.exec.v1", "session.program.v1", "session.stream.v1", "session.target.v1","session.target.v2","session.stream.process.v1","session.process.v1","files.pluginData.v1","content.export.v1", "ui.background.v1", "settings.v1", "servers.read.v1", "connections.v1", "ui.workbench.v2", "ui.openView.v1"];
   const initialized = await peer.request("initialize", { apiVersion: "1", capabilities, dataDirectory: path.join(directory, "data") });
   assert.equal(initialized.apiVersion, "1");
   if (manifest.commands) {
@@ -112,6 +117,7 @@ try {
       report.mcpConnections=true;
     }
   }
+  if(plugin==='network-proxy'&&manifest.commands?.handlers.includes('network.tcpForward.ensure.v1')){const {verifyNetworkCommands}=await import('./test-network-commands.mjs');await verifyNetworkCommands(path.join(checked.root,manifest.entry));report.tunnelCommands=true;}
   assert.equal(sha256(path.join(input, metadata.file)), metadata.sha256);
   Object.assign(report, { passed: true, calls });
   console.log(`${plugin}: actual ${target} archive initialized, mounted, disposed and exited`);

@@ -64,7 +64,8 @@
     update(await event({action,id,revision:row?.rule.revision,target:checkTarget}));await refresh();
   })().catch(fail);});
   addEventListener('sodeck:mount',ev=>{epoch++;mounted=true;pending=false;pageKey=undefined;region.dispose();region=new DomRegion(root);const m=ev.detail;context=m.context;kind=m.data.kind;update(m.data);applyTokens(m.tokens);visible=m.visible;readOnly=Boolean(m.readOnly);settings(m.settings);dirty=m.data.dirty;selected=m.data.navigation?.selected;offset=m.data.navigation?.offset||0;if(kind==='rule-editor')renderForm();else{renderManager();clearInterval(timer);timer=setInterval(refresh,800);}sodeck.mounted(true);});
-  addEventListener('sodeck:surfaceReady',()=>{readOnly=false;});
+  addEventListener('sodeck:surfaceReady',()=>{readOnly=false;void event({action:'resumeInput'}).catch(fail);});
+  addEventListener('sodeck:transferCancelled',()=>{readOnly=false;void event({action:'resumeInput'}).then(update).catch(fail);});
   addEventListener('sodeck:themeChanged',ev=>applyTokens(ev.detail.tokens));
   addEventListener('sodeck:visibilityChanged',ev=>{visible=ev.detail.visible;if(visible)void refresh();});
   addEventListener('sodeck:flush',ev=>{const m=ev.detail;Promise.resolve(kind==='rule-editor'&&dirty?syncDraft():sync).then(()=>parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:m.surfaceId,id:m.id},'*')).catch(err=>parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:m.surfaceId,id:m.id,error:String(err)},'*'));});

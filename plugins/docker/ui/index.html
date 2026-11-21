@@ -22,7 +22,7 @@
       <form id="terminal-form" class="toolbar"><label for="terminal-shell">容器 Shell</label><input id="terminal-shell" value="/bin/sh" spellcheck="false" autocomplete="off" required><button id="open-terminal" type="submit">打开终端</button></form>
       <p id="terminal-result" role="status" hidden></p>
       <section class="metrics"><div class="section-title"><h2>资源快照</h2><button id="read-stats" type="button">读取资源</button></div><p class="muted">按需读取 · 数值来自 Docker CLI，网络和块 I/O 为累计量。</p><dl id="stats"><dt>状态</dt><dd>尚未读取</dd></dl></section>
-      <nav id="sections" aria-label="容器详情分区"></nav><label id="show-env-label" class="check" hidden><input id="show-env" type="checkbox">显示环境变量值</label><dl id="fields"></dl>
+      <nav id="sections" aria-label="容器详情分区"></nav><label id="show-env-label" class="check" hidden><input id="show-env" type="checkbox">显示环境变量值</label><dl id="fields"></dl><section id="port-tunnels" aria-label="容器端口隧道" hidden></section>
       <div class="paging"><button id="fields-prev" type="button" disabled>上一页</button><span id="fields-page"></span><button id="fields-next" type="button" disabled>下一页</button></div>
     </section>
     <section id="logs" hidden>

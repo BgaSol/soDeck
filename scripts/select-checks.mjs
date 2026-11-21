@@ -145,9 +145,9 @@ export function selectChecks(files, { suite, fallback } = {}) {
       if(file==='scripts/workbench-transfer-fixture.mjs'){ui();plan.communication=true;['terminal','files','system-status'].forEach(name=>integration.add(name));continue;}
       if (file === 'scripts/test-close-native.mjs' || file === 'scripts/native-pointer.ps1') { core(); ui(); plan.ssh = true; continue; }
       if (/^scripts\/test-network-netem\.mjs$/.test(file)) { plan.scripts = true; integration.add('network-proxy'); continue; }
-      if (/^scripts\/(network-tools|test-network-ui)\.mjs$/.test(file)) { plan.scripts = true; integration.add('network-proxy'); continue; }
+      if (/^scripts\/(network-tools|test-network-(ui|process|commands))\.mjs$/.test(file)) { plan.scripts = true; integration.add('network-proxy'); continue; }
       if (/^scripts\/test-system-status-(ui|package)\.mjs$/.test(file)) { plan.scripts = true; integration.add('system-status'); continue; }
-      if (/^scripts\/(docker-process|test-docker(?:-(ui|process|package))?)\.mjs$/.test(file)) { plan.scripts = true; integration.add('docker'); continue; }
+      if (/^scripts\/(docker-process|test-docker(?:-(ui|process|package|ports-ui))?)\.mjs$/.test(file)) { plan.scripts = true; integration.add('docker'); continue; }
       if (/^scripts\/test-mcp(?:-(ui|process))?\.mjs$/.test(file) || file === 'src-tauri/tests/fixtures/mcp_flow.rs') { plan.scripts = true; core(['linux-x86_64']); integration.add('mcp'); continue; }
       if (file === 'src-tauri/tests/fixtures/docker_flow.rs') { core(['linux-x86_64']); integration.add('docker'); continue; }
       if (file === 'src-tauri/tests/fixtures/session_stream_flow.rs') { core(); integration.add('docker'); integration.add('terminal'); continue; }

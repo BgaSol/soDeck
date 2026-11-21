@@ -52,7 +52,7 @@ export async function buildPlugin({ plugin, target, output, release, installDepe
   if (metadata.ui) packageStyles(directory);
   if (metadata.ui) fs.copyFileSync("plugins/shared/clipboard.js", path.join(directory, "ui/clipboard-bridge.js"));
   if (metadata.build?.fileEditor) packageFileEditor(directory);
-  if (['terminal','files'].includes(plugin)) fs.copyFileSync("plugins/shared/state.js", path.join(directory, "ui/state.js"));
+  if (['terminal','files','docker'].includes(plugin)) fs.copyFileSync("plugins/shared/state.js", path.join(directory, "ui/state.js"));
   if (metadata.ui) await packageMenuAssets(directory);
   if (['network-proxy','docker'].includes(plugin)) await packageDomAssets(directory);
   packageSettingsAssets(metadata, directory);

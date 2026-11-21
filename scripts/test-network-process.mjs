@@ -1,3 +1,4 @@
+import {verifyNetworkCommands} from './test-network-commands.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -12,6 +13,9 @@ let listener,createCount=0,failQuery=false,allowCleanup=false,stopped=false,hold
 const observed=()=>({state:'observed',listenerId:'listener',cleanupComplete:stopped,snapshot:{listenerId:'listener',state:stopped?'closed':'running',cleanupComplete:stopped,address:listener?.address()&&{host:'127.0.0.1',port:listener.address().port}}});
 const peer=pluginPeer(executable,async(method,p)=>{
   if(method==='logging.write'||method==='messages.publish')return {};
+  if(method==='state.put')return {revision:'1'};
+  if(method==='state.get')return {record:{revision:'0',present:false}};
+  if(method==='state.remove')return {};
   if(method==='net.poll')return {items:[]};
   if(method==='net.listener.create'){
     createCount++;assert.equal(createCount,1,'Lost create response must never cause a second listener');listener=net.createServer();await new Promise(resolve=>listener.listen(0,'127.0.0.1',resolve));throw Object.assign(new Error('Create accepted; reply lost'),{code:-32003});
@@ -32,7 +36,7 @@ const request=(method,viewId,extra={})=>peer.request(method,{viewId,context,...e
 const event=(data)=>request('ui.event','manager',{data});
 const row=()=>request('ui.getView','manager').then(r=>r.data.catalog.rules[0]);
 try{
-  await peer.request('initialize',{dataDirectory:directory,capabilities:['net.tcp.v1','net.listenerLifecycle.v1','ui.dialog.v1']});
+  await peer.request('initialize',{dataDirectory:directory,capabilities:['net.tcp.v1','net.listenerLifecycle.v1','ui.dialog.v1','commands.v1','sharedState.v1','ui.background.v1','ui.openView.v1']});
   await request('ui.createView','manager',{viewType:'manager'});
   await request('ui.createView','editor',{viewType:'rule-editor',params:{rule:{id:'rule',serverId:'server',name:'test',revision:0,type:'socks5',bind:{host:'127.0.0.1',port:0}}}});
   const rule={id:'rule',serverId:'server',name:'test',revision:0,type:'socks5',bind:{host:'127.0.0.1',port:0}};
@@ -72,3 +76,5 @@ try{
   if(peer.child.exitCode===null){peer.child.kill();await new Promise(resolve=>peer.child.once('exit',resolve));}
   assert.equal(path.dirname(directory),os.tmpdir());assert(path.basename(directory).startsWith('sodeck-network-process-'));fs.rmSync(directory,{recursive:true,force:true});
 }
+
+await verifyNetworkCommands(executable);

@@ -77,13 +77,58 @@ async fn openssh_docker_plugin() {
     let root_tree=event(token,json!({"action":"browser.page","query":"sodeck-test","status":"all"}));assert!(root_tree["nodes"].as_array().unwrap().iter().any(|n|n["type"]=="root"));
     let opened = event(
         token,
-        json!({"action":"openContainer","id":id,"requestId":"docker-detail"}),
+        json!({"action":"openPorts","id":id,"requestId":"docker-detail"}),
     );
     let detail_id = opened["viewId"].as_str().unwrap();
     let mounted = f.core.ui_attach("main", detail_id).unwrap();
     let detail = mounted["surfaceId"].as_str().unwrap();
     f.core.ui_surface_ready("main", detail).unwrap();
-    assert_eq!(idle(&f, detail).await["status"], "running");
+    let initial_detail=idle(&f, detail).await;assert_eq!(initial_detail["status"],"running");assert_eq!(initial_detail["navigation"]["section"],"ports");
+    async fn tunnel_http(f:&Fixture,address:SocketAddr){
+        let mut socket=TcpStream::connect(address).await.unwrap();
+        socket.write_all(b"GET / HTTP/1.0\r\nHost: localhost\r\n\r\n").await.unwrap();
+        let mut body=Vec::new();tokio::time::timeout(Duration::from_secs(20),socket.read_to_end(&mut body)).await.unwrap().unwrap_or_else(|e|panic!("tunnel HTTP {e}; logs: {:?}",f.core.logs(&Default::default())));
+        assert!(String::from_utf8_lossy(&body).contains("sodeck-port-tunnel"),"{}",String::from_utf8_lossy(&body));
+    }
+    let tunnel_address=if std::env::var("SODECK_TEST_DOCKER_TUNNELS").is_ok(){
+        load("NETWORK");
+        let deadline=std::time::Instant::now()+Duration::from_secs(20);
+        loop{
+            let shared=f.core.state_surface_request("main",detail,&json!({"op":"list","expectedContext":context,"filter":{"topics":["network.tunnelService.v1"]}})).unwrap();
+            if shared["records"].as_array().unwrap().iter().any(|r|r["value"]["ready"]==true){break;}
+            assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let ports=event(detail,json!({"action":"ports.list","offset":0}));
+        let binding=ports["rows"].as_array().unwrap().iter().find(|r|r["binding"]["containerPort"]==8080&&r["binding"]["protocol"]=="tcp").expect("actual HTTP publish binding")["binding"].clone();
+        let input=json!({"action":"tunnel.create","requestId":"docker-port-once","binding":binding,"selectedRule":null,"id":id,"expectedContext":context,"engineId":browser["engine"]["id"],"endpoint":browser["endpoint"]});
+        event(detail,input.clone());event(detail,input.clone());
+        let deadline=std::time::Instant::now()+Duration::from_secs(30);
+        let receipt=loop{let s=event(detail,json!({"action":"snapshot"}));if s["tunnel"]["status"]!="pending"{break s["tunnel"].clone();}assert!(std::time::Instant::now()<deadline,"{s}");tokio::time::sleep(Duration::from_millis(50)).await;};
+        assert_eq!(receipt["status"],"completed","{receipt}");assert_eq!(receipt["result"]["outcome"],"accepted","{receipt}");
+        let rule_id=receipt["result"]["ruleId"].as_str().unwrap();
+        let address=loop{
+            let shared=f.core.state_surface_request("main",detail,&json!({"op":"list","expectedContext":context,"filter":{"topics":["network.tunnelRules.v1"]}})).unwrap();
+            let rows=shared["records"].as_array().unwrap();assert!(rows.len()<=1,"Duplicate creation must not save another rule");
+            if let Some(value)=rows.iter().find(|r|r["key"]==rule_id&&r["value"]["run"]["snapshot"]["state"]=="running"){
+                let address=&value["value"]["run"]["snapshot"]["address"];break format!("{}:{}",address["host"].as_str().unwrap(),address["port"].as_u64().unwrap()).parse::<SocketAddr>().unwrap();
+            }
+            assert!(std::time::Instant::now()<deadline,"{shared}");tokio::time::sleep(Duration::from_millis(50)).await;
+        };
+        tunnel_http(&f,address).await;
+        let before=f.core.ui_snapshot("main").unwrap();
+        let manager=before["workspaces"].as_object().unwrap().values().flat_map(|w|w["views"].as_array().unwrap()).find(|v|v["definitionKey"]=="sodeck.network-proxy:manager").unwrap();assert_eq!(manager["uiRequested"],false,"Creating a tunnel must not display its sidebar");
+        event(detail,json!({"action":"tunnel.create","requestId":"docker-port-reuse","binding":binding,"selectedRule":null,"id":id,"expectedContext":context,"engineId":browser["engine"]["id"],"endpoint":browser["endpoint"]}));
+        let deadline=std::time::Instant::now()+Duration::from_secs(20);
+        loop{let s=event(detail,json!({"action":"snapshot"}));if s["tunnel"]["status"]=="completed"{assert_eq!(s["tunnel"]["result"]["ruleId"],rule_id);assert_eq!(s["tunnel"]["result"]["disposition"],"reused");break;}assert!(std::time::Instant::now()<deadline,"{s}");tokio::time::sleep(Duration::from_millis(50)).await;}
+        let close=f.core.ui_close_prepare("main",vec![],Some(detail_id.into())).unwrap();f.core.ui_close_finish(close["token"].as_str().unwrap(),serde_json::from_value(close["views"].clone()).unwrap(),"discard").unwrap();
+        tunnel_http(&f,address).await;
+        Some(address)
+    }else{None};
+    let reopened=event(token,json!({"action":"openContainer","id":id,"requestId":"docker-detail-after-tunnel"}));
+    let remounted=f.core.ui_attach("main",reopened["viewId"].as_str().unwrap()).unwrap();let detail=remounted["surfaceId"].as_str().unwrap();f.core.ui_surface_ready("main",detail).unwrap();idle(&f,detail).await;
+    event(detail,json!({"action":"navigation","state":{"section":"environment"}}));
+    event(token,json!({"action":"openPorts","id":id,"requestId":"docker-existing-ports"}));
+    assert_eq!(event(detail,json!({"action":"snapshot"}))["navigation"]["section"],"ports","Existing details must navigate to the ports section");
     load("TERMINAL");
     event(token,json!({"action":"openTerminal","requestId":"docker-terminal","shell":"/bin/sh","id":id,"engineId":browser["engine"]["id"],"endpoint":browser["endpoint"],"expectedContext":browser["context"]}));
     let deadline=std::time::Instant::now()+Duration::from_secs(40);
@@ -212,5 +257,8 @@ async fn openssh_docker_plugin() {
             "discard",
         )
         .unwrap();
+    if let Some(address)=tunnel_address {
+        let deadline=std::time::Instant::now()+Duration::from_secs(10);loop {if let Ok(listener)=TcpListener::bind(address).await{drop(listener);break;}assert!(std::time::Instant::now()<deadline,"tunnel port was not released");tokio::time::sleep(Duration::from_millis(50)).await;}
+    }
     f.core.shutdown().unwrap();
 }

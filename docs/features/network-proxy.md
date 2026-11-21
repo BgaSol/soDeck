@@ -14,6 +14,16 @@
 
 规则文件 `network-rules.json` 只保存配置与服务器 ID，不保存 SSH 凭据或运行状态。当前最多 256 条、512 KiB，原子保存并检查修订；损坏或不支持的 schema 保留原文件。
 
+## 其他插件的快捷入口
+
+网络隧道 0.5.0 在同一核心组件通讯机制上提供普通 TCP 目标的创建／复用和规则定位。后台 manager 按工作区初始化，隐藏或从未显示侧栏也能运行；初始化不启动保存规则。需要核心 commands.v1、sharedState.v1、ui.background.v1 及原有网络／视图能力，缺少时明确提示升级核心。
+
+[Docker 端口](docker.md#容器端口隧道)是首个调用方。新规则保存后启动，默认本机回环自动端口；固定目标的已有回环规则可复用，存在歧义时选择。监听类型、bind、target 必须与固定运行配置一致，配置仅改名不要求重启。状态未知、停止或尚未确认清理、其他 Context 持有时不补建替代规则。手动与快捷路径使用同一保存／启动／停止／检查服务；保存仍不会更改运行监听。
+
+命令回执只表示业务接纳，真实运行和检查结果通过核心共享状态发布。新启动自动检查一次 TCP；复用／加入已有启动不重复检查。检查不证明应用健康，失败不关闭正常监听。跨插件命令和普通 UI 不直接互调，凭据仍在核心。协议字段见[插件 API](../plugin-api.md#网络隧道协作契约)。
+
+创建来源关闭或 Docker 插件退出不结束已交接的监听；资源归网络隧道自己的 manager。核心负责关闭冻结与取消关闭，后台逻辑视图不保留另一套可能无法解除的关闭状态。网络隧道逻辑管理视图／工作区结束、连接断开或本插件退出清理资源；重连不恢复旧运行。规则保持普通固定端点语义，不绑定或追踪容器。
+
 ## 状态、检查与边界
 
 显示实际绑定入口、连接数、约三秒速率和本次运行累计有效载荷。查询失败显示“状态待确认”，保留原监听、最后观测时间和累计量，速率标为过期；禁用启动、删除和检查，允许停止原启动或继续查询。停止回执只说明接受取消，必须等核心确认监听、流、转发和探测任务全部退出后才能重新启动或删除。客户端连接错误与整条规则监听失败分开；普通连接错误写日志，重要中断按服务器去重，不因日志级别自动弹消息。
@@ -24,7 +34,7 @@
 
 ## 实现与回归入口
 
-- 插件：[manager.rs](../../plugins/network-proxy/src/manager.rs)、[rules.rs](../../plugins/network-proxy/src/rules.rs)、[socks5.rs](../../plugins/network-proxy/src/socks5.rs)、[checks.rs](../../plugins/network-proxy/src/checks.rs)、[view.js](../../plugins/network-proxy/ui/view.js)。
+- 插件：[service.rs](../../plugins/network-proxy/src/service.rs)、[runtime.rs](../../plugins/network-proxy/src/runtime.rs)、[rules.rs](../../plugins/network-proxy/src/rules.rs)、[socks5.rs](../../plugins/network-proxy/src/socks5.rs)、[checks.rs](../../plugins/network-proxy/src/checks.rs)、[view.js](../../plugins/network-proxy/ui/view.js)。
 - 核心：[network](../../src-tauri/src/network/mod.rs)、[relay.rs](../../src-tauri/src/network/relay.rs)、[resource_owner.rs](../../src-tauri/src/resource_owner.rs)、[network_metrics.rs](../../src-tauri/src/network_metrics.rs)。
 - 回归：[真实网络夹具](../../src-tauri/tests/fixtures/network_flow.rs)、[原生进程与延迟端口回收](../../scripts/test-network-process.mjs)、[网络 UI](../../scripts/test-network-ui.mjs)、[OpenSSH](../../scripts/test-openssh.mjs)、[netem 专项](../../scripts/test-network-netem.mjs)。实际字节、取消、端口回收和重连隔离需集成验证。
 - 普通协议分片测试不等于丢包/延迟测试；netem 手动执行，限制和命令见[开发指南](../development.md)。接口见[插件 API](../plugin-api.md)，独立发布证据见[CHANGELOG](../../plugins/network-proxy/CHANGELOG.md)。

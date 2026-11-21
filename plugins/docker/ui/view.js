@@ -1,3 +1,4 @@
+import {PortController} from './ports.js';
 import {installLogPage} from './logs-controller.js';
 import {installBrowserPage} from './browser.js';
 installBrowserPage(()=>{clearTimeout(timer);timer=null;ready=false;frozen=true;epoch++;});
@@ -10,6 +11,8 @@ SoDeckMotion.observeMotion(document);
 let snapshot, ready=false, frozen=false, visible=true, epoch=0, revision, timer, selected='',offset=0,nextOffset,section='basic',fieldOffset=0,fieldNext,rows=[],fields=[],operationRequest,rendering=false,renderAgain=false,restoreScroll;
 const listHistory=[],fieldHistory=[];
 const pending = new Set();
+const portController=new PortController($('port-tunnels'),data=>call(data),text=>sodeckClipboard.writeText(text,()=>ready&&!frozen&&visible));
+let navigationIntent;
 let terminalOpening=false;
 let shellOptions=false,containerShell='',operationSubmitting=false;
 const confirmPanel=$('confirm');
@@ -28,6 +31,7 @@ async function call(data) {
 function renderHeader() {
   if(!snapshot) return;
   const kind=snapshot.kind;
+  const nav=snapshot.navigation;if(nav?.intent&&nav.intent!==navigationIntent){navigationIntent=nav.intent;section=nav.section||section;fieldOffset=0;fieldHistory.length=0;revision=undefined;}
   for(const id of ['browser','container','logs','resource']) $(id).hidden=id!==kind;
   $('browser-more').hidden=true;
   $('title').textContent=kind==='browser'?'Docker':(snapshot.name||'容器')+(kind==='logs'?' · 日志':'');
@@ -108,8 +112,8 @@ async function renderBody() {
       if(!$('sections').children.length) for(const [key,label] of Object.entries(sections)){
         const button=document.createElement('button');button.textContent=label;button.dataset.section=key;button.onclick=()=>{section=key;fieldOffset=0;fieldHistory.length=0;void renderBody();};$('sections').append(button);
       }
-      const data=await event({action:'section',section,offset:fieldOffset,limit:50});if(generation!==epoch||frozen)return;
-      fields=data.rows;fieldNext=data.nextOffset;renderFields();
+      const data=await event(section==='ports'?{action:'ports.list',offset:fieldOffset}:{action:'section',section,offset:fieldOffset,limit:50});if(generation!==epoch||frozen)return;
+      fields=data.rows;fieldNext=data.nextOffset;if(section==='ports')portController.partial=!!data.partial;renderFields();
       $('fields-page').textContent=data.total?String(fieldOffset+1)+'–'+(fieldOffset+fields.length)+' / '+data.total:'无记录';
       $('fields-prev').disabled=fieldOffset===0;$('fields-next').disabled=fieldNext==null;
     } else if(snapshot.kind==='resource') {
@@ -125,6 +129,8 @@ async function renderBody() {
 function renderFields() {
   for(const button of $('sections').children)button.setAttribute('aria-current',String(button.dataset.section===section));
   $('show-env-label').hidden=section!=='environment';$('fields').replaceChildren();
+  $('fields').hidden=section==='ports';portController.update(section==='ports'?fields:[],snapshot,section==='ports'&&snapshot.kind==='container'&&visible);
+  if(section==='ports')return;
   for(const field of fields) appendField($('fields'),field.key,field.secret&&!$('show-env').checked?'值已隐藏':field.value);
 }
 async function poll(force=false) {
@@ -157,6 +163,7 @@ $('confirm-cancel').onclick=closeConfirmation;
 $('confirm-form').onsubmit=e=>{e.preventDefault();if(!operationRequest||!writable())return;const request=operationRequest;closeConfirmation();void submitOperation(request);};
 addEventListener('keydown',e=>{if(e.key==='Escape'){const menu=document.activeElement?.closest('details[open]');closeConfirmation();for(const details of document.querySelectorAll('details[open]'))details.open=false;menu?.querySelector('summary')?.focus();}});
 addEventListener('sodeck:mount',e=>{
+  portController.mount(e.detail);navigationIntent=e.detail.data?.navigation?.intent;
   closeConfirmation();epoch++;snapshot=e.detail.data;ready=false;frozen=!!e.detail.readOnly;visible=e.detail.visible!==false;revision=undefined;tokens(e.detail.tokens);
   const nav=snapshot?.navigation||{};selected=nav.selected||'';offset=nav.offset||0;section=nav.section||'basic';fieldOffset=nav.fieldOffset||0;
   for(const [history,key] of [[listHistory,'listHistory'],[fieldHistory,'fieldHistory']])history.splice(0,history.length,...(nav[key]||[]));
@@ -165,15 +172,15 @@ addEventListener('sodeck:mount',e=>{
   $('query').value=nav.query||'';$('status-filter').value=nav.status||'running';$('health-filter').value=nav.health||'all';$('group').checked=!!nav.group;
   renderHeader();sodeck.mounted();schedule();
 });
-addEventListener('sodeck:surfaceReady',()=>{ready=true;frozen=false;void call({action:'resumeInput'}).then(()=>poll(true));});
+addEventListener('sodeck:surfaceReady',()=>{ready=true;frozen=false;portController.enabled(true);void call({action:'resumeInput'}).then(()=>poll(true));});
 addEventListener('sodeck:themeChanged',e=>tokens(e.detail.tokens));
-addEventListener('sodeck:visibilityChanged',e=>{visible=e.detail.visible!==false;if(visible)void poll(true);});
-addEventListener('sodeck:contextChanged',()=>{closeConfirmation();selected='';epoch++;revision=undefined;void poll(true);});
+addEventListener('sodeck:visibilityChanged',e=>{visible=e.detail.visible!==false;if(!visible)portController.update([],snapshot,false);if(visible)void poll(true);});
+addEventListener('sodeck:contextChanged',()=>{portController.dispose();closeConfirmation();selected='';epoch++;revision=undefined;void poll(true);});
 addEventListener('sodeck:settingsChanged',()=>void poll(true));
-addEventListener('sodeck:transferCancelled',()=>{frozen=false;void call({action:'resumeInput'}).then(()=>poll(true));});
+addEventListener('sodeck:transferCancelled',()=>{frozen=false;portController.enabled(true);void call({action:'resumeInput'}).then(()=>poll(true));});
 addEventListener('sodeck:flush',async e=>{
-  const writable=ready&&!frozen;frozen=true;
-  try{await Promise.allSettled([...pending]);if(writable)await event({action:'navigation',state:navigation()});frozen=!!e.detail.freeze;closeConfirmation();sodeck.flushed(e.detail.id);}
+  const writable=ready&&!frozen;frozen=true;portController.enabled(false);
+  try{await Promise.allSettled([...pending]);if(writable)await event({action:'navigation',state:navigation()});frozen=!!e.detail.freeze;portController.enabled(!frozen);closeConfirmation();sodeck.flushed(e.detail.id);}
   catch(error){sodeck.flushed(e.detail.id,error.message);}
 });
-addEventListener('sodeck:unmount',()=>{epoch++;ready=false;clearInterval(timer);});
+addEventListener('sodeck:unmount',()=>{portController.dispose();epoch++;ready=false;clearInterval(timer);});

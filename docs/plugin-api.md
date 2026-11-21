@@ -275,6 +275,38 @@ loginShell 缺省目录策略在创建时读取设置，允许 auto/manual/off�
 
 首次挂载保存已解析配置，同 viewId 重挂载复用原 PTY，初始化失败不自动重跑。mount.data.createParams 含可再次使用的配置；command 退出后“重新打开终端”创建新 view/PTY。支持 commands.v1 时，现有 ui.event 的 `{action:"createTerminal",requestId,params}` 由终端后台保存票据并提交 terminal.open.v1；terminalCommandStatus 查询原票据，Surface 重挂载继续查询。缺少该能力的旧核心沿用旧创建接口；新协议业务失败不降级到旧路径。新页面使用当前挂载 Context，不复用原 streamId、输入序号或集成 token。off 不采纳 OSC7/633 的 known 目录，不将嵌套环境路径传给主机文件跟随。
 
+### 网络隧道协作契约
+
+网络隧道 0.5.0 提供以下业务契约，复用 commands.v1/sharedState.v1/ui.background.v1/ui.openView.v1，不新增核心 RPC、权限或直接插件调用。manager 为 sidebar + perWorkspace + backgroundOnWorkspace；后台初始化不启动保存规则。
+
+| 命令 | payload | 结果 |
+| --- | --- | --- |
+| `network.tcpForward.ensure.v1` | `{version:1,target:{host,port},suggestedName,selectedRule:null或{id,revision}}` | `{version:1,outcome,disposition?,ruleId?,ruleRevision?,runId?,state?,candidateCount?,target?,reasonCode?,message?}` |
+| `network.rule.reveal.v1` | `{version:1,ruleId}` | 核心已关联的 `{viewId,closed?}`，定位本插件 manager 与规则分页；不修改编辑草稿或移动跨窗单例 |
+
+ensure 的 target.host 必须是明确 IPv4／IPv6，拒绝通配、组播和无效地址；port 为 1–65535。suggestedName 为字符串，最多 128 字符，不含控制字符；selectedRule 非空时 id 为字符串、revision 为 u64。已知字段类型错误或未知 version 拒绝，未知可选字段忽略；payload／结果沿用 16 KiB 限制。服务器与完整 Context 从核心信封取得，调用方不传凭据或自报来源身份。
+
+匹配同服务器、规范化 IP 与目标端口的回环 TCP 规则，优先当前 Context 的运行项，其次已登记启动，最后已停止项；同优先级多个候选返回 selectionRequired，selectedRule 提交时再次核对最新 revision。仅名称修改不改变转发语义；保存的 type/bind/target 与固定运行配置不一致、其他 Context 持有、查询未知、停止／清理未完时拒绝。不自动复用或启动非回环规则。不同来源的同目标串行决策由网络插件服务负责，不能以核心 requestId 去重替代。
+
+outcome 为：
+
+- `accepted`：规则与启动意图已登记；disposition 为 created／started／reused／joined。返回 ruleId、ruleRevision、runId 及当前 state；不返回顶层 viewId，也不打开侧栏。commands completed 不表示监听已经运行或 TCP 已经可达。
+- `selectionRequired`：返回 candidateCount 与 target，无副作用；调用方从共享规则摘要展示候选，用户明确选择后产生新意图。
+- `savedNotStarted`：保存已发生而启动未接纳，返回 ruleId、ruleRevision、reasonCode／message；不隐含回滚或自动重试。
+
+无副作用拒绝使用错误 code/message，包括 invalidParams、managerNotReady、changeBusy、ruleConflict、tunnelBusy、tunnelStateUnknown、storageUnavailable、resourceLimit，其他失败兼容 handlerError。变更门繁忙时明确拒绝，不排无限等待任务；停止与关闭标记不等待磁盘。通信超时查询原 Ticket，结果未知不换编号自动补执行。核心尚未分发的请求可随来源关闭撤销；处理者已接收办理后，不承诺关闭来源能够回滚副作用。
+
+网络 manager 使用共享状态发布两个 topic，完整 producer 由核心绑定；消费者同时核对 Context、pluginId、pluginInstanceId、viewId，不能只用 ruleId 认领其他来源。读取／订阅不启动或检查隧道：
+
+| topic／key | value |
+| --- | --- |
+| `network.tunnelService.v1`／current | `{version:1,ready:true,publishState:"synced"或"limited",storageError:null或string,observedAt}` |
+| `network.tunnelRules.v1`／ruleId | `{version:1,rule,run:null或{runId,ruleRevision,rule,ownedElsewhere,canStart,released,stopRequested,queryError,observedAt,snapshot:{state,cleanupComplete,address,error}},check:null或{checking,listenerId,runId,observedAt?,ok?,message?}}` |
+
+rule 是网络插件既有 schema 1 的普通规则配置。run.rule 固定启动配置，与当前保存配置分别表达；runId 是 opaque 关联标识，不是核心资源操作凭证。其他 Context 持有时 ownedElsewhere=true、address=null。snapshot.error 与 queryError 只提供有界说明，不含客户端流、凭据或完整网络路径。日期时间为 Unix 毫秒，生产者每约 5 秒更新服务 observedAt；消费者超过 15 秒没有有效服务观测，或具体 Run 观测过期时停止把入口当作当前可用事实。
+
+单条记录与整个范围沿用 sharedState 预算，不增加跨记录事务。发布失败为 limited；尚未取得同步副本不能把缺少记录解释为可以安全重复启动。UI 候选只是提示，真正命令由 Service 重读事实决定。删除移除记录，进程／逻辑 view／Context 结束由核心回收其事实；Surface 变化不结束监听。新启动自动检查一次实际入口到目标的 TCP，joined／reused 不重复检查，TCP 可达不表示应用健康。用户行为和失败恢复见[网络隧道](features/network-proxy.md#其他插件的快捷入口)及[Docker](features/docker.md#容器端口隧道)。
+
 ## 会话状态与有界短命令
 
 可选能力 `session.exec.v1`。系统识别、命令文本、指标和调度由插件负责；核心提供当前认证会话上的非交互任务，不暴露凭据或传输类型。

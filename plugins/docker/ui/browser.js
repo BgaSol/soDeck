@@ -89,7 +89,7 @@ export function installBrowserPage(releaseIncumbent){
     else if(n.resource){
       add('查看详情',()=>openView(n.resource.kind==='container'?'openContainer':'openResource',n));add('读取资源关系',()=>load(null,n.resource));
       if(n.resource.kind==='container'){
-        add('查看日志',()=>openView('openLogs',n));add('打开终端',()=>terminal(n,nav.shell||snapshot.defaultShell||''),!writable||n.status!=='running'||snapshot.terminal?.status==='pending','容器未运行或终端请求尚未完成');add('终端选项',()=>shell(n),!writable||n.status!=='running');items.push({separator:true});
+        add('查看日志',()=>openView('openLogs',n));add('端口隧道…',()=>openView('openPorts',n));add('打开终端',()=>terminal(n,nav.shell||snapshot.defaultShell||''),!writable||n.status!=='running'||snapshot.terminal?.status==='pending','容器未运行或终端请求尚未完成');add('终端选项',()=>shell(n),!writable||n.status!=='running');items.push({separator:true});
         for(const action of ['start','stop','restart','pause','unpause','remove'])if(available(action,n.status)&&!(snapshot.engine?.os==='windows'&&['pause','unpause'].includes(action)))add(operationNames[action],()=>operate(action,n,target),!writable,'连接待刷新或请求处理中',action==='remove');
       }else if(!n.system){items.push({separator:true});add('删除'+({image:'镜像',network:'网络',volume:'卷'}[n.resource.kind]||'资源'),()=>remove(n,target),!writable||!n.canDelete,!n.canDelete?'请展开并完整读取引用；有引用的资源不能删除':'连接待刷新',true);}
       items.push({separator:true});add('复制'+(n.resource.kind==='volume'?'名称':'完整 ID'),()=>copy(n.resource.id));

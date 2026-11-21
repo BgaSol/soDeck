@@ -112,3 +112,5 @@ Workspace 表示服务器会话上下文，Host 表示某个窗口中的显示�
 开发与五平台原生验证入口见[开发指南](development.md)，签名与独立分发见[分发文档](distribution.md)。功能变化同步对应正式说明，未落实的结构调整保留临时计划，已完成设计不另建实施流水。
 
 返回[文档索引](README.md)。
+
+Docker 端口联动复用同一命令通道，网络隧道处理普通 TCP ensure／reveal，当前事实通过 sharedState.v1 发布。监听属于网络隧道后台 manager，后台初始化不显示侧栏或启动保存规则。网络插件内部 Service 是手动与协作请求的唯一变更入口，runtime 驱动网络资源，publication 只发布投影；配置磁盘写入与 RPC 等待均不持有业务状态锁。同目标去重由网络插件办理，核心继续只保证原请求去重和真实 Context／资源归属。业务契约见[插件 API](plugin-api.md#网络隧道协作契约)。

@@ -171,3 +171,19 @@ dialog .toolbar { justify-content:flex-end; margin-top:18px; }
 
 @keyframes tree-loading {to {transform:rotate(360deg);}}
 #connection-target {white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;}
+
+/* Published container ports keep their endpoint and action on the same row. */
+.port-intro { margin: 12px 0; }
+.port-list { list-style: none; margin: 0; padding: 0; }
+.port-row { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(180px, 1.2fr) auto; gap: 12px 20px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.port-identity, .port-state { display: flex; flex-direction: column; gap: 5px; min-width: 0; overflow-wrap: anywhere; }
+.port-identity span, .port-identity small, .port-state small { color: var(--muted); }
+.port-identity code, .port-entry { font-family: var(--font-mono, ui-monospace, monospace); font-variant-numeric: tabular-nums; user-select: text; }
+.port-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.port-choice { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.port-choice select { width: 100%; max-width: 320px; }
+.port-feedback { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 680px) {
+  .port-row { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .port-actions { justify-content: flex-start; }
+}
