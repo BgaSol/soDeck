@@ -5,7 +5,7 @@
 - 统一有界对象观察和集合分页，固定资源行加单个实测行内区域，保留滚动、输入与焦点。端口隧道从树内办理，切换选择后原请求仍属于原容器；复用既有组件通信与网络规则生命周期。
 - 精简信息范围，不再提供环境变量整表、全部标签及完整 inspect 字段浏览；完整 ID、运行时间、重启策略和手动指标按需查看。
 - 日志独立入口保留原正文／Worker／导出流程；修复保持阅读位置时，窗口变宽后剩余正文不足一屏导致的底部滚动限制造成的锚点偏移。
-- 无新增生产依赖、核心 API 或网络插件版本。本版独立发布的来源、五平台实际包和验证／跳过范围由下方交付记录补齐。
+- 无新增生产依赖、核心 API 或网络插件版本。本版独立发布的来源、五平台实际包和验证／跳过范围见下方交付记录。
 包来源：[1fc1eb40123caecf0b9b6d459da0db1b6a0bb001](https://github.com/BgaSol/soDeck/commit/1fc1eb40123caecf0b9b6d459da0db1b6a0bb001)；[最终来源 Check](https://github.com/BgaSol/soDeck/actions/runs/44906968463)；[修正后 Docker UI 复验](https://github.com/BgaSol/soDeck/actions/runs/44907742085)；[原始独立打包与五平台包验收](https://github.com/BgaSol/soDeck/actions/runs/44906932529)；[正式 Release](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.8.0)。
 
 Windows x86_64／ARM64、Linux x86_64／ARM64、macOS ARM64 五平台原生归档、包内程序初始化、生命周期和退出均通过；最终 Check 的源码、浏览器、桌面、网络及 Docker 集成通过，netem 按专项范围跳过。修正后复验只等待日志缩略导航投影完成，产品代码和发行包来源保持不变。真实 Linux Engine 24.0.9／OpenSSH 完整流程通过；Windows Docker Desktop CLI/Engine 29.9.2 的信息、隧道 HTTP 数据、终端和维护流程通过，公开 Docker Hub 拉取因 TLS handshake timeout 未计为通过，直接 docker pull 复现相同外部故障。核心版本保持 1.11.0，仓库 Latest 保留给核心。
@@ -88,7 +88,7 @@ macOS ARM64 的实际包验收首次因 GitHub hosted runner 容量不足未启�
 
 发行：[Docker 0.5.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.5.1)，非 Latest；同期核心 1.2.3 为仓库 Latest。五份程序归档沿用上述原始 run，草稿阶段只同步说明与更新清单 notes。六个公开附件的实际大小、SHA-256 和五平台更新地址均核对一致，来源及摘要留在[本轮附件记录](release-evidence/v0.5.1-assets.json)。
 
-未新增生产依赖或改变核心 API 主版本；启用中的升级在重启后生效。未新增目标应用 IME/DPI/读屏、rootless、生产服务器和全部 Engine 版本专项，仍以[后续验收](../../docs/plans/docker-expansion.md)为准。
+未新增生产依赖或改变核心 API 主版本；启用中的升级在重启后生效。未新增目标应用 IME/DPI/读屏、rootless、生产服务器和全部 Engine 版本专项，仍以[设备验收](../../docs/plans/native-verification.md)与[远端验收](../../docs/plans/docker-windows.md)为准。
 
 # 0.5.0
 
@@ -107,7 +107,7 @@ macOS ARM64 的实际包验收首次因 GitHub hosted runner 容量不足未启�
 
 发行：[Docker 0.5.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.5.0)，按用户要求设为 GitHub Latest；沿用原始 run 的五份程序归档，只同步发行说明和更新清单 notes。未新增生产依赖或变更核心 API 主版本，继续要求核心 1.1.0 的通用命令流/内容导出能力；启用中的插件升级在重启后生效。
 
-尚未完成新资源树的目标应用真实 IME/DPI/读屏、多屏、rootless、生产服务器和全部 Engine 版本专项，见[后续验收](../../docs/plans/docker-expansion.md)。卷无不可变唯一 ID 或原子比较删除，外部同名重建的并发风险无法完全消除，删除会永久移除数据。
+尚未完成新资源树的目标应用真实 IME/DPI/读屏、多屏、rootless、生产服务器和全部 Engine 版本专项，见[设备验收](../../docs/plans/native-verification.md)与[远端验收](../../docs/plans/docker-windows.md)。卷无不可变唯一 ID 或原子比较删除，外部同名重建的并发风险无法完全消除，删除会永久移除数据。
 
 # 0.4.1
 
@@ -143,7 +143,7 @@ macOS ARM64 的实际包验收首次因 GitHub hosted runner 容量不足未启�
 
 本机另下载本次原始五份归档、更新清单及五平台验收报告，核对提交、版本、SHA-256、大小与草稿附件；Windows x86_64 原归档实际进程验收再次通过。发行：[docker 0.3.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.3.0)，按用户要求设为 GitHub Latest。六个附件沿用原始 run；发布前只同步发行说明和更新清单 notes，五份程序归档不变。开发期间的 0.2.0 本机测试包不作为正式候选。
 
-未新增生产依赖或变更核心 API；继续需要核心 0.24.0 的 commands.v1 与终端 0.9.0 的 terminal.open.v1。启用中的升级在重启后生效。未执行正式版实际升级、目标应用的人工 DPI/输入法/读屏、多屏、生产服务器、rootless、代理路径或全部 Engine 版本专项；设备复核见 [Docker 后续计划](../../docs/plans/docker-expansion.md)。已有手动停靠继续恢复，不静默覆盖保存布局。
+未新增生产依赖或变更核心 API；继续需要核心 0.24.0 的 commands.v1 与终端 0.9.0 的 terminal.open.v1。启用中的升级在重启后生效。未执行正式版实际升级、目标应用的人工 DPI/输入法/读屏、多屏、生产服务器、rootless、代理路径或全部 Engine 版本专项；设备复核见 [原生设备验收](../../docs/plans/native-verification.md)。已有手动停靠继续恢复，不静默覆盖保存布局。
 
 # 0.2.0
 

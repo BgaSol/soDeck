@@ -33,4 +33,4 @@ Windows 原生入口、参数及报告方式见[开发指南](../development.md)
 
 发行可按实际已验范围交付，但完整专项验收仍保持未完成。剩余范围全部完成或用户明确调整后，回写正式功能/架构/API 与发行记录，删除本计划并修复引用；历史由 Git 保留。
 
-返回[Docker 后续扩展](docker-expansion.md)或[文档索引](../README.md)。
+返回[Docker 功能](../features/docker.md)或[文档索引](../README.md)。

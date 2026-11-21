@@ -17,6 +17,6 @@ Windows Server Windows Engine 是原设计的完成条件，目前没有可用�
 
 ARM64 远端只在 Docker 原生发行物可用且真实测试后记为已验；五平台 SoDeck/插件原生客户端包不能推出远端 Docker 支持。rootless、更多 Engine 版本及生产环境按取得的具体环境补测，不从普通 Linux 夹具推出全矩阵通过。
 
-资源树设备复核与日志工作台其他专项仍由[资源树计划](docker-expansion.md)和[日志计划](docker-log-viewer.md)维护，本主题不接管它们。
+资源树设备复核与日志工作台其他专项仍由[原生设备验收](native-verification.md)和[日志计划](docker-log-viewer.md)维护，本主题不接管它们。
 
 返回[文档索引](../README.md)。
