@@ -6,7 +6,11 @@
 
 要求核心 1.12.0 的 servers.write.v1；先更新核心和插件，再重启 SoDeck。行为见[功能说明](../../docs/features/mcp.md#管理服务器节点)，字段与限制见[MCP API](../../docs/mcp-api.md#服务器节点写入0110)。无新增生产依赖。
 
-本次正在准备源码检查、独立五平台原生打包和实际包验证，发行后补入精确来源、原始 run 与公开附件证据。
+发行：[Agent MCP 0.11.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.11.0)，按本次要求设为 GitHub Latest。包来源 [3aea7f50c7569438527039add83db282e1728f4f](https://github.com/BgaSol/soDeck/commit/3aea7f50c7569438527039add83db282e1728f4f)；[原始五平台打包及实际包验收](https://github.com/BgaSol/soDeck/actions/runs/44927721574)首次全部通过。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五份原生归档的初始化、十五工具、节点写入/冲突/HTTP 中断、任务/输入/上传/连接、挂载/销毁和退出通过。直接发布同一草稿五份归档，不重新构建；草稿阶段只同步说明和更新清单 notes。
+
+[main 来源 Check](https://github.com/BgaSol/soDeck/actions/runs/44927711062)与[同树 PR Check](https://github.com/BgaSol/soDeck/actions/runs/44926232225)首次通过。本机类型/格式、207 项脚本、完整核心测试、24 项 MCP 单元、进程/连接、服务器和侧栏 UI、独立构建通过。另下载本次 Windows x64 原归档，与同源核心夹具和三台隔离 OpenSSH 联调，节点创建/部分修改/连接/关闭/删除和原调查、交互、上传回归在 30.14 秒通过。1 GiB 上传 12.532 秒并逐字节回读，核心峰值工作集前后均为 30,990,336 字节；不外推为性能承诺。
+
+六个公开附件匿名下载大小、SHA-256、五平台清单和 GitHub Latest 均核对。[永久发行证据](release-evidence/v0.11.0-assets.json)保留五报告、固定来源、原始 run、附件摘要与实际范围。未执行五平台已安装核心/MCP 真实 SSH 组合、实际旧版升级、新的认证 Codex CLI、netem 或物理 IME/DPI/读屏专项；原生进程和 Chromium 不替代这些专项。
 
 # 0.10.0（2026-11-21）
 
