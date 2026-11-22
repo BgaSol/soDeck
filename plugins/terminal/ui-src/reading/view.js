@@ -11,12 +11,12 @@ export function createReading(terminal,host,buffers,allowed){
   const button=(label,name,action)=>{const b=document.createElement('button');b.type='button';b.className='reading-button';b.innerHTML=icon(name)+`<span>${label}</span>`;b.setAttribute('aria-label',label);b.title=label;b.onclick=action;return b;};
   const directory=document.createElement('div');directory.className='reading-directory';directory.innerHTML=icon('folder');
   const directoryText=document.createElement('span');directoryText.textContent='当前终端';directory.append(directoryText);
+  const readingContext=document.createElement('span');readingContext.className='reading-context';
+  const integrationState=document.createElement('span');integrationState.className='reading-integration';
   const count=document.createElement('span');count.className='reading-position';
   const previous=button('上一处','up',()=>navigate(-1)),next=button('下一处','down',()=>navigate(1));
   const add=button('添加标记','bookmark',()=>toggleManual(terminal.buffer.active.viewportY));
-  add.classList.add('reading-add');toolbar.append(directory,count,previous,next,add);layout.before(toolbar);
-  const footer=document.createElement('div');footer.className='terminal-reading-footer';
-  const readingContext=document.createElement('span'),integrationState=document.createElement('span');integrationState.className='reading-integration';footer.append(readingContext,integrationState);layout.after(footer);
+  add.classList.add('reading-add');toolbar.append(directory,readingContext,integrationState,count,previous,next,add);layout.before(toolbar);
   const overlay=document.createElement('div');overlay.className='terminal-reading-overlay';host.append(overlay);
   const sticky=document.createElement('div');sticky.className='terminal-command-sticky';sticky.hidden=true;
   const title=document.createElement('span');title.className='reading-command-title';
@@ -35,7 +35,7 @@ export function createReading(terminal,host,buffers,allowed){
   function geometry(){const screen=host.querySelector('.xterm-screen');if(!screen)return;const rect=screen.getBoundingClientRect(),outer=host.getBoundingClientRect();return {x:rect.left-outer.left,y:rect.top-outer.top,height:rect.height,width:rect.width,ch:rect.height/terminal.rows};}
   function paint(){
     frame=undefined;if(disposed)return;
-    toolbar.hidden=footer.hidden=mode==='off';overlay.replaceChildren();sticky.hidden=true;
+    toolbar.hidden=mode==='off';overlay.replaceChildren();sticky.hidden=true;
     const enabled=active(),g=geometry(),b=terminal.buffer.active,positions=model.positions();
     previous.disabled=!enabled||!positions.some(p=>p.row<b.viewportY);next.disabled=!enabled||!positions.some(p=>p.row>b.viewportY);add.disabled=!enabled;
     const index=positions.filter(p=>p.row<=b.viewportY).length;
@@ -103,6 +103,6 @@ export function createReading(terminal,host,buffers,allowed){
     positions:()=>mode==='off'?[]:model.positions(),
     onChanged(listener){listeners.add(listener);return {dispose(){listeners.delete(listener);}};},
     navigateRow:go,
-    dispose(){disposed=true;cancelAnimationFrame(frame);listeners.clear();observe.disconnect();osc.dispose();scroll.dispose();render.dispose();resize.dispose();buffer.dispose();model.dispose();toolbar.remove();footer.remove();overlay.remove();sticky.remove();host.classList.remove('has-reading-gutter');host.removeEventListener('pointermove',move);host.removeEventListener('pointerleave',leave);}
+    dispose(){disposed=true;cancelAnimationFrame(frame);listeners.clear();observe.disconnect();osc.dispose();scroll.dispose();render.dispose();resize.dispose();buffer.dispose();model.dispose();toolbar.remove();overlay.remove();sticky.remove();host.classList.remove('has-reading-gutter');host.removeEventListener('pointermove',move);host.removeEventListener('pointerleave',leave);}
   };
 }

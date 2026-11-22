@@ -59,6 +59,10 @@ try{
   const geometry=await child().evaluate(()=>{const marker=document.querySelector('.reading-marker').getBoundingClientRect(),screen=document.querySelector('.xterm-screen').getBoundingClientRect(),host=document.querySelector('#terminal').getBoundingClientRect();return {gutter:screen.left-host.left,gap:screen.left-marker.right};});assert(geometry.gutter>=42&&geometry.gap>=8,'Markers have their own gutter, clear of selectable text');
   assert.equal(await frame.getByRole('button',{name:'阅读选项',exact:true}).count(),0);assert.equal(await frame.locator('.terminal-reading-options').count(),0,'Reading options must never cover terminal content');
   await frame.locator('.reading-result').filter({hasText:'已完成'}).waitFor();
+  assert.equal(await frame.locator('.terminal-reading-footer').count(),0,'Reading status is part of the single toolbar');
+  const toolbarHeight=await frame.locator('.terminal-reading-toolbar').evaluate(element=>element.getBoundingClientRect().height);
+  assert(toolbarHeight<=34,`Reading toolbar is compact: ${toolbarHeight}px`);
+  assert.equal(await frame.locator('.reading-integration').textContent(),'bash · UTF-8');
   fs.mkdirSync('artifacts/terminal-reading',{recursive:true});
   for(const theme of ['light','dark','dopamine']){await page.evaluate(theme=>window.theme(theme),theme);await frame.locator('.reading-marker').first().hover();await page.screenshot({path:`artifacts/terminal-reading/${theme}-start.png`});await child().evaluate(()=>window.testTerminal.scrollToLine(20));await frame.locator('.terminal-command-sticky:not([hidden])').waitFor();await page.screenshot({path:`artifacts/terminal-reading/${theme}-sticky.png`});await child().evaluate(()=>window.testTerminal.scrollToLine(0));await frame.locator('.reading-marker').first().waitFor();}
   await page.evaluate(()=>window.theme('light'));
@@ -91,7 +95,7 @@ try{
   await frame.getByRole('button',{name:'x'.repeat(110)+' · 执行中',exact:true}).waitFor();
   const occupied=await child().evaluate(()=>{const row=window.testReading.state().entries.at(-1).start.line,screen=document.querySelector('.xterm-screen').getBoundingClientRect(),top=screen.top+(row-window.testTerminal.buffer.active.viewportY)*(screen.height/window.testTerminal.rows);return [...document.querySelectorAll('.reading-result')].some(element=>Math.abs(element.getBoundingClientRect().top-top)<1);});assert.equal(occupied,false,'Command results never paint over occupied terminal cells');
   await emit(osc('end',7,'0'));
-  await page.evaluate(()=>window.lifecycle('settingsChanged',{settings:{definitionToken:'fixture',revision:'1',pageId:'terminal',values:{readingMode:'off'}}}));await frame.locator('.terminal-reading-toolbar').waitFor({state:'hidden'});await frame.locator('.terminal-reading-footer').waitFor({state:'hidden'});assert.equal(await frame.locator('#terminal').evaluate(element=>element.classList.contains('has-reading-gutter')),false);
+  await page.evaluate(()=>window.lifecycle('settingsChanged',{settings:{definitionToken:'fixture',revision:'1',pageId:'terminal',values:{readingMode:'off'}}}));await frame.locator('.terminal-reading-toolbar').waitFor({state:'hidden'});assert.equal(await frame.locator('#terminal').evaluate(element=>element.classList.contains('has-reading-gutter')),false);
   await page.evaluate(()=>window.lifecycle('settingsChanged',{settings:{definitionToken:'fixture',revision:'2',pageId:'terminal',values:{readingMode:'auto'}}}));await frame.locator('.terminal-reading-toolbar').waitFor({state:'visible'});
   // Captured visible titles never include password-like data that wasn't echoed.
   await emit(osc('prompt',8)+'Password: '+osc('input',8)+'\r\n'+osc('start',8)+'done\r\n'+osc('end',8,'0'));
