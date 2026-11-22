@@ -1,3 +1,4 @@
+import {fixtureBinary} from './cargo-fixture.mjs';
 // Real DOM -> actual core: credential saving choice, progress, cancellation and retry.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -12,7 +13,7 @@ import { chromium } from "playwright";
 const build = spawnSync("cargo", ["build", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--bin", "catalog-fixture", "--locked"], { stdio: "inherit", windowsHide: true });
 if (build.status !== 0) throw new Error("Core test bridge build failed");
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-connection-ui-"));
-const child = spawn(path.resolve(`src-tauri/target/debug/catalog-fixture${process.platform === "win32" ? ".exe" : ""}`), [directory], { stdio: ["pipe", "pipe", "inherit"], windowsHide: true });
+const child = spawn(fixtureBinary('catalog-fixture'), [directory], { stdio: ["pipe", "pipe", "inherit"], windowsHide: true });
 const queue = [];
 readline.createInterface({ input: child.stdout }).on("line", line => { const response = JSON.parse(line), request = queue.shift(); if (response.error) request.reject(new Error(response.error)); else request.resolve(response.value); });
 const call = (command, args = {}) => new Promise((resolve, reject) => { queue.push({ resolve, reject }); child.stdin.write(JSON.stringify({ command, args }) + "\n"); });

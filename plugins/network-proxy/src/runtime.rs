@@ -4,6 +4,7 @@ use crate::{
 };
 use serde_json::{json, Value};
 use socker::socks5::Reply;
+use sodeck_plugin_client::protocol::requests as api;
 use sodeck_plugin_client::Client;
 use std::{
     collections::HashMap,
@@ -174,7 +175,27 @@ pub fn tick(shared: &std::sync::Arc<std::sync::Mutex<App>>, c: &Client) {
             };
             (r.request.clone(), method)
         };
-        let result = c.call_detailed(method, request.clone());
+        let result = (|| {
+            use api::{call, ListenerCreate, ListenerIntent};
+            let intent = || {
+                serde_json::from_value::<ListenerIntent>({
+                    let mut p = request.clone();
+                    p.as_object_mut().unwrap().remove("bind");
+                    p
+                })
+                .map_err(|_| sodeck_plugin_client::RpcError::invalid("监听请求参数无效"))
+            };
+            match method {
+                "net.listener.create" => c.request(call::ListenerCreate(
+                    serde_json::from_value::<ListenerCreate>(request.clone())
+                        .map_err(|_| sodeck_plugin_client::RpcError::invalid("监听创建参数无效"))?,
+                )),
+                "net.listener.lookup" => c.request(call::ListenerLookup(intent()?)),
+                "net.listener.cancel" => c.request(call::ListenerCancel(intent()?)),
+                "net.listener.release" => c.request(call::ListenerRelease(intent()?)),
+                _ => unreachable!(),
+            }
+        })();
         let mut state = shared.lock().unwrap();
         let Some(r) = state.runs.get_mut(&id).filter(|r| r.request == request) else {
             continue;
@@ -212,7 +233,10 @@ pub fn tick(shared: &std::sync::Arc<std::sync::Mutex<App>>, c: &Client) {
         let notification=(!was_failed&&r.snapshot["state"]=="failed"&&!r.stop_requested).then(||json!({"title":"网络隧道已中断","body":format!("{}：{}",name(&r.rule),r.snapshot["error"]["message"].as_str().unwrap_or("连接已断开")),"level":"warning","notify":true,"dedupeKey":format!("tunnel-{}",r.rule.server)}));
         drop(state);
         if let Some(message) = notification {
-            let _ = c.call("messages.publish", message);
+            let _ = serde_json::from_value::<api::Message>(message)
+                .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+                .and_then(|params| c.request(api::call::Message(params)))
+                .map_err(|e| e.message);
         }
     }
     let views = {
@@ -232,7 +256,12 @@ pub fn tick(shared: &std::sync::Arc<std::sync::Mutex<App>>, c: &Client) {
             .collect::<Vec<_>>()
     };
     for view in views {
-        let Ok(result) = c.call("net.poll", json!({"viewId":view})) else {
+        let Ok(result) = c
+            .request(api::call::NetPoll(api::NetPoll {
+                view_id: view.to_string(),
+            }))
+            .map_err(|e| e.message)
+        else {
             continue;
         };
         let mut close = Vec::new();
@@ -265,7 +294,9 @@ pub fn tick(shared: &std::sync::Arc<std::sync::Mutex<App>>, c: &Client) {
             }
         }
         for id in close {
-            let _ = c.call("net.close", json!({"id":id}));
+            let _ = c
+                .request(api::call::StreamClose(api::Resource { id: id.to_string() }))
+                .map_err(|e| e.message);
         }
     }
     let ids = {
@@ -295,10 +326,10 @@ pub fn tick(shared: &std::sync::Arc<std::sync::Mutex<App>>, c: &Client) {
             let result=if active{advance(c,&listener,&rule,peer_id,peer)}else{Err("监听正在停止".into())};
             match result{Ok(done)=>!done,Err(e)=>{
                 let response=peer.socks.as_mut().and_then(|s|s.failure_reply(if e.contains("超时"){Reply::TTL_EXPIRED}else if e.to_lowercase().contains("refused"){Reply::CONNECTION_REFUSED}else{Reply::GENERAL_FAILURE}));
-                if active{if let Some(bytes)=response{let _=c.call("net.stream.write",json!({"streamId":peer_id,"bytes":bytes}));let _=c.call("net.stream.finish",json!({"streamId":peer_id}));}else{let _=c.call("net.close",json!({"id":peer_id}));}}
-                if let Some(remote)=&peer.remote{let _=c.call("net.close",json!({"id":remote}));}
+                if active{if let Some(bytes)=response{let _=serde_json::from_value::<api::StreamWrite>(json!({"streamId":peer_id,"bytes":bytes})).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| c.request(api::call::StreamWrite(params))).map_err(|e|e.message);let _=c.request(api::call::StreamFinish(api::Stream { stream_id: peer_id.to_string() })).map_err(|e|e.message);}else{let _=c.request(api::call::StreamClose(api::Resource { id: peer_id.to_string() })).map_err(|e|e.message);}}
+                if let Some(remote)=&peer.remote{let _=c.request(api::call::StreamClose(api::Resource { id: remote.to_string() })).map_err(|e|e.message);}
                 let stage=if peer.remote.is_some(){"targetConnect"}else{"protocol"};last_error=Some(json!({"stage":stage,"message":e}));
-                let _=c.call("logging.write",json!({"level":"warn","message":"隧道客户端连接失败","fields":{"ruleId":id,"stage":stage,"error":e}}));false}}
+                let _=serde_json::from_value::<api::Log>(json!({"level":"warn","message":"隧道客户端连接失败","fields":{"ruleId":id,"stage":stage,"error":e}})).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| c.request(api::call::Log(params))).map_err(|e|e.message);false}}
         });
         let mut state = shared.lock().unwrap();
         if let Some(r) = state.runs.get_mut(&id).filter(|r| r.request == request) {
@@ -315,7 +346,7 @@ pub fn tick(shared: &std::sync::Arc<std::sync::Mutex<App>>, c: &Client) {
 }
 
 fn target(c: &Client, listener: &str, id: &str, host: &str, port: u16) -> Result<String, String> {
-    c.call("net.tcp.open",json!({"listenerId":listener,"clientStreamId":id,"operationId":"target","host":host,"port":port}))?["streamId"].as_str().map(str::to_owned).ok_or("没有返回远端流".into())
+    serde_json::from_value::<api::TcpOpen>(json!({"listenerId":listener,"clientStreamId":id,"operationId":"target","host":host,"port":port})).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| c.request(api::call::TcpOpen(params))).map_err(|e|e.message)?["streamId"].as_str().map(str::to_owned).ok_or("没有返回远端流".into())
 }
 fn advance(
     c: &Client,
@@ -328,16 +359,22 @@ fn advance(
         return Err("代理协商超时".into());
     }
     if let Some(remote) = &p.remote {
-        let status = c.call("net.stream.status", json!({"streamId":remote}))?;
+        let status = c
+            .request(api::call::StreamStatus(api::Stream {
+                stream_id: remote.to_string(),
+            }))
+            .map_err(|e| e.message)?;
         return match status["state"].as_str() {
             Some("ready") => {
                 if let Some(socks) = &mut p.socks {
-                    c.call(
-                        "net.stream.write",
+                    serde_json::from_value::<api::StreamWrite>(
                         json!({"streamId":id,"bytes":socks.succeeded()}),
-                    )?;
+                    )
+                    .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+                    .and_then(|params| c.request(api::call::StreamWrite(params)))
+                    .map_err(|e| e.message)?;
                 }
-                c.call("net.stream.splice",json!({"listenerId":listener,"leftId":id,"rightId":remote,"operationId":"relay"}))?;
+                serde_json::from_value::<api::StreamSplice>(json!({"listenerId":listener,"leftId":id,"rightId":remote,"operationId":"relay"})).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| c.request(api::call::StreamSplice(params))).map_err(|e|e.message)?;
                 Ok(true)
             }
             Some("failed" | "closed") => {
@@ -356,10 +393,11 @@ fn advance(
         )?);
         return Ok(false);
     };
-    let read = c.call(
-        "net.stream.read",
-        json!({"streamId":id,"maxBytes":socks.next()}),
-    )?;
+    let read =
+        serde_json::from_value::<api::StreamRead>(json!({"streamId":id,"maxBytes":socks.next()}))
+            .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+            .and_then(|params| c.request(api::call::StreamRead(params)))
+            .map_err(|e| e.message)?;
     if read["pending"] == true {
         return Ok(false);
     }
@@ -373,11 +411,20 @@ fn advance(
             debug_assert!(needed > 0);
         }
         Action::Write(bytes) => {
-            c.call("net.stream.write", json!({"streamId":id,"bytes":bytes}))?;
+            serde_json::from_value::<api::StreamWrite>(json!({"streamId":id,"bytes":bytes}))
+                .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+                .and_then(|params| c.request(api::call::StreamWrite(params)))
+                .map_err(|e| e.message)?;
         }
         Action::Reject(bytes) => {
-            c.call("net.stream.write", json!({"streamId":id,"bytes":bytes}))?;
-            c.call("net.stream.finish", json!({"streamId":id}))?;
+            serde_json::from_value::<api::StreamWrite>(json!({"streamId":id,"bytes":bytes}))
+                .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+                .and_then(|params| c.request(api::call::StreamWrite(params)))
+                .map_err(|e| e.message)?;
+            c.request(api::call::StreamFinish(api::Stream {
+                stream_id: id.to_string(),
+            }))
+            .map_err(|e| e.message)?;
             return Ok(true);
         }
         Action::Connect(host, port) => p.remote = Some(target(c, listener, id, &host, port)?),

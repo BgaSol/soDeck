@@ -1,11 +1,8 @@
 use super::*;
-#[derive(Clone, Deserialize)]
-#[serde(tag = "action", rename_all = "camelCase", deny_unknown_fields)]
-pub enum SecretChange {
-    Keep { remember: bool },
-    Replace { value: String, remember: bool },
-    Clear,
-}
+pub use sodeck_plugin_protocol::servers::{
+    RouteInput, SecretChange, ServerPatch, WriteAuthentication,
+};
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthInput {
@@ -82,63 +79,26 @@ pub(crate) struct CatalogChanged {
     pub catalog: Value,
 }
 
-fn provided<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
-    d: D,
-) -> Result<Option<T>, D::Error> {
-    T::deserialize(d).map(Some)
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ServerPatch {
-    #[serde(default, deserialize_with = "provided")]
-    name: Option<String>,
-    #[serde(default, deserialize_with = "provided")]
-    host: Option<String>,
-    #[serde(default, deserialize_with = "provided")]
-    port: Option<u16>,
-    #[serde(default, deserialize_with = "provided")]
-    username: Option<String>,
-    #[serde(default, deserialize_with = "provided")]
-    tag_ids: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "provided")]
-    route: Option<Vec<RouteInput>>,
-    #[serde(default, deserialize_with = "provided")]
-    authentication: Option<WriteAuthentication>,
-}
-#[derive(Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) enum RouteInput {
-    #[serde(rename_all = "camelCase")]
-    Ssh { server_id: String },
-    #[serde(rename_all = "camelCase")]
-    Socks5 { proxy_id: String },
-}
-impl RouteInput {
-    pub(crate) fn step(self) -> RouteStep {
-        match self {
-            Self::Ssh { server_id } => RouteStep::Ssh {
+impl From<RouteInput> for RouteStep {
+    fn from(input: RouteInput) -> RouteStep {
+        match input {
+            RouteInput::Ssh { server_id } => RouteStep::Ssh {
                 id: String::new(),
                 server_id,
             },
-            Self::Socks5 { proxy_id } => RouteStep::Socks5 {
+            RouteInput::Socks5 { proxy_id } => RouteStep::Socks5 {
                 id: String::new(),
                 proxy_id,
             },
         }
     }
 }
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct WriteAuthentication {
-    #[serde(rename = "type")]
-    pub kind: String,
-    #[serde(default, deserialize_with = "provided")]
-    pub private_key_path: Option<String>,
-    #[serde(default, deserialize_with = "provided")]
-    pub secret: Option<SecretChange>,
+
+pub(crate) trait AuthInputExt {
+    fn input(self, default: SecretChange) -> AuthInput;
 }
-impl WriteAuthentication {
-    pub(crate) fn input(self, default: SecretChange) -> AuthInput {
+impl AuthInputExt for WriteAuthentication {
+    fn input(self, default: SecretChange) -> AuthInput {
         AuthInput {
             r#type: self.kind,
             private_key_path: self.private_key_path,
@@ -147,7 +107,10 @@ impl WriteAuthentication {
         }
     }
 }
-impl ServerPatch {
+trait MergePatch {
+    fn merge(self, store: &ServerStore, id: &str) -> Result<ServerInput, CatalogError>;
+}
+impl MergePatch for ServerPatch {
     fn merge(self, store: &ServerStore, id: &str) -> Result<ServerInput, CatalogError> {
         if self.name.is_none()
             && self.host.is_none()
@@ -206,7 +169,7 @@ impl ServerPatch {
             new_tag_names: vec![],
             route: self
                 .route
-                .map(|r| r.into_iter().map(RouteInput::step).collect())
+                .map(|r| r.into_iter().map(RouteStep::from).collect())
                 .unwrap_or_else(|| old.route.clone()),
             authentication,
         })

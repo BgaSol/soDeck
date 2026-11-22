@@ -11,7 +11,6 @@ use std::{
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Declaration {
-    pub api_version: String,
     pub entry: String,
     pub views: Vec<Definition>,
     #[serde(default)]
@@ -20,8 +19,7 @@ pub struct Declaration {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionDefinition {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub command: Option<String>,
+    pub command: String,
     pub id: String,
     pub title: String,
     #[serde(default)]
@@ -59,10 +57,6 @@ pub struct Definition {
     #[serde(default)]
     pub startup_order: u32,
     #[serde(default)]
-    pub create_action: Option<String>,
-    #[serde(default)]
-    pub locate_entry: bool,
-    #[serde(default)]
     pub background_on_workspace: bool,
     #[serde(default)]
     pub location_provider: Option<String>,
@@ -92,10 +86,7 @@ pub fn resource(root: &Path, relative: &str) -> Result<PathBuf, String> {
 }
 impl Declaration {
     pub fn validate(&self, root: &Path) -> Result<(), String> {
-        if !["1", "2"].contains(&self.api_version.as_str())
-            || self.views.is_empty()
-            || self.views.len() > 64
-        {
+        if self.views.is_empty() || self.views.len() > 64 {
             return Err("插件 UI API 或视图数量无效".into());
         }
         resource(root, &self.entry)?;
@@ -136,18 +127,10 @@ impl Declaration {
                 || !["none", "reveal", "createOne"].contains(&d.open_on_workspace.as_str())
                 || (["sidebar", "dialog"].contains(&d.container.as_str())
                     && d.instance_policy != "perWorkspace")
-                || (d.container == "dialog"
-                    && (d.open_on_workspace != "none"
-                        || d.default_pinned
-                        || d.locate_entry
-                        || d.create_action.is_some()))
+                || (d.container == "dialog" && (d.open_on_workspace != "none" || d.default_pinned))
                 || (d.instance_policy == "perResource" && d.open_on_workspace != "none")
-                || (d.locate_entry && d.container != "editor")
                 || (d.background_on_workspace
                     && (d.container != "sidebar" || d.instance_policy != "perWorkspace"))
-                || d.create_action
-                    .as_ref()
-                    .is_some_and(|s| s.trim().is_empty() || s.len() > 256)
             {
                 return Err("插件 UI 视图声明无效或重复".into());
             }
@@ -166,7 +149,6 @@ pub struct Registered {
     pub plugin_instance_id: String,
     pub entry: String,
     pub available: bool,
-    pub ui_api_version: String,
     pub icon_url: Option<String>,
 }
 #[derive(Clone, Deserialize, Serialize)]
@@ -213,7 +195,8 @@ pub struct View {
     #[serde(skip)]
     pub(crate) calls: std::sync::Arc<crate::resource_tasks::Tasks>,
     #[serde(skip)]
-    pub(crate) creation: std::sync::Arc<std::sync::Mutex<Option<Result<(), String>>>>,
+    pub(crate) creation:
+        std::sync::Arc<std::sync::Mutex<Option<Result<(), sodeck_plugin_protocol::ApiError>>>>,
     pub definition_key: String,
     pub plugin_id: String,
     pub plugin_instance_id: String,
@@ -316,63 +299,65 @@ pub async fn component_ui(
     desktop: tauri::State<'_, crate::windows::DesktopWindows>,
     operation: String,
     args: Value,
-) -> Result<Value, String> {
+) -> Result<Value, sodeck_plugin_protocol::ApiError> {
     let core = desktop.core.clone();
     let window = window.label().to_owned();
     tauri::async_runtime::spawn_blocking(move || dispatch(&core, &window, &operation, args))
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| sodeck_plugin_protocol::ApiError::execution(e.to_string()))?
 }
 pub fn dispatch(
     core: &std::sync::Arc<AppCore>,
     window: &str,
     operation: &str,
     args: Value,
-) -> Result<Value, String> {
+) -> Result<Value, sodeck_plugin_protocol::ApiError> {
     let text = |key: &str| args[key].as_str().ok_or_else(|| format!("缺少 {key}"));
     match operation {
-        "snapshot" => core.ui_snapshot(window),
+        "snapshot" => Ok(core.ui_snapshot(window)?),
         "command" => Ok(match core.command_host_request(window, &args) {
             Ok(result) => json!({"result":result}),
             Err(error) => json!({"error":error}),
         }),
-        "invokeAction" => core.ui_invoke_action(window, &args),
-        "actionStatus" => core.ui_action_status(window, &args),
-        "action" => core.ui_action(
+        "action" => Ok(core.ui_action(
             window,
             &serde_json::from_value(args["context"].clone()).map_err(|e| e.to_string())?,
             args["action"].clone(),
-        ),
+        )?),
         "attach" => core.ui_attach(window, text("viewId")?),
         "ready" => core
             .ui_surface_ready(window, text("surfaceId")?)
-            .map(|_| Value::Null),
-        "moveStatus" => core.workbench_move_status(window, text("id")?),
+            .map(|_| Value::Null)
+            .map_err(Into::into),
+        "moveStatus" => Ok(core.workbench_move_status(window, text("id")?)?),
         "retryLayoutSave" => core
             .save_workbench_layout()
-            .map(|saved| json!({"persistence":if saved {"saved"} else {"pending"}})),
+            .map(|saved| json!({"persistence":if saved {"saved"} else {"pending"}}))
+            .map_err(Into::into),
         "transferDrained" => core
             .transfer_drained(window, text("id")?)
-            .map(|_| Value::Null),
+            .map(|_| Value::Null)
+            .map_err(Into::into),
         "detach" => {
             core.ui_detach(window, text("surfaceId")?);
             Ok(Value::Null)
         }
         "event" => core.ui_event(window, text("surfaceId")?, args["event"].clone()),
-        "state" => Ok(
-            match core.state_surface_request(window, text("surfaceId")?, &args["input"]) {
-                Ok(result) => json!({"result":result}),
-                Err(error) => json!({"error":error}),
-            },
-        ),
+        "state" => core
+            .state_surface_request(window, text("surfaceId")?, &args["input"])
+            .map_err(|error| sodeck_plugin_protocol::ApiError {
+                code: -32000,
+                message: error.message,
+                data: json!({"code":error.code,"details":error.data}),
+            }),
         #[cfg(feature = "test-fixtures")]
-        "prepareClose" => core.ui_close_prepare(
+        "prepareClose" => Ok(core.ui_close_prepare(
             window,
             serde_json::from_value(args["workspaceIds"].clone()).map_err(|e| e.to_string())?,
             args["viewId"].as_str().map(str::to_owned),
-        ),
+        )?),
         #[cfg(feature = "test-fixtures")]
-        "pollClose" => core.ui_close_poll(window, text("token")?, args["save"] == true),
+        "pollClose" => Ok(core.ui_close_poll(window, text("token")?, args["save"] == true)?),
         #[cfg(feature = "test-fixtures")]
         "finishClose" => core
             .component_close_owner(window, text("token")?)
@@ -383,7 +368,8 @@ pub fn dispatch(
                     text("decision")?,
                 )
             })
-            .map(|_| Value::Null),
+            .map(|_| Value::Null)
+            .map_err(Into::into),
         #[cfg(feature = "test-fixtures")]
         "allWorkspaces" if window == "main" => {
             Ok(json!(core.ui_state().workspaces.keys().collect::<Vec<_>>()))

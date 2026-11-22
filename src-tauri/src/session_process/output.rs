@@ -1,10 +1,9 @@
-//! Compatibility and display adapters for the shared command resource service.
+//! Surface-owned output subscriptions for the existing process resources.
 use crate::{
-    session_process::{ProcessResource as Stream, Reader},
+    session_process::{ProcessResource, Reader},
     streams::{Frame, Sink},
     AppCore,
 };
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     sync::{atomic::Ordering, Arc, Mutex, Weak},
@@ -12,21 +11,6 @@ use std::{
 };
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Open {
-    view_id: String,
-    expected_context: crate::workspaces::Context,
-    operation_id: String,
-    sequence: String,
-    command: String,
-    max_output_bytes: usize,
-    retention: String,
-    #[serde(default)]
-    timeout_ms: Option<u64>,
-    #[serde(default)]
-    program_output: Option<String>,
-}
 fn integer(p: &Value, name: &str) -> Result<u64, String> {
     p[name]
         .as_str()
@@ -35,64 +19,7 @@ fn integer(p: &Value, name: &str) -> Result<u64, String> {
         .map_err(|_| format!("{name} 无效"))
 }
 impl AppCore {
-    pub(crate) fn stream_request(
-        self: &Arc<Self>,
-        plugin: &str,
-        instance: &str,
-        method: &str,
-        p: &Value,
-    ) -> Result<Value, String> {
-        if matches!(method, "session.stream.open" | "session.stream.lookup") {
-            let request: Open = serde_json::from_value(p.clone()).map_err(|e| e.to_string())?;
-            let value = serde_json::to_value(request).unwrap();
-            let result = self
-                .process_request(
-                    plugin,
-                    instance,
-                    if method.ends_with("open") {
-                        "session.process.start"
-                    } else {
-                        "session.process.lookup"
-                    },
-                    &value,
-                )
-                .map_err(|e| e.message)?;
-            if method.ends_with("open") {
-                return Ok(
-                    json!({"streamId":result["processId"],"state":result["status"]["state"]}),
-                );
-            }
-            return Ok(if result["known"] == true {
-                json!({"known":true,"streamId":result["processId"],"status":result["status"]})
-            } else {
-                json!({"known":false})
-            });
-        }
-        let mut value = json!({"processId":p["streamId"]});
-        let name = match method {
-            "session.stream.status" => "session.process.status",
-            "session.stream.poll" => {
-                value["offset"] = p["offset"].clone();
-                "session.process.read"
-            }
-            "session.stream.close" => "session.process.cancel",
-            "session.stream.release" => "session.process.release",
-            _ => return Err("未知流式命令方法".into()),
-        };
-        let result = self
-            .process_request(plugin, instance, name, &value)
-            .map_err(|e| e.message)?;
-        Ok(match method {
-            "session.stream.close" => {
-                json!({"accepted":true,"released":false,"state":result["state"]})
-            }
-            "session.stream.release" => {
-                json!({"accepted":true,"released":true,"state":result["status"]["state"]})
-            }
-            _ => result,
-        })
-    }
-    pub async fn session_stream_data(
+    pub async fn process_output_data(
         self: &Arc<Self>,
         window: &str,
         token: &str,
@@ -231,12 +158,12 @@ impl AppCore {
         }
     }
 }
-fn status(s: &Stream) -> Value {
+fn status(s: &ProcessResource) -> Value {
     crate::session_process::status(s)
 }
 async fn subscribe(
     core: Weak<AppCore>,
-    s: Arc<Stream>,
+    s: Arc<ProcessResource>,
     id: String,
     window: String,
     token: String,
@@ -266,7 +193,7 @@ async fn subscribe(
             (
                 "reset",
                 vec![],
-                json!({"streamId":id,"earliestAvailableOffset":earliest.to_string()}),
+                json!({"processId":id,"earliestAvailableOffset":earliest.to_string()}),
             )
         } else if cursor < earliest
             && !s
@@ -280,11 +207,11 @@ async fn subscribe(
             (
                 "gap",
                 vec![],
-                json!({"streamId":id,"message":"较早输出已退出最近缓冲"}),
+                json!({"processId":id,"message":"较早输出已退出最近缓冲"}),
             )
         } else if !caught && cursor >= initial {
             caught = true;
-            ("caughtUp", vec![], json!({"streamId":id}))
+            ("caughtUp", vec![], json!({"processId":id}))
         } else if cursor < produced {
             let output = s.clone();
             let start = cursor;
@@ -300,19 +227,19 @@ async fn subscribe(
             match result {
                 Ok(Ok(data)) => {
                     cursor += data.len() as u64;
-                    ("data", data, json!({"streamId":id}))
+                    ("data", data, json!({"processId":id}))
                 }
                 _ => {
                     cursor = s.output.capture.lock().unwrap().earliest;
                     (
                         "gap",
                         vec![],
-                        json!({"streamId":id,"message":"输出保留范围已变化"}),
+                        json!({"processId":id,"message":"输出保留范围已变化"}),
                     )
                 }
             }
         } else if finished {
-            ("end", vec![], json!({"streamId":id,"status":status(&s)}))
+            ("end", vec![], json!({"processId":id,"status":status(&s)}))
         } else {
             tokio::select! {_=changed=>{},_=r.cancel.cancelled()=>break,_=tokio::time::sleep(Duration::from_secs(2))=>{}};
             continue;

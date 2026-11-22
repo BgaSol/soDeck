@@ -200,7 +200,7 @@ async fn component_data(
     surface_id: String,
     request: serde_json::Value,
     channel: tauri::ipc::Channel<sodeck::streams::Frame>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, sodeck_plugin_protocol::ApiError> {
     if request["op"] == "pluginData" && request["action"] == "reveal" {
         let relative: Vec<String> =
             serde_json::from_value(request["relative"].clone()).map_err(|e| e.to_string())?;
@@ -210,13 +210,14 @@ async fn component_data(
         sodeck::desktop_files::reveal_directory(window.app_handle().clone(), path).await?;
         return Ok(serde_json::json!({}));
     }
-    if request["op"] == "sessionStream" {
+    if request["op"] == "processOutput" {
         let sink = Arc::new(move |frame| channel.send(frame).map_err(|e| e.to_string()))
             as sodeck::streams::Sink;
         return app
             .core
-            .session_stream_data(window.label(), &surface_id, request, Some(sink))
-            .await;
+            .process_output_data(window.label(), &surface_id, request, Some(sink))
+            .await
+            .map_err(Into::into);
     }
     if request["op"] == "contentExport" {
         if request["action"] == "begin" {
@@ -245,7 +246,8 @@ async fn component_data(
         return app
             .core
             .content_export_data(window.label(), &surface_id, request)
-            .await;
+            .await
+            .map_err(Into::into);
     }
     if request["op"] == "files" {
         let action = request["action"].as_str().unwrap_or("");
@@ -261,7 +263,7 @@ async fn component_data(
             return Ok(serde_json::json!({}));
         }
         if action == "input.revision" || action == "input.clipboard" {
-            app.core.validate_file_download(
+            app.core.validate_file_input(
                 window.label(),
                 &surface_id,
                 &serde_json::json!({"id":file,"path":"/"}),
@@ -288,7 +290,7 @@ async fn component_data(
             return Ok(value);
         }
         if action == "input.drop" {
-            app.core.validate_file_download(
+            app.core.validate_file_input(
                 window.label(),
                 &surface_id,
                 &serde_json::json!({"id":file,"path":"/"}),
@@ -348,18 +350,9 @@ async fn component_data(
         }
         if request["action"] == "export.start" {
             use tauri_plugin_dialog::DialogExt;
-            let (receipt, task) = match app.core.files_export_begin(
-                window.label(),
-                &surface_id,
-                &request,
-            ) {
-                Ok(value) => value,
-                Err(error) => {
-                    return Ok(
-                        serde_json::json!({"ok":false,"error":{"code":"exportRejected","message":error}}),
-                    )
-                }
-            };
+            let (receipt, task) =
+                app.core
+                    .files_export_begin(window.label(), &surface_id, &request)?;
             if let Some(task) = task {
                 let core = app.core.clone();
                 let filename = request["path"]
@@ -381,58 +374,14 @@ async fn component_data(
                     core.files_export_finish(task, chosen).await;
                 });
             }
-            return Ok(serde_json::json!({"ok":true,"value":receipt}));
+            return Ok(receipt);
         }
-        if request["action"] == "download" || request["action"] == "exportDraft" {
-            use tauri_plugin_dialog::DialogExt;
-            app.core
-                .validate_file_download(window.label(), &surface_id, &request)?;
-            let export = if request["action"] == "exportDraft" {
-                Some(
-                    app.core
-                        .files_export_legacy_begin(window.label(), &surface_id, &request)?,
-                )
-            } else {
-                None
-            };
-            let filename = request["path"]
-                .as_str()
-                .unwrap_or("download")
-                .rsplit('/')
-                .next()
-                .unwrap_or("download")
-                .to_string();
-            let dialog = window.dialog().file().set_file_name(filename);
-            let chosen = tauri::async_runtime::spawn_blocking(move || dialog.blocking_save_file())
-                .await
-                .map_err(|e| e.to_string());
-            if let Some(task) = export {
-                let chosen = chosen.and_then(|value| {
-                    value
-                        .map(|p| p.into_path().map_err(|e| e.to_string()))
-                        .transpose()
-                });
-                let result = app.core.files_export_finish(task, chosen).await;
-                if result["state"] == "failed" {
-                    return Err(result["error"].as_str().unwrap_or("导出失败").into());
-                }
-                return Ok(
-                    serde_json::json!({"path":result["path"],"size":result["size"],"cancelled":result["state"]=="cancelled"}),
-                );
-            }
-            let Some(chosen) = chosen? else {
-                return Ok(serde_json::json!({"cancelled":true}));
-            };
-            let local = chosen.into_path().map_err(|e| e.to_string())?;
-            return app
-                .core
-                .files_download(window.label(), &surface_id, request, local)
-                .await;
-        }
+
         return app
             .core
             .files_data(window.label(), &surface_id, request)
-            .await;
+            .await
+            .map_err(Into::into);
     }
     let sink = Some({
         Arc::new(move |frame| channel.send(frame).map_err(|e| e.to_string()))
@@ -447,6 +396,7 @@ async fn component_data(
         )
         .await
         .map(|_| serde_json::Value::Null)
+        .map_err(Into::into)
 }
 
 #[tauri::command]

@@ -1,11 +1,12 @@
-/* UI v1 bounded clipboard transport. No terminal behavior belongs in the host. */
+/* Surface-owned bounded clipboard transport. No terminal behavior belongs in the host. */
 (() => {
   let available=false,surface;
-  addEventListener('sodeck:mount',event=>{available=event.detail.capabilities?.clipboard===1;surface=event.detail.surfaceId;});
-  const interaction=()=>{if(surface)parent.postMessage({channel:sodeck.channel||'sodeck-ui-v1',type:'interaction',surfaceId:surface},'*');};
+  addEventListener('sodeck:unmount',()=>{available=false;surface=undefined;});
+  addEventListener('sodeck:mount',event=>{available=true;surface=event.detail.surfaceId;});
+  const interaction=()=>{if(surface)sodeck.interaction();};
   document.addEventListener('pointerdown',interaction,true);
   document.addEventListener('keydown',interaction,true);
-  const request = params => available?sodeck.request('clipboard',params):Promise.reject(new Error('当前核心不支持原生剪贴板服务，请先升级核心'));
+  const request = params => available?sodeck.request('clipboard',params):Promise.reject(new Error('页面尚未挂载或已经结束'));
   window.sodeckClipboard = {
     async readText(valid=()=>true) {
       const result=await request({op:'read'});let text='';

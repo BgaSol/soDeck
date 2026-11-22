@@ -45,7 +45,7 @@ test('test helpers select their existing consumers and download unit tests stay 
   const download=selectChecks(['scripts/verified-download.test.mjs']);
   assert(download.scripts);assert.deepEqual(download.native,[]);assert.deepEqual(download.integration,[]);
 });
-test('shared state selects its native source, SDK and actual three-plugin communication',()=>{for(const file of ['src/component-state.ts','src-tauri/src/shared_state.rs','src-tauri/src/shared_state/delivery.rs','plugins/shared/state.js']){const p=selectChecks([file]);assert(p.communication&&p.sharedClient&&p.core);assert(p.integration.some(t=>t.communication&&t.terminal&&t.files&&t.status));assert.deepEqual(p.plugins,['terminal','files','system-status']);}assert(selectChecks(['plugins/files/ui/tree.js']).communication);});
+test('shared state selects its native source, SDK and actual three-plugin communication',()=>{for(const file of ['src/component-state.ts','src-tauri/src/shared_state.rs','src-tauri/src/shared_state/delivery.rs','packages/plugin-sdk/src/state.js']){const p=selectChecks([file]);assert(p.communication&&p.sharedClient&&p.core);assert(p.integration.some(t=>t.communication&&t.terminal&&t.files&&t.status));assert.deepEqual(p.plugins,['terminal','files','system-status']);}assert(selectChecks(['plugins/files/ui/tree.js']).communication);});
 
 test('command service selects native core, client, terminal and Docker with real integration', () => {
   const plan=selectChecks(['src-tauri/src/commands.rs']);
@@ -157,7 +157,7 @@ test('transport/lifecycle changes retain real integrations and shared inputs/unk
   assert.deepEqual(pointer.native.filter(t => t.core).map(t => t.name), ['windows-x86_64', 'windows-aarch64']);
   const opener = selectChecks(['src-tauri/src/desktop_open.rs']);
   assert(opener.browser && !opener.desktop && opener.native.filter(t => t.core).length === 5 && opener.integration[0].files);
-  for (const file of ['src-tauri/src/connections/ssh.rs', 'src-tauri/src/plugins/rpc.rs', 'src-tauri/src/session_exec.rs', 'src-tauri/src/session_stream.rs', 'src-tauri/src/content_export.rs', 'src-tauri/src/streams/capture.rs', 'src-tauri/src/lifecycle.rs', 'src-tauri/src/lifecycle/close.rs', 'src-tauri/src/resource_tasks.rs', 'src-tauri/tests/close_lifecycle.rs', 'src-tauri/tests/lifecycle.rs']) {
+  for (const file of ['src-tauri/src/connections/ssh.rs', 'src-tauri/src/plugins/rpc.rs', 'src-tauri/src/session_exec.rs', 'src-tauri/src/session_process/output.rs', 'src-tauri/src/content_export.rs', 'src-tauri/src/streams/capture.rs', 'src-tauri/src/lifecycle.rs', 'src-tauri/src/lifecycle/close.rs', 'src-tauri/src/resource_tasks.rs', 'src-tauri/tests/close_lifecycle.rs', 'src-tauri/tests/lifecycle.rs']) {
     const p = selectChecks([file]);
     assert(p.ssh && p.desktop);
     assert.equal(p.native.filter(t => t.core).length, 5);
@@ -170,8 +170,8 @@ test('transport/lifecycle changes retain real integrations and shared inputs/unk
     assert(p.native.every(t => t.core && t.terminal && t.files && t.network), file);
     assert(!p.netem, file);
   }
-  const sharedUi = selectChecks(['src/text-menu.js', 'plugins/shared/clipboard.js']);
-  assert(sharedUi.terminalInput && sharedUi.web && sharedUi.browser && !sharedUi.desktop && sharedUi.integration.some(t => t.files));
+  const sharedUi = selectChecks(['src/text-menu.js', 'packages/plugin-sdk/src/clipboard.js']);
+  assert(sharedUi.terminalInput && sharedUi.web && sharedUi.browser && sharedUi.desktop && sharedUi.integration.some(t => t.files));
   const mixed = selectChecks(['docs/usage.md', 'src-tauri/src/platform.rs']);
   assert.equal(mixed.native.length, 5);
   const files = selectChecks(['src-tauri/src/remote_files/operations/copy.rs']);

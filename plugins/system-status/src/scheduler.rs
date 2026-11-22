@@ -4,6 +4,7 @@ use crate::{
 };
 use serde::Serialize;
 use serde_json::{json, Value};
+use sodeck_plugin_client::protocol::requests as api;
 use sodeck_plugin_client::{Client, RpcError};
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -59,7 +60,6 @@ struct Ticket {
     poll_due: Instant,
 }
 pub struct App {
-    pub shared_enabled: bool,
     pub views: BTreeMap<String, View>,
     pub interval: u64,
     pub settings_revision: u64,
@@ -98,7 +98,6 @@ pub fn timestamp() -> u64 {
 impl App {
     pub fn new(interval: u64) -> Self {
         Self {
-            shared_enabled: false,
             views: BTreeMap::new(),
             interval,
             settings_revision: 0,
@@ -264,7 +263,7 @@ impl App {
             _ => return Err("未知系统状态操作".into()),
         }
         v.revision += 1;
-        if self.shared_enabled && ["pause", "resume"].contains(&action) {
+        if ["pause", "resume"].contains(&action) {
             v.publisher
                 .observe(&v.data, timestamp(), v.groups[2].error.as_deref(), v.paused);
         }
@@ -371,7 +370,12 @@ impl App {
             }
             if v.state_due <= now {
                 v.state_due = now + Duration::from_secs(5);
-                return Some(make(v, Kind::State, "session.state", json!({"viewId":id})));
+                return Some(make(
+                    v,
+                    Kind::State,
+                    "session.target.describe",
+                    json!({"viewId":id,"expectedContext":v.context}),
+                ));
             }
             if let Some(t) = &v.ticket {
                 if t.poll_due > now {
@@ -388,8 +392,7 @@ impl App {
                     make(v, Kind::Start, "session.exec.start", t.params.clone())
                 });
             }
-            if self.shared_enabled
-                && v.connected
+            if v.connected
                 && (v.paused
                     || !v
                         .groups
@@ -727,7 +730,7 @@ impl App {
                             };
                         }
                     }
-                    if self.shared_enabled && [2, 3].contains(&t.group) {
+                    if [2, 3].contains(&t.group) {
                         v.publisher.observe(
                             &v.data,
                             observed,
@@ -893,7 +896,43 @@ pub fn start(app: Arc<Mutex<App>>, client: Client) {
             let Ok(work) = rx.lock().unwrap().recv() else {
                 break;
             };
-            let result = c.call_detailed(work.method, work.params.clone());
+            let result = (|| {
+                let invalid = |_| RpcError::invalid("状态采集请求参数无效");
+                let params = work.params.clone();
+                match work.method {
+                    "session.target.describe" => c
+                        .request(api::call::Target(
+                            serde_json::from_value(params).map_err(invalid)?,
+                        ))
+                        .map(|reply| json!(reply)),
+                    "session.exec.start" => c
+                        .request(api::call::ExecStart(
+                            serde_json::from_value(params).map_err(invalid)?,
+                        ))
+                        .map(|reply| json!(reply)),
+                    "session.exec.poll" => c
+                        .request(api::call::ExecPoll(
+                            serde_json::from_value(params).map_err(invalid)?,
+                        ))
+                        .map(|reply| json!(reply)),
+                    "session.exec.release" => c.request(api::call::ExecRelease(
+                        serde_json::from_value(params).map_err(invalid)?,
+                    )),
+                    "state.get" => c.request(api::call::StateGet(
+                        serde_json::from_value(params).map_err(invalid)?,
+                    )),
+                    "state.put" => c.request(api::call::StatePut(
+                        serde_json::from_value(params).map_err(invalid)?,
+                    )),
+                    "state.remove" => c.request(api::call::StateRemove(
+                        serde_json::from_value(params).map_err(invalid)?,
+                    )),
+                    "logging.write" => c.request(api::call::Log(
+                        serde_json::from_value(params).map_err(invalid)?,
+                    )),
+                    _ => unreachable!(),
+                }
+            })();
             if done.send(Result { work, result }).is_err() {
                 break;
             }

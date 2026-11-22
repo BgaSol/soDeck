@@ -12,7 +12,7 @@ export class ComponentData {
     let detach: Record<string, unknown> | undefined;
     if (typeof request.id === "string") {
       if (request.op === "attach") detach = {op: "detach", id: request.id};
-      if (request.op === "sessionStream" && request.action === "attach") detach = {op: "sessionStream", action: "detach", id: request.id};
+      if (request.op === "processOutput" && request.action === "attach") detach = {op: "processOutput", action: "detach", id: request.id};
       if (detach) {
         if (!entries) { entries = new Map(); this.subscriptions.set(token, entries); }
         entries.set(request.id, detach);

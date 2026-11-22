@@ -1,4 +1,5 @@
 use super::*;
+use sodeck_plugin_client::protocol::requests as api;
 impl Collector<'_> {
     pub(super) fn command(&mut self) -> Result<Outcome, Value> {
         let mut output =
@@ -17,10 +18,14 @@ impl Collector<'_> {
         };
         let request = json!({"viewId":self.task.target.view,"expectedContext":self.task.target.context,"operationId":self.task.id,"sequence":self.task.admission_sequence.to_string(),"command":spec.command,"timeoutMs":spec.timeout_seconds.map(|n|n*1000),"maxOutputBytes":16*1024*1024,"retention":"fixed","io":io});
         let accepted = self.accept(
-            "session.process.start",
-            request.clone(),
-            "session.process.lookup",
-            request,
+            api::call::ProcessStart(
+                serde_json::from_value(request.clone())
+                    .map_err(|_| failure("invalidParams", "进程参数无效"))?,
+            ),
+            api::call::ProcessLookup(
+                serde_json::from_value(request)
+                    .map_err(|_| failure("invalidParams", "进程票据无效"))?,
+            ),
             "processId",
         )?;
         let id = text(&accepted, "processId", 256)?.to_owned();
@@ -45,15 +50,17 @@ impl Collector<'_> {
                 });
             }
             if (self.app.stopped(self.task) || !save_error.is_null()) && !cancelled {
-                cancelled = self
-                    .app
-                    .rpc("session.process.cancel", json!({"processId":id}))
+                cancelled = serde_json::from_value::<api::Process>(json!({"processId":id}))
+                    .map_err(|_| failure("invalidParams", "核心请求参数无效"))
+                    .and_then(|params| self.app.rpc(api::call::ProcessCancel(params)))
                     .is_ok();
             }
-            let polled = match self.app.rpc(
-                "session.process.read",
+            let polled = match serde_json::from_value::<api::ProcessRead>(
                 json!({"processId":id,"offset":offset.to_string()}),
-            ) {
+            )
+            .map_err(|_| failure("invalidParams", "核心请求参数无效"))
+            .and_then(|params| self.app.rpc(api::call::ProcessRead(params)))
+            {
                 Ok(value) => value,
                 Err(e) => {
                     self.unavailable(e.clone());

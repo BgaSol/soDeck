@@ -58,7 +58,7 @@ async fn openssh_terminal_plugin() {
         "sh -c 'printf \"sodeck-command-ready\\n\"; read line; printf \"sodeck-command-input:%s\\n\" \"$line\"; exit 7'"
     };
     let params=json!({"version":1,"title":"指定命令","launch":{"kind":"command","command":command},"directoryIntegration":"off"});
-    let opened=f.core.ui_invoke_action("main",&json!({"context":context,"requestId":"command-test","actionKey":"sodeck.terminal:new-terminal","data":params})).unwrap();
+    let opened=f.core.command_host_request("main",&json!({"context":context,"requestId":"command-test","op":"submit","name":"terminal.open.v1","actionKey":"sodeck.terminal:new-terminal","payload":params})).unwrap();
     let opened=wait_terminal_action(&f.core,"main",&context,"command-test",opened).await;
     assert_eq!(opened["status"],"completed");
     let mounted=f.core.ui_attach("main",opened["viewId"].as_str().unwrap()).unwrap();
@@ -95,7 +95,7 @@ fn terminal_fixture(f: &Fixture) -> (String, String, String) {
     let binary = format!("plugin{}", std::env::consts::EXE_SUFFIX);
     std::fs::copy(env!("CARGO_BIN_EXE_plugin-fixture"), plugin.join(&binary)).unwrap();
     std::fs::write(plugin.join("ui/index.html"), "<p>terminal</p>").unwrap();
-    std::fs::write(plugin.join("plugin.json"),json!({"id":"test.terminal","name":"PTY test","version":"0.1.0","apiVersion":"1","target":sodeck::TARGET,"entry":binary,"ui":{"apiVersion":"1","entry":"ui/index.html","views":[{"id":"terminal","title":"终端","icon":"terminal","container":"editor","instancePolicy":"multiple","openOnWorkspace":"createOne"}]}}).to_string()).unwrap();
+    std::fs::write(plugin.join("plugin.json"),json!({"id":"test.terminal","name":"PTY test","version":"0.1.0","apiVersion":"2.0","target":sodeck::TARGET,"entry":binary,"ui":{"entry":"ui/index.html","views":[{"id":"terminal","title":"终端","icon":"terminal","container":"editor","instancePolicy":"multiple","openOnWorkspace":"createOne"}]}}).to_string()).unwrap();
     f.core.load(&plugin).unwrap();
     let context = f.core.workspace_projection("main").unwrap().workspaces[0].context.clone();
     f.core.ui_action("main", &context, json!({"op":"open","key":"test.terminal:terminal","requestId":"terminal-fixture"})).unwrap();
@@ -340,6 +340,6 @@ async fn real_pty_keeps_one_shell_across_views_and_rejects_old_surface_input() {
 
 async fn wait_terminal_action(core:&AppCore,window:&str,context:&sodeck::workspaces::Context,request:&str,mut receipt:Value)->Value {
     let deadline=std::time::Instant::now()+Duration::from_secs(10);
-    while receipt["status"]=="pending" {assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(25)).await;receipt=core.ui_action_status(window,&json!({"context":context,"requestId":request})).unwrap();}
+    while receipt["status"]=="pending" {assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(25)).await;receipt=core.command_host_request(window,&json!({"op":"get","context":context,"requestId":request})).unwrap();}
     receipt
 }

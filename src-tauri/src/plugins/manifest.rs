@@ -42,7 +42,7 @@ pub fn read_manifest(directory: &Path) -> Result<PluginRecord, String> {
         return Err("插件图标名称无效".into());
     }
     crate::plugin_icons::validate(&manifest.icons)?;
-    if manifest.api_version.split('.').next() != Some(API_VERSION) {
+    if !sodeck_plugin_protocol::supports(&manifest.api_version) {
         return Err(format!(
             "插件要求核心 API {}，当前为 {API_VERSION}",
             manifest.api_version
@@ -69,13 +69,14 @@ pub fn read_manifest(directory: &Path) -> Result<PluginRecord, String> {
     if let Some(ui) = &manifest.ui {
         ui.validate(&directory)?;
         for action in &ui.actions {
-            if action.command.as_ref().is_some_and(|s| {
+            let s = &action.command;
+            if {
                 !crate::commands::valid_name(s)
                     || !manifest
                         .commands
                         .as_ref()
                         .is_some_and(|c| c.handlers.contains(s))
-            }) {
+            } {
                 return Err("UI 行为必须引用本插件声明的命令".into());
             }
         }
@@ -86,11 +87,11 @@ pub fn read_manifest(directory: &Path) -> Result<PluginRecord, String> {
             {
                 return Err("createActionId 仅用于 editor + multiple 的新建入口".into());
             }
-            if view.create_action_id.as_ref().is_some_and(|id| {
-                !ui.actions
-                    .iter()
-                    .any(|a| &a.id == id && a.command.is_some())
-            }) {
+            if view
+                .create_action_id
+                .as_ref()
+                .is_some_and(|id| !ui.actions.iter().any(|a| &a.id == id))
+            {
                 return Err("createActionId 必须引用本插件的命令行为".into());
             }
         }

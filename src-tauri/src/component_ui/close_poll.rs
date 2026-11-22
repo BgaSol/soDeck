@@ -28,7 +28,7 @@ impl AppCore {
             );
             let reply = match reply {
                 Ok(reply) => reply,
-                Err(error) if save => return Err(error),
+                Err(error) if save => return Err(error.to_string()),
                 Err(_) => json!({"metadata":{"busy":false}}),
             };
             self.ui_state()

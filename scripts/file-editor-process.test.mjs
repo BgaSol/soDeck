@@ -11,7 +11,7 @@ test('independent SDK consumer saves on close, retains newer input, and does not
  const entered=new Promise(resolve=>queryEntered=resolve);let hold=false;
  const resources=new Set(),saves=[];
  const peer=pluginPeer(path.resolve('crates/plugin-client/target/debug/examples/file-editor-fixture'+(process.platform==='win32'?'.exe':'')),async(method,p)=>{
-  if(method==='files.request'){if(p.action==='open'){resources.add(p.viewId);return {id:p.viewId};}if(p.action==='close'){resources.delete(p.id);return {};}}
+  if(method==='files.open'||method==='files.close'){if(method==='files.open'){resources.add(p.viewId);return {id:p.viewId};}if(method==='files.close'){resources.delete(p.id);return {};}}
   if(method==='ui.openView'){assert.equal(p.viewType,'configFile');assert.deepEqual(p.expectedContext,context);return {viewId:'config'};}
   if(method==='files.editor'){
    if(p.action==='save.start'){saves.push(p);request=p;state='committed';saved=p.expectedDraftRef.revision;}
@@ -23,7 +23,7 @@ test('independent SDK consumer saves on close, retains newer input, and does not
  });
  const view={viewId:'config',viewType:'configFile',context,params:{path:'/config'}};
  try{
-  await peer.request('initialize',{capabilities:['files.v1','files.editor.v1','viewData.v1','ui.workbench.v2','ui.openView.v1']});
+  await peer.initialize();
   await peer.request('ui.createView',view);
   const source={viewId:'source',viewType:'manager',context};
   assert.equal((await peer.request('ui.event',{...source,data:{action:'fileEditor.resource',expectedContext:context}})).data.id,'source');
@@ -44,12 +44,13 @@ test('closing a source or editor during resource creation releases the late reso
   let entered,release;
   const waiting=new Promise(resolve=>entered=resolve),closed=[];
   const peer=pluginPeer(path.resolve('crates/plugin-client/target/debug/examples/file-editor-fixture'+(process.platform==='win32'?'.exe':'')),async(method,p)=>{
-   assert.equal(method,'files.request');
-   if(p.action==='open'){entered();await new Promise(resolve=>release=resolve);return {id:'late'};}
-   assert.equal(p.action,'close');closed.push(p.id);return {};
+   assert(['files.open','files.close'].includes(method));
+   if(method==='files.open'){entered();await new Promise(resolve=>release=resolve);return {id:'late'};}
+   assert.equal(method,'files.close');closed.push(p.id);return {};
   });
-  const view={viewId:'late-view',viewType:editor?'configFile':'manager',context:{workspaceId:'sdk'},params:{path:'/config'}};
+  const view={viewId:'late-view',viewType:editor?'configFile':'manager',context:{workspaceId:'sdk',serverId:'server',connectionId:'connection',generation:1},params:{path:'/config'}};
   try{
+   await peer.initialize();
    const pending=peer.request(editor?'ui.createView':'ui.event',{...view,data:{action:'fileEditor.resource',expectedContext:view.context}});
    // Observe rejection before continuing so late cleanup cannot create an unhandled rejection.
    const rejected=assert.rejects(pending,/已关闭/);
@@ -64,12 +65,12 @@ test('closing a source or editor during resource creation releases the late reso
 test('a failed close retains SDK ownership so resource disposal can be retried',async()=>{
  let fail=true,closes=0;
  const peer=pluginPeer(path.resolve('crates/plugin-client/target/debug/examples/file-editor-fixture'+(process.platform==='win32'?'.exe':'')),async(method,p)=>{
-  assert.equal(method,'files.request');
-  if(p.action==='open')return {id:'owned'};
-  assert.equal(p.action,'close');closes++;if(fail){fail=false;throw Error('close observation lost');}return {};
+  if(method==='files.open')return {id:'owned'};
+  assert.equal(method,'files.close');closes++;if(fail){fail=false;throw Error('close observation lost');}return {};
  });
- const view={viewId:'retry',viewType:'configFile',context:{workspaceId:'sdk'},params:{path:'/config'}};
+ const view={viewId:'retry',viewType:'configFile',context:{workspaceId:'sdk',serverId:'server',connectionId:'connection',generation:1},params:{path:'/config'}};
  try{
+  await peer.initialize();
   await peer.request('ui.createView',view);
   await assert.rejects(peer.request('ui.disposeView',view),/close observation lost/);
   assert.equal((await peer.request('ui.getView',view)).data.fileId,'owned');

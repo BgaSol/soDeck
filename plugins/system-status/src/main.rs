@@ -1,3 +1,4 @@
+use sodeck_plugin_client::protocol::requests as api;
 mod collectors;
 mod filesystem;
 mod metrics;
@@ -7,25 +8,17 @@ use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Arc::new(Mutex::new(None::<Arc<Mutex<scheduler::App>>>));
-    sodeck_plugin_client::run(move |client, method, p| {
+    sodeck_plugin_client::run(move |client, callback| {
+        let (method, p) = callback.into_parts();
         if method == "initialize" {
-            for capability in ["session.exec.v1", "ui.background.v1", "settings.v1"] {
-                if !p["capabilities"]
-                    .as_array()
-                    .is_some_and(|a| a.iter().any(|v| v == capability))
-                {
-                    return Err(format!("核心缺少 {capability}，请升级 SoDeck"));
-                }
-            }
-            let settings = client.call("settings.get", json!({"pageId":"sampling"}))?;
+            let settings = client.request(api::call::Settings(api::Page {
+                page_id: "sampling".to_string(),
+            }))?;
             let interval = interval(&settings["values"]["dynamicIntervalSeconds"])?;
             let state = Arc::new(Mutex::new(scheduler::App::new(interval)));
-            state.lock().unwrap().shared_enabled = p["capabilities"]
-                .as_array()
-                .is_some_and(|a| a.iter().any(|v| v == "sharedState.v1"));
             scheduler::start(state.clone(), client.clone());
             *app.lock().unwrap() = Some(state);
-            return Ok(json!({"apiVersion":"1","settingsApiVersion":"1","uiApiVersion":"2"}));
+            return Ok(json!({}));
         }
         let state = app.lock().unwrap().clone().ok_or("插件未初始化")?;
         let mut a = state.lock().unwrap();

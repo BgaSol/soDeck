@@ -98,20 +98,13 @@ impl AppCore {
         view: &View,
         method: &str,
         data: Value,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, sodeck_plugin_protocol::ApiError> {
         self.ui_plugin_call_observed(view, method, data, None, std::time::Duration::from_secs(5))
     }
-    pub(crate) fn ui_create_view(&self, view: &View) -> Result<(), String> {
-        let version = self
-            .ui_state()
-            .definitions
-            .get(&view.definition_key)
-            .ok_or("组件未登记")?
-            .ui_api_version
-            .clone();
-        if version != "2" {
-            return Ok(());
-        }
+    pub(crate) fn ui_create_view(
+        &self,
+        view: &View,
+    ) -> Result<(), sodeck_plugin_protocol::ApiError> {
         let mut creation = view.creation.lock().unwrap();
         if let Some(result) = &*creation {
             return result.clone();
@@ -137,7 +130,6 @@ impl AppCore {
                 d.available
                     && d.plugin_instance_id == instance
                     && d.definition.background_on_workspace
-                    && d.ui_api_version == "2"
             })
             .map(|_| ())
             .ok_or("UI v2 后台视图声明不存在".into())
@@ -163,7 +155,6 @@ impl AppCore {
                     d.available
                         && d.plugin_instance_id == instance
                         && d.definition.background_on_workspace
-                        && d.ui_api_version == "2"
                 })
                 .ok_or("后台视图声明不存在")?;
             state
@@ -213,7 +204,7 @@ impl AppCore {
         data: Value,
         receipt: Option<crate::plugins::Receipt>,
         timeout: std::time::Duration,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, sodeck_plugin_protocol::ApiError> {
         let instance = self
             .instances
             .lock()
@@ -241,7 +232,7 @@ impl AppCore {
             {
                 return Err("界面输入权已改变".into());
             }
-            if matches!(method, "ui.mount" | "ui.event") && ui.lifecycle.view_frozen(&view.id) {
+            if method == "ui.event" && ui.lifecycle.view_frozen(&view.id) {
                 let input = method == "ui.event"
                     && ui.surfaces.values().any(|s| {
                         s.view == view.id && ui.lifecycle.view_input_allowed(&view.id, &s.window)
@@ -254,8 +245,12 @@ impl AppCore {
         };
         instance.request_observed(method, json!({"viewId":view.id,"viewType":view.definition_key.split(':').nth(1),"context":view.context,"resourceKey":view.resource_key,"params":view.params,"data":data}),Some(task),receipt, timeout)
     }
-    pub fn ui_attach(&self, window: &str, id: &str) -> Result<Value, String> {
-        let (view, candidate, version) = {
+    pub fn ui_attach(
+        &self,
+        window: &str,
+        id: &str,
+    ) -> Result<Value, sodeck_plugin_protocol::ApiError> {
+        let (view, candidate) = {
             let state = self.workbench_state();
             let ui = &state.ui;
             let view = ui.view(id)?.clone();
@@ -283,22 +278,13 @@ impl AppCore {
             if !active && !candidate {
                 return Err("组件不属于此窗口".into());
             }
-            let version = ui.definitions[&view.definition_key].ui_api_version.clone();
-            (view, !active, version)
+            (view, !active)
         };
         let token = self.next_id();
         if !candidate {
             self.ui_create_view(&view)?;
         }
-        let data = self.ui_plugin_call(
-            &view,
-            if version == "2" {
-                "ui.getView"
-            } else {
-                "ui.mount"
-            },
-            Value::Null,
-        )?;
+        let data = self.ui_plugin_call(&view, "ui.getView", Value::Null)?;
         let mut _workbench = self.workbench_state();
         let crate::workbench::State { workspaces, ui, .. } = &mut *_workbench;
         if !workspaces.contains(window, &view.context.workspace_id)
@@ -341,7 +327,7 @@ impl AppCore {
             },
         );
         Ok(
-            json!({"uiApiVersion":version,"inputEpoch":token,"surfaceId":token,"view":view,"data":data["data"],"readOnly":candidate,"capabilities":{"workbench":2,"sharedState":1,"fileLocation":1,"fileLocationProof":1,"uiOpenView":1}}),
+            json!({"inputEpoch":token,"surfaceId":token,"view":view,"data":data["data"],"readOnly":candidate}),
         )
     }
     pub fn ui_surface_ready(&self, window: &str, token: &str) -> Result<(), String> {
@@ -354,7 +340,12 @@ impl AppCore {
         s.ready = true;
         Ok(())
     }
-    pub fn ui_event(&self, window: &str, token: &str, event: Value) -> Result<Value, String> {
+    pub fn ui_event(
+        &self,
+        window: &str,
+        token: &str,
+        event: Value,
+    ) -> Result<Value, sodeck_plugin_protocol::ApiError> {
         if serde_json::to_vec(&event).map_err(|e| e.to_string())?.len() > 24 * 1024 {
             return Err("UI 事件超过 24 KiB；该接口不用于文件或终端数据流".into());
         }

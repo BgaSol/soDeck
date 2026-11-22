@@ -1,7 +1,6 @@
 //! One remote channel runner shared by commands, command capture and terminals.
 use crate::{execution_output::OutputTarget, resource_owner::Owner, resource_tasks::Task, AppCore};
 use russh::{client::Msg, ChannelReadHalf, ChannelWriteHalf};
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
@@ -11,46 +10,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot, Notify};
 use tokio_util::sync::CancellationToken;
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum StdinPolicy {
-    Closed,
-    Open,
-}
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
-pub(crate) enum ExecutionIo {
-    Pipe { stdin: StdinPolicy },
-    Pty { cols: u32, rows: u32 },
-}
-impl Default for ExecutionIo {
-    fn default() -> Self {
-        Self::Pipe {
-            stdin: StdinPolicy::Closed,
-        }
-    }
-}
-impl ExecutionIo {
-    pub fn terminal(&self) -> bool {
-        matches!(self, Self::Pty { .. })
-    }
-    pub fn interactive(&self) -> bool {
-        !matches!(
-            self,
-            Self::Pipe {
-                stdin: StdinPolicy::Closed
-            }
-        )
-    }
-    pub fn validate(&self) -> Result<(), String> {
-        if let Self::Pty { cols, rows } = self {
-            if !(2..=1000).contains(cols) || !(1..=500).contains(rows) {
-                return Err("invalidParams:终端尺寸超出范围".into());
-            }
-        }
-        Ok(())
-    }
-}
+pub(crate) use sodeck_plugin_protocol::session::ExecutionIo;
 pub(crate) enum Launch {
     Command(String),
     LoginShell,

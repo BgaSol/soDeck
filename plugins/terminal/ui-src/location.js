@@ -1,4 +1,4 @@
-import {SharedState} from './state.js';
+import {SharedState} from './sdk/state.js';
 export function parseIntegration(text,token){
   if(!token||text.length>17000)return null;
   const parts=text.split(';');if(parts[0]!=='SODECK'||parts[1]!==token)return null;
@@ -22,7 +22,7 @@ export function parseOsc7(text,host){
 }
 export function createLocation(terminal,onLocation=()=>{}){
   let client,mount,host='',kind='',frameOffset=0,report,latest,ready=false,busy=false,disposed=false,timer,epoch=0,integration={},observed=false,confirmed=false,handshake;
-  const valid=()=>!disposed&&ready&&client?.available&&JSON.stringify(mount.context)===JSON.stringify(mount.data.openedContext);
+  const valid=()=>!disposed&&ready&&client&&JSON.stringify(mount.context)===JSON.stringify(mount.data.openedContext);
   const handler=terminal.parser.registerOscHandler(7,text=>{if(kind==='data'&&integration.mode==='manual')report=parseOsc7(text,host)||{state:'unknown',path:null,reasonCode:'invalid-report'};return true;});
   // Integration failure belongs to both observers. Let reading receive the same OSC event.
   const automatic=terminal.parser.registerOscHandler(633,text=>{if(kind==='data'&&integration.mode==='auto'){const parsed=parseIntegration(text,integration.token);if(parsed){observed=true;if(parsed.state==='known')confirmed=true;if(parsed.activity==='unavailable')confirmed=false;clearTimeout(handshake);report=parsed;return parsed.activity!=='unavailable';}}return false;});
@@ -45,7 +45,7 @@ export function createLocation(terminal,onLocation=()=>{}){
     completed(){if(report&&Number.isSafeInteger(frameOffset)){latest=observation(report);void publish();}report=null;},
     ready(){ready=true;void publish();const ticket=epoch;void client?.request('get',{topic:'terminal.location.v1',key:'current'}).then(({record})=>{
       if(ticket!==epoch||disposed||observed||(record?.present&&integration.mode!=='off'))return;
-      latest=observation({state:'unknown',path:null,activity:'starting',reasonCode:integration.mode==='auto'?'starting':integration.mode==='off'?'disabled':integration.mode==='manual'?'manual-setup':integration.reasonCode||'old-core'});void publish();
+      latest=observation({state:'unknown',path:null,activity:'starting',reasonCode:integration.mode==='auto'?'starting':integration.mode==='off'?'disabled':integration.mode==='manual'?'manual-setup':integration.reasonCode||'integration-failed'});void publish();
       if(integration.mode==='auto')handshake=setTimeout(()=>{if(ticket===epoch&&!disposed&&!observed){latest=observation({state:'unknown',path:null,activity:'unavailable',reasonCode:'handshake-timeout'});void publish();}},8000);
     }).catch(()=>{});},
     input(text){if(integration.mode==='auto'&&confirmed&&/[\r\n\x03\x04]/.test(text)){latest=observation({state:'unknown',path:null,activity:'busy',reasonCode:'busy'});void publish();}},

@@ -3,10 +3,10 @@ use serde_json::json;
 use sodeck_plugin_client::file_editor::EditorHost;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let editors = EditorHost::new("configFile");
-    sodeck_plugin_client::run(move |client, method, p| {
+    sodeck_plugin_client::run_with_commands(&[], move |client, callback| {
+        let (method, p) = callback.into_parts();
         if method == "initialize" {
-            editors.check_capabilities(&p)?;
-            return Ok(json!({"apiVersion":"1","uiApiVersion":"2"}));
+            return Ok(json!({}));
         }
         if method == "ui.event"
             && p["data"]["action"]

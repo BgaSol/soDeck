@@ -17,7 +17,6 @@ const MAX_VALUE: usize = 16 * 1024;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Declaration {
-    pub api_version: String,
     pub handlers: Vec<String>,
 }
 pub fn valid_name(name: &str) -> bool {
@@ -38,8 +37,7 @@ pub fn valid_name(name: &str) -> bool {
 impl Declaration {
     pub fn validate(&self) -> Result<(), String> {
         let names: HashSet<_> = self.handlers.iter().collect();
-        if self.api_version != "1"
-            || names.len() != self.handlers.len()
+        if names.len() != self.handlers.len()
             || names.len() > 32
             || self.handlers.iter().any(|s| !valid_name(s))
         {
@@ -53,10 +51,7 @@ pub(crate) fn confirm(manifest: &Manifest, result: &Value) -> Result<(), String>
         let actual: Vec<String> = serde_json::from_value(result["commandHandlers"].clone())
             .map_err(|_| "插件未确认命令处理者")?;
         let declared: HashSet<_> = d.handlers.iter().collect();
-        if result["commandsApiVersion"] != "1"
-            || actual.len() != declared.len()
-            || actual.iter().collect::<HashSet<_>>() != declared
-        {
+        if actual.len() != declared.len() || actual.iter().collect::<HashSet<_>>() != declared {
             return Err("插件清单与初始化命令声明不一致".into());
         }
     }
@@ -247,7 +242,6 @@ pub(crate) struct Record {
     bytes: usize,
     retired: bool,
     focus_clock: u64,
-    legacy: bool,
 }
 impl Record {
     fn wire(&self, id: &str) -> Value {
@@ -447,7 +441,6 @@ impl AppCore {
         let mut providers = instances.iter().filter_map(|(id, i)| {
             let v = i.view();
             (v.status == PluginStatus::Running
-                && i.commands_api.load(std::sync::atomic::Ordering::Acquire)
                 && v.manifest
                     .commands
                     .as_ref()
@@ -654,39 +647,7 @@ impl AppCore {
             return Err(Error::new("targetClosed", "目标标签组已关闭"));
         }
         command_admission(self, &state, &context, target, &group)?;
-        let legacy_action = if process.is_none() && name == "ui.action.v1" {
-            let action = state
-                .ui
-                .actions
-                .get(text(p, "actionKey")?)
-                .filter(|a| a.available && a.definition.command.is_none())
-                .cloned()
-                .ok_or_else(|| Error::new("noHandler", "行为提供者不可用"))?;
-            Some(action)
-        } else {
-            None
-        };
-        let (provider, instance, transport) = if let Some(action) = &legacy_action {
-            let transport = self
-                .instances
-                .lock()
-                .unwrap()
-                .get(&action.plugin_id)
-                .cloned()
-                .ok_or_else(|| Error::new("noHandler", "行为提供者不可用"))?;
-            if transport.view().status != PluginStatus::Running
-                || transport.view().instance_id.as_deref() != Some(&action.plugin_instance_id)
-            {
-                return Err(Error::new("noHandler", "行为提供者已停止"));
-            }
-            (
-                action.plugin_id.clone(),
-                action.plugin_instance_id.clone(),
-                transport,
-            )
-        } else {
-            self.command_provider(name)?
-        };
+        let (provider, instance, transport) = self.command_provider(name)?;
         if op == "resolve" {
             return Ok(json!({"available":true,"name":name}));
         }
@@ -713,7 +674,13 @@ impl AppCore {
         {
             return Err(Error::new("resourceLimit", "命令回执或在途请求已满"));
         }
-        let focus_clock = state.ui.clock;
+        let focus_clock = w
+            .views
+            .iter()
+            .filter(|v| host.group_of(&v.id).is_some())
+            .map(|v| v.last_used)
+            .max()
+            .unwrap_or(0);
         let id = self.next_id();
         let tasks = Arc::new(Tasks::default());
         let task: Task = tasks.enter().map_err(Error::invalid)?;
@@ -743,24 +710,14 @@ impl AppCore {
                 bytes,
                 retired: false,
                 focus_clock,
-                legacy: legacy_action.is_some(),
             },
         );
         state.commands.keys.insert(key, id.clone());
         state.commands.active.insert(id.clone());
         drop(state);
         self.command_log(&id, "命令已接纳");
-        let (method, params) = if let Some(action) = legacy_action {
-            (
-                "ui.action",
-                json!({"requestId":id,"context":context,"actionId":action.definition.id,"data":payload}),
-            )
-        } else {
-            (
-                "commands.handle",
-                json!({"commandId":id,"name":name,"context":context,"payload":payload}),
-            )
-        };
+        let method = "commands.handle";
+        let params = json!({"commandId":id,"name":name,"context":context,"payload":payload});
         let _ = transport.enqueue_command(method, params, task, Delivery(delivery, id.clone()));
         let mut state = self.workbench_state();
         state.commands.refresh();
@@ -892,7 +849,14 @@ impl AppCore {
             return Err(Error::new("startupSuperseded", "默认页面已由显式创建取代"));
         }
         let previous = host.clone();
-        let keep_focus = ui.clock != r.focus_clock;
+        let focus_clock = w
+            .views
+            .iter()
+            .filter(|v| host.group_of(&v.id).is_some())
+            .map(|v| v.last_used)
+            .max()
+            .unwrap_or(0);
+        let keep_focus = focus_clock != r.focus_clock;
         let view = ui
             .open_view(
                 &context,
@@ -921,23 +885,6 @@ impl AppCore {
         self.command_log(id, "命令页面已登记");
         self.workspace_changed();
         Ok(json!({"viewId":view}))
-    }
-    pub(crate) fn command_legacy_open(
-        &self,
-        plugin: &str,
-        instance: &str,
-        p: &Value,
-    ) -> Option<Value> {
-        let state = self.workbench_state();
-        let id = p["requestId"].as_str()?;
-        let r = state.commands.records.get(id)?;
-        if !r.legacy || r.provider != plugin || r.instance != instance {
-            return None;
-        }
-        let mut input = p.clone();
-        input["commandId"] = json!(id);
-        input["requestId"] = json!(format!("open:{id}"));
-        Some(input)
     }
 }
 fn command_admission(

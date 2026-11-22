@@ -1,5 +1,6 @@
 use crate::{cli, commands, connection::Snapshot, resources, runtime};
 use serde_json::{json, Value};
+use sodeck_plugin_client::protocol::requests as api;
 use sodeck_plugin_client::Client;
 use std::{
     collections::BTreeMap,
@@ -110,7 +111,10 @@ impl Pulls {
         if let Some(id) = old_id {
             let _ = self
                 .client
-                .call("session.stream.release", json!({"streamId":id}));
+                .request(api::call::ProcessRelease(api::Process {
+                    process_id: id.to_string(),
+                }))
+                .map_err(|e| e.message);
         }
         Ok(json!({"accepted":true}))
     }
@@ -120,7 +124,10 @@ impl Pulls {
             if let Some(id) = p.id {
                 let _ = self
                     .client
-                    .call("session.stream.release", json!({"streamId":id}));
+                    .request(api::call::ProcessRelease(api::Process {
+                        process_id: id.to_string(),
+                    }))
+                    .map_err(|e| e.message);
             }
         }
     }
@@ -178,7 +185,7 @@ impl Pulls {
                 match result {
                     Ok((ticket, reply)) => {
                         p.ticket = Some(ticket);
-                        p.id = reply.and_then(|r| r["streamId"].as_str().map(str::to_string));
+                        p.id = reply.and_then(|r| r["processId"].as_str().map(str::to_string));
                     }
                     Err(error) => {
                         p.finished = true;
@@ -193,14 +200,21 @@ impl Pulls {
                 continue;
             }
             if p.id.is_none() {
-                let found = self
-                    .client
-                    .call_detailed("session.stream.lookup", p.ticket.as_ref().unwrap().clone());
+                let found = serde_json::from_value::<
+                    sodeck_plugin_client::protocol::session::ProcessStart,
+                >(p.ticket.as_ref().unwrap().clone())
+                .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+                .and_then(|params| self.client.request(api::call::ProcessLookup(params)));
                 let result = match found {
-                    Ok(r) if r["known"] == true => Ok(r),
-                    Ok(_) if !p.cancelled && !expired => self
-                        .client
-                        .call_detailed("session.stream.open", p.ticket.as_ref().unwrap().clone()),
+                    Ok(r) if r.known => Ok(json!(r)),
+                    Ok(_) if !p.cancelled && !expired => {
+                        serde_json::from_value::<
+                            sodeck_plugin_client::protocol::session::ProcessStart,
+                        >(p.ticket.as_ref().unwrap().clone())
+                        .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+                        .and_then(|params| self.client.request(api::call::ProcessStart(params)))
+                        .map(|reply| json!(reply))
+                    }
                     Ok(_) => {
                         p.finished = true;
                         self.finish(
@@ -214,7 +228,7 @@ impl Pulls {
                     Err(e) => Err(e),
                 };
                 match result {
-                    Ok(r) => p.id = r["streamId"].as_str().map(str::to_owned),
+                    Ok(r) => p.id = r["processId"].as_str().map(str::to_owned),
                     Err(e) if e.code == -32003 => continue,
                     Err(e) => {
                         p.finished = true;
@@ -227,11 +241,17 @@ impl Pulls {
             if p.cancelled || expired {
                 let _ = self
                     .client
-                    .call("session.stream.close", json!({"streamId":id}));
+                    .request(api::call::ProcessCancel(api::Process {
+                        process_id: id.to_string(),
+                    }))
+                    .map_err(|e| e.message);
             }
             match self
                 .client
-                .call("session.stream.status", json!({"streamId":id}))
+                .request(api::call::ProcessStatus(api::Process {
+                    process_id: id.to_string(),
+                }))
+                .map_err(|e| e.message)
             {
                 Ok(status) => {
                     {
@@ -241,24 +261,22 @@ impl Pulls {
                                 && v.pull["requestId"] == p.request
                                 && v.target.as_ref().is_some_and(|t| t.same(&p.target))
                         }) {
-                            v.pull["producedBytes"] = status["producedBytes"].clone();
+                            v.pull["producedBytes"] = json!(status.produced_bytes);
                         }
                     }
-                    if status["finished"] == true || expired {
+                    if status.finished || expired {
                         p.finished = true;
-                        if let Some(message) = cli::startup_error(&status) {
+                        if let Some(message) = cli::startup_error(&json!(status.startup)) {
                             self.finish(view, p, "failed", &message);
                             continue;
                         }
-                        let (state, message) = if status["finished"] == true
-                            && status["state"] == "completed"
-                            && status["remoteExitConfirmed"] == true
-                            && status["exitCode"] == 0
+                        let (state, message) = if status.finished
+                            && status.state == "completed"
+                            && status.remote_exit_confirmed
+                            && status.exit_code == Some(0)
                         {
                             ("succeeded", "镜像拉取成功；资源索引待刷新")
-                        } else if status["state"] == "completed"
-                            && status["remoteExitConfirmed"] == true
-                        {
+                        } else if status.state == "completed" && status.remote_exit_confirmed {
                             (
                                 "failed",
                                 "拉取失败，请查看命令输出；当前仅管理公开源，不保存 Registry 凭据",
@@ -278,8 +296,8 @@ impl Pulls {
                                 && v.target.as_ref().is_some_and(|t| t.same(&p.target))
                         }) {
                             v.pull["state"] = json!("running");
-                            v.pull["streamId"] = json!(id);
-                            v.pull["producedBytes"] = status["producedBytes"].clone();
+                            v.pull["processId"] = json!(id);
+                            v.pull["producedBytes"] = json!(status.produced_bytes);
                             v.pull["message"] = json!("正在拉取 · Docker 尚未确认退出");
                             v.revision += 1;
                         }
@@ -299,9 +317,10 @@ impl Pulls {
             }
             if expired {
                 if let Some(id) = &p.id {
-                    let _ = self
-                        .client
-                        .call("session.stream.release", json!({"streamId":id}));
+                    let _ = serde_json::from_value::<api::Process>(json!({"processId":id}))
+                        .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+                        .and_then(|params| self.client.request(api::call::ProcessRelease(params)))
+                        .map_err(|e| e.message);
                 }
                 p.id = None;
             }
@@ -335,7 +354,10 @@ impl Pulls {
         for id in orphaned {
             let _ = self
                 .client
-                .call("session.stream.release", json!({"streamId":id}));
+                .request(api::call::ProcessRelease(api::Process {
+                    process_id: id.to_string(),
+                }))
+                .map_err(|e| e.message);
         }
     }
     fn finish(&self, view: &str, p: &Pull, state: &str, message: &str) {
@@ -346,7 +368,7 @@ impl Pulls {
                 && v.target.as_ref().is_some_and(|t| t.same(&p.target))
         }) {
             v.pull["state"] = json!(state);
-            v.pull["streamId"] = json!(p.id);
+            v.pull["processId"] = json!(p.id);
             v.pull["message"] = json!(commands::text(message, 2048));
             v.pull["reference"] = json!(p.reference);
             let task = v.pull.clone();
@@ -360,9 +382,9 @@ impl Pulls {
             }
         }
         drop(a);
-        let _=self.client.call("logging.write",json!({"level":if state=="succeeded"{"info"}else{"warn"},"message":"Docker 镜像拉取完成","fields":{"viewId":view,"reference":p.reference,"result":state}}));
+        let _=serde_json::from_value::<api::Log>(json!({"level":if state=="succeeded"{"info"}else{"warn"},"message":"Docker 镜像拉取完成","fields":{"viewId":view,"reference":p.reference,"result":state}})).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| self.client.request(api::call::Log(params))).map_err(|e|e.message);
         if state != "succeeded" {
-            let _=self.client.call("messages.publish",json!({"title":"Docker 镜像拉取未完成","body":format!("{}：请在 Docker 任务中查看结果",p.reference),"level":"warning","notify":false}));
+            let _=serde_json::from_value::<api::Message>(json!({"title":"Docker 镜像拉取未完成","body":format!("{}：请在 Docker 任务中查看结果",p.reference),"level":"warning","notify":false})).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| self.client.request(api::call::Message(params))).map_err(|e|e.message);
         }
     }
 }

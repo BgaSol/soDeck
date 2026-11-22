@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {packageSdkAssets} from '../../scripts/plugin-sdk-assets.mjs';
 import {packageSettingsAssets} from '../../scripts/plugin-settings-assets.mjs';
 import {packageMenuAssets} from '../../scripts/plugin-menu-assets.mjs';
 import {packageStyles} from '../../packages/ui/package.mjs';
@@ -8,8 +9,9 @@ for(const [pkg,version]of [['@xterm/xterm','6.0.0'],['@xterm/addon-serialize','0
 fs.mkdirSync('ui/vendor',{recursive:true});
 fs.cpSync('ui-src','ui',{recursive:true});
 packageStyles('.');
-fs.copyFileSync('../shared/clipboard.js','ui/clipboard-bridge.js');
-fs.copyFileSync('../shared/state.js','ui/state.js');
+packageSdkAssets('.');
+
+
 fs.copyFileSync('../../packages/ui/scroll-rail.js','ui/scroll-rail.js');
 await packageMenuAssets('.');
 packageSettingsAssets(JSON.parse(fs.readFileSync('release.json','utf8')),'.');

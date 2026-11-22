@@ -1,4 +1,5 @@
 use serde_json::{json, Value};
+use sodeck_plugin_client::protocol::requests as api;
 use sodeck_plugin_client::{
     encoding::{base64, unbase64},
     Client,
@@ -18,6 +19,7 @@ pub fn prepare(client: &Client, view: &str, context: &Value) -> Result<(String, 
         view,
         context,
         &token,
+        1,
         "printf 'SODECK-SHELL:%s\\n' \"$SHELL\"; uname -s",
     );
     if let Ok(output) = posix {
@@ -40,7 +42,14 @@ pub fn prepare(client: &Client, view: &str, context: &Value) -> Result<(String, 
     }
     // Execute in the user's actual default shell. CMD must remain CMD even with PowerShell installed.
     let script = "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);[Console]::WriteLine('SODECK-POWERSHELL:' + (Get-Process -Id $PID).Path)";
-    let output = probe(client, view, context, &format!("windows-{token}"), script)?;
+    let output = probe(
+        client,
+        view,
+        context,
+        &format!("windows-{token}"),
+        2,
+        script,
+    )?;
     let shell = output
         .lines()
         .find_map(|line| line.trim().strip_prefix("SODECK-POWERSHELL:"))
@@ -75,25 +84,41 @@ fn probe(
     view: &str,
     context: &Value,
     id_hint: &str,
+    sequence: u64,
     command: &str,
 ) -> Result<String, String> {
-    let task = client.call("session.exec.start", json!({"viewId":view,"expectedContext":context,"operationId":format!("shell-{id_hint}"),"sequence":"1","command":command,"timeoutMs":2500,"maxOutputBytes":2048}))?;
-    let id = &task["taskId"];
+    let task = client
+        .request(api::call::ExecStart(api::ExecStart {
+            view_id: view.into(),
+            expected_context: serde_json::from_value(context.clone())
+                .map_err(|_| "终端上下文无效")?,
+            operation_id: format!("shell-{id_hint}"),
+            sequence: sequence.to_string(),
+            command: command.into(),
+            timeout_ms: 2500,
+            max_output_bytes: 2048,
+            program_output: None,
+        }))
+        .map_err(|e| e.message)?;
+    let id = task.task_id;
     let result = (|| {
         let deadline = Instant::now() + Duration::from_millis(2800);
         loop {
-            let result = client.call(
-                "session.exec.poll",
-                json!({"taskId":id,"stdoutOffset":"0","stderrOffset":"0"}),
-            )?;
-            if result["outputComplete"] == true {
-                if result["error"]["code"] == "timedOut" {
+            let result = client
+                .request(api::call::ExecPoll(api::ExecPoll {
+                    task_id: id.to_string(),
+                    stdout_offset: "0".to_string(),
+                    stderr_offset: "0".to_string(),
+                }))
+                .map_err(|e| e.message)?;
+            if result.output_complete {
+                if result.error.as_ref().is_some_and(|e| e.code == "timedOut") {
                     return Err("shell-probe-timeout".into());
                 }
-                if result["exitCode"] != 0 {
+                if result.exit_code != Some(0) {
                     return Err("shell-probe-failed".into());
                 }
-                let bytes = unbase64(result["stdout"]["dataBase64"].as_str().unwrap_or(""))?;
+                let bytes = unbase64(&result.stdout.data_base64)?;
                 let output = std::str::from_utf8(&bytes).map_err(|_| "shell-probe-failed")?;
                 return Ok(output.to_owned());
             }
@@ -103,7 +128,11 @@ fn probe(
             std::thread::sleep(Duration::from_millis(30));
         }
     })();
-    let _ = client.call("session.exec.release", json!({"taskId":id}));
+    let _ = client
+        .request(api::call::ExecRelease(api::Task {
+            task_id: id.to_string(),
+        }))
+        .map_err(|e| e.message);
     result
 }
 fn supported(shell: &str) -> bool {

@@ -1,6 +1,6 @@
 # Docker Windows 远端剩余验收
 
-状态：2026-11-19，核心 1.8.1 / Docker 0.6.0 的源码、真实 Docker Desktop/Linux 流程与独立五平台发行验收完成；发行证据见[核心版本记录](../releases/v1.8.1.md)和[Docker CHANGELOG](../../plugins/docker/CHANGELOG.md)。正式行为、边界和契约已迁入 [Docker 功能](../features/docker.md)、[架构](../architecture.md)和[程序 API](../plugin-api.md#sessionprogramv1核心-181)。本文只保留尚未完成的真实远端要求，不代表这些组合已经通过。
+状态：2026-11-19，核心 1.8.1 / Docker 0.6.0 的源码、真实 Docker Desktop/Linux 流程与独立五平台发行验收完成；发行证据见[核心版本记录](../releases/v1.8.1.md)和[Docker CHANGELOG](../../plugins/docker/CHANGELOG.md)。正式行为、边界和契约已迁入 [Docker 功能](../features/docker.md)、[架构](../architecture.md)和[程序 API](../plugin-api.md#会话目标短命令与终端)。本文只保留尚未完成的真实远端要求，不代表这些组合已经通过。
 
 ## 尚未完成的真实远端范围
 

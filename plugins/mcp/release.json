@@ -3,32 +3,62 @@
   "name": "Agent MCP",
   "description": "让本机 AI 客户端发现并连接保存的服务器，执行命令、上传文件并下载证据。",
   "icon": "bot",
-  "icons": {"bot": "assets/icons/robot.svg"},
+  "icons": {
+    "bot": "assets/icons/robot.svg"
+  },
   "order": 60,
-  "apiVersion": "1",
+  "apiVersion": "2.0",
   "binary": "sodeck-mcp",
   "tagPrefix": "plugin-mcp-v",
   "ui": {
-    "apiVersion": "2",
     "entry": "ui/index.html",
-    "views": [{
-      "id": "status", "title": "Agent MCP", "icon": "bot",
-      "container": "sidebar", "instancePolicy": "perWorkspace",
-      "defaultSide": "right", "defaultPinned": true,
-      "openOnWorkspace": "none", "backgroundOnWorkspace": true,
-      "startupOrder": 60
-    }]
+    "views": [
+      {
+        "id": "status",
+        "title": "Agent MCP",
+        "icon": "bot",
+        "container": "sidebar",
+        "instancePolicy": "perWorkspace",
+        "defaultSide": "right",
+        "defaultPinned": true,
+        "openOnWorkspace": "none",
+        "backgroundOnWorkspace": true,
+        "startupOrder": 60
+      }
+    ]
   },
   "settings": {
-    "apiVersion": "1", "schemaVersion": 1,
-    "pages": [{
-      "id": "connection", "title": "Agent MCP", "icon": "bot", "order": 600,
-      "viewTypes": ["status"],
-      "groups": [{"id": "local", "title": "本机接入", "fields": [{
-        "key": "port", "title": "本机端口", "type": "number", "default": 19846,
-        "min": 1024, "max": 65535, "step": 1, "unit": "", "apply": "newInstance",
-        "description": "重启后使用此端口；修改后重新复制客户端配置。"
-      }]}]
-    }]
+    "schemaVersion": 1,
+    "pages": [
+      {
+        "id": "connection",
+        "title": "Agent MCP",
+        "icon": "bot",
+        "order": 600,
+        "viewTypes": [
+          "status"
+        ],
+        "groups": [
+          {
+            "id": "local",
+            "title": "本机接入",
+            "fields": [
+              {
+                "key": "port",
+                "title": "本机端口",
+                "type": "number",
+                "default": 19846,
+                "min": 1024,
+                "max": 65535,
+                "step": 1,
+                "unit": "",
+                "apply": "newInstance",
+                "description": "重启后使用此端口；修改后重新复制客户端配置。"
+              }
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

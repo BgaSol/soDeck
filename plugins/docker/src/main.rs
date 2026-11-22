@@ -1,3 +1,4 @@
+use sodeck_plugin_client::protocol::requests as api;
 mod browser;
 mod cli;
 mod collaboration;
@@ -15,36 +16,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let holder = Arc::new(Mutex::new(None::<runtime::Shared>));
     let log_holder = Arc::new(Mutex::new(None::<Arc<logs::Logs>>));
     let pull_holder = Arc::new(Mutex::new(None::<Arc<pulls::Pulls>>));
-    sodeck_plugin_client::run(move |client, method, p| {
+    sodeck_plugin_client::run(move |client, callback| {
+        let (method, p) = callback.into_parts();
         if method == "initialize" {
-            for cap in [
-                "commands.v1",
-                "session.exec.v1",
-                "session.program.v1",
-                "session.stream.v1",
-                "viewData.v1",
-                "content.export.v1",
-                "ui.workbench.v2",
-                "ui.openView.v1",
-                "settings.v1",
-            ] {
-                if !p["capabilities"]
-                    .as_array()
-                    .is_some_and(|v| v.iter().any(|c| c == cap))
-                {
-                    return Err(format!("核心缺少 {cap}，请升级 SoDeck"));
-                }
-            }
             let directory = p["dataDirectory"].as_str().ok_or("缺少插件数据目录")?;
             let mut state = runtime::App::new(directory.into())?;
-            let settings = client.call("settings.get", json!({"pageId":"display"}))?;
+            let settings = client.request(api::call::Settings(api::Page {
+                page_id: "display".to_string(),
+            }))?;
             apply_settings(&mut state, &settings["values"])?;
             let app = Arc::new(Mutex::new(state));
             runtime::start(app.clone(), client.clone());
             *pull_holder.lock().unwrap() = Some(pulls::Pulls::new(app.clone(), client.clone()));
             *log_holder.lock().unwrap() = Some(logs::Logs::new(client.clone(), app.clone()));
             *holder.lock().unwrap() = Some(app);
-            return Ok(json!({"apiVersion":"1","uiApiVersion":"2","settingsApiVersion":"1"}));
+            return Ok(json!({}));
         }
         let app = holder
             .lock()
@@ -89,7 +75,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .clone()
                 .ok_or("拉取服务未就绪")?;
             let result = service.event(id, &p["data"])?;
-            return app.lock().unwrap().response(id, result);
+            return app.lock().unwrap().response(id, result).map_err(Into::into);
         }
         if method == "ui.event"
             && p["data"]["action"]
@@ -113,7 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .clone()
                 .ok_or("日志服务尚未就绪")?;
             let result = service.event(id, target, &p["data"])?;
-            return app.lock().unwrap().response(id, result);
+            return app.lock().unwrap().response(id, result).map_err(Into::into);
         }
         if method == "ui.event" && p["data"]["action"] == "openLogs" {
             let d = &p["data"];
@@ -136,8 +122,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .as_str()
                 .filter(|s| !s.is_empty() && s.len() <= 128)
                 .ok_or("请求 ID 无效")?;
-            let result=client.call("ui.openView",json!({"expectedContext":context,"requestId":request,"viewType":"logs","resourceKey":resource,"sourceViewId":id}))?;
-            return app.lock().unwrap().response(id, result);
+            let result=serde_json::from_value::<api::OpenView>(json!({"expectedContext":context,"requestId":request,"viewType":"logs","resourceKey":resource,"sourceViewId":id})).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| client.request(api::call::OpenView(params))).map_err(|e|e.message)?;
+            return app
+                .lock()
+                .unwrap()
+                .response(id, json!({"viewId":result.view_id}))
+                .map_err(Into::into);
         }
         let mut a = app.lock().unwrap();
         match method {
@@ -195,7 +185,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             "ui.event" => {
                 let data = a.event(id, &p["data"])?;
-                return a.response(id, data);
+                return a.response(id, data).map_err(Into::into);
             }
             _ => return Err("未知 Docker 方法".into()),
         }
@@ -206,7 +196,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 data["logCapture"] = logs.snapshot(id)?;
             }
         }
-        a.response(id, data)
+        a.response(id, data).map_err(Into::into)
     })
 }
 fn apply_settings(a: &mut runtime::App, values: &Value) -> Result<(), String> {

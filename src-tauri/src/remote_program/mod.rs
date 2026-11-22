@@ -1,59 +1,14 @@
 //! Platform encoding for owned remote programs; execution stays in session services.
 mod posix;
 mod windows;
-use crate::{session_exec::Error, workspaces::Context, AppCore};
-use serde::Deserialize;
+use crate::{session_exec::Error, AppCore};
 use serde_json::{json, Value};
 
 pub(crate) const ENVIRONMENT_OUTPUT_BUDGET: usize = 16 * 1024;
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) enum Environment {
-    Posix,
-    Windows {
-        launcher: String,
-        #[serde(rename = "exitMode")]
-        exit_mode: ExitMode,
-    },
-}
-#[derive(Clone, Copy, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) enum ExitMode {
-    Native,
-    Powershell,
-}
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct Check {
-    pub argv: Vec<String>,
-    pub expected_stdout: String,
-}
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct Program {
-    pub file: String,
-    pub argv: Vec<String>,
-    #[serde(default)]
-    pub remove_env: Vec<String>,
-    #[serde(default)]
-    pub checks: Vec<Check>,
-}
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub(crate) enum Mode {
-    NonInteractive,
-    Terminal,
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Prepare {
-    view_id: String,
-    expected_context: Context,
-    environment: Environment,
-    mode: Mode,
-    program: Program,
-}
+#[cfg(test)]
+use sodeck_plugin_protocol::program::Check;
+pub(crate) use sodeck_plugin_protocol::program::{Environment, ExitMode, Mode, Prepare, Program};
 pub(crate) fn error(code: &'static str, message: impl Into<String>) -> Error {
     Error {
         code,

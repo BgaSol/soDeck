@@ -1,5 +1,6 @@
 //! File business orchestration. The core executes only individual filesystem primitives.
 use serde_json::{json, Value};
+use sodeck_plugin_client::protocol::requests as api;
 use sodeck_plugin_client::Client;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -210,16 +211,20 @@ impl Tasks {
             self.inner.remove_batch(&mut queue, &old);
         }
         if let Some(input) = parameters["inputId"].as_str() {
-            self.inner.client.call(
-                "files.request",
-                json!({"action":"input.claim","id":file,"inputId":input,"renew":parameters["renewInput"]==true}),
-            )?;
+            serde_json::from_value::<api::InputClaim>(
+                json!({"id":file,"inputId":input,"renew":parameters["renewInput"]==true}),
+            )
+            .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+            .and_then(|params| self.inner.client.request(api::call::InputClaim(params)))
+            .map_err(|e| e.message)?;
         }
         let id = self.inner.next().map_err(|e| e.message)?.to_string();
-        self.inner.client.call(
-            "files.request",
-            json!({"action":"batch.begin","id":file,"batchId":id,"context":context}),
-        )?;
+        serde_json::from_value::<api::BatchBegin>(
+            json!({"id":file,"batchId":id,"context":context}),
+        )
+        .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+        .and_then(|params| self.inner.client.request(api::call::BatchBegin(params)))
+        .map_err(|e| e.message)?;
         let batch = Arc::new(Batch {
             id: id.clone(),
             view: view.into(),
@@ -491,10 +496,12 @@ impl Inner {
                     .values()
                     .any(|b| b.file == batch.file && b.parameters["inputId"] == input)
                 {
-                    let _ = self.client.call(
-                        "files.request",
-                        json!({"action":"input.release","id":batch.file,"inputId":input}),
-                    );
+                    let _ = serde_json::from_value::<api::InputRelease>(
+                        json!({"id":batch.file,"inputId":input}),
+                    )
+                    .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+                    .and_then(|params| self.client.request(api::call::InputRelease(params)))
+                    .map_err(|e| e.message);
                 }
             }
         }
@@ -559,17 +566,22 @@ impl Inner {
             let state = batch.state.lock().unwrap().clone();
             if state["state"] == "completed" && state["kind"] != "download" {
                 if let Some(input) = batch.parameters["inputId"].as_str() {
-                    let _ = self.client.call(
-                        "files.request",
-                        json!({"action":"input.release","id":batch.file,"inputId":input}),
-                    );
+                    let _ = serde_json::from_value::<api::InputRelease>(
+                        json!({"id":batch.file,"inputId":input}),
+                    )
+                    .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+                    .and_then(|params| self.client.request(api::call::InputRelease(params)))
+                    .map_err(|e| e.message);
                 }
             }
-            let _ = self.client.call(
-                "files.request",
-                json!({"action":"batch.end","id":batch.file,"batchId":batch.id}),
-            );
-            let _=self.client.call("messages.publish",json!({"title":if state["state"]=="completed"{"文件任务完成"}else{"文件任务结束"},"body":format!("成功 {}，失败 {}，跳过 {}{}",state["completed"],state["failed"],state["skipped"],state["error"].as_str().map(|e|format!("；{e}")).unwrap_or_default()),"level":if state["state"]=="completed"{"success"}else{"warning"},"dedupeKey":batch.id}));
+            let _ = self
+                .client
+                .request(api::call::BatchEnd(api::Batch {
+                    id: batch.file.to_string(),
+                    batch_id: batch.id.to_string(),
+                }))
+                .map_err(|e| e.message);
+            let _=serde_json::from_value::<api::Message>(json!({"title":if state["state"]=="completed"{"文件任务完成"}else{"文件任务结束"},"body":format!("成功 {}，失败 {}，跳过 {}{}",state["completed"],state["failed"],state["skipped"],state["error"].as_str().map(|e|format!("；{e}")).unwrap_or_default()),"level":if state["state"]=="completed"{"success"}else{"warning"},"dedupeKey":batch.id})).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| self.client.request(api::call::Message(params))).map_err(|e|e.message);
             self.queue.lock().unwrap().active.remove(&workspace(&batch));
             self.wake.notify_all();
         }
@@ -588,9 +600,9 @@ impl Inner {
             append(&mut f, &request)?;
             f.sync_all().map_err(|e| e.to_string())?;
         }
-        let mut response = self
-            .client
-            .call_detailed("files.operations", request.clone());
+        let mut response = serde_json::from_value::<api::FileRequest>(request.clone())
+            .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+            .and_then(|params| self.client.request(api::call::FileOperation(params)));
         let mut id = None::<String>;
         let mut cancelled = false;
         loop {
@@ -678,31 +690,32 @@ impl Inner {
                 }
             }
             if batch.cancel.load(Ordering::Acquire) && !cancelled {
-                if let Err(error) = self.client.call_detailed(
-                    "files.request",
-                    json!({"action":"batch.cancel","id":batch.file,"batchId":batch.id}),
-                ) {
+                if let Err(error) = serde_json::from_value::<api::Batch>(
+                    json!({"id":batch.file,"batchId":batch.id}),
+                )
+                .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+                .and_then(|params| self.client.request(api::call::BatchCancel(params)))
+                {
                     response = Err(error);
                     thread::sleep(Duration::from_millis(300));
                     continue;
                 }
                 cancelled = true;
                 if let Some(id) = &id {
-                    let _ = self.client.call(
-                        "files.operations",
+                    let _ = serde_json::from_value::<api::FileRequest>(
                         json!({"action":"cancel","id":batch.file,"operationId":id}),
-                    );
+                    )
+                    .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+                    .and_then(|params| self.client.request(api::call::FileOperation(params)))
+                    .map_err(|e| e.message);
                 }
             }
             thread::sleep(Duration::from_millis(60));
-            response = self.client.call_detailed(
-                "files.operations",
-                if let Some(id) = &id {
+            response = serde_json::from_value::<api::FileRequest>(if let Some(id) = &id {
                     json!({"action":"poll","id":batch.file,"operationId":id})
                 } else {
                     json!({"action":"lookup","id":batch.file,"batchId":batch.id,"requestId":request["requestId"]})
-                },
-            );
+                }).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| self.client.request(api::call::FileOperation(params)));
         }
     }
     fn inspect(&self, batch: &Batch, endpoint: &Value) -> Result<Option<Value>, TaskError> {
@@ -715,10 +728,11 @@ impl Inner {
     }
     fn release_receipt(&self, batch: &Batch, id: &str) -> Result<(), TaskError> {
         loop {
-            let reply = self.client.call_detailed(
-                "files.operations",
+            let reply = serde_json::from_value::<api::FileRequest>(
                 json!({"action":"release","id":batch.file,"operationId":id}),
-            );
+            )
+            .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+            .and_then(|params| self.client.request(api::call::FileOperation(params)));
             if reply
                 .as_ref()
                 .map_or_else(|error| error.data["code"] == "expired", |_| true)
@@ -777,7 +791,7 @@ impl Inner {
             state["state"] = json!("awaitingConflict");
             state["conflict"] = json!({"allowedActions":allowed,"name":item.name,"typeConflict":type_conflict,"invalidName":target["kind"]=="invalidName","target":target,"itemId":self.next()?.to_string()});
         }
-        let _=self.client.call("messages.publish",json!({"title":"文件任务需要处理同名条目","body":item.name.chars().take(256).collect::<String>(),"level":"warning","dedupeKey":format!("{}/conflict",batch.id)}));
+        let _=serde_json::from_value::<api::Message>(json!({"title":"文件任务需要处理同名条目","body":item.name.chars().take(256).collect::<String>(),"level":"warning","dedupeKey":format!("{}/conflict",batch.id)})).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| self.client.request(api::call::Message(params))).map_err(|e|e.message);
         let mut decision = batch.decision.lock().unwrap();
         while decision.is_none() {
             if batch.cancel.load(Ordering::Acquire) || self.client.is_closed() {
@@ -860,10 +874,12 @@ impl Inner {
             let input = batch.parameters["inputId"].as_str().ok_or("缺少本地来源")?;
             let mut offset = 0;
             loop {
-                let page = self.client.call(
-                    "files.request",
-                    json!({"action":"input.list","id":batch.file,"inputId":input,"offset":offset}),
-                )?;
+                let page = serde_json::from_value::<api::InputList>(
+                    json!({"id":batch.file,"inputId":input,"offset":offset}),
+                )
+                .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+                .and_then(|params| self.client.request(api::call::InputList(params)))
+                .map_err(|e| e.message)?;
                 for entry in page["entries"].as_array().ok_or("本地来源结果无效")? {
                     let name = entry["name"].as_str().ok_or("本地文件名无效")?;
                     let source = json!({"side":"local","inputId":input,"rootId":entry["rootId"],"relative":[]});

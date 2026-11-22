@@ -1,33 +1,33 @@
 #[tokio::test(flavor="multi_thread",worker_threads=2)]
-async fn session_stream_recovers_raw_bytes_and_cancels_only_its_channel() {
+async fn process_output_recovers_raw_bytes_and_cancels_only_its_channel() {
     use base64::{engine::general_purpose::STANDARD, Engine};
     let f=Fixture::new();let target=SshServer::new().await;let server=f.server("127.0.0.1",target.addr.port(),json!([]));let context=connected(&f,&server).await.context.unwrap();let (_,token,terminal)=terminal_fixture(&f);
     let invoke=|method:&str,p:Value|f.core.ui_event("main",&token,json!({"rpc":method,"params":p})).unwrap();
     let input=json!({"expectedContext":context,"operationId":"binary","sequence":"1","command":"status-test:binary","maxOutputBytes":100000,"retention":"fixed"});
-    let start=invoke("session.stream.open",input.clone());let id=start["streamId"].as_str().unwrap();assert_eq!(invoke("session.stream.open",input.clone())["streamId"],id);
-    assert_eq!(invoke("session.stream.lookup",input.clone())["streamId"],id);let mut unknown=input.clone();unknown["operationId"]=json!("never-opened");assert_eq!(invoke("session.stream.lookup",unknown)["known"],false);
-    let mut conflict=input.clone();conflict["command"]=json!("sample");assert!(invoke("session.stream.open",conflict)["rpcError"].is_object());
-    let mut conflict=input.clone();conflict["maxOutputBytes"]=json!(100001);assert!(invoke("session.stream.lookup",conflict)["rpcError"].is_object());
-    let deadline=std::time::Instant::now()+Duration::from_secs(5);let status=loop{let s=invoke("session.stream.status",json!({"streamId":id}));if s["finished"]==true{break s;}assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(20)).await;};
+    let start=invoke("session.process.start",input.clone());let id=start["processId"].as_str().unwrap();assert_eq!(invoke("session.process.start",input.clone())["processId"],id);
+    assert_eq!(invoke("session.process.lookup",input.clone())["processId"],id);let mut unknown=input.clone();unknown["operationId"]=json!("never-opened");assert_eq!(invoke("session.process.lookup",unknown)["known"],false);
+    let mut conflict=input.clone();conflict["command"]=json!("sample");assert!(invoke("session.process.start",conflict)["rpcError"].is_object());
+    let mut conflict=input.clone();conflict["maxOutputBytes"]=json!(100001);assert!(invoke("session.process.lookup",conflict)["rpcError"].is_object());
+    let deadline=std::time::Instant::now()+Duration::from_secs(5);let status=loop{let s=invoke("session.process.status",json!({"processId":id}));if s["finished"]==true{break s;}assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(20)).await;};
     assert_eq!(status["state"],"completed");assert_eq!(status["remoteExitConfirmed"],true);
-    let summary=invoke("session.state",json!({}));assert_eq!(summary["target"]["protocol"],"ssh");assert!(summary["target"]["endpoint"].as_str().unwrap().ends_with(&target.addr.port().to_string()));
-    let first=invoke("session.stream.poll",json!({"streamId":id,"offset":"0"}));assert_eq!(first,invoke("session.stream.poll",json!({"streamId":id,"offset":"0"})));assert!(!first["chunks"].as_array().unwrap().is_empty());
-    assert!(invoke("session.stream.poll",json!({"streamId":id,"offset":"1"}))["rpcError"].is_object());
+    let summary=invoke("session.target.describe",json!({"expectedContext":context}));assert_eq!(summary["target"]["protocol"],"ssh");assert!(summary["target"]["endpoint"].as_str().unwrap().ends_with(&target.addr.port().to_string()));
+    let first=invoke("session.process.read",json!({"processId":id,"offset":"0"}));assert_eq!(first,invoke("session.process.read",json!({"processId":id,"offset":"0"})));assert!(!first["chunks"].as_array().unwrap().is_empty());
+    assert!(invoke("session.process.read",json!({"processId":id,"offset":"1"}))["rpcError"].is_object());
     let mut offset=0u64;let end=status["producedBytes"].as_str().unwrap().parse::<u64>().unwrap();let mut output=vec![];
-    while offset<end{let p=json!({"id":id,"action":"read","offset":offset.to_string(),"watermark":end.to_string()});let r=f.core.session_stream_data("main",&token,p.clone(),None).await.unwrap();assert_eq!(r,f.core.session_stream_data("main",&token,p,None).await.unwrap());let b:Vec<u8>=serde_json::from_value(r["data"].clone()).unwrap();assert!(b.len()<=16384);offset+=b.len() as u64;output.extend(b);}
+    while offset<end{let p=json!({"id":id,"action":"read","offset":offset.to_string(),"watermark":end.to_string()});let r=f.core.process_output_data("main",&token,p.clone(),None).await.unwrap();assert_eq!(r,f.core.process_output_data("main",&token,p,None).await.unwrap());let b:Vec<u8>=serde_json::from_value(r["data"].clone()).unwrap();assert!(b.len()<=16384);offset+=b.len() as u64;output.extend(b);}
     let (mut stdout,mut stderr)=(vec![],vec![]);for line in output.split(|b|*b==b'\n').filter(|b|!b.is_empty()){let envelope:Value=serde_json::from_slice(line).unwrap();let bytes=STANDARD.decode(envelope["dataBase64"].as_str().unwrap()).unwrap();if envelope["source"]=="stdout"{stdout.extend(bytes)}else{stderr.extend(bytes)}}
     assert_eq!(stdout,(0..16385).map(|i|i as u8).collect::<Vec<_>>());assert_eq!(stderr,(0..8193).map(|i|(255-i%256) as u8).collect::<Vec<_>>());
-    invoke("session.stream.release",json!({"streamId":id}));assert!(invoke("session.stream.open",input)["rpcError"].is_object());
-    let hang=invoke("session.stream.open",json!({"expectedContext":context,"operationId":"hang","sequence":"2","command":"status-test:hang","maxOutputBytes":1024,"retention":"rolling"}));let id=hang["streamId"].as_str().unwrap();
-    let large=invoke("session.stream.open",json!({"expectedContext":context,"operationId":"quota","sequence":"3","command":"status-test:hang","maxOutputBytes":48*1024*1024,"retention":"fixed"}));let large_id=large["streamId"].as_str().unwrap();assert!(invoke("session.stream.open",json!({"expectedContext":context,"operationId":"over-quota","sequence":"4","command":"status-test:hang","maxOutputBytes":32*1024*1024,"retention":"fixed"}))["rpcError"].is_object());invoke("session.stream.release",json!({"streamId":large_id}));
-    let (tx,mut rx)=tokio::sync::mpsc::unbounded_channel();let sink:Sink=Arc::new(move|frame|tx.send(frame).map_err(|_|"closed".into()));f.core.session_stream_data("main",&token,json!({"action":"attach","id":id}),Some(sink)).await.unwrap();let frame=rx.recv().await.unwrap();assert_eq!(frame.kind,"reset");
-    f.core.session_stream_data("main",&token,json!({"action":"ack","id":id,"packet":frame.packet}),None).await.unwrap();
-    invoke("session.stream.close",json!({"streamId":id}));tokio::time::sleep(Duration::from_millis(100)).await;assert_eq!(invoke("session.stream.status",json!({"streamId":id}))["state"],"cancelled");invoke("session.stream.release",json!({"streamId":id}));
-    let rolling=invoke("session.stream.open",json!({"expectedContext":context,"operationId":"pinned-binary","sequence":"5","command":"status-test:binary","maxOutputBytes":100000,"retention":"rolling"}));let id=rolling["streamId"].as_str().unwrap();
-    let deadline=std::time::Instant::now()+Duration::from_secs(5);let status=loop{let status=invoke("session.stream.status",json!({"streamId":id}));if status["finished"]==true{break status;}assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(20)).await;};
-    let pin=f.core.session_stream_data("main",&token,json!({"action":"pin","id":id,"start":"0","end":status["producedBytes"]}),None).await.unwrap();
-    let fixed=json!({"expectedContext":context,"operationId":"fixed-after-pin","sequence":"6","command":"status-test:hang","maxOutputBytes":64*1024*1024,"retention":"fixed"});assert!(invoke("session.stream.open",fixed.clone())["rpcError"].is_object(),"fixed captures and protected rolling bytes share the 64MiB reading quota");
-    f.core.session_stream_data("main",&token,json!({"action":"unpin","id":id,"pinId":pin["pinId"]}),None).await.unwrap();let freed=invoke("session.stream.open",fixed);assert!(freed["streamId"].is_string(),"{freed}");invoke("session.stream.release",json!({"streamId":freed["streamId"]}));invoke("session.stream.release",json!({"streamId":id}));
+    invoke("session.process.release",json!({"processId":id}));assert!(invoke("session.process.start",input)["rpcError"].is_object());
+    let hang=invoke("session.process.start",json!({"expectedContext":context,"operationId":"hang","sequence":"2","command":"status-test:hang","maxOutputBytes":1024,"retention":"rolling"}));let id=hang["processId"].as_str().unwrap();
+    let large=invoke("session.process.start",json!({"expectedContext":context,"operationId":"quota","sequence":"3","command":"status-test:hang","maxOutputBytes":48*1024*1024,"retention":"fixed"}));let large_id=large["processId"].as_str().unwrap();assert!(invoke("session.process.start",json!({"expectedContext":context,"operationId":"over-quota","sequence":"4","command":"status-test:hang","maxOutputBytes":32*1024*1024,"retention":"fixed"}))["rpcError"].is_object());invoke("session.process.release",json!({"processId":large_id}));
+    let (tx,mut rx)=tokio::sync::mpsc::unbounded_channel();let sink:Sink=Arc::new(move|frame|tx.send(frame).map_err(|_|"closed".into()));f.core.process_output_data("main",&token,json!({"action":"attach","id":id}),Some(sink)).await.unwrap();let frame=rx.recv().await.unwrap();assert_eq!(frame.kind,"reset");
+    f.core.process_output_data("main",&token,json!({"action":"ack","id":id,"packet":frame.packet}),None).await.unwrap();
+    invoke("session.process.cancel",json!({"processId":id}));tokio::time::sleep(Duration::from_millis(100)).await;assert_eq!(invoke("session.process.status",json!({"processId":id}))["state"],"cancelled");invoke("session.process.release",json!({"processId":id}));
+    let rolling=invoke("session.process.start",json!({"expectedContext":context,"operationId":"pinned-binary","sequence":"5","command":"status-test:binary","maxOutputBytes":100000,"retention":"rolling"}));let id=rolling["processId"].as_str().unwrap();
+    let deadline=std::time::Instant::now()+Duration::from_secs(5);let status=loop{let status=invoke("session.process.status",json!({"processId":id}));if status["finished"]==true{break status;}assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(20)).await;};
+    let pin=f.core.process_output_data("main",&token,json!({"action":"pin","id":id,"start":"0","end":status["producedBytes"]}),None).await.unwrap();
+    let fixed=json!({"expectedContext":context,"operationId":"fixed-after-pin","sequence":"6","command":"status-test:hang","maxOutputBytes":64*1024*1024,"retention":"fixed"});assert!(invoke("session.process.start",fixed.clone())["rpcError"].is_object(),"fixed captures and protected rolling bytes share the 64MiB reading quota");
+    f.core.process_output_data("main",&token,json!({"action":"unpin","id":id,"pinId":pin["pinId"]}),None).await.unwrap();let freed=invoke("session.process.start",fixed);assert!(freed["processId"].is_string(),"{freed}");invoke("session.process.release",json!({"processId":freed["processId"]}));invoke("session.process.release",json!({"processId":id}));
     td(&f.core,"main",&token,json!({"op":"write","id":terminal,"sequence":0,"data":b"still-connected"})).await.unwrap();assert_eq!(target.state.auth.load(Ordering::Relaxed),1);close_terminal_views(&f);f.core.shutdown().unwrap();
 }
 
@@ -36,30 +36,30 @@ async fn command_stream_deadline_uses_the_original_ticket_and_keeps_session() {
     let f=Fixture::new();let ssh=SshServer::new().await;let server=f.server("127.0.0.1",ssh.addr.port(),json!([]));let context=connected(&f,&server).await.context.unwrap();let (_,token,_)=terminal_fixture(&f);
     let invoke=|method:&str,p:Value|f.core.ui_event("main",&token,json!({"rpc":method,"params":p})).unwrap();
     let input=json!({"expectedContext":context,"operationId":"deadline","sequence":"1","command":"status-test:hang","timeoutMs":1000,"maxOutputBytes":4096,"retention":"fixed"});
-    let start=invoke("session.stream.open",input.clone());let id=&start["streamId"];
-    let mut changed=input.clone();changed["timeoutMs"]=json!(2000);assert!(invoke("session.stream.lookup",changed)["rpcError"].is_object());
-    let end=std::time::Instant::now()+Duration::from_secs(5);loop{let result=invoke("session.stream.poll",json!({"streamId":id,"offset":"0"}));if result["status"]["workerFinished"]==true{assert_eq!(result["status"]["error"]["code"],"deadlineExceeded");assert_eq!(result["status"]["outputComplete"],false);break;}assert!(std::time::Instant::now()<end);tokio::time::sleep(Duration::from_millis(20)).await;}
-    assert_eq!(invoke("session.state",json!({}))["state"],"connected");invoke("session.stream.release",json!({"streamId":id}));close_terminal_views(&f);f.core.shutdown().unwrap();
+    let start=invoke("session.process.start",input.clone());let id=&start["processId"];
+    let mut changed=input.clone();changed["timeoutMs"]=json!(2000);assert!(invoke("session.process.lookup",changed)["rpcError"].is_object());
+    let end=std::time::Instant::now()+Duration::from_secs(5);loop{let result=invoke("session.process.read",json!({"processId":id,"offset":"0"}));if result["status"]["workerFinished"]==true{assert_eq!(result["status"]["error"]["code"],"deadlineExceeded");assert_eq!(result["status"]["outputComplete"],false);break;}assert!(std::time::Instant::now()<end);tokio::time::sleep(Duration::from_millis(20)).await;}
+    assert_eq!(invoke("session.target.describe",json!({"expectedContext":context}))["state"],"connected");invoke("session.process.release",json!({"processId":id}));close_terminal_views(&f);f.core.shutdown().unwrap();
 }
 
 #[tokio::test(flavor="multi_thread",worker_threads=2)]
 async fn slow_stream_ack_does_not_block_capture_and_revoked_readers_cannot_resume() {
     let f=Fixture::new();let ssh=SshServer::new().await;let server=f.server("127.0.0.1",ssh.addr.port(),json!([]));let context=connected(&f,&server).await.context.unwrap();let (view,token,_)=terminal_fixture(&f);
-    let opened=f.core.ui_event("main",&token,json!({"rpc":"session.stream.open","params":{"expectedContext":context,"operationId":"burst","sequence":"1","command":"status-test:stream-burst","maxOutputBytes":65536,"retention":"rolling"}})).unwrap();let id=opened["streamId"].as_str().unwrap();
+    let opened=f.core.ui_event("main",&token,json!({"rpc":"session.process.start","params":{"expectedContext":context,"operationId":"burst","sequence":"1","command":"status-test:stream-burst","maxOutputBytes":65536,"retention":"rolling"}})).unwrap();let id=opened["processId"].as_str().unwrap();
     let (tx,mut rx)=tokio::sync::mpsc::unbounded_channel();let sink:Sink=Arc::new(move|frame|tx.send(frame).map_err(|_|"closed".into()));
-    f.core.session_stream_data("main",&token,json!({"action":"attach","id":id,"offset":"0"}),Some(sink)).await.unwrap();
+    f.core.process_output_data("main",&token,json!({"action":"attach","id":id,"offset":"0"}),Some(sink)).await.unwrap();
     let reset=tokio::time::timeout(Duration::from_secs(3),rx.recv()).await.unwrap().unwrap();assert_eq!(reset.kind,"reset");
     tokio::time::sleep(Duration::from_millis(200)).await;assert!(rx.try_recv().is_err());
-    let deadline=std::time::Instant::now()+Duration::from_secs(10);loop { let status=f.core.ui_event("main",&token,json!({"rpc":"session.stream.status","params":{"streamId":id}})).unwrap();if status["finished"]==true {assert_eq!(status["state"],"completed");assert!(status["producedBytes"].as_str().unwrap().parse::<u64>().unwrap()>3_000_000);break;}assert!(std::time::Instant::now()<deadline,"{status}");tokio::time::sleep(Duration::from_millis(25)).await; }
+    let deadline=std::time::Instant::now()+Duration::from_secs(10);loop { let status=f.core.ui_event("main",&token,json!({"rpc":"session.process.status","params":{"processId":id}})).unwrap();if status["finished"]==true {assert_eq!(status["state"],"completed");assert!(status["producedBytes"].as_str().unwrap().parse::<u64>().unwrap()>3_000_000);break;}assert!(std::time::Instant::now()<deadline,"{status}");tokio::time::sleep(Duration::from_millis(25)).await; }
     // A real stalled reader keeps one pending packet while the source completes and rotates.
     tokio::time::sleep(Duration::from_secs(30)).await;assert!(rx.try_recv().is_err());
-    f.core.session_stream_data("main",&token,json!({"action":"ack","id":id,"packet":reset.packet}),None).await.unwrap();let gap=tokio::time::timeout(Duration::from_secs(3),rx.recv()).await.unwrap().unwrap();assert_eq!(gap.kind,"gap");
+    f.core.process_output_data("main",&token,json!({"action":"ack","id":id,"packet":reset.packet}),None).await.unwrap();let gap=tokio::time::timeout(Duration::from_secs(3),rx.recv()).await.unwrap().unwrap();assert_eq!(gap.kind,"gap");
     tokio::time::sleep(Duration::from_secs(2)).await;assert!(rx.try_recv().is_err());
-    f.core.ui_detach("main",&token);assert!(f.core.session_stream_data("main",&token,json!({"action":"ack","id":id,"packet":gap.packet}),None).await.is_err());
+    f.core.ui_detach("main",&token);assert!(f.core.process_output_data("main",&token,json!({"action":"ack","id":id,"packet":gap.packet}),None).await.is_err());
     let mounted=f.core.ui_attach("main",&view).unwrap();let replacement=mounted["surfaceId"].as_str().unwrap();f.core.ui_surface_ready("main",replacement).unwrap();
     let (tx,mut rx)=tokio::sync::mpsc::unbounded_channel();let sink:Sink=Arc::new(move|frame|tx.send(frame).map_err(|_|"closed".into()));
-    f.core.session_stream_data("main",replacement,json!({"action":"attach","id":id}),Some(sink)).await.unwrap();let reset=tokio::time::timeout(Duration::from_secs(3),rx.recv()).await.unwrap().unwrap();assert_eq!(reset.kind,"reset");
-    f.core.session_stream_data("main",replacement,json!({"action":"ack","id":id,"packet":reset.packet}),None).await.unwrap();let data=tokio::time::timeout(Duration::from_secs(3),rx.recv()).await.unwrap().unwrap();assert_eq!(data.kind,"data");assert!(data.data.len()<=16384);
+    f.core.process_output_data("main",replacement,json!({"action":"attach","id":id}),Some(sink)).await.unwrap();let reset=tokio::time::timeout(Duration::from_secs(3),rx.recv()).await.unwrap().unwrap();assert_eq!(reset.kind,"reset");
+    f.core.process_output_data("main",replacement,json!({"action":"ack","id":id,"packet":reset.packet}),None).await.unwrap();let data=tokio::time::timeout(Duration::from_secs(3),rx.recv()).await.unwrap().unwrap();assert_eq!(data.kind,"data");assert!(data.data.len()<=16384);
     close_terminal_views(&f);f.core.shutdown().unwrap();
 }
 
@@ -156,6 +156,6 @@ async fn process_requires_server_acceptance_and_rejection_keeps_shared_session()
     invoke("session.process.release",json!({"processId":id}));
     let rejected=invoke("session.process.start",request("2","status-test:reject"));let id=&rejected["processId"];
     loop {let status=invoke("session.process.status",json!({"processId":id}));if status["workerFinished"]==true{assert_eq!(status["launchAccepted"],false);assert_eq!(status["error"]["code"],"execRejected");break;}assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(5)).await;}
-    invoke("session.process.release",json!({"processId":id}));assert_eq!(invoke("session.state",json!({}))["state"],"connected");
+    invoke("session.process.release",json!({"processId":id}));assert_eq!(invoke("session.target.describe",json!({"expectedContext":context}))["state"],"connected");
     close_terminal_views(&f);f.core.shutdown().unwrap();
 }

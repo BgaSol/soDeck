@@ -152,7 +152,7 @@ addEventListener('sodeck:mount',({detail})=>{
   config ||= createConfigPopover({request:event,host:(method,params)=>sodeck.request(method,params),owner});
   observer=new IntersectionObserver(entries=>{for(const entry of entries){const id=entry.target.dataset.taskId;if(entry.isIntersecting)inView.add(id);else inView.delete(id);}},{root:pane});
   for(const row of rows.values())observer.observe(row.li);
-  if(detail.data)render(detail.data);config.settings(detail.settings);sodeck.mounted();void refresh();void config.readSettings();
+  if(detail.data)render(detail.data);config.settings(detail.settings);sodeck.prepared();void refresh();void config.readSettings();
 });
 addEventListener('sodeck:themeChanged',({detail})=>{stopAnimations();config?.finishMotion();theme(detail.tokens);});
 addEventListener('sodeck:settingsChanged',({detail})=>config?.settings(detail.settings));

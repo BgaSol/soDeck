@@ -1,3 +1,4 @@
+import {fixtureBinary} from './cargo-fixture.mjs';
 // Exercise the plugin-generated policy, shared text menu and scrollbar styles.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -12,7 +13,7 @@ const run = (command, args, options = {}) => {
   return result;
 };
 run('cargo', ['build', '--manifest-path', 'src-tauri/Cargo.toml', '--features', 'test-fixtures', '--bin', 'catalog-fixture', '--locked'], { stdio: 'inherit' });
-const metadata = JSON.parse(run(path.resolve(`src-tauri/target/debug/catalog-fixture${process.platform === 'win32' ? '.exe' : ''}`), ['--desktop-script'], { encoding: 'utf8' }).stdout);
+const metadata = JSON.parse(run(fixtureBinary('catalog-fixture'), ['--desktop-script'], { encoding: 'utf8' }).stdout);
 assert.equal(metadata.allFrames, true, 'The native plugin must inject its policy into child frames');
 const policy = metadata.script;
 fs.mkdirSync('artifacts/desktop-ui', { recursive: true });

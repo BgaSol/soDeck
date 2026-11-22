@@ -1,3 +1,5 @@
+import {fixtureBinary} from './cargo-fixture.mjs';
+import {pluginUiFile,fixtureError} from './plugin-ui-fixture.mjs';
 import {completedAction} from './component-command-fixture.mjs';
 // Actual terminal package + xterm UI + core PTY + independent OpenSSH.
 import assert from 'node:assert/strict';
@@ -7,11 +9,11 @@ import fs from 'node:fs';import os from 'node:os';import path from 'node:path';i
 import {spawn,spawnSync} from 'node:child_process';import {createServer} from 'vite';import {chromium} from 'playwright';
 const build=spawnSync('cargo',['build','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--locked','--bin','catalog-fixture'],{stdio:'inherit',windowsHide:true});if(build.status!==0)throw new Error('Fixture build failed');
 const data=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-terminal-ui-'));
-const child=spawn(path.resolve(`src-tauri/target/debug/catalog-fixture${process.platform==='win32'?'.exe':''}`),[data],{stdio:['pipe','pipe','inherit'],windowsHide:true});
+const child=spawn(fixtureBinary('catalog-fixture'),[data],{stdio:['pipe','pipe','inherit'],windowsHide:true});
 const pending=[],routes=new Map(),pages=[],errors=[],traces=[];
 let delayOwnership=false;
 child.on('exit',()=>{for(const p of pending.splice(0))p.reject(new Error('Core fixture exited'));});
-readline.createInterface({input:child.stdout}).on('line',line=>{const r=JSON.parse(line);if(r.event==='data'){const route=routes.get(r.surface);if(route)void route.page.evaluate(({callback,index,frame})=>window.callbacks.get(callback)?.({index,message:frame}),{callback:route.callback,index:route.index++,frame:r.frame}).catch(()=>{});return;}const p=pending.shift();r.error?p.reject(new Error(r.error)):p.resolve(r.value);});
+readline.createInterface({input:child.stdout}).on('line',line=>{const r=JSON.parse(line);if(r.event==='data'){const route=routes.get(r.surface);if(route)void route.page.evaluate(({callback,index,frame})=>window.callbacks.get(callback)?.({index,message:frame}),{callback:route.callback,index:route.index++,frame:r.frame}).catch(()=>{});return;}const p=pending.shift();r.error?p.reject(fixtureError(r.error)):p.resolve(r.value);});
 const call=(command,args={})=>new Promise((resolve,reject)=>{pending.push({resolve,reject});child.stdin.write(JSON.stringify({command,args})+'\n');});
 const vite=await createServer({server:{host:'127.0.0.1',port:0}});await vite.listen();const url=vite.resolvedUrls.local[0];
 const browser=await chromium.launch({headless:true});
@@ -20,13 +22,13 @@ async function pageFor(window){
  const page=await browser.newPage({viewport:{width:1100,height:720}});pages.push(page);traces.push(await recordTrace(page.context(),'terminal-'+window));page.on('pageerror',e=>errors.push(String(e)));
  await page.addInitScript(()=>addEventListener('sodeck:surfaceReady',()=>{document.documentElement.dataset.testInputReady='true';},{once:true}));
  await page.exposeBinding('testInvoke',async(_,command,args={})=>{if(command==='clipboard_text'){if(args.operation==='read')return clipboard;clipboard=args.text;return null;}if(command==='component_data'&&args.request.op==='attach')routes.set(args.surfaceId,{page,callback:args.callback,index:0});return call(command,{...args,window});});
- await page.route(url+'__plugin__/**',route=>{const relative=new URL(route.request().url()).pathname.split('/').slice(3).join('/');const filename=path.join(process.env.SODECK_TEST_TERMINAL_PLUGIN,relative);const contentType={'.js':'text/javascript','.css':'text/css','.html':'text/html'}[path.extname(filename)]||'application/octet-stream';
+ await page.route(url+'__plugin__/**',route=>{const relative=new URL(route.request().url()).pathname.split('/').slice(3).join('/');const filename=pluginUiFile(process.env.SODECK_TEST_TERMINAL_PLUGIN,relative);const contentType={'.js':'text/javascript','.css':'text/css','.html':'text/html','.svg':'image/svg+xml'}[path.extname(filename)]||'application/octet-stream';
   let body=fs.readFileSync(filename);
-  if(delayOwnership&&window==='main'&&relative.endsWith('/bridge.js')){
+  if(delayOwnership&&window==='main'&&relative.endsWith('/sdk/index.js')){
    // A restored xterm must wait for the ownership event, even when its delivery is delayed.
-   const dispatch="else dispatchEvent(new CustomEvent('sodeck:'+message.type,{detail:message}));";
+   const dispatch="dispatchEvent(new CustomEvent('sodeck:' + message.type, {detail: message}));";
    assert(body.toString().includes(dispatch),'Terminal bridge still exposes the event dispatcher');
-   body=Buffer.from(body.toString().replace(dispatch,"else {const notify=()=>dispatchEvent(new CustomEvent('sodeck:'+message.type,{detail:message}));if(message.type==='surfaceReady')setTimeout(notify,800);else notify();}"));
+   body=Buffer.from(body.toString().replace(dispatch,"{const notify=()=>dispatchEvent(new CustomEvent('sodeck:'+message.type,{detail:message}));if(message.type==='surfaceReady')setTimeout(notify,800);else notify();}"));
   }
   return route.fulfill({contentType,body});
  });
@@ -88,7 +90,7 @@ try{
  const context=(await call('connection',{command:{op:'snapshot'}}))[0].context;
  const command=process.platform==='win32'?`powershell.exe -NoLogo -NoProfile -Command "Write-Output 'sodeck-ui-launch-ready'; $line = [Console]::ReadLine(); Write-Output ('sodeck-ui-launch-input:' + $line); exit 7"`:`sh -c 'printf "sodeck-ui-launch-ready\\n"; read line; printf "sodeck-ui-launch-input:%s\\n" "$line"; exit 7'`;
  const config={version:1,title:'指定命令 UI',launch:{kind:'command',command},directoryIntegration:'off'};
- const action=await completedAction(call,{window:'main',context,requestId:'ui-command'},await call('component_ui',{window:'main',operation:'invokeAction',args:{context,requestId:'ui-command',actionKey:'sodeck.terminal:new-terminal',data:config}}));assert.equal(action.status,'completed');
+ const action=await completedAction(call,{window:'main',context,requestId:'ui-command'},await call('component_ui',{window:'main',operation:'command',args:{op:'submit',name:'terminal.open.v1',context,requestId:'ui-command',actionKey:'sodeck.terminal:new-terminal',payload:config}}));assert.equal(action.status,'completed');
  await main.evaluate(()=>window.manager.refresh());
  const commandFrame=main.frameLocator(`.component-surface[data-view-id="${action.viewId}"] iframe`);
  await commandFrame.locator('.xterm-rows').filter({hasText:'sodeck-ui-launch-ready'}).waitFor();

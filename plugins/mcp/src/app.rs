@@ -1,5 +1,6 @@
 use crate::{targets::Target, task::now, tasks::Registry};
 use serde_json::{json, Value};
+use sodeck_plugin_client::protocol::requests as api;
 use sodeck_plugin_client::{Client, RpcError};
 use std::{
     collections::HashMap,
@@ -57,9 +58,16 @@ impl App {
             target_changes: tokio::sync::watch::channel(0).0,
         }
     }
-    pub fn rpc(&self, method: &str, p: Value) -> Result<Value, Value> {
+    pub fn rpc<R: api::Call>(&self, request: R) -> Result<Value, Value>
+    where
+        R::Reply: serde::Serialize,
+    {
         self.client
-            .call_detailed(method, p)
+            .request(request)
+            .and_then(|reply| {
+                serde_json::to_value(reply)
+                    .map_err(|_| RpcError::local("核心回复无法写入 MCP 证据"))
+            })
             .map_err(|e: RpcError| json!({"code":e.code,"message":e.message,"details":e.data}))
     }
 }

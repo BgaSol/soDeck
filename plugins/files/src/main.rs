@@ -1,5 +1,6 @@
 use serde_json::json;
 use sodeck_plugin_client::file_editor::EditorHost;
+use sodeck_plugin_client::protocol::requests as api;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -45,35 +46,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let selections = Mutex::new(HashMap::<String, Selection>::new());
     let task_manager: Arc<Mutex<Option<Arc<tasks::Tasks>>>> = Arc::new(Mutex::new(None));
     let task_manager_for_handler = task_manager.clone();
-    sodeck_plugin_client::run(move |client, method, p| {
+    sodeck_plugin_client::run(move |client, callback| {
+        let (method, p) = callback.into_parts();
         if method == "initialize" {
-            editors.check_capabilities(&p)?;
-            for capability in [
-                "files.v1",
-                "files.directoryCursors.v1",
-                "files.operations.v1",
-                "files.operations.v2",
-                "files.editor.v1",
-                "files.localInputs.v1",
-                "viewData.v1",
-            ] {
-                if !p["capabilities"]
-                    .as_array()
-                    .is_some_and(|c| c.iter().any(|v| v == capability))
-                {
-                    return Err(format!("核心缺少 {capability}，请先升级 SoDeck"));
-                }
-            }
             let directory = p["dataDirectory"]
                 .as_str()
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|| std::env::temp_dir().join("sodeck-files"));
             let manager = Arc::new(tasks::Tasks::new(client.clone(), directory)?);
             *task_manager_for_handler.lock().unwrap() = Some(manager);
-            return Ok(json!({"apiVersion":"1","settingsApiVersion":"1","uiApiVersion":"2"}));
+            return Ok(json!({}));
         }
         if method == "settings.changed" {
-            return settings.changed(&p, &["browser", "editor"]);
+            return settings
+                .changed(&p, &["browser", "editor"])
+                .map_err(Into::into);
         }
         let tasks = task_manager_for_handler
             .lock()
@@ -155,16 +142,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             tasks.cancel_view(view);
             editors.dispose_source(client, view)?;
             if let Some(v) = views.lock().unwrap().remove(view) {
-                client.call("files.request", json!({"action":"close","id":v.id}))?;
+                client.request(api::call::FileClose(api::Resource {
+                    id: v.id.to_string(),
+                }))?;
             }
             return Ok(json!({}));
         }
         if method == "ui.createView" && !views.lock().unwrap().contains_key(view) {
-            let result = client.call("files.request", json!({"action":"open","viewId":view}))?;
+            let result = client.request(api::call::FileOpen(api::FileOpen {
+                view_id: view.to_string(),
+            }))?;
             let path = p["params"]["path"].as_str().unwrap_or("").to_string();
             let title = "文件".to_string();
             views.lock().unwrap().entry(view.into()).or_insert(View {
-                id: result["id"].as_str().ok_or("没有文件资源 ID")?.into(),
+                id: result.id,
                 title,
                 path,
                 dirty: false,
@@ -388,10 +379,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             match d["action"].as_str() {
                 Some("error") => {
-                    client.call("logging.write", json!({
+                    serde_json::from_value::<api::Log>(json!({
                         "level":"error", "message":d["message"].as_str().unwrap_or("文件操作失败"),
                         "fields":{"viewId":view}
-                    }))?;
+                    }))
+                    .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+                    .and_then(|params| client.request(api::call::Log(params)))?;
                 }
                 Some("directory") => v.path = d["path"].as_str().ok_or("缺少 path")?.into(),
                 Some("navigation") => {

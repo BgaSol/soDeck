@@ -42,7 +42,7 @@ fn latest_discovery_does_not_read_oversized_historical_releases() {
     );
     server.put(
         "/manifest.json",
-        json!({"id":"test.fixture","version":"0.10.0","apiVersion":"1","notes":"current version only",
+        json!({"id":"test.fixture","version":"0.10.0","apiVersion":"2.0","notes":"current version only",
             "platforms":{TARGET:{"url":format!("{}/plugin.zip",server.base),"sha256":"a".repeat(64)}}})
         .to_string(),
     );
@@ -73,7 +73,7 @@ fn latest_discovery_does_not_read_oversized_historical_releases() {
 #[test]
 fn missing_and_unpublished_tags_are_checked_in_version_order_then_stop() {
     let server = Server::new();
-    server.release(Vec::new(), "1", TARGET);
+    server.release(Vec::new(), "2.0", TARGET);
     server.tags(
         "test/repo",
         "plugin-fixture-v",
@@ -188,7 +188,7 @@ fn tag_directory_rejects_wrong_refs_invalid_json_and_large_responses() {
                 "0.1.0",
             )
             .unwrap_err();
-        assert!(error.contains(message), "{error}");
+        assert!(error.message.contains(message), "{error}");
         assert_eq!(server.requests.lock().unwrap().len(), 1);
     }
 }
@@ -208,7 +208,7 @@ fn first_official_release_errors_are_not_bypassed() {
         ("url", "HTTPS"),
     ] {
         let server = Server::new();
-        server.release(Vec::new(), "1", TARGET);
+        server.release(Vec::new(), "2.0", TARGET);
         server.tags(
             "test/repo",
             "plugin-fixture-v",
@@ -261,7 +261,7 @@ fn first_official_release_errors_are_not_bypassed() {
                 "0.1.0",
             )
             .unwrap_err();
-        assert!(error.contains(message), "{case}: {error}");
+        assert!(error.message.contains(message), "{case}: {error}");
         assert!(
             !server
                 .requests
@@ -523,7 +523,7 @@ impl Drop for Fixture {
     }
 }
 fn manifest(version: &str) -> serde_json::Value {
-    json!({"id":"test.fixture","name":"Update Fixture","version":version,"apiVersion":"1","target":TARGET,"entry":format!("fixture{}",std::env::consts::EXE_SUFFIX)})
+    json!({"id":"test.fixture","name":"Update Fixture","version":version,"apiVersion":"2.0","target":TARGET,"entry":format!("fixture{}",std::env::consts::EXE_SUFFIX)})
 }
 
 #[test]
@@ -532,7 +532,7 @@ fn official_install_uses_fallback_for_tree_blob_release_manifest_and_package() {
     let direct = Server::new();
     let bad = Server::new();
     let good = Server::new();
-    direct.official_release(fixture.package_for("sodeck.terminal", ""), "1", TARGET);
+    direct.official_release(fixture.package_for("sodeck.terminal", ""), "2.0", TARGET);
     let canonical = direct.routes.lock().unwrap().clone();
     for (path, bytes) in canonical {
         good.put(&format!("/{}{path}", direct.base), bytes);
@@ -620,7 +620,7 @@ fn official_install_live_mirror() {
 }
 fn settings_manifest(version: &str) -> serde_json::Value {
     let mut m = manifest(version);
-    m["ui"] = json!({"apiVersion":"1","entry":"ui.html","views":[{"id":"test","title":"Test","icon":"info","container":"editor","instancePolicy":"multiple"}]});
+    m["ui"] = json!({"entry":"ui.html","views":[{"id":"test","title":"Test","icon":"info","container":"editor","instancePolicy":"multiple"}]});
     m["icon"] = json!("shape");
     m["icons"] = json!({"shape":"shape.svg"});
     let mut fields = vec![
@@ -631,7 +631,7 @@ fn settings_manifest(version: &str) -> serde_json::Value {
             json!({"key":"blink","title":"闪烁","type":"boolean","default":true,"apply":"live"}),
         );
     }
-    m["settings"] = json!({"apiVersion":"1","schemaVersion":1,"pages":[{"id":"appearance","title":"外观","viewTypes":["test"],"groups":[{"id":"text","title":"文字","fields":fields}]}]});
+    m["settings"] = json!({"schemaVersion":1,"pages":[{"id":"appearance","title":"外观","viewTypes":["test"],"groups":[{"id":"text","title":"文字","fields":fields}]}]});
     m
 }
 
@@ -658,7 +658,7 @@ fn settings_follow_pending_activation_and_program_rollback() {
             } else {
                 "settings-upgrade"
             }),
-            "1",
+            "2.0",
             TARGET,
         );
         core.check_component("test.fixture", &server.client())
@@ -893,7 +893,7 @@ fn a_new_repository_plugin_can_be_installed_without_a_compiled_in_id() {
     let core = f.open();
     let server = Server::new();
     let id = "example.future-plugin";
-    server.official_release_for(id, "future-release-v", f.package_for(id, ""), "1", TARGET);
+    server.official_release_for(id, "future-release-v", f.package_for(id, ""), "2.0", TARGET);
     assert_eq!(
         core.install_official_plugin(id, &server.client()).unwrap(),
         id
@@ -974,7 +974,7 @@ fn official_first_install_downloads_registers_and_waits_for_restart() {
     let f = Fixture::new();
     let core = f.open();
     let server = Server::new();
-    server.official_release(f.package_for("sodeck.terminal", ""), "1", TARGET);
+    server.official_release(f.package_for("sodeck.terminal", ""), "2.0", TARGET);
     assert!(core
         .install_official_plugin("unknown.plugin", &server.client())
         .is_err());
@@ -1017,25 +1017,25 @@ fn official_install_failures_leave_no_record_and_can_retry() {
     let f = Fixture::new();
     let core = f.open();
     let server = Server::new();
-    for (api, target) in [("2", TARGET), ("1", "unsupported-target")] {
+    for (api, target) in [("2", TARGET), ("2.0", "unsupported-target")] {
         server.official_release(f.package_for("sodeck.terminal", ""), api, target);
         assert!(core
             .install_official_plugin("sodeck.terminal", &server.client())
             .is_err());
         assert!(core.snapshot().plugins.is_empty());
     }
-    server.official_release(f.package_for("sodeck.terminal", ""), "1", TARGET);
+    server.official_release(f.package_for("sodeck.terminal", ""), "2.0", TARGET);
     server.put("/plugin.zip", b"broken".to_vec());
     assert!(core
         .install_official_plugin("sodeck.terminal", &server.client())
         .unwrap_err()
         .contains("SHA-256"));
-    server.official_release(f.package(""), "1", TARGET);
+    server.official_release(f.package(""), "2.0", TARGET);
     assert!(core
         .install_official_plugin("sodeck.terminal", &server.client())
         .unwrap_err()
         .contains("ID"));
-    server.official_release(f.package_for("sodeck.terminal", ""), "1", TARGET);
+    server.official_release(f.package_for("sodeck.terminal", ""), "2.0", TARGET);
     fs::create_dir_all(f.root.join("data/plugins.json.tmp")).unwrap();
     assert!(core
         .install_official_plugin("sodeck.terminal", &server.client())
@@ -1151,7 +1151,7 @@ fn enabled_update_keeps_old_process_until_restart_then_runs_new_program() {
     let f = Fixture::new();
     f.add();
     let server = Server::new();
-    server.release(f.package(""), "1", TARGET);
+    server.release(f.package(""), "2.0", TARGET);
     let core = f.open();
     core.start_enabled();
     let old_pid = core.snapshot().plugins[0].pid;
@@ -1185,7 +1185,7 @@ fn checking_prepared_plugin_keeps_ready_state() {
     let f = Fixture::new();
     f.add();
     let server = Server::new();
-    server.release(f.package(""), "1", TARGET);
+    server.release(f.package(""), "2.0", TARGET);
     let core = f.open();
     core.check_component("test.fixture", &server.client())
         .unwrap();
@@ -1208,7 +1208,7 @@ fn batch_reservations_preserve_other_results_and_interrupted_tasks_can_retry() {
     let f = Fixture::new();
     f.add();
     let server = Server::new();
-    server.release(f.package(""), "1", TARGET);
+    server.release(f.package(""), "2.0", TARGET);
     let core = f.open();
     core.check_component("test.fixture", &server.client())
         .unwrap();
@@ -1247,7 +1247,7 @@ fn automatic_check_preferences_and_candidates_survive_restart() {
     let f = Fixture::new();
     f.add();
     let server = Server::new();
-    server.release(f.package(""), "1", TARGET);
+    server.release(f.package(""), "2.0", TARGET);
     let core = f.open();
     let mut batch = core.begin_update_check(false).unwrap();
     assert!(core.begin_update_check(false).is_none());
@@ -1298,7 +1298,7 @@ fn failed_checks_remain_visible_after_reopening_without_a_candidate() {
     assert!(view.version.is_none());
     assert_eq!(core.update_overview().next_check_at, retry_at);
     assert!(core.begin_update_check(true).is_none());
-    server.release(f.package(""), "1", TARGET);
+    server.release(f.package(""), "2.0", TARGET);
     core.check_component("test.fixture", &server.client())
         .unwrap();
     assert_eq!(core.update_views()["test.fixture"].phase, "available");
@@ -1340,7 +1340,7 @@ fn failed_tag_checks_are_independent_and_can_retry() {
 fn core_and_plugin_discovery_read_only_their_own_tags() {
     let server = Server::new();
     let f = Fixture::new();
-    server.release(f.package(""), "1", TARGET);
+    server.release(f.package(""), "2.0", TARGET);
     server.publish("test/repo", "v", vec![json!({"tag_name":"v0.2.1","draft":false,"prerelease":false,"assets":[{"name":"core-update.json","browser_download_url":format!("{}/core.json",server.base)}]})]);
     server.put("/core.json",json!({"id":"sodeck.core","version":"0.2.1","platforms":{TARGET:{"url":format!("{}/core.zip",server.base)}}}).to_string());
     let client = server.client();
@@ -1391,7 +1391,7 @@ fn completely_disabled_plugin_updates_without_restart_status() {
     drop(core);
     let core = f.open();
     let server = Server::new();
-    server.release(f.package(""), "1", TARGET);
+    server.release(f.package(""), "2.0", TARGET);
     core.check_component("test.fixture", &server.client())
         .unwrap();
     assert!(!core
@@ -1418,7 +1418,7 @@ fn changed_update_source_survives_version_switch_and_rollback() {
         let f = Fixture::new();
         f.add();
         let server = Server::new();
-        server.release(f.package(mode), "1", TARGET);
+        server.release(f.package(mode), "2.0", TARGET);
         let core = f.open();
         core.set_enabled("test.fixture", enabled).unwrap();
         core.start_enabled();
@@ -1450,7 +1450,7 @@ fn failed_new_initialization_restores_previous_program() {
     let f = Fixture::new();
     f.add();
     let server = Server::new();
-    server.release(f.package("init-error"), "1", TARGET);
+    server.release(f.package("init-error"), "2.0", TARGET);
     let core = f.open();
     core.start_enabled();
     core.check_component("test.fixture", &server.client())
@@ -1468,7 +1468,7 @@ fn failed_new_initialization_restores_previous_program() {
         .update_error
         .as_ref()
         .unwrap()
-        .contains("已恢复旧程序"));
+        .contains("已恢复兼容程序"));
     core.shutdown().unwrap();
 }
 
@@ -1483,7 +1483,7 @@ fn disabled_plugin_updates_without_starting_a_process() {
     let core = f.open();
     core.start_enabled();
     let server = Server::new();
-    server.release(f.package(""), "1", TARGET);
+    server.release(f.package(""), "2.0", TARGET);
     core.check_component("test.fixture", &server.client())
         .unwrap();
     assert!(!core
@@ -1510,11 +1510,11 @@ fn invalid_packages_sources_and_platforms_preserve_old_program() {
     assert!(core
         .check_component("test.fixture", &server.client())
         .is_err());
-    server.release(f.package(""), "1", "wrong-platform");
+    server.release(f.package(""), "2.0", "wrong-platform");
     assert!(core
         .check_component("test.fixture", &server.client())
         .is_err());
-    server.release(f.package(""), "1", TARGET);
+    server.release(f.package(""), "2.0", TARGET);
     core.check_component("test.fixture", &server.client())
         .unwrap();
     server.put("/plugin.zip", b"corrupt".to_vec());
@@ -1526,7 +1526,7 @@ fn invalid_packages_sources_and_platforms_preserve_old_program() {
         .start_file("../outside", zip::write::SimpleFileOptions::default())
         .unwrap();
     archive.write_all(b"escape").unwrap();
-    server.release(archive.finish().unwrap().into_inner(), "1", TARGET);
+    server.release(archive.finish().unwrap().into_inner(), "2.0", TARGET);
     core.check_component("test.fixture", &server.client())
         .unwrap();
     assert!(core
@@ -1542,14 +1542,14 @@ fn invalid_packages_sources_and_platforms_preserve_old_program() {
             zip::write::SimpleFileOptions::default(),
         )
         .unwrap();
-    server.release(archive.finish().unwrap().into_inner(), "1", TARGET);
+    server.release(archive.finish().unwrap().into_inner(), "2.0", TARGET);
     core.check_component("test.fixture", &server.client())
         .unwrap();
     assert!(core
         .download_plugin("test.fixture", &server.client())
         .unwrap_err()
         .contains("符号链接"));
-    server.release(f.package(""), "1", TARGET);
+    server.release(f.package(""), "2.0", TARGET);
     core.check_component("test.fixture", &server.client())
         .unwrap();
     core.set_update_source("test.fixture", None).unwrap();

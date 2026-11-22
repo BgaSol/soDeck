@@ -1,3 +1,11 @@
+# 0.12.0
+
+- 迁移 API 2.0 会话、进程、文件、服务器和连接请求，使用共享协议及页面 SDK。
+- 保留 15 个工具、调查与输入、上传下载、原票据恢复及本地证据；传输错误继续保留结构化详情。
+- 插件包携带自身 SVG 图标和 SDK 资源，独立分发；需要核心 API 2.0，API 1 核心无法加载。
+
+待发行：源码和实际包验收记录在本条补齐；尚未发布。
+
 # 0.11.0（2026-11-22）
 
 - 新增 sodeck_server_create/update/delete；沿用 servers_list 的目录修订和唯一 ID，管理 SoDeck 保存的 SSH 节点。
@@ -183,7 +191,7 @@ Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生源码、
 
 - 机器人图标随自身包携带，默认、侧栏和组件设置引用同一 SVG。在核心 1.5.3 起，更换图标只需发行插件。
 
-名称、技术 ID、端口、密钥、数据及 MCP 工具协议继续沿用；旧核心按原 bot 名称展示。无新增生产依赖，核心与插件独立发行。当前行为见[功能说明](../../docs/features/mcp.md)，声明契约见[插件 API](../../docs/plugin-api.md#插件图标核心-153)。
+名称、技术 ID、端口、密钥、数据及 MCP 工具协议继续沿用；旧核心按原 bot 名称展示。无新增生产依赖，核心与插件独立发行。当前行为见[功能说明](../../docs/features/mcp.md)，声明契约见[插件 API](../../docs/plugin-api.md#插件图标)。
 
 发行：[Agent MCP 0.2.3](https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.2.3)，独立正式插件发行，仓库 Latest 留给核心。包来源：[584212337bd908a6f8d64dd05b8caaf001d35f3b](https://github.com/BgaSol/soDeck/commit/584212337bd908a6f8d64dd05b8caaf001d35f3b)；[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/44277800228) 与[原始打包及实际包验收](https://github.com/BgaSol/soDeck/actions/runs/44277927242) 首次通过。发布使用同一草稿和五份已验证归档，不重新构建。包源码之后仅纠正核心发行版本与相应说明；插件产物保持原始提交。
 

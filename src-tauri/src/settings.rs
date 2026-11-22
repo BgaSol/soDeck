@@ -75,7 +75,7 @@ impl AppCore {
             .as_u64()
             .filter(|n| *n > 0)
             .ok_or("设置 schemaVersion 无效")?;
-        if raw["apiVersion"] != "1" {
+        if raw.get("apiVersion").is_some() {
             return Err("此插件设置需要更新版本的核心".into());
         }
         let pages = raw["pages"]
@@ -307,10 +307,7 @@ impl AppCore {
             .unwrap()
             .get(snapshot["pluginId"].as_str().unwrap_or(""))
             .cloned();
-        if let Some(instance) = instance.filter(|i| {
-            i.settings_api.load(std::sync::atomic::Ordering::Acquire)
-                && i.view().status == PluginStatus::Running
-        }) {
+        if let Some(instance) = instance.filter(|i| i.view().status == PluginStatus::Running) {
             let core = self.clone();
             std::thread::spawn(move || {
                 let instance_id = instance.view().instance_id;

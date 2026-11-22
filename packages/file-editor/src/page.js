@@ -35,8 +35,7 @@ export function mountRemoteFileEditor({root,mount,configureDownloads}) {
  }
  const data=async(action,args={})=>{
   const result=await request('data',{op:'files',id,action,...args});
-  if(result?.ok===false){const error=new Error(result.error.message);error.code=result.error.code;throw error;}
-  return result?.ok===true?result.value:result;
+  return result;
  };
  const event=args=>!activated||readOnly||transferFrozen?(args.action==='navigation'?Promise.resolve({}):Promise.reject(new Error('界面正在交接'))):request('event',args);
  function message(text,error=false){if(status){setMotionText(status,text);status.classList.toggle('error',error);}if(error)void event({action:'error',message:String(text).slice(0,2048)}).catch(()=>{});}
@@ -99,7 +98,7 @@ export function mountRemoteFileEditor({root,mount,configureDownloads}) {
 
   {
    root.className='editor-root';const header=document.createElement('header');header.className='editor-toolbar';root.append(header);
-   const title=document.createElement('span');title.className='path';title.textContent=m.data.path;title.title=m.data.path;header.append(title,button('保存',save,'primary'),button('搜索',()=>codeEditor?.openSearch()));
+   const title=document.createElement('span');title.className='path';title.textContent=m.data.path;title.title=m.data.path;header.append(title,button('保存',save,'sd-primary'),button('搜索',()=>codeEditor?.openSearch()));
    if(configureDownloads)header.append(button('下载远端',()=>download(m.data.path)));
    header.append(button('导出草稿',exportDraft));
    transfers=configureDownloads?.({fileId:id,data,event,request,message,host:root,path:m.data.path});
@@ -123,7 +122,7 @@ export function mountRemoteFileEditor({root,mount,configureDownloads}) {
    codeEditor.readOnly(readOnly||!activated);editorHost.dataset.ready='true';
    message('UTF-8'+(bom?' BOM':'')+(eol==='\r\n'?' · CRLF':' · LF')+' · '+size(info.size));
   }
-  sodeck.mounted(true,false);
+  sodeck.prepared(true,false);
  }
  void perform(()=>init(mount));
  addEventListener('sodeck:themeChanged',e=>theme(e.detail.tokens));
@@ -140,11 +139,11 @@ export function mountRemoteFileEditor({root,mount,configureDownloads}) {
    await draft?.flush();await project();await flushPosition();
    if(disposed||ticket!==flushTicket)return;
    transferFrozen=e.detail.freeze===true;root.inert=readOnly||transferFrozen;codeEditor?.readOnly(readOnly||transferFrozen);
-   parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:e.detail.surfaceId,id:e.detail.id},'*');
+   sodeck.flushed(e.detail.id);
   }catch(error){
    if(disposed||ticket!==flushTicket)return;
    transferFrozen=false;root.inert=readOnly;codeEditor?.readOnly(readOnly);
-   parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:e.detail.surfaceId,id:e.detail.id,error:error.message},'*');
+   sodeck.flushed(e.detail.id,error.message);
   }
  });
  addEventListener('sodeck:surfaceReady',()=>{

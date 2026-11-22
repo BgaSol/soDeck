@@ -45,7 +45,9 @@ async function sourceConfig(api, key, commit) {
   if (!sha(commit)) throw new Error("Invalid package source commit");
   if (key === "core") {
     const config = JSON.parse(await api.text("src-tauri/tauri.conf.json", commit));
-    const apiVersion = (await api.text("src-tauri/src/lib.rs", commit)).match(/pub const API_VERSION:\s*&str\s*=\s*"([^"]+)"/)?.[1];
+    const entry=await api.text("src-tauri/src/lib.rs",commit);
+    const source=entry.includes('sodeck_plugin_protocol::API_VERSION')?await api.text('crates/plugin-protocol/src/lib.rs',commit):entry;
+    const apiVersion = source.match(/pub const API_VERSION:\s*&str\s*=\s*"([^"]+)"/)?.[1];
     if (!version(config.version) || !/^\d+(?:\.\d+)*$/.test(apiVersion ?? "")) throw new Error("Invalid core source version/API");
     return { id: "sodeck.core", version: config.version, apiVersion, commit };
   }

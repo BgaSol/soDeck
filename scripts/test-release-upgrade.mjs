@@ -1,3 +1,4 @@
+import {fixtureBinary} from './cargo-fixture.mjs';
 // Real old/new release bytes; native updater install and persistent plugin activation.
 // The companion driver is a test fixture, never a shipped application.
 import assert from "node:assert/strict";
@@ -34,7 +35,7 @@ fs.mkdirSync(output, { recursive: true });
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-release-upgrade-")));
 const data = path.join(root, "data");
 const suffix = process.platform === "win32" ? ".exe" : "";
-const driver = path.resolve(`src-tauri/target/debug/release-upgrade-fixture${suffix}`);
+const driver = fixtureBinary('release-upgrade-fixture');
 const plugins = component === "core" ? [] : [{ name: component, id: `sodeck.${component}`, current: from, version: to }];
 const digest = filename => createHash("sha256").update(fs.readFileSync(filename)).digest("hex");
 function run(command, args, env = {}) {

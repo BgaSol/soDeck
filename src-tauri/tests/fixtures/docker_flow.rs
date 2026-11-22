@@ -125,7 +125,7 @@ async fn openssh_docker_plugin() {
     };
     assert_eq!(receipt["status"],"completed","{receipt}");
     let terminal_view=receipt["viewId"].as_str().unwrap();let terminal=f.core.ui_attach("main",terminal_view).unwrap();
-    let terminal_token=terminal["surfaceId"].as_str().unwrap();let stream=terminal["data"]["streamId"].as_str().unwrap();
+    let terminal_token=terminal["surfaceId"].as_str().unwrap();let stream=terminal["data"]["processId"].as_str().unwrap();
     f.core.ui_surface_ready("main",terminal_token).unwrap();let mut output=subscribe(&f.core,"main",terminal_token,stream).await;
     td(&f.core,"main",terminal_token,json!({"op":"write","id":stream,"sequence":0,"data":b"printf 'sodeck-container-terminal:%s\\n' \"$SODECK_TOKEN\"\r".as_slice()})).await.unwrap();
     data_until(&f.core,"main",terminal_token,stream,&mut output,"sodeck-container-terminal:a=b").await;
@@ -158,7 +158,7 @@ async fn openssh_docker_plugin() {
     let resource=capture["resources"].as_array().unwrap().iter().find(|r|!r["end"].is_null()).unwrap();
     assert_eq!(resource["status"]["state"],"completed","{resource}");
     let resource_id=resource["id"].as_str().unwrap();let watermark=resource["status"]["producedBytes"].as_str().unwrap();
-    async fn captured(core:&Arc<AppCore>,token:&str,id:&str,watermark:&str)->Vec<u8>{let end=watermark.parse::<u64>().unwrap();let mut offset=0u64;let mut bytes=vec![];while offset<end{let value=core.session_stream_data("main",token,json!({"id":id,"action":"read","offset":offset.to_string(),"watermark":watermark}),None).await.unwrap();let part:Vec<u8>=serde_json::from_value(value["data"].clone()).unwrap();offset+=part.len() as u64;bytes.extend(part);}bytes}
+    async fn captured(core:&Arc<AppCore>,token:&str,id:&str,watermark:&str)->Vec<u8>{let end=watermark.parse::<u64>().unwrap();let mut offset=0u64;let mut bytes=vec![];while offset<end{let value=core.process_output_data("main",token,json!({"id":id,"action":"read","offset":offset.to_string(),"watermark":watermark}),None).await.unwrap();let part:Vec<u8>=serde_json::from_value(value["data"].clone()).unwrap();offset+=part.len() as u64;bytes.extend(part);}bytes}
     let lines=captured(&f.core,logs,resource_id,watermark).await;
     use base64::{engine::general_purpose::STANDARD, Engine};
     let raw=lines.split(|b|*b==b'\n').filter(|l|!l.is_empty()).flat_map(|line|{let envelope:Value=serde_json::from_slice(line).unwrap();STANDARD.decode(envelope["dataBase64"].as_str().unwrap()).unwrap()}).collect::<Vec<_>>();

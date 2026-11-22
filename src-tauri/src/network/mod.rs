@@ -63,15 +63,9 @@ pub(crate) struct Listener {
     probe_clients: Mutex<HashMap<String, tokio::net::TcpStream>>,
     probe_operations: Mutex<HashSet<String>>,
 }
-struct Operation {
-    fingerprint: String,
-    id: String,
-    at: Instant,
-}
 #[derive(Default)]
 struct Registry {
     listeners: HashMap<String, Arc<Listener>>,
-    operations: HashMap<(String, String), Operation>,
     scopes: HashMap<String, Scope>,
 }
 struct Scope {
@@ -112,9 +106,6 @@ impl Registry {
                     .entries
                     .values()
                     .any(|r| r.result["cleanupComplete"] != true)
-        });
-        self.operations.retain(|_, op| {
-            self.listeners.contains_key(&op.id) || op.at.elapsed() < Duration::from_secs(60)
         });
     }
     fn observed(&self, scope: &str, sequence: u64, operation: &str) -> Result<Value, String> {
@@ -326,11 +317,10 @@ impl AppCore {
             }
             identity = Some((scope, sequence, operation.to_owned()));
         }
-        if method == "net.listener.open" || method == "net.listener.create" {
+        if method == "net.listener.create" {
             let owner = self.resource_owner(plugin, instance, text(p, "viewId")?)?;
-            if lifecycle
-                && serde_json::to_value(&owner.context).map_err(|e| e.to_string())?
-                    != p["expectedContext"]
+            if serde_json::to_value(&owner.context).map_err(|e| e.to_string())?
+                != p["expectedContext"]
             {
                 return Err("连接上下文已变化".into());
             }
@@ -342,9 +332,6 @@ impl AppCore {
                 .as_u64()
                 .filter(|p| *p <= 65535)
                 .ok_or("本地端口无效")? as u16;
-            let key = (instance.to_owned(), text(p, "operationId")?.to_owned());
-            let fingerprint =
-                json!([method, owner.view, owner.context, host.to_string(), port]).to_string();
             let path = self
                 .connection_views()
                 .into_iter()
@@ -365,11 +352,6 @@ impl AppCore {
                     }
                     return Ok(old);
                 }
-            } else if let Some(op) = registry.operations.get(&key) {
-                if op.fingerprint != fingerprint {
-                    return Err("操作 ID 参数已变化".into());
-                }
-                return Ok(json!({"listenerId":op.id}));
             }
             if identity
                 .as_ref()
@@ -378,12 +360,11 @@ impl AppCore {
             {
                 return Err("网络操作作用域已满".into());
             }
-            if registry.operations.len()
-                + registry
-                    .scopes
-                    .values()
-                    .map(|s| s.entries.len())
-                    .sum::<usize>()
+            if registry
+                .scopes
+                .values()
+                .map(|s| s.entries.len())
+                .sum::<usize>()
                 >= 4096
             {
                 return Err("网络操作已满，请先确认并释放旧记录".into());
@@ -439,15 +420,6 @@ impl AppCore {
                         result: Value::Null,
                     },
                 );
-            } else {
-                registry.operations.insert(
-                    key,
-                    Operation {
-                        fingerprint,
-                        id: id.clone(),
-                        at: Instant::now(),
-                    },
-                );
             }
             drop(registry);
             drop(admission);
@@ -456,11 +428,9 @@ impl AppCore {
                 let _task = task;
                 runtime::listen(l, host, port, slots).await;
             });
-            return Ok(if lifecycle {
-                json!({"state":"observed","listenerId":id,"cleanupComplete":false,"snapshot":{"listenerId":id,"state":"starting","cleanupComplete":false}})
-            } else {
-                json!({"listenerId":id})
-            });
+            return Ok(
+                json!({"state":"observed","listenerId":id,"cleanupComplete":false,"snapshot":{"listenerId":id,"state":"starting","cleanupComplete":false}}),
+            );
         }
         if method == "net.poll" {
             let view = text(p, "viewId")?;
@@ -503,14 +473,14 @@ impl AppCore {
         };
         let Some((l, stream)) = resource else {
             // Resource IDs are never reused. Repeated cleanup stays successful.
-            return if method == "net.close" {
+            return if method == "net.stream.close" {
                 Ok(json!({}))
             } else {
                 Err("网络资源已释放".into())
             };
         };
         owned(&l)?;
-        if method == "net.close" {
+        if method == "net.stream.close" {
             if let Some(s) = stream {
                 s.cancel.cancel();
                 if !s.remote {
@@ -521,7 +491,7 @@ impl AppCore {
                     }
                 }
             } else {
-                l.close();
+                return Err("关闭流需要 streamId".into());
             }
             return Ok(json!({}));
         }

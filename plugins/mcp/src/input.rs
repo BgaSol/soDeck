@@ -6,6 +6,7 @@ use crate::{
 };
 use serde_json::{json, Value};
 use sodeck_plugin_client::encoding::{base64, unbase64};
+use sodeck_plugin_client::protocol::requests as api;
 use std::sync::Arc;
 use tokio::sync::OwnedSemaphorePermit;
 use tokio_util::sync::CancellationToken;
@@ -167,7 +168,9 @@ pub async fn submit(
         .spawn_blocking({
             let app = app.clone();
             move || {
-                let result = app.rpc("session.process.input", params);
+                let result = serde_json::from_value::<api::ProcessInput>(params)
+                    .map_err(|_| failure("invalidParams", "核心请求参数无效"))
+                    .and_then(|params| app.rpc(api::call::ProcessInput(params)));
                 let error = match result {
                     Ok(native) => {
                         let valid = native["input"]["last"]["sequence"]

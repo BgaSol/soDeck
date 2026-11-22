@@ -19,10 +19,10 @@ window.remount=()=>{window.ready=false;iframe.src='/__terminal__/index.html?rest
 window.lifecycle=(type,detail={})=>post({type,...detail});
 window.theme=theme=>{document.documentElement.dataset.theme=theme;post({type:'themeChanged',tokens:themeTokens()});};
 addEventListener('message',event=>{if(event.source!==iframe.contentWindow||event.data?.channel!=='sodeck-ui-v2')return;const m=event.data,p=m.params;
-if(m.type==='ready'){post({type:'mount',viewId:'terminal',context:{generation:1},data:{streamId:'stream',integration:{mode:'auto',token:'reading-test',shell:'bash'},openedContext:{generation:1}},visible:true,tokens:themeTokens(),capabilities:{clipboard:1}});return;}
-if(m.type==='prepared'){window.ready=true;return;}if(m.type==='flushed'){flushes.get(m.id)?.(m.error);return;}if(m.type!=='request')return;
+if(m.type==='ready'){post({type:'mount',viewId:'terminal',context:{generation:1},data:{streamId:'stream',integration:{mode:'auto',token:'reading-test',shell:'bash'},openedContext:{generation:1}},visible:true,tokens:themeTokens()});return;}
+if(m.type==='prepared'){post({type:'surfaceReady',readOnly:false});window.ready=true;return;}if(m.type==='flushed'){flushes.get(m.id)?.(m.error);return;}if(m.type!=='request')return;
 if(m.method==='data'){
-if(p.op==='write'&&window.failWrite){post({type:'response',id:m.id,error:'fixture input rejected'});return;}
+if(p.op==='write'&&window.failWrite){post({type:'response',id:m.id,error:{code:-32000,message:'fixture input rejected',data:{}}});return;}
 if(p.op==='attach')void(async()=>{await send('reset',[],{...checkpoint.metadata,ui},checkpoint.offset);for(let pos=0;pos<checkpoint.data.length;pos+=16384)await send('snapshot',checkpoint.data.slice(pos,pos+16384),undefined,checkpoint.offset);await send('restore');await send('caughtUp');})();
 if(p.op==='ack'){acks.get(p.packet)?.();acks.delete(p.packet);}if(p.op==='write')window.writes.push(p.data);
 if(p.op==='checkpoint'){if(p.begin)upload={data:[],offset:p.offset,metadata:p.metadata};upload.data.push(...p.data);if(p.done)checkpoint=upload;}

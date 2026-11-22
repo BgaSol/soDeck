@@ -7,6 +7,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sodeck_plugin_client::encoding::{base64, unbase64};
+use sodeck_plugin_client::protocol::requests as api;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -74,7 +75,19 @@ pub async fn write(
         if ct.is_cancelled() || app.shutdown.is_cancelled() {
             return Err(failure("requestCancelled", "服务器写入尚未派发"));
         }
-        app.rpc(method, p)
+        let invalid = |_| failure("invalidParams", "服务器参数无效");
+        match method {
+            "servers.create" => app.rpc(api::call::ServerCreate(
+                serde_json::from_value(p).map_err(invalid)?,
+            )),
+            "servers.update" => app.rpc(api::call::ServerUpdate(
+                serde_json::from_value(p).map_err(invalid)?,
+            )),
+            "servers.delete" => app.rpc(api::call::ServerDelete(
+                serde_json::from_value(p).map_err(invalid)?,
+            )),
+            _ => unreachable!(),
+        }
     })
     .await
     .map_err(|_| failure("unavailable", "服务器写入结果未知，请查询目录确认"))?
@@ -190,7 +203,7 @@ pub async fn discover(app: Arc<App>, p: &Value, ct: CancellationToken) -> Result
             let mut input=json!({"detail":params.detail,"limit":20,"viewType":"status"});
             if let Some(server)=&params.server_id{input["serverId"]=json!(server);}
             if let Some(c)=&native_cursor{input["cursor"]=json!(c);}
-            let page=app.rpc("servers.list",input)?;
+            let page=serde_json::from_value::<api::ServerList>(input).map_err(|_| failure("invalidParams","核心请求参数无效")).and_then(|params| app.rpc(api::call::ServerList(params)))?;
             let rev=page["catalogRevision"].as_str().ok_or_else(||failure("invalidResult","目录版本缺失"))?.to_owned();
             if revision.as_ref().is_some_and(|old|old!=&rev)||cursor.as_ref().is_some_and(|c|c.revision!=rev){return Err(failure("catalogChanged","资料目录发生变化，请从第一页查询"));}
             revision=Some(rev);

@@ -1,3 +1,4 @@
+import {fixtureBinary} from './cargo-fixture.mjs';
 // Real workspace DOM -> test bridge -> actual Rust ownership. Browser windows stand in for native surfaces.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -15,18 +16,19 @@ if (build.status !== 0) throw new Error("Catalog test bridge build failed");
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-ui-"));
 const pluginRoot = path.join(directory, "ui-plugin");fs.mkdirSync(pluginRoot);
 const suffix = process.platform === "win32" ? ".exe" : "";
-fs.copyFileSync(`src-tauri/target/debug/workspace-ui-fixture${suffix}`, path.join(pluginRoot, `workspace-ui-fixture${suffix}`));
+fs.copyFileSync(fixtureBinary('workspace-ui-fixture'), path.join(pluginRoot, `workspace-ui-fixture${suffix}`));
 if (process.platform !== 'win32') fs.chmodSync(path.join(pluginRoot, `workspace-ui-fixture${suffix}`), 0o755);
 fs.cpSync("scripts/fixtures/workspace-ui/ui", path.join(pluginRoot,"ui"), {recursive:true});
 const metadata = JSON.parse(fs.readFileSync("scripts/fixtures/workspace-ui/manifest.json","utf8"));
 // Exercise the product's default target with a test process, never a distributed plugin.
 metadata.id = 'test.workbench';
 metadata.ui.views.find(v=>v.id==='forwarding').backgroundOnWorkspace=true;
-metadata.ui.views.push({id:'alternative',title:'其他工具',icon:'plug',container:'editor',instancePolicy:'multiple',createAction:'新建其他工具'});
+metadata.commands.handlers.push('fixture.alternative.v1');metadata.ui.actions.push({id:'other-page',title:'新建其他工具',dataVersion:1,command:'fixture.alternative.v1'});
+metadata.ui.views.push({id:'alternative',title:'其他工具',icon:'plug',container:'editor',instancePolicy:'multiple',createActionId:'other-page'});
 for(let index=0;index<20;index++)metadata.ui.views.push({id:`extra${index}`,title:`扩展测试组件 ${index}`,icon:'plug',container:'sidebar',instancePolicy:'perWorkspace',defaultSide:'left'});
 const target = spawnSync("rustc",["-vV"],{encoding:"utf8"}).stdout.match(/^host: (.+)$/m)[1];
 fs.writeFileSync(path.join(pluginRoot,"plugin.json"),JSON.stringify({...metadata,target,entry:`workspace-ui-fixture${suffix}`}));
-const executable = path.resolve(`src-tauri/target/debug/catalog-fixture${process.platform === "win32" ? ".exe" : ""}`);
+const executable = fixtureBinary('catalog-fixture');
 function startBridge() {
   const child = spawn(executable, [directory], { stdio: ["pipe", "pipe", "inherit"], windowsHide: true });
   const queue = [];
@@ -484,10 +486,13 @@ try {
   checks.push('宿主销毁结束捕获、清理工作台与 RAF，不保存未提交的手势');
   assert.deepEqual(errors,[]); console.log(JSON.stringify({passed:checks.length,checks,pageErrors:errors,screenshot:output},null,2));
 } catch(error) {
+  console.error(JSON.stringify(await componentState('main'),null,2));
+  console.error({pageErrors:errors});
+  for(const page of pages)for(const frame of page.frames())console.error({url:frame.url(),text:await frame.locator('body').innerText().catch(()=>'<unavailable>')});
   for (const finish of traces) await finish(true);
   console.error(JSON.stringify(await call('close_operations',{window:'main'}),null,2));
   fs.mkdirSync('artifacts/menu-layout',{recursive:true});await pages[0]?.screenshot({path:'artifacts/menu-layout/failure.png'});
-  for(const page of pages) console.error(await page.evaluate(()=>({focus:document.activeElement?.tagName,notice:document.querySelector('#notice')?.textContent,dialog:document.querySelector('.component-close-dialog')?.textContent,content:document.querySelector('#workspace-content')?.style.cssText,board:document.querySelector('.server-workbench:not([hidden])')?.style.cssText})));
+  for(const page of pages) console.error(await page.evaluate(()=>({focus:document.activeElement?.tagName,notice:document.querySelector('#notice')?.textContent,dialog:document.querySelector('.component-close-dialog')?.textContent,content:document.querySelector('#workspace-content')?.style.cssText,board:document.querySelector('.server-workbench:not([hidden])')?.style.cssText,surfaces:[...document.querySelectorAll('.component-surface')].map(s=>({id:s.dataset.viewId,hidden:s.hidden,style:s.style.cssText})),groups:[...document.querySelectorAll('.server-workbench:not([hidden]) .view-group')].map(s=>s.outerHTML)})));
   throw error;
 } finally {
   for (const finish of traces) await finish(false);

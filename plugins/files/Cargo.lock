@@ -45,6 +45,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba"
 dependencies = [
  "serde_core",
+ "serde_derive",
 ]
 
 [[package]]
@@ -82,7 +83,7 @@ dependencies = [
 
 [[package]]
 name = "sodeck-files"
-version = "0.11.5"
+version = "0.12.0"
 dependencies = [
  "serde_json",
  "sodeck-plugin-client",
@@ -90,9 +91,18 @@ dependencies = [
 
 [[package]]
 name = "sodeck-plugin-client"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "base64",
+ "serde_json",
+ "sodeck-plugin-protocol",
+]
+
+[[package]]
+name = "sodeck-plugin-protocol"
+version = "2.0.0"
+dependencies = [
+ "serde",
  "serde_json",
 ]
 

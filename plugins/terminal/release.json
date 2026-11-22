@@ -4,11 +4,10 @@
   "description": "通过当前服务器连接打开真实终端，支持多个终端页和跨窗口接续。",
   "icon": "terminal",
   "order": 10,
-  "apiVersion": "1",
+  "apiVersion": "2.0",
   "binary": "sodeck-terminal",
   "tagPrefix": "plugin-terminal-v",
   "ui": {
-    "apiVersion": "2",
     "entry": "ui/index.html",
     "actions": [
       {
@@ -27,7 +26,6 @@
         "icon": "terminal",
         "container": "editor",
         "instancePolicy": "multiple",
-        "createAction": "新建终端",
         "openOnWorkspace": "createOne",
         "startupOrder": 20,
         "createActionId": "new-terminal"
@@ -35,7 +33,6 @@
     ]
   },
   "settings": {
-    "apiVersion": "1",
     "schemaVersion": 1,
     "pages": [
       {
@@ -239,9 +236,11 @@
     ]
   },
   "commands": {
-    "apiVersion": "1",
     "handlers": [
       "terminal.open.v1"
     ]
+  },
+  "icons": {
+    "terminal": "assets/icons/terminal.svg"
   }
 }

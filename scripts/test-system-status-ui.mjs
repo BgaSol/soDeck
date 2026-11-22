@@ -4,6 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {packageMenuAssets} from './plugin-menu-assets.mjs';
 import {packageStyles} from '../packages/ui/package.mjs';
+import {packageSdkAssets} from './plugin-sdk-assets.mjs';
 import { createServer } from 'node:http';
 import { chromium } from 'playwright';
 import { path as chartPath, timeline } from '../plugins/system-status/ui/charts.js';
@@ -11,7 +12,7 @@ import { readTestThemeTokens } from './test-theme-tokens.mjs';
 
 const root = path.resolve(process.env.SODECK_TEST_SYSTEM_STATUS_PLUGIN || 'plugins/system-status');
 const assets=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-status-ui-'));
-await packageMenuAssets(assets);packageStyles(assets);
+await packageMenuAssets(assets);packageStyles(assets);packageSdkAssets(assets);
 const observed = Date.now();
 const normalInterfaces = [
   { id: 'eth0', name: 'eth0', addresses: ['192.168.10.12/24', 'fe80::d019:2cff:fec8:137/64'] },
@@ -52,7 +53,8 @@ const server = createServer((req, res) => {
     res.end('<!doctype html><html><body style="margin:0"><iframe title="状态测试" style="border:0;width:100vw;height:100vh" src="/ui/index.html"></iframe></body></html>');
     return;
   }
-  const base=['/ui/text-menu.js','/ui/shared.css'].includes(req.url.split('?')[0])?assets:root;
+  const url=req.url.split('?')[0];
+  const base=(url.startsWith('/ui/sdk/')||['/ui/text-menu.js','/ui/shared.css'].includes(url))?assets:root;
   const file = path.join(base, req.url.split('?')[0]);
   if (!file.startsWith(base + path.sep) || !fs.existsSync(file)) { res.statusCode = 404; res.end(); return; }
   res.setHeader('Content-Type', { '.js': 'text/javascript', '.html': 'text/html', '.css': 'text/css' }[path.extname(file)] || 'application/octet-stream');
@@ -116,7 +118,7 @@ await page.addInitScript(() => {
     if (m.type === 'ready') e.source.postMessage({ channel: m.channel, type: 'mount', surfaceId: 'test', data: window.statusInitial, tokens: {}, visible: true }, '*');
     if (m.type === 'request') {
       try { const data = await window.statusRequest(m.params); e.source.postMessage({ channel: m.channel, type: 'response', surfaceId: 'test', id: m.id, data }, '*'); }
-      catch (error) { e.source.postMessage({ channel: m.channel, type: 'response', surfaceId: 'test', id: m.id, error: error.message }, '*'); }
+      catch (error) { e.source.postMessage({ channel: m.channel, type: 'response', surfaceId: 'test', id: m.id, error: {code:-32000,message:error.message,data:{code:'fixtureError'}} }, '*'); }
     }
   });
 });
@@ -141,7 +143,7 @@ try {
   assert.equal(await frame.locator('#host-architecture').innerText(), 'x86_64');
   assert.equal(await frame.locator('#architecture').textContent(), 'x86_64');
   assert.match(await frame.locator('#memory-caption').innerText(), /已用 9.9 GiB \/ 16 GiB/);
-  await page.waitForFunction(() => document.querySelector('iframe').contentDocument.querySelectorAll('#network-chart .series').length === 2);
+  await page.waitForFunction(() => [...document.querySelector('iframe').contentDocument.querySelectorAll('#network-chart .series, #resource-chart .series')].filter(p=>p.getAttribute('d')).length === 4);
   const receivePath = await frame.locator('#network-chart .series.first').getAttribute('d');
   const sendPath = await frame.locator('#network-chart .series.second').getAttribute('d');
   assert.notEqual(receivePath, sendPath);
@@ -488,6 +490,9 @@ try {
   assert(actions.includes('refresh') && actions.includes('pause') && actions.includes('resume'));
   assert.deepEqual(errors, []);
   console.log('Status UI: shared CPU/memory chart, matching/misaligned timestamps, one-series and gap states, keyboard cursor, forced colors and 100% readouts, three themes/seven widths, existing filesystem/network/lifecycle regressions passed.');
+} catch(error) {
+  console.error({errors,actions,seriesKeys,body:await frame.locator('body').innerText(),paths:await frame.locator('.series').evaluateAll(rows=>rows.map(p=>p.outerHTML))});
+  throw error;
 } finally {
   await browser.close();
   await new Promise(resolve => server.close(resolve));

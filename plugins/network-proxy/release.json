@@ -4,11 +4,10 @@
   "description": "通过当前服务器建立本地 TCP 转发和 SOCKS5 代理，按规则查看连接与流量。",
   "icon": "network",
   "order": 30,
-  "apiVersion": "1",
+  "apiVersion": "2.0",
   "binary": "sodeck-network-proxy",
   "tagPrefix": "plugin-network-proxy-v",
   "ui": {
-    "apiVersion": "2",
     "entry": "ui/index.html",
     "views": [
       {
@@ -34,7 +33,6 @@
     ]
   },
   "settings": {
-    "apiVersion": "1",
     "schemaVersion": 1,
     "pages": [
       {
@@ -107,10 +105,12 @@
     ]
   },
   "commands": {
-    "apiVersion": "1",
     "handlers": [
       "network.tcpForward.ensure.v1",
       "network.rule.reveal.v1"
     ]
+  },
+  "icons": {
+    "network": "assets/icons/network.svg"
   }
 }

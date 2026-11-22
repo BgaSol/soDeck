@@ -30,10 +30,10 @@
       if (result.state === 'waitingInput') {
         const operationId = result.id;
         try {
-          do { await sleep(150); result = await this.data('op.poll', { operationId }); } while (result.state === 'waitingInput');
+          do { await sleep(150); result = await this.data('operation.poll', { operationId }); } while (result.state === 'waitingInput');
           if (result.state !== 'completed') throw new Error(result.error?.message || '选择文件失败');
           result = result.result;
-        } finally { await this.data('op.release', { operationId }).catch(() => {}); }
+        } finally { await this.data('operation.release', { operationId }).catch(() => {}); }
       }
       if (epoch !== this.contextEpoch || this.disposed) {
         if(result.inputId)await this.data('input.release',{inputId:result.inputId}).catch(()=>{});

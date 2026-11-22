@@ -1,4 +1,5 @@
 //! Reusable remote file editor lifecycle. Bodies remain on the core data bridge.
+use crate::protocol::requests as api;
 use crate::Client;
 use serde_json::{json, Value};
 use std::{
@@ -118,27 +119,10 @@ impl EditorHost {
             sources: Mutex::new(HashMap::new()),
         }
     }
-    pub fn check_capabilities(&self, p: &Value) -> Result<(), String> {
-        for cap in [
-            "files.v1",
-            "files.editor.v1",
-            "viewData.v1",
-            "ui.workbench.v2",
-            "ui.openView.v1",
-        ] {
-            if !p["capabilities"]
-                .as_array()
-                .is_some_and(|v| v.iter().any(|c| c == cap))
-            {
-                return Err(format!("核心缺少 {cap}，请升级 SoDeck"));
-            }
-        }
-        Ok(())
-    }
     pub fn contains(&self, view: &str) -> bool {
         self.views.lock().unwrap().contains_key(view)
     }
-    pub fn view(&self, view: &str) -> Result<EditorView, String> {
+    pub fn view(&self, view: &str) -> Result<EditorView, crate::RpcError> {
         Ok(self.entry(view)?.lock().unwrap().clone())
     }
     pub fn entries(&self, context: &Value) -> Vec<(String, EditorView)> {
@@ -153,7 +137,7 @@ impl EditorHost {
             })
             .collect()
     }
-    fn entry(&self, view: &str) -> Result<Entry, String> {
+    fn entry(&self, view: &str) -> Result<Entry, crate::RpcError> {
         self.views
             .lock()
             .unwrap()
@@ -161,23 +145,26 @@ impl EditorHost {
             .cloned()
             .ok_or("编辑视图已关闭".into())
     }
-    pub fn projection(&self, view: &str) -> Result<Value, String> {
+    pub fn projection(&self, view: &str) -> Result<Value, crate::RpcError> {
         Ok(self.entry(view)?.lock().unwrap().facts.clone())
     }
-    pub fn refresh(&self, client: &Client, view: &str) -> Result<Value, String> {
+    pub fn refresh(&self, client: &Client, view: &str) -> Result<Value, crate::RpcError> {
         let entry = self.entry(view)?;
         let (id, query) = {
             let mut v = entry.lock().unwrap();
             v.query = v.query.checked_add(1).ok_or("查询序号已用尽")?;
             (v.id.clone(), v.query)
         };
-        let facts = client.call("files.editor", json!({"action":"save.status","id":id}))?;
+        let facts =
+            serde_json::from_value::<api::EditorRequest>(json!({"action":"save.status","id":id}))
+                .map_err(|_| crate::RpcError::invalid("核心请求参数无效"))
+                .and_then(|params| client.request(api::call::FileEditor(params)))?;
         let mut state = entry.lock().unwrap();
         state.project(&facts, query);
         Ok(state.facts.clone())
     }
     /// Handles source-page events without taking over that page's lifecycle.
-    pub fn source_event(&self, client: &Client, p: &Value) -> Result<Value, String> {
+    pub fn source_event(&self, client: &Client, p: &Value) -> Result<Value, crate::RpcError> {
         let view = p["viewId"].as_str().ok_or("缺少 viewId")?;
         let d = &p["data"];
         if d["expectedContext"] != p["context"] {
@@ -194,7 +181,17 @@ impl EditorHost {
                         !v.is_empty() && v.len() <= 4096 && !v.chars().any(char::is_control)
                     })
                     .ok_or("文件路径无效")?;
-                client.call("ui.openView",json!({"requestId":d["requestId"],"expectedContext":p["context"],"sourceViewId":view,"viewType":self.view_type,"resourceKey":path,"params":{"path":path}}))
+                let opened = client.request(api::call::OpenView(api::OpenView {
+                    expected_context: serde_json::from_value(p["context"].clone())
+                        .map_err(|_| crate::RpcError::invalid("编辑上下文无效"))?,
+                    request_id: d["requestId"].as_str().ok_or("缺少打开身份")?.into(),
+                    view_type: self.view_type.clone(),
+                    command_id: None,
+                    source_view_id: Some(view.into()),
+                    resource_key: Some(path.into()),
+                    params: Some(json!({"path":path})),
+                }))?;
+                Ok(json!({"viewId":opened.view_id}))
             }
             Some("fileEditor.resource") => {
                 {
@@ -207,18 +204,16 @@ impl EditorHost {
                     }
                     sources.insert(view.into(), None);
                 }
-                let result =
-                    match client.call("files.request", json!({"action":"open","viewId":view})) {
-                        Ok(result) => result,
-                        Err(error) => {
-                            self.sources.lock().unwrap().remove(view);
-                            return Err(error);
-                        }
-                    };
-                let Some(id) = result["id"].as_str().map(str::to_string) else {
-                    self.sources.lock().unwrap().remove(view);
-                    return Err("没有文件资源 ID".into());
+                let result = match client.request(api::call::FileOpen(api::FileOpen {
+                    view_id: view.to_string(),
+                })) {
+                    Ok(result) => result,
+                    Err(error) => {
+                        self.sources.lock().unwrap().remove(view);
+                        return Err(error.into());
+                    }
                 };
+                let id = result.id;
                 let accepted = {
                     let mut sources = self.sources.lock().unwrap();
                     if let Some(slot) = sources.get_mut(view) {
@@ -229,24 +224,26 @@ impl EditorHost {
                     }
                 };
                 if !accepted {
-                    client.call("files.request", json!({"action":"close","id":id}))?;
+                    client.request(api::call::FileClose(api::Resource { id: id.to_string() }))?;
                     return Err("来源页面已关闭".into());
                 }
-                Ok(result)
+                Ok(json!({"id":id}))
             }
             _ => Err("未知编辑器来源事件".into()),
         }
     }
-    pub fn dispose_source(&self, client: &Client, view: &str) -> Result<(), String> {
+    pub fn dispose_source(&self, client: &Client, view: &str) -> Result<(), crate::RpcError> {
         let id = self.sources.lock().unwrap().remove(view).flatten();
         if let Some(id) = id {
-            if let Err(error) = client.call("files.request", json!({"action":"close","id":id})) {
+            if let Err(error) =
+                client.request(api::call::FileClose(api::Resource { id: id.to_string() }))
+            {
                 self.sources
                     .lock()
                     .unwrap()
                     .entry(view.into())
                     .or_insert(Some(id));
-                return Err(error);
+                return Err(error.into());
             }
         }
         Ok(())
@@ -257,7 +254,7 @@ impl EditorHost {
         method: &str,
         p: &Value,
         before_write: impl Fn(&Value, &str) -> Result<(), String>,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, crate::RpcError> {
         let view = p["viewId"].as_str().ok_or("缺少 viewId")?;
         if method == "ui.createView" {
             let path = p["params"]["path"]
@@ -290,7 +287,7 @@ impl EditorHost {
                 if unopened {
                     self.views.lock().unwrap().remove(view);
                 }
-                return Err(error);
+                return Err(error.into());
             }
             let needs_open = {
                 let mut v = entry.lock().unwrap();
@@ -302,17 +299,14 @@ impl EditorHost {
                 needed
             };
             if needs_open {
-                let result = client.call("files.request", json!({"action":"open","viewId":view}));
-                let id = match result.and_then(|r| {
-                    r["id"]
-                        .as_str()
-                        .map(str::to_string)
-                        .ok_or("没有文件资源 ID".into())
-                }) {
+                let result = client.request(api::call::FileOpen(api::FileOpen {
+                    view_id: view.to_string(),
+                }));
+                let id = match result.map(|r| r.id) {
                     Ok(id) => id,
                     Err(error) => {
                         entry.lock().unwrap().opening = false;
-                        return Err(error);
+                        return Err(error.into());
                     }
                 };
                 let accepted = {
@@ -330,7 +324,7 @@ impl EditorHost {
                     }
                 };
                 if !accepted {
-                    client.call("files.request", json!({"action":"close","id":id}))?;
+                    client.request(api::call::FileClose(api::Resource { id: id.to_string() }))?;
                     return Err("编辑页面已关闭".into());
                 }
             }
@@ -341,14 +335,15 @@ impl EditorHost {
             self.views.lock().unwrap().remove(view);
             let id = entry.lock().unwrap().id.clone();
             if !id.is_empty() {
-                if let Err(error) = client.call("files.request", json!({"action":"close","id":id}))
+                if let Err(error) =
+                    client.request(api::call::FileClose(api::Resource { id: id.to_string() }))
                 {
                     self.views
                         .lock()
                         .unwrap()
                         .entry(view.into())
                         .or_insert(entry);
-                    return Err(error);
+                    return Err(error.into());
                 }
             }
             return Ok(json!({}));
@@ -376,7 +371,7 @@ impl EditorHost {
                         return Err("原保存结果未知，请核对服务器；可以导出草稿".into());
                     }
                     if job["request"]["requestId"].is_string() {
-                        client.call("files.editor",json!({"action":"save.release","id":v.id,"requestId":job["request"]["requestId"]}))?;
+                        serde_json::from_value::<api::EditorRequest>(json!({"action":"save.release","id":v.id,"requestId":job["request"]["requestId"]})).map_err(|_| crate::RpcError::invalid("核心请求参数无效")).and_then(|params| client.request(api::call::FileEditor(params)))?;
                     }
                     let sequence = job["draft"]["saveSequence"]
                         .as_str()
@@ -384,7 +379,7 @@ impl EditorHost {
                         .unwrap_or(0)
                         .checked_add(1)
                         .ok_or("保存序号已用尽")?;
-                    client.call("files.editor",json!({"action":"save.start","id":v.id,"requestId":format!("close/{view}/{sequence}"),"sequence":sequence.to_string(),"expectedDraftRef":job["draft"]["draftRef"],"expectedContext":p["context"]}))?;
+                    serde_json::from_value::<api::EditorRequest>(json!({"action":"save.start","id":v.id,"requestId":format!("close/{view}/{sequence}"),"sequence":sequence.to_string(),"expectedDraftRef":job["draft"]["draftRef"],"expectedContext":p["context"]})).map_err(|_| crate::RpcError::invalid("核心请求参数无效")).and_then(|params| client.request(api::call::FileEditor(params)))?;
                     self.refresh(client, view)?;
                 }
             }
@@ -397,7 +392,11 @@ impl EditorHost {
                         let mut command = d.clone();
                         command["action"] = json!("save.start");
                         command["id"] = json!(v.id);
-                        result = Some(client.call("files.editor", command)?);
+                        result = Some(
+                            serde_json::from_value::<api::EditorRequest>(command)
+                                .map_err(|_| crate::RpcError::invalid("核心请求参数无效"))
+                                .and_then(|params| client.request(api::call::FileEditor(params)))?,
+                        );
                         self.refresh(client, view)?;
                     }
                     Some("editorState" | "dirty" | "staged" | "saved" | "busy") => {
@@ -420,7 +419,7 @@ impl EditorHost {
                         v.scroll = d["scroll"].as_u64().unwrap_or(0);
                     }
                     Some("error") => {
-                        client.call("logging.write",json!({"level":"error","message":d["message"].as_str().unwrap_or("文件编辑失败"),"fields":{"viewId":view}}))?;
+                        serde_json::from_value::<api::Log>(json!({"level":"error","message":d["message"].as_str().unwrap_or("文件编辑失败"),"fields":{"viewId":view}})).map_err(|_| crate::RpcError::invalid("核心请求参数无效")).and_then(|params| client.request(api::call::Log(params)))?;
                     }
                     _ => return Err("未知编辑器交互".into()),
                 }

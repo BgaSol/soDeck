@@ -10,7 +10,7 @@ pub fn verify(handle: &tauri::AppHandle, core: &Arc<AppCore>) -> Result<(), Stri
         let directory=root.join(id);fs::create_dir_all(directory.join("assets")).map_err(|e|e.to_string())?;
         fs::write(directory.join("entry"),"disabled; never executed").map_err(|e|e.to_string())?;
         fs::write(directory.join("assets/shape.svg"),svg).map_err(|e|e.to_string())?;
-        fs::write(directory.join("plugin.json"),json!({"id":id,"name":id,"version":"1.0.0","apiVersion":"1","target":TARGET,"entry":"entry","icon":"shape","icons":{"shape":"assets/shape.svg"}}).to_string()).map_err(|e|e.to_string())?;
+        fs::write(directory.join("plugin.json"),json!({"id":id,"name":id,"version":"1.0.0","apiVersion":sodeck_plugin_protocol::API_VERSION,"target":TARGET,"entry":"entry","icon":"shape","icons":{"shape":"assets/shape.svg"}}).to_string()).map_err(|e|e.to_string())?;
         if !core.snapshot().plugins.iter().any(|p|p.manifest.id==id) { core.add_plugin(&directory)?; }
         core.set_enabled(id,false)?;
     }

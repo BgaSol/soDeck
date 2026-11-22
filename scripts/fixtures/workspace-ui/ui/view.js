@@ -26,7 +26,7 @@
       input.addEventListener('input',remember);input.addEventListener('select',position);input.addEventListener('scroll',position,{passive:true});
       input.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key==='s'){event.preventDefault();request('event',{action:'save'});}});
     }
-    sodeck.mounted();
+    sodeck.prepared(true);
   });
   addEventListener('sodeck:themeChanged',event=>theme(event.detail.tokens));
   addEventListener('sodeck:flush',async event=>{

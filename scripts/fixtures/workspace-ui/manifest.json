@@ -1,9 +1,16 @@
 {
-  "apiVersion": "1",
+  "apiVersion": "2.0",
   "ui": {
-    "apiVersion": "1",
     "entry": "ui/index.html",
-    "actions": [{"id":"new-page","title":"新建终端","defaultCreate":true,"dataVersion":1}],
+    "actions": [
+      {
+        "id": "new-page",
+        "title": "新建终端",
+        "defaultCreate": true,
+        "dataVersion": 1,
+        "command": "fixture.create.v1"
+      }
+    ],
     "views": [
       {
         "id": "files",
@@ -31,10 +38,9 @@
         "instancePolicy": "multiple",
         "defaultSide": "left",
         "defaultPinned": true,
-        "locateEntry": true,
-        "createAction": "新建终端",
         "openOnWorkspace": "createOne",
-        "startupOrder": 20
+        "startupOrder": 20,
+        "createActionId": "new-page"
       },
       {
         "id": "forwarding",
@@ -51,5 +57,10 @@
   },
   "id": "test.workspace-ui",
   "name": "Workspace test fixture",
-  "version": "0.0.0"
+  "version": "0.0.0",
+  "commands": {
+    "handlers": [
+      "fixture.create.v1"
+    ]
+  }
 }

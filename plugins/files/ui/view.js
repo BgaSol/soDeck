@@ -15,8 +15,7 @@ import {openRemoteFile} from './file-editor/open.js';
  }
  const data=async(action,args={})=>{
   const result=await request('data',{op:'files',id,action,...args});
-  if(result?.ok===false){const error=new Error(result.error.message);error.code=result.error.code;throw error;}
-  return result?.ok===true?result.value:result;
+  return result;
  };
  const event=args=>!activated||readOnly||transferFrozen?(args.action==='navigation'?Promise.resolve({}):Promise.reject(new Error('界面正在交接'))):request('event',args);
  function message(text,error=false){if(status){SoDeckMotion.setMotionText(status,text);status.classList.toggle('error',error);}if(error)void event({action:'error',message:String(text).slice(0,2048)}).catch(()=>{});}
@@ -39,13 +38,13 @@ import {openRemoteFile} from './file-editor/open.js';
 
   if(m.viewType==='files'){
    root.className='browser-root';const host=document.createElement('section');root.append(host);
-   cancelButton=button('取消下载',()=>data('cancel'));cancelButton.hidden=true;footer.append(cancelButton);root.append(footer);
+   root.append(footer);
    transfers=new FileTransfers({fileId:id,data,event,request,message,host:root,target:()=>tree.targetDirectory(),ambiguous:()=>tree.ambiguousTarget(),refresh:()=>tree.refresh()});
    tree=new FileTree(host,{data,event,request,openFile:path=>openRemoteFile({path,mount:m,fileId:id}),download:path=>transfers.download([path]),message,state:m.data.navigation,transfers});tree.preferences(settingsSnapshot?.values||{showHidden:true,density:'compact',fontSize:12});await tree.start();
    shared=connectFileState(tree,m,data,async followTerminal=>{const snapshot=await request('settings',{op:'get'});const result=await request('settings',{op:'save',requestId:crypto.randomUUID(),definitionToken:snapshot.definitionToken,baseRevision:snapshot.revision,values:{...snapshot.values,followTerminal}});await applySettings(result.snapshot,true);});
    void applySettings(settingsSnapshot,true);
   }
-  sodeck.mounted(true,m.viewType==='files');
+  sodeck.prepared(true,m.viewType==='files');
  }
  addEventListener('sodeck:mount',e=>void perform(()=>init(e.detail)));
  addEventListener('sodeck:themeChanged',e=>theme(e.detail.tokens));
@@ -62,11 +61,11 @@ import {openRemoteFile} from './file-editor/open.js';
    await tree?.flush();
    if(disposed||ticket!==flushTicket)return;
    transferFrozen=e.detail.freeze===true;root.inert=readOnly||transferFrozen;
-   parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:e.detail.surfaceId,id:e.detail.id},'*');
+   sodeck.flushed(e.detail.id);
   }catch(error){
    if(disposed||ticket!==flushTicket)return;
    transferFrozen=false;root.inert=readOnly;
-   parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:e.detail.surfaceId,id:e.detail.id,error:error.message},'*');
+   sodeck.flushed(e.detail.id,error.message);
   }
  });
  addEventListener('sodeck:surfaceReady',()=>{

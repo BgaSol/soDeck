@@ -12,7 +12,7 @@ use std::{
     time::Instant,
 };
 
-pub(super) fn plugin_request(
+fn plugin_request_validated(
     core: &Arc<AppCore>,
     id: &str,
     instance: &str,
@@ -54,9 +54,6 @@ pub(super) fn plugin_request(
         method if method.starts_with("session.process.") => core
             .process_request(id, instance, method, &frame["params"])
             .map_err(|e| RpcError::session(e.code, e.message)),
-        method if method.starts_with("session.stream.") => core
-            .stream_request(id, instance, method, &frame["params"])
-            .map_err(RpcError::execution),
         method if method.starts_with("session.") => core
             .session_request(id, instance, method, &frame["params"])
             .map_err(|e| RpcError::session(e.code, e.message)),
@@ -76,7 +73,6 @@ pub(super) fn plugin_request(
                 message,
                 data: json!({"code":"networkRequestRejected"}),
             }),
-        "metrics.networkSnapshot" => Ok(core.network_snapshot()),
         "files.editor" => core
             .files_editor(id, instance, &frame["params"])
             .map_err(RpcError::execution),
@@ -87,9 +83,15 @@ pub(super) fn plugin_request(
                 message: e.message.clone(),
                 data: e.value(),
             }),
-        "files.request" => core
-            .files_control(id, instance, &frame["params"])
-            .map_err(RpcError::execution),
+        method
+            if method == "files.open"
+                || method == "files.close"
+                || method.starts_with("files.batch.")
+                || method.starts_with("files.input.") =>
+        {
+            core.files_control(id, instance, method, &frame["params"])
+                .map_err(RpcError::execution)
+        }
         "terminal.open" => {
             let p = &frame["params"];
             let view = p["viewId"]
@@ -166,6 +168,21 @@ pub(super) fn plugin_request(
             .map_err(RpcError::execution),
         _ => Err(RpcError::method_not_found()),
     }
+}
+
+pub(super) fn plugin_request(
+    core: &Arc<AppCore>,
+    id: &str,
+    instance: &str,
+    frame: &Value,
+) -> Result<Value, RpcError> {
+    let request = sodeck_plugin_protocol::requests::Request::decode(
+        frame["method"].as_str().unwrap_or(""),
+        frame["params"].clone(),
+    )?;
+    let normalized =
+        serde_json::to_value(request).map_err(|_| RpcError::invalid("核心请求编码失败"))?;
+    plugin_request_validated(core, id, instance, &normalized)
 }
 
 const WORKERS: usize = 4;

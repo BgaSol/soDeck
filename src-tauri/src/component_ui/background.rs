@@ -84,20 +84,9 @@ pub(crate) fn start_background(core: &Arc<AppCore>) {
                 let workers = workers.clone();
                 std::thread::spawn(move || {
                     let ok = core.upgrade().is_some_and(|c| {
-                        let response = c.ui_create_view(&view).and_then(|_| {
-                            let version = c.ui_state().definitions[&view.definition_key]
-                                .ui_api_version
-                                .clone();
-                            c.ui_plugin_call(
-                                &view,
-                                if version == "2" {
-                                    "ui.getView"
-                                } else {
-                                    "ui.mount"
-                                },
-                                Value::Null,
-                            )
-                        });
+                        let response = c
+                            .ui_create_view(&view)
+                            .and_then(|_| c.ui_plugin_call(&view, "ui.getView", Value::Null));
                         let mut ui = c.ui_state();
                         if !ui.view(&view.id).is_ok_and(|v| {
                             v.plugin_instance_id == view.plugin_instance_id
@@ -124,7 +113,7 @@ pub(crate) fn start_background(core: &Arc<AppCore>) {
                                     .flat_map(|w| &mut w.views)
                                     .find(|v| v.id == view.id)
                                 {
-                                    v.error = Some(e);
+                                    v.error = Some(e.to_string());
                                 }
                                 false
                             }

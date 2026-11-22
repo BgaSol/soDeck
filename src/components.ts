@@ -1,3 +1,4 @@
+import {surfaceError} from "./plugin-errors";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeTheme, themeTokens } from "./theme";
@@ -18,7 +19,7 @@ import {centerMinimum,effectiveRatio,ratioBounds,splitNode,splitWidth,withSplit}
 import { animateMotion, cancelMotion, captureMotion, enterMotion } from './motion.js';
 
 type Call = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
-interface Definition { iconUrl?:string|null; uiApiVersion?:string; key: string; id: string; pluginId: string; pluginName: string; pluginInstanceId: string; title: string; icon: string; container: string; instancePolicy: string; entry: string; available: boolean; createAction?: string; locateEntry: boolean }
+interface Definition { iconUrl?:string|null; key: string; id: string; pluginId: string; pluginName: string; pluginInstanceId: string; title: string; icon: string; container: string; instancePolicy: string; entry: string; available: boolean;  }
 interface Preference { side: string; pinned: boolean; startup: string; order: number }
 interface View { resourceKey?: string; id: string; definitionKey: string; pluginInstanceId: string; context: Context; title: string; dirty: boolean; busy: boolean; error?: string; lastUsed: number; uiRequested?: boolean }
 export type CenterNode = {type:"group";groupId:string}|{type:"split";id:string;axis:"x"|"y";ratio:number;first:CenterNode;second:CenterNode};
@@ -29,7 +30,7 @@ interface ReturnLocation {windowId:string;groupId?:string;side?:string}
 interface ToolEntry {key:string;viewId:string|null;location:{windowId:string;hostId:string;side?:string;order?:number;groupId?:string}|null;active:boolean;pinned:boolean;available:boolean}
 interface ToolResult {status:string;revision?:number;persistence?:string;error?:string;saveError?:string}
 interface UiWorkspace {tools?:ToolEntry[];returnLocations?:Record<string,ReturnLocation>;groupReturnLocations?:Record<string,ReturnLocation>;unavailableTools?:{key:string;groupId?:string;side?:string}[];otherViews?:{id:string;definitionKey:string;title:string;windowId:string}[]; views: View[]; preferences: Record<string, Preference>; left: string | null; right: string | null; editor: string | null; host?:WorkbenchHost }
-interface ActionDefinition { command?:string; key: string; title: string; available: boolean; reason?: string }
+interface ActionDefinition { command:string; key: string; title: string; available: boolean; reason?: string }
 interface ActionResult { commandId?:string; command?:string; groupId?:string; hostId?:string; status: "pending" | "completed" | "failed" | "invalidated" | "unknown"; requestId: string; context: Context; viewId?: string; error?: string }
 export interface UiProjection { definitions: Record<string, Definition>; actions?: Record<string, ActionDefinition>; defaultCreateAction?: string; pendingAction?: ActionResult[]; workspaces: Record<string, UiWorkspace>; error?: string; layoutSaveError?:string; transfers?:Transfer[] }
 interface Surface { readOnly?:boolean; transferEpoch?:string; node: HTMLDivElement; frame: HTMLIFrameElement; view: View; token?: string; chain: Promise<unknown>; deferred: Map<string,MessageEvent>; visible: boolean; initialized: boolean; mounted?: boolean; acceptsLocalFiles?: boolean; focusPending?: number; flushable?: boolean; flushing?: {id: string; done: (error?: string) => void}; timeout: ReturnType<typeof setTimeout> }
@@ -589,46 +590,46 @@ export class Components {
     if(result.persistence==='saved'){this.layoutSaveFailed=false;this.notify('工作台布局已保存');await this.refresh();}
   }
   private tokens() { return themeTokens(); }
-  private post(surface: Surface, message: Record<string, unknown>) { surface.frame.contentWindow?.postMessage({ channel: this.definitions[surface.view.definitionKey]?.uiApiVersion==="2"?"sodeck-ui-v2":"sodeck-ui-v1", surfaceId: surface.token, ...message }, new URL(surface.frame.src).origin === "null" ? "*" : new URL(surface.frame.src).origin); }
+  private post(surface: Surface, message: Record<string, unknown>) { surface.frame.contentWindow?.postMessage({ channel: "sodeck-ui-v2", surfaceId: surface.token, ...message }, new URL(surface.frame.src).origin === "null" ? "*" : new URL(surface.frame.src).origin); }
   private broadcast() { for (const s of this.shells.values()) for (const f of s.surfaces.values()) this.post(f, { type: "themeChanged", tokens: this.tokens() }); }
   private async refreshSettings(surface: Surface) {
     const token = surface.token; if (!token || this.disposed) return;
     try { const settings = await this.call("settings_for_surface", {surfaceId: token}); if(surface.token===token && !this.disposed && settings) this.post(surface,{type:"settingsChanged",settings}); }
-    catch { /* Older plugins and cores continue with their defaults. */ }
+    catch(error) { if(surface.token===token && !this.disposed)this.surfaceError(surface,'读取组件设置失败：'+surfaceError(error).message); }
   }
   private outside = (event: PointerEvent) => { if (this.menu && !this.menu.contains(event.target as Node) && !this.menuAnchor?.contains(event.target as Node)) this.closeMenu(); };
   private message = (event: MessageEvent) => {
-    if (!event.data || !["sodeck-ui-v1","sodeck-ui-v2"].includes(event.data.channel)) return;
+    if (!event.data || event.data.channel !== "sodeck-ui-v2") return;
     const surface = [...this.shells.values()].flatMap(s => [...s.surfaces.values()]).find(s => s.frame.contentWindow === event.source);
-    if (!surface || event.data.channel!==(this.definitions[surface.view.definitionKey]?.uiApiVersion==="2"?"sodeck-ui-v2":"sodeck-ui-v1")) return;
+    if (!surface || event.data.channel!=="sodeck-ui-v2") return;
     const expectedOrigin = new URL(surface.frame.src).origin;
     if (expectedOrigin !== "null" && event.origin !== expectedOrigin) return;
     const message = event.data;
     if (message.type === "ready") {
       if (surface.initialized) return; surface.initialized = true;
-      surface.chain = this.invoke<{ surfaceId: string; data: unknown; view: View; readOnly?:boolean; capabilities?:{workbench?:number;sharedState?:number;fileLocation?:number;fileLocationProof?:number;uiOpenView?:number} }>("attach", { viewId: surface.view.id }).then(async result => {
+      surface.chain = this.invoke<{ surfaceId: string; data: unknown; view: View; readOnly?:boolean }>("attach", { viewId: surface.view.id }).then(async result => {
         surface.token = result.surfaceId; surface.readOnly=result.readOnly;
         this.shared.attach(result.surfaceId,result.view.context,message=>this.post(surface,message));
-        const settings = await this.call("settings_for_surface", {surfaceId: result.surfaceId}).catch(() => null);
-        this.post(surface, { type: "mount", readOnly:result.readOnly, connected: this.shells.get(surface.view.context.workspaceId)?.workspace.connected, context: result.view.context, serverName: this.shells.get(surface.view.context.workspaceId)?.workspace.name, viewId: surface.view.id, viewType: surface.view.definitionKey.split(":")[1], data: result.data, tokens: this.tokens(), settings, capabilities: {workbench:result.capabilities?.workbench,clipboard:1,localFiles:1,settings:1,sharedState:result.capabilities?.sharedState,fileLocation:result.capabilities?.fileLocation,fileLocationProof:result.capabilities?.fileLocationProof,uiOpenView:result.capabilities?.uiOpenView}, visible: surface.visible });
+        const settings = await this.call("settings_for_surface", {surfaceId: result.surfaceId});
+        this.post(surface, { type: "mount", readOnly:result.readOnly, connected: this.shells.get(surface.view.context.workspaceId)?.workspace.connected, context: result.view.context, serverName: this.shells.get(surface.view.context.workspaceId)?.workspace.name, viewId: surface.view.id, viewType: surface.view.definitionKey.split(":")[1], data: result.data, tokens: this.tokens(), settings, visible: surface.visible });
         surface.frame.dataset.surfaceId = result.surfaceId;
       }).catch(error => this.surfaceError(surface, String(error)));
       return;
     }
     if (!surface.token || message.surfaceId !== surface.token) return;
     if (message.type === "interaction") { if (surface.visible && !surface.readOnly && !this.movingViews.has(surface.view.id)) { void this.invoke("action",{context:surface.view.context,action:{op:"focus",viewId:surface.view.id}}).catch(()=>{}); this.interaction(); this.closeMenu(); this.content.dispatchEvent(new Event("surface-interaction")); } return; }
-    if ((message.type === "mounted"||message.type === "prepared")) { surface.flushable = message.flush === true; surface.acceptsLocalFiles = message.localFiles === true; clearTimeout(surface.timeout); void this.invoke("ready", { surfaceId: surface.token }).then(async () => { surface.mounted = true; surface.node.removeAttribute("aria-busy"); this.scheduleLayout(surface.view.context.workspaceId); await this.refreshSettings(surface); await this.refresh(); if (surface.focusPending === this.focusEpoch && surface.visible) this.focusSurface(surface); }).catch(error => this.surfaceError(surface, String(error))); return; }
+    if (message.type === "prepared") { surface.flushable = message.flush === true; surface.acceptsLocalFiles = message.localFiles === true; clearTimeout(surface.timeout); void this.invoke("ready", { surfaceId: surface.token }).then(async () => { surface.mounted = true; surface.node.removeAttribute("aria-busy"); this.scheduleLayout(surface.view.context.workspaceId); await this.refreshSettings(surface); await this.refresh(); if (surface.focusPending === this.focusEpoch && surface.visible) this.focusSurface(surface); }).catch(error => this.surfaceError(surface, String(error))); return; }
     if (message.type === "flushed" && surface.flushing && surface.flushing.id === message.id) { surface.flushing.done(message.error); return; }
     if (message.type !== "request" || typeof message.id !== "string") return;
     const requestId = message.id;
     if(message.method === 'state'){
       const token=surface.token,context=JSON.stringify(surface.view.context);
       void this.shared.request(token,message.params??{}).then(data=>{if(surface.token===token && JSON.stringify(surface.view.context)===context)this.post(surface,{type:'response',id:requestId,data});})
-        .catch(error=>{if(surface.token===token)this.post(surface,{type:'response',id:requestId,error:String(error)});});
+        .catch(error=>{if(surface.token===token)this.post(surface,{type:'response',id:requestId,error:surfaceError(error)});});
       return;
     }
     if((this.closeBlocked.has(surface.view.id)||this.movingViews.has(surface.view.id))&&!surface.flushing) {
-      if(surface.deferred.size>=64&&!surface.deferred.has(requestId))this.post(surface,{type:"response",id:requestId,error:"组件等待请求已满，请在关闭决定后重试"});
+      if(surface.deferred.size>=64&&!surface.deferred.has(requestId))this.post(surface,{type:"response",id:requestId,error:surfaceError(new Error("组件等待请求已满，请在关闭决定后重试"))});
       else surface.deferred.set(requestId,event);
       return;
     }
@@ -638,7 +639,7 @@ export class Components {
       const {op:_,...input}=params;
       void (command ? this.call(command, {surfaceId:surface.token,input}) : Promise.reject(new Error("未知设置操作")))
         .then(data=>this.post(surface,{type:"response",id:requestId,data}))
-        .catch(error=>this.post(surface,{type:"response",id:requestId,error:String(error)}));
+        .catch(error=>this.post(surface,{type:"response",id:requestId,error:surfaceError(error)}));
       return;
     }
     if (message.method === "clipboard") {
@@ -646,13 +647,13 @@ export class Components {
       const valid=()=>!this.disposed&&surface.token===token&&surface.visible&&document.hasFocus()&&document.activeElement===surface.frame&&JSON.stringify(surface.view.context)===context&&this.focusEpoch===epoch;
       void this.clipboard.request(token,message.params??{},valid)
         .then(data=>this.post(surface,{type:"response",id:requestId,data}))
-        .catch(error=>this.post(surface,{type:"response",id:requestId,error:String(error)}));
+        .catch(error=>this.post(surface,{type:"response",id:requestId,error:surfaceError(error)}));
       return;
     }
     if(message.method === "closeView") {
       void surface.chain.then(()=>this.close([surface.view.context.workspaceId],surface.view.id))
         .then(data=>this.post(surface,{type:"response",id:requestId,data}))
-        .catch(error=>this.post(surface,{type:"response",id:requestId,error:String(error)}));
+        .catch(error=>this.post(surface,{type:"response",id:requestId,error:surfaceError(error)}));
       return;
     }
     if(message.method === "closeViews") {
@@ -666,13 +667,13 @@ export class Components {
           if(!view || view.definitionKey.split(':')[0]!==surface.view.definitionKey.split(':')[0] || id===surface.view.id)throw new Error("页面不属于当前插件工作区");
         }
         return !ids.length||this.requestClose({kind:"views",ids});
-      })().then(accepted=>this.post(surface,{type:"viewsClosed",ticket,accepted})).catch(error=>this.post(surface,{type:"viewsClosed",ticket,error:String(error)}));
+      })().then(accepted=>this.post(surface,{type:"viewsClosed",ticket,accepted})).catch(error=>this.post(surface,{type:"viewsClosed",ticket,error:surfaceError(error)}));
       return;
     }
     if (message.method === "data") {
       void this.data.request(surface.token, message.params, data => this.post(surface, {type: "data", data}))
         .then(data => this.post(surface, {type: "response", id: requestId, data}))
-        .catch(error => this.post(surface, {type: "response", id: requestId, error: String(error)}));
+        .catch(error => this.post(surface, {type: "response", id: requestId, error: surfaceError(error)}));
       return;
     }
     const requestFocusEpoch = this.focusEpoch;
@@ -684,7 +685,7 @@ export class Components {
         else if (message.method === "event") { data = await this.invoke("event", { surfaceId: surface.token, event: message.params }); await this.refresh(); const viewId=(data as {viewId?:string})?.viewId; if(viewId && this.focusEpoch===requestFocusEpoch && this.state?.window.activeWorkspace===shell.workspace.context.workspaceId){const target=shell.surfaces.get(viewId);if(target)this.focusSurface(target);} }
         else throw new Error("未知插件 UI bridge 方法");
         this.post(surface, { type: "response", id: requestId, data });
-      } catch (error) { this.post(surface, { type: "response", id: requestId, error: String(error) }); }
+      } catch (error) { this.post(surface, { type: "response", id: requestId, error: surfaceError(error) }); }
     };
     surface.chain = surface.chain.then(task, task);
   };
@@ -767,7 +768,7 @@ export class Components {
       const focusEpoch = this.focusEpoch;
       this.creating.add(id); this.paint(shell);
       const requestId = crypto.randomUUID();
-      const submission={op:"submit",expectedContext:shell.workspace.context,requestId,name:d.command??'ui.action.v1',actionKey:d.key,groupId};
+      const submission={op:"submit",expectedContext:shell.workspace.context,requestId,name:d.command!,actionKey:d.key,groupId};
       try {
         this.pendingActions.set(requestId, {status:"pending",requestId,context:shell.workspace.context,focusEpoch,command:d.command,groupId,submission});
         const result = await this.command(submission);

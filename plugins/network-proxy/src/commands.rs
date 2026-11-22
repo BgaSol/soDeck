@@ -1,5 +1,6 @@
 use crate::{rules::Target, runtime::App, service::Service};
 use serde_json::{json, Value};
+use sodeck_plugin_client::protocol::requests as api;
 use sodeck_plugin_client::{Client, RpcError};
 use std::sync::Arc;
 pub const HANDLERS: &[&str] = &["network.tcpForward.ensure.v1", "network.rule.reveal.v1"];
@@ -130,8 +131,8 @@ pub fn handle(service: &Arc<Service>, client: &Client, p: &Value) -> Result<Valu
                     return Err(error("ruleConflict：规则已删除或不属于当前服务器".into()));
                 }
             }
-            let result=client.call_detailed("ui.openView",json!({"expectedContext":p["context"],"commandId":p["commandId"],"requestId":format!("open:{}",p["commandId"].as_str().unwrap_or("")),"viewType":"manager"}))?;
-            if result["closed"] != true {
+            let result=serde_json::from_value::<api::OpenView>(json!({"expectedContext":p["context"],"commandId":p["commandId"],"requestId":format!("open:{}",p["commandId"].as_str().unwrap_or("")),"viewType":"manager"})).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| client.request(api::call::OpenView(params)))?;
+            if !result.closed {
                 let mut a = service.state.lock().unwrap();
                 let server = p["context"]["serverId"].as_str().unwrap_or("");
                 let offset = a
@@ -142,15 +143,15 @@ pub fn handle(service: &Arc<Service>, client: &Client, p: &Value) -> Result<Valu
                     .position(|r| r.id == id)
                     .map(|i| i / 20 * 20)
                     .unwrap_or(0);
-                if let Some(v) = result["viewId"]
-                    .as_str()
-                    .and_then(|view| a.views.get_mut(view))
+                if let Some(v) = a
+                    .views
+                    .get_mut(&result.view_id)
                     .filter(|v| v.context == p["context"])
                 {
                     v.navigation = json!({"selected":id,"offset":offset});
                 }
             }
-            Ok(result)
+            Ok(json!({"viewId":result.view_id,"closed":result.closed}))
         }
         _ => Err(error("invalidParams：未知网络命令".into())),
     }

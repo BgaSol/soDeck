@@ -17,10 +17,7 @@ async fn target_facts_follow_authenticated_context_without_catalog_fallback() {
     assert_eq!(summary["target"]["host"], "127.0.0.1");
     assert_eq!(summary["target"]["port"], ssh.addr.port());
     assert_eq!(summary["target"]["username"], "ops");
-    let legacy = invoke("session.state", json!({}));
-    assert!(legacy["target"].get("host").is_none());
-    assert!(legacy.get("targetSource").is_none());
-    assert_eq!(legacy["target"]["endpoint"], summary["target"]["endpoint"]);
+    assert_eq!(invoke("session.state", json!({}))["rpcError"]["code"], -32601);
     let foreign = invoke(
         "session.target.describe",
         json!({"viewId":"foreign","expectedContext":first}),
@@ -41,7 +38,7 @@ async fn target_facts_follow_authenticated_context_without_catalog_fallback() {
     assert_eq!(last["target"], edited["target"]);
     assert_eq!(last["state"], "disconnected");
     assert_eq!(last["capabilities"], json!([]));
-    assert!(invoke("session.state", json!({}))["target"].is_null());
+    assert_eq!(invoke("session.state", json!({}))["rpcError"]["code"], -32601);
     for accept in [false, true] {
         let attempt = f.core.start_connection("main", &server).unwrap();
         until(|| f.core.connection_views()[0].question.is_some()).await;

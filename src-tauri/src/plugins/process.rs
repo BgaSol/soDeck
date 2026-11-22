@@ -59,8 +59,7 @@ pub(crate) fn supervise(
     let mut failure = core.plugin_data(id).and_then(|path| queue_frame(&writer, json!({
         "jsonrpc":"2.0", "id":"initialize", "method":"initialize", "params":{
             "coreApiVersion":API_VERSION, "coreVersion":core.version(), "dataDirectory":path,
-            "settings":core.settings_index(id),
-              "capabilities":["commands.v1","logging.write","messages.publish","ui.v1","ui.workbench.v2","ui.actions.v1","ui.openView.v1","rpc.concurrent","terminal.v1","terminal.launch.v1","terminal.history.v1","viewData.v1","files.v1","files.directoryCursors.v1","files.operations.v1","files.operations.v2","files.copy.v1","files.editor.v1","files.localInputs.v1","net.tcp.v1","net.listenerLifecycle.v1","ui.dialog.v1","settings.v1","ui.background.v1","session.exec.v1","session.stream.v1","session.program.v1","session.target.v1","session.target.v2","servers.read.v1","servers.write.v1","connections.v1","session.stream.process.v1","session.process.v1","files.pluginData.v1","content.export.v1","sharedState.v1","files.location.v1"]
+            "settings":core.settings_index(id)
         }
     }))).err();
     let mut ready = Some(ready);
@@ -74,7 +73,7 @@ pub(crate) fn supervise(
         String,
         (
             Instant,
-            Option<Sender<Result<Value, String>>>,
+            Option<Sender<Result<Value, sodeck_plugin_protocol::ApiError>>>,
             Option<crate::resource_tasks::Task>,
             super::Observation,
             bool,
@@ -93,7 +92,9 @@ pub(crate) fn supervise(
                     .stop_instance(id, instance_id, now(), Instant::now());
                 for (_, reply, _, _, _) in requests.values_mut() {
                     if let Some(reply) = reply.take() {
-                        let _ = reply.send(Err("插件正在停止，请求已取消".into()));
+                        let _ = reply.send(Err(sodeck_plugin_protocol::ApiError::local(
+                            "插件正在停止；原请求结果待确认",
+                        )));
                     }
                 }
                 core.log(Some((id, instance_id)), "info", "正在卸载插件", None);
@@ -119,7 +120,9 @@ pub(crate) fn supervise(
                 expire_at_deadline,
             } = call;
             if Instant::now() >= deadline {
-                let _ = reply.send(Err("插件请求已超时".into()));
+                let _ = reply.send(Err(sodeck_plugin_protocol::ApiError::not_sent(
+                    "插件请求已超时",
+                )));
             } else if stop_deadline.is_some()
                 || !initialized
                 || requests.len() >= 64
@@ -128,7 +131,9 @@ pub(crate) fn supervise(
                     .as_ref()
                     .is_some_and(|command| !command.allowed(&core))
             {
-                let _ = reply.send(Err("插件忙碌或正在停止".into()));
+                let _ = reply.send(Err(sodeck_plugin_protocol::ApiError::not_sent(
+                    "插件忙碌或正在停止",
+                )));
             } else {
                 sequence += 1;
                 let key = format!("ui-{sequence}");
@@ -144,7 +149,7 @@ pub(crate) fn supervise(
                         );
                     }
                     Err(e) => {
-                        let _ = reply.send(Err(e));
+                        let _ = reply.send(Err(sodeck_plugin_protocol::ApiError::not_sent(e)));
                     }
                 }
             }
@@ -157,7 +162,7 @@ pub(crate) fn supervise(
         for (deadline, reply, _, _, _) in requests.values_mut() {
             if Instant::now() >= *deadline {
                 if let Some(reply) = reply.take() {
-                    let _ = reply.send(Err("插件界面请求超时；结果尚未确认".into()));
+                    let _ = reply.send(Err(sodeck_plugin_protocol::ApiError::timeout()));
                 }
             }
         }
@@ -203,7 +208,9 @@ pub(crate) fn supervise(
                 .stop_instance(id, instance_id, now(), Instant::now());
             for (_, reply, _, _, _) in requests.values_mut() {
                 if let Some(reply) = reply.take() {
-                    let _ = reply.send(Err("插件通信已停止，请求已取消".into()));
+                    let _ = reply.send(Err(sodeck_plugin_protocol::ApiError::local(
+                        "插件通信已停止；原请求结果待确认",
+                    )));
                 }
             }
             if expired && exited.is_none() {
@@ -343,7 +350,9 @@ pub(crate) fn supervise(
                 {
                     observation.frame(&core, &frame);
                     let result = if frame.get("error").is_some() {
-                        Err(format!("{}", frame["error"]))
+                        Err(sodeck_plugin_protocol::ApiError::from_frame(
+                            &frame["error"],
+                        ))
                     } else {
                         Ok(frame["result"].clone())
                     };
@@ -354,34 +363,14 @@ pub(crate) fn supervise(
                 } else if frame["id"] == "initialize" && !initialized {
                     if frame.get("error").is_some() {
                         failure = Some(format!("插件初始化失败：{}", frame["error"]));
-                    } else if frame["result"]["apiVersion"] != API_VERSION {
+                    } else if frame["result"]["apiVersion"] != initial.manifest.api_version {
                         failure = Some("插件初始化响应的 API 版本不匹配".into());
-                    } else if initial
-                        .manifest
-                        .ui
-                        .as_ref()
-                        .is_some_and(|u| u.api_version == "2")
-                        && frame["result"]["uiApiVersion"] != "2"
-                    {
-                        failure = Some("插件清单声明 UI v2，但初始化未确认 UI v2".into());
                     } else if let Err(error) =
                         crate::commands::confirm(&initial.manifest, &frame["result"])
                     {
                         failure = Some(error);
                     } else {
                         initialized = true;
-                        instance.commands_api.store(
-                            frame["result"]["commandsApiVersion"] == "1",
-                            std::sync::atomic::Ordering::Release,
-                        );
-                        instance.ui_actions_api.store(
-                            frame["result"]["uiActionsApiVersion"] == "1",
-                            std::sync::atomic::Ordering::Release,
-                        );
-                        instance.settings_api.store(
-                            frame["result"]["settingsApiVersion"] == "1",
-                            std::sync::atomic::Ordering::Release,
-                        );
                         if stop_deadline.is_none() {
                             if let Err(error) = core.shared_state.activate_instance(id, instance_id)
                             {

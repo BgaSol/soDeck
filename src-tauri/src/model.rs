@@ -14,7 +14,7 @@ pub struct UpdateSourceBaseline {
     pub source: Option<UpdateSource>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -35,6 +35,63 @@ pub struct Manifest {
     pub ui: Option<crate::component_ui::Declaration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings: Option<Value>,
+}
+
+// Installed metadata must remain readable when its executable protocol is retired.
+// Executable manifests are independently validated from the actual package on load.
+impl<'de> Deserialize<'de> for Manifest {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Metadata {
+            id: String,
+            name: String,
+            version: String,
+            api_version: String,
+            target: String,
+            entry: String,
+            #[serde(default)]
+            icon: String,
+            #[serde(default)]
+            icons: std::collections::BTreeMap<String, String>,
+            update_source: Option<UpdateSource>,
+            ui: Option<Value>,
+            commands: Option<Value>,
+            settings: Option<Value>,
+        }
+        let raw = Metadata::deserialize(deserializer)?;
+        let current = sodeck_plugin_protocol::supports(&raw.api_version);
+        let ui = if current {
+            raw.ui
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(serde::de::Error::custom)?
+        } else {
+            None
+        };
+        let commands = if current {
+            raw.commands
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(serde::de::Error::custom)?
+        } else {
+            None
+        };
+        Ok(Self {
+            id: raw.id,
+            name: raw.name,
+            version: raw.version,
+            api_version: raw.api_version,
+            target: raw.target,
+            entry: raw.entry,
+            icon: raw.icon,
+            icons: raw.icons,
+            update_source: raw.update_source,
+            ui,
+            commands,
+            settings: if current { raw.settings } else { None },
+        })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

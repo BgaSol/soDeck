@@ -65,12 +65,17 @@ fn main() {
                     send(json!({"jsonrpc":"2.0","id":frame["id"],"result":{}}));
                     continue;
                 }
+                if let Some(view) = p["payload"].get("returnViewId") {
+                    send(json!({"jsonrpc":"2.0","id":frame["id"],"result":{"viewId":view}}));
+                    continue;
+                }
+                let delay = p["payload"]["delayMs"].as_u64().unwrap_or(0);
                 let request = format!("command-open-{action_count}");
                 pending_actions.insert(
                     request.clone(),
                     (frame["id"].clone(), p["payload"]["failAfterOpen"] == true),
                 );
-                let open = json!({"jsonrpc":"2.0","id":request,"method":"ui.openView","params":{"expectedContext":p["context"],"commandId":p["commandId"],"requestId":format!("open:{}",p["commandId"].as_str().unwrap()),"viewType":"terminal","params":p["payload"]["params"]}});
+                let open = json!({"jsonrpc":"2.0","id":request,"method":"ui.openView","params":{"expectedContext":p["context"],"commandId":p["commandId"],"requestId":format!("open:{}",p["commandId"].as_str().unwrap()),"viewType":p["payload"]["viewType"].as_str().unwrap_or("terminal"),"params":p["payload"]["params"]}});
                 let gate = p["payload"]["gate"]
                     .as_str()
                     .map(str::to_owned)
@@ -79,6 +84,7 @@ fn main() {
                             .then(|| format!("{directory}/startup-release"))
                     });
                 thread::spawn(move || {
+                    thread::sleep(Duration::from_millis(delay));
                     if let Some(gate) = gate {
                         let end = std::time::Instant::now() + Duration::from_secs(30);
                         while !std::path::Path::new(&gate).exists()
@@ -100,41 +106,6 @@ fn main() {
                 send(
                     json!({"jsonrpc":"2.0","id":frame["id"],"result":{"accepted":true,"batchId":p["batchId"],"part":p["part"],"appliedRevision":p["toRevision"]}}),
                 );
-            }
-            Some("ui.action") => {
-                action_count += 1;
-                fs::write(
-                    format!("{}/action-count", data.as_ref().unwrap()),
-                    action_count.to_string(),
-                )
-                .unwrap();
-                let p = &frame["params"];
-                if p["data"]["none"] == true {
-                    send(json!({"jsonrpc":"2.0","id":frame["id"],"result":{}}));
-                    continue;
-                }
-                if let Some(view) = p["data"].get("returnViewId") {
-                    send(json!({"jsonrpc":"2.0","id":frame["id"],"result":{"viewId":view}}));
-                    continue;
-                }
-                if p["data"]["fail"] == true {
-                    send(
-                        json!({"jsonrpc":"2.0","id":frame["id"],"error":{"code":-32000,"message":"action failed"}}),
-                    );
-                    continue;
-                }
-                let request = format!("action-open-{action_count}");
-                pending_actions.insert(
-                    request.clone(),
-                    (frame["id"].clone(), p["data"]["failAfterOpen"] == true),
-                );
-                let open = json!({"jsonrpc":"2.0","id":request,"method":"ui.openView","params":{"expectedContext":p["context"],"requestId":p["requestId"],"viewType":p["data"]["viewType"].as_str().unwrap_or("terminal"),"params":p["data"]["params"]}});
-                let delay = p["data"]["delayMs"].as_u64().unwrap_or(0);
-                thread::spawn(move || {
-                    thread::sleep(Duration::from_millis(delay));
-                    send(open);
-                });
-                continue;
             }
             Some(method) if method.starts_with("ui.") => {
                 let p = &frame["params"];
@@ -165,10 +136,7 @@ fn main() {
                             params["sourceViewId"] = json!(id);
                             params["expectedContext"] = p["context"].clone();
                         }
-                        if rpc == "session.state"
-                            || rpc == "session.exec.start"
-                            || rpc == "session.stream.open"
-                            || rpc == "session.stream.lookup"
+                        if rpc == "session.exec.start"
                             || rpc == "session.process.start"
                             || rpc == "session.process.lookup"
                         {
@@ -287,7 +255,7 @@ fn main() {
                         continue;
                     }
                 }
-                if method == "ui.mount" {
+                if method == "ui.getView" {
                     fs::write(
                         format!("{}/mounted-{}", data.as_ref().unwrap(), id),
                         p.to_string(),
@@ -335,7 +303,7 @@ fn main() {
                     fs::write(format!("{directory}/child-pid"), child.id().to_string()).unwrap();
                 }
                 send(
-                    json!({"jsonrpc":"2.0","id":frame["id"],"result":{"apiVersion":"1","uiApiVersion":"2","commandsApiVersion":"1","commandHandlers":["terminal.open.v1"],"uiActionsApiVersion":if mode=="old-actions" {Value::Null} else {json!("1")}}}),
+                    json!({"jsonrpc":"2.0","id":frame["id"],"result":{"apiVersion":"2.0","commandHandlers":if mode=="second-command" {json!(["second.open.v1"])} else {json!(["terminal.open.v1"])}}}),
                 );
                 eprintln!("fixture diagnostic");
                 send(
@@ -391,9 +359,7 @@ fn main() {
                     frame.to_string(),
                 )
                 .unwrap();
-                send(
-                    json!({"jsonrpc":"2.0","id":"initialize","result":{"apiVersion":"1","uiApiVersion":"2","settingsApiVersion":"1","uiActionsApiVersion":if mode=="old-actions" {Value::Null} else {json!("1")}}}),
-                );
+                send(json!({"jsonrpc":"2.0","id":"initialize","result":{"apiVersion":"2.0"}}));
             }
             _ if frame["id"]
                 .as_str()

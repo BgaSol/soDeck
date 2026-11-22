@@ -168,7 +168,7 @@ fn main() {
                             vec![local],
                             args["request"]["action"] == "input.chooseDownload",
                         )
-                        .map_err(String::from)
+                        .map_err(|e| sodeck_plugin_protocol::ApiError::execution(e.to_string()))
                     } else if args["request"]["action"] == "export.start" {
                         match core.files_export_begin(
                             args["window"].as_str().unwrap_or("main"),
@@ -184,30 +184,10 @@ fn main() {
                                         core.files_export_finish(task, Ok(Some(path.into()))).await;
                                     });
                                 }
-                                Ok(json!({"ok":true,"value":receipt}))
+                                Ok(receipt)
                             }
-                            Err(error) => Ok(
-                                json!({"ok":false,"error":{"code":"exportRejected","message":error}}),
-                            ),
+                            Err(error) => Err(error.into()),
                         }
-                    } else if args["request"]["action"] == "exportDraft" {
-                        let local = std::env::var("SODECK_TEST_DOWNLOAD_PATH")
-                            .expect("test export destination");
-                        tauri::async_runtime::block_on(core.files_export(
-                            args["window"].as_str().unwrap_or("main"),
-                            args["surfaceId"].as_str().unwrap(),
-                            args["request"].clone(),
-                            local.into(),
-                        ))
-                    } else if args["request"]["action"] == "download" {
-                        let local = std::env::var("SODECK_TEST_DOWNLOAD_PATH")
-                            .expect("test download destination");
-                        tauri::async_runtime::block_on(core.files_download(
-                            args["window"].as_str().unwrap_or("main"),
-                            args["surfaceId"].as_str().unwrap(),
-                            args["request"].clone(),
-                            local.into(),
-                        ))
                     } else {
                         tauri::async_runtime::block_on(core.files_data(
                             args["window"].as_str().unwrap_or("main"),
@@ -370,7 +350,8 @@ fn main() {
                 args["window"].as_str().unwrap(),
                 args["operation"].as_str().unwrap(),
                 args["args"].clone(),
-            ),
+            )
+            .map_err(|error| error.to_string()),
             "fixture_load_plugin" => core
                 .load(std::path::Path::new(args["directory"].as_str().unwrap()))
                 .map(|p| json!(p)),

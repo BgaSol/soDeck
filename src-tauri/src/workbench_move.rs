@@ -672,12 +672,7 @@ impl AppCore {
         let mut by_workspace: std::collections::BTreeMap<String, Vec<String>> = Default::default();
         for id in tools {
             let v = ui.resource_view(id)?;
-            if ui.definitions[&v.definition_key].ui_api_version != "2" {
-                return Err(format!(
-                    "{} 需要跨窗口返回，请先升级此插件，或关闭服务器全部工作区",
-                    v.title
-                ));
-            }
+
             by_workspace
                 .entry(v.context.workspace_id.clone())
                 .or_default()
@@ -1017,14 +1012,7 @@ impl AppCore {
         }) {
             return Err("此页面有编辑弹窗，请先完成或关闭弹窗再移动".into());
         }
-        for view in &views {
-            if ui.definitions[&ui.resource_view(view)?.definition_key].ui_api_version != "2" {
-                return Err(format!(
-                    "{} 使用 UI v1，请先升级此插件后跨窗口移动",
-                    ui.resource_view(view)?.title
-                ));
-            }
-        }
+
         source_after.validate()?;
         target_after.validate()?;
         let movement = Move {

@@ -228,6 +228,14 @@ impl AppCore {
                 view.directory = installed.0;
                 view.manifest = installed.1;
             }
+            if !sodeck_plugin_protocol::supports(&view.manifest.api_version) {
+                view.status = PluginStatus::Failed;
+                view.error = Some(format!(
+                    "插件要求核心 API {}，当前为 {}；请升级插件",
+                    view.manifest.api_version,
+                    crate::API_VERSION
+                ));
+            }
             view.enabled = record.enabled;
             view.manifest.update_source = update_source;
             view.pending_restart = record.enabled
@@ -565,16 +573,32 @@ impl AppCore {
                     }
                 }
                 Err(error) => {
-                    if let Some(previous) = record.previous.take() {
-                        // Only restore binaries; plugin data belongs to the plugin and is kept.
-                        record.directory = previous.directory;
-                        record.manifest = previous.manifest;
-                        record.update_error = Some(format!("新版启动失败，已恢复旧程序：{error}"));
-                        let saved = self.store.lock().unwrap().register(record.clone());
-                        if saved.is_ok() {
-                            let _ = self.load(&record.directory);
+                    let previous = record
+                        .previous
+                        .as_ref()
+                        .filter(|p| sodeck_plugin_protocol::supports(&p.manifest.api_version));
+                    let mut restored = false;
+                    if let Some(previous) = previous.cloned() {
+                        let mut fallback = record.clone();
+                        fallback.directory = previous.directory;
+                        fallback.manifest = previous.manifest;
+                        if plugins::read_manifest(&fallback.directory).is_ok()
+                            && self
+                                .store
+                                .lock()
+                                .unwrap()
+                                .register(fallback.clone())
+                                .is_ok()
+                        {
+                            if self.load(&fallback.directory).is_ok() {
+                                fallback.update_error =
+                                    Some(format!("新版启动失败，已恢复兼容程序：{error}"));
+                                let _ = self.store.lock().unwrap().register(fallback);
+                                restored = true;
+                            }
                         }
-                    } else {
+                    }
+                    if !restored {
                         record.update_error = Some(error.clone());
                         let _ = self.store.lock().unwrap().register(record.clone());
                         self.log(

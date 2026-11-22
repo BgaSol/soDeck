@@ -86,8 +86,9 @@ export function selectChecks(files, { suite, fallback } = {}) {
       if (file.startsWith('.github/workflows/') || file.startsWith('.github/actions/')) plan.workflow = true;
       if (['src-tauri/tests/fixtures/release_upgrade.rs', 'scripts/test-release-upgrade.mjs', '.github/workflows/release-upgrade.yml'].includes(file)) { core(); plan.scripts = true; continue; }
       if (/^scripts\/upgrade-inputs(?:\.test)?\.mjs$/.test(file)) { plan.scripts = true; continue; }
-      if (/^(src\/component-state\.ts|src-tauri\/src\/shared_state(\/|\.)|plugins\/shared\/state\.js|scripts\/(test-component-communication\.mjs|component-state\.test\.mjs|fixtures\/shared-state\.json))$/.test(file)||file==='src-tauri/src/shared_state.rs'||file.startsWith('src-tauri/src/shared_state/')){communication();core();plan.sharedClient=true;['terminal','files','system-status'].forEach(plugin);continue;}
+      if (/^(src\/component-state\.ts|src-tauri\/src\/shared_state(\/|\.)|packages\/plugin-sdk\/src\/state\.js|scripts\/(test-component-communication\.mjs|component-state\.test\.mjs|fixtures\/shared-state\.json))$/.test(file)||file==='src-tauri/src/shared_state.rs'||file.startsWith('src-tauri/src/shared_state/')){communication();core();plan.sharedClient=true;['terminal','files','system-status'].forEach(plugin);continue;}
       if (/^src-tauri\/(src|tests)\/commands(\/|\.)/.test(file)) {communication();core();plan.sharedClient=true;plugin('terminal');plugin('docker');continue;}
+      if (file.startsWith('crates/plugin-protocol/') || file.startsWith('packages/plugin-sdk/') || file === 'scripts/plugin-sdk-assets.mjs') { full(); continue; }
       if (file.startsWith('src/')) {
         if (/^src\/(ui\.css|themes\.css|text-menu\.|menu-position\.|font-loader\.)/.test(file)) sharedUi();
         else ui();
@@ -123,7 +124,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
         if (file.includes('settings')) ui();
         continue;
       }
-      if (/^src-tauri\/(src|tests)\/(connections|streams|plugins|session_exec|session_target|session_stream|session_process|remote_execution|execution_output|content_export|core|lib|main|model|lifecycle|close_lifecycle|resource_tasks|resource_owner|platform|servers|workbench)(\/|\.|_)/.test(file)) {
+      if (/^src-tauri\/(src|tests)\/(connections|streams|plugins|session_exec|session_target|session_process|remote_execution|execution_output|content_export|core|lib|main|model|lifecycle|close_lifecycle|resource_tasks|resource_owner|platform|servers|workbench)(\/|\.|_)/.test(file)) {
         core(); ui();
         plan.ssh = plan.sharedClient = true;
         pluginNames.forEach(name => integration.add(name));
@@ -151,7 +152,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
       if (/^scripts\/(docker-process|test-docker(?:-(ui|process|package|ports-ui|tree-ui|native))?)\.mjs$/.test(file)) { plan.scripts = true; integration.add('docker'); continue; }
       if (/^scripts\/test-mcp(?:-(ui|process))?\.mjs$/.test(file) || file === 'src-tauri/tests/fixtures/mcp_flow.rs') { plan.scripts = true; core(['linux-x86_64']); integration.add('mcp'); continue; }
       if (file === 'src-tauri/tests/fixtures/docker_flow.rs') { core(['linux-x86_64']); integration.add('docker'); continue; }
-      if (file === 'src-tauri/tests/fixtures/session_stream_flow.rs') { core(); integration.add('docker'); integration.add('terminal'); continue; }
+      if (file === 'src-tauri/tests/fixtures/process_output_flow.rs') { core(); integration.add('docker'); integration.add('terminal'); continue; }
       const pluginUiTest = file.match(/^scripts\/test-(terminal|files)-ui\.mjs$/);
       if (/^scripts\/(test-file-editor-ui|file-editor-fixture)\.mjs$/.test(file)) { plan.scripts = true; integration.add('files'); continue; }
       if (pluginUiTest) { plan.scripts = true; integration.add(pluginUiTest[1]); continue; }

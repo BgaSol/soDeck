@@ -282,7 +282,7 @@ fn component_settings_bind_reports_to_current_window_surface_and_revision() {
     let f = Fixture::new();
     let path = f.plugin.join("plugin.json");
     let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    manifest["settings"] = json!({"apiVersion":"1","schemaVersion":1,"pages":[{"id":"browser","title":"列表","viewTypes":["browser"],"groups":[{"id":"display","title":"显示","fields":[{"key":"hidden","type":"boolean","title":"隐藏条目","default":true,"apply":"live"}]}]}]});
+    manifest["settings"] = json!({"schemaVersion":1,"pages":[{"id":"browser","title":"列表","viewTypes":["browser"],"groups":[{"id":"display","title":"显示","fields":[{"key":"hidden","type":"boolean","title":"隐藏条目","default":true,"apply":"live"}]}]}]});
     fs::write(path, manifest.to_string()).unwrap();
     let token = f.surface();
     let snapshot = f.core.settings_for_surface("main", &token).unwrap();
@@ -326,7 +326,7 @@ fn separately_registered_plugins_keep_their_own_recommended_defaults() {
     let binary = format!("fixture{}", std::env::consts::EXE_SUFFIX);
     fs::copy(env!("CARGO_BIN_EXE_plugin-fixture"), second.join(&binary)).unwrap();
     fs::write(second.join("ui/index.html"), "ok").unwrap();
-    fs::write(second.join("plugin.json"),json!({"id":"test.second","name":"Second","version":"0.1.0","apiVersion":"1","target":TARGET,"entry":binary,"ui":{"apiVersion":"1","entry":"ui/index.html","views":[{"id":"browser","title":"Second files","icon":"folder","container":"sidebar","instancePolicy":"perWorkspace","defaultPinned":true,"openOnWorkspace":"reveal"}]}}).to_string()).unwrap();
+    fs::write(second.join("plugin.json"),json!({"id":"test.second","name":"Second","version":"0.1.0","apiVersion":"2.0","target":TARGET,"entry":binary,"ui":{"entry":"ui/index.html","views":[{"id":"browser","title":"Second files","icon":"folder","container":"sidebar","instancePolicy":"perWorkspace","defaultPinned":true,"openOnWorkspace":"reveal"}]}}).to_string()).unwrap();
     f.core.ui_snapshot("main").unwrap();
     {
         let _startup = STARTUP.lock().unwrap();
@@ -439,7 +439,7 @@ impl Fixture {
         self.actions();
         let path = self.plugin.join("plugin.json");
         let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        manifest["commands"] = json!({"apiVersion":"1","handlers":["terminal.open.v1"]});
+        manifest["commands"] = json!({"handlers":["terminal.open.v1"]});
         manifest["ui"]["actions"][0]["command"] = json!("terminal.open.v1");
         manifest["ui"]["views"][1]["createActionId"] = json!("create");
         manifest["ui"]["views"][1]["openOnWorkspace"] =
@@ -480,16 +480,16 @@ impl Fixture {
     fn actions(&self) {
         let path = self.plugin.join("plugin.json");
         let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        manifest["ui"]["actions"] =
-            json!([{"id":"create","title":"默认行为","defaultCreate":true,"dataVersion":1}]);
+        manifest["commands"] = json!({"handlers":["terminal.open.v1"]});
+        manifest["ui"]["actions"] = json!([{"id":"create","title":"默认行为","defaultCreate":true,"dataVersion":1,"command":"terminal.open.v1"}]);
         fs::write(path, manifest.to_string()).unwrap();
     }
     fn invoke(&self, context: &sodeck::workspaces::Context, id: &str, data: Value) -> Value {
         let receipt = self
             .core
-            .ui_invoke_action(
+            .command_host_request(
                 "main",
-                &json!({"context":context,"requestId":id,"actionKey":"test.ui:create","data":data}),
+                &json!({"context":context,"requestId":id,"op":"submit","name":"terminal.open.v1","actionKey":"test.ui:create","payload":data}),
             )
             .unwrap();
         self.wait_action("main", context, id, receipt)
@@ -506,7 +506,10 @@ impl Fixture {
             std::thread::sleep(std::time::Duration::from_millis(10));
             receipt = self
                 .core
-                .ui_action_status(window, &json!({"context":context,"requestId":id}))
+                .command_host_request(
+                    window,
+                    &json!({"op":"get","context":context,"requestId":id}),
+                )
                 .unwrap();
         }
         receipt
@@ -526,7 +529,7 @@ impl Fixture {
         let binary = format!("fixture{}", std::env::consts::EXE_SUFFIX);
         fs::copy(env!("CARGO_BIN_EXE_plugin-fixture"), plugin.join(&binary)).unwrap();
         fs::write(plugin.join("ui/index.html"), "<p>fixture</p>").unwrap();
-        fs::write(plugin.join("plugin.json"),json!({"id":"test.ui","name":"UI fixture","version":"0.1.0","apiVersion":"1","target":TARGET,"entry":binary,"ui":{"apiVersion":"1","entry":"ui/index.html","views":[
+        fs::write(plugin.join("plugin.json"),json!({"id":"test.ui","name":"UI fixture","version":"0.1.0","apiVersion":"2.0","target":TARGET,"entry":binary,"ui":{"entry":"ui/index.html","views":[
             {"id":"browser","title":"Files","icon":"folder","container":"sidebar","instancePolicy":"perWorkspace","defaultPinned":true,"openOnWorkspace":"reveal"},
             {"id":"terminal","title":"Terminal","icon":"terminal","container":"editor","instancePolicy":"multiple","openOnWorkspace":"createOne","startupOrder":20},
             {"id":"editor","title":"Editor","icon":"log","container":"editor","instancePolicy":"perResource"}
@@ -856,6 +859,30 @@ fn a_late_command_page_preserves_the_later_active_page() {
     );
 }
 #[test]
+fn commands_in_different_workspaces_keep_each_first_page_visible() {
+    let f = Fixture::new();
+    f.commands(false);
+    f.load().unwrap();
+    let a = f.open("first-workspace");
+    let b = f.open("second-workspace");
+    let gate = f.root.join("workspace-focus-release");
+    let slow = f.command("main", &a.context, "slow", json!({"gate":gate}));
+    f.command_sent(&slow);
+    let fast = f.command("main", &b.context, "fast", json!({}));
+    let fast = f.wait_command("main", &fast);
+    fs::write(gate, "").unwrap();
+    let slow = f.wait_command("main", &slow);
+    let ui = f.core.ui_snapshot("main").unwrap();
+    assert_eq!(
+        ui["workspaces"][&a.context.workspace_id]["editor"],
+        slow["viewId"]
+    );
+    assert_eq!(
+        ui["workspaces"][&b.context.workspace_id]["editor"],
+        fast["viewId"]
+    );
+}
+#[test]
 fn startup_and_explicit_creation_share_the_command_handler() {
     let f = Fixture::new();
     f.commands(true);
@@ -875,9 +902,9 @@ fn startup_and_explicit_creation_share_the_command_handler() {
     }
     let result = f
         .core
-        .ui_invoke_action(
+        .command_host_request(
             "main",
-            &json!({"context":w.context,"requestId":"explicit","actionKey":"test.ui:create"}),
+            &json!({"context":w.context,"requestId":"explicit","op":"submit","name":"terminal.open.v1","actionKey":"test.ui:create"}),
         )
         .unwrap();
     assert_eq!(
@@ -1020,8 +1047,8 @@ fn declared_behavior_chooses_own_page_and_deduplicates_without_a_surface() {
         f.invoke(&w.context, "create", json!({"params":config})),
         result
     );
-    assert!(f.core.ui_invoke_action("main",&json!({"context":w.context,"requestId":"create","actionKey":"test.ui:create","data":{}})).is_err());
-    let process = json!({"expectedContext":w.context,"requestId":result["commandId"],"viewType":"terminal","params":config});
+    assert!(f.core.command_host_request("main",&json!({"context":w.context,"requestId":"create","op":"submit","name":"terminal.open.v1","actionKey":"test.ui:create","payload":{}})).is_err());
+    let process = json!({"expectedContext":w.context,"commandId":result["commandId"],"requestId":format!("open:{}",result["commandId"].as_str().unwrap()),"viewType":"terminal","params":config});
     assert_eq!(
         f.core
             .ui_process_open("test.ui", plugin.instance_id.as_ref().unwrap(), &process)
@@ -1055,11 +1082,12 @@ fn declared_behavior_chooses_own_page_and_deduplicates_without_a_surface() {
         )
         .unwrap();
     f.finish(&plan, "discard").unwrap();
-    assert!(f
-        .core
-        .ui_process_open("test.ui", plugin.instance_id.as_ref().unwrap(), &process)
-        .unwrap_err()
-        .contains("viewClosed"));
+    assert_eq!(
+        f.core
+            .ui_process_open("test.ui", plugin.instance_id.as_ref().unwrap(), &process)
+            .unwrap()["closed"],
+        true
+    );
 }
 #[test]
 fn behavior_can_return_no_page_or_select_a_different_declared_view() {
@@ -1125,13 +1153,13 @@ fn timeout_status_queries_original_delivery_and_late_creation_is_fenced_by_close
     let result = f.invoke(&w.context, "late", json!({"delayMs":6100}));
     assert_eq!(result["status"], "pending");
     assert_eq!(
-        f.core.ui_invoke_action("main",&json!({"context":w.context,"requestId":"late","actionKey":"test.ui:create","data":{"delayMs":6100}})).unwrap()["status"],
+        f.core.command_host_request("main",&json!({"context":w.context,"requestId":"late","op":"submit","name":"terminal.open.v1","actionKey":"test.ui:create","payload":{"delayMs":6100}})).unwrap()["status"],
         "pending"
     );
-    let query = json!({"context":w.context,"requestId":"late"});
+    let query = json!({"op":"get","context":w.context,"requestId":"late"});
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
     loop {
-        let status = f.core.ui_action_status("main", &query).unwrap();
+        let status = f.core.command_host_request("main", &query).unwrap();
         if status["status"] == "completed" {
             break;
         }
@@ -1139,7 +1167,7 @@ fn timeout_status_queries_original_delivery_and_late_creation_is_fenced_by_close
         std::thread::sleep(std::time::Duration::from_millis(30));
     }
     assert_eq!(
-        fs::read_to_string(f.root.join("data/plugin-data/test.ui/action-count")).unwrap(),
+        fs::read_to_string(f.root.join("data/plugin-data/test.ui/command-count")).unwrap(),
         "1"
     );
     assert_eq!(
@@ -1157,9 +1185,9 @@ fn timeout_status_queries_original_delivery_and_late_creation_is_fenced_by_close
     f.finish(&plan, "cancel").unwrap();
     assert_eq!(
         f.core
-            .ui_action_status(
+            .command_host_request(
                 "main",
-                &json!({"context":w.context,"requestId":"closed-late"})
+                &json!({"op":"get","context":w.context,"requestId":"closed-late"})
             )
             .unwrap()["status"],
         "invalidated"
@@ -1186,10 +1214,13 @@ fn saved_default_survives_provider_stop_and_unsupported_old_plugin_is_unavailabl
     assert_eq!(fs::read(f.root.join("data/ui-layout.json")).unwrap(), saved);
     let old = Fixture::new();
     old.actions();
-    fs::write(old.plugin.join("mode"), "old-actions").unwrap();
-    old.load().unwrap();
+    let manifest_path = old.plugin.join("plugin.json");
+    let mut manifest: Value = serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+    manifest["apiVersion"] = json!("1");
+    fs::write(manifest_path, manifest.to_string()).unwrap();
+    assert!(old.load().is_err());
     let snapshot = old.core.ui_snapshot("main").unwrap();
-    assert_eq!(snapshot["actions"]["test.ui:create"]["available"], false);
+    assert_eq!(snapshot["actions"].get("test.ui:create"), None);
     assert!(snapshot["defaultCreateAction"].is_null());
 }
 #[test]
@@ -1198,11 +1229,11 @@ fn action_declaration_validates_ids_titles_versions_and_default_count() {
     let path = f.plugin.join("plugin.json");
     let original: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     for actions in [
-        json!([{"id":"bad:id","title":"x","dataVersion":1}]),
-        json!([{"id":"a","title":" ","dataVersion":1}]),
-        json!([{"id":"a","title":"x","dataVersion":0}]),
-        json!([{"id":"a","title":"x","dataVersion":1},{"id":"a","title":"y","dataVersion":1}]),
-        json!([{"id":"a","title":"x","dataVersion":1,"defaultCreate":true},{"id":"b","title":"y","dataVersion":1,"defaultCreate":true}]),
+        json!([{"id":"bad:id","title":"x","dataVersion":1,"command":"fixture.open.v1"}]),
+        json!([{"id":"a","title":" ","dataVersion":1,"command":"fixture.open.v1"}]),
+        json!([{"id":"a","title":"x","dataVersion":0,"command":"fixture.open.v1"}]),
+        json!([{"id":"a","title":"x","dataVersion":1,"command":"fixture.open.v1"},{"id":"a","title":"y","dataVersion":1,"command":"fixture.open.v1"}]),
+        json!([{"id":"a","title":"x","dataVersion":1,"command":"fixture.open.v1","defaultCreate":true},{"id":"b","title":"y","dataVersion":1,"command":"fixture.open.v1","defaultCreate":true}]),
     ] {
         let mut m = original.clone();
         m["ui"]["actions"] = actions;
@@ -1237,6 +1268,9 @@ fn startup_default_is_stable_across_saved_plugin_order_and_queries_do_not_write(
     let mut manifest: Value =
         serde_json::from_slice(&fs::read(f.plugin.join("plugin.json")).unwrap()).unwrap();
     manifest["id"] = json!("aaa.default");
+    manifest["commands"]["handlers"] = json!(["second.open.v1"]);
+    manifest["ui"]["actions"][0]["command"] = json!("second.open.v1");
+    fs::write(second.join("mode"), "second-command").unwrap();
     fs::write(second.join("plugin.json"), manifest.to_string()).unwrap();
     f.core.add_plugin(&f.plugin).unwrap();
     f.core.add_plugin(&second).unwrap();
@@ -1263,9 +1297,9 @@ fn accepted_behavior_follows_workspace_ownership_and_disconnect_fences_new_creat
     let core = f.core.clone();
     let context = w.context.clone();
     let action = std::thread::spawn(move || {
-        core.ui_invoke_action("main",&json!({"context":context,"requestId":"moving","actionKey":"test.ui:create","data":{"delayMs":500}})).unwrap()
+        core.command_host_request("main",&json!({"context":context,"requestId":"moving","op":"submit","name":"terminal.open.v1","actionKey":"test.ui:create","payload":{"delayMs":500}})).unwrap()
     });
-    let marker = f.root.join("data/plugin-data/test.ui/action-count");
+    let marker = f.root.join("data/plugin-data/test.ui/command-count");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
     while !marker.exists() {
         assert!(std::time::Instant::now() < deadline);
@@ -1273,9 +1307,9 @@ fn accepted_behavior_follows_workspace_ownership_and_disconnect_fences_new_creat
     }
     assert!(f
         .core
-        .ui_invoke_action(
+        .command_host_request(
             "main",
-            &json!({"context":w.context,"requestId":"second","actionKey":"test.ui:create"})
+            &json!({"context":w.context,"requestId":"second","op":"submit","name":"terminal.open.v1","actionKey":"test.ui:create"})
         )
         .is_ok());
     let movement = f
@@ -1294,23 +1328,23 @@ fn accepted_behavior_follows_workspace_ownership_and_disconnect_fences_new_creat
     f.core.workspace_changed();
     let result = f.wait_action("moved", &w.context, "moving", action.join().unwrap());
     assert_eq!(result["status"], "completed");
-    let query = json!({"context":w.context,"requestId":"moving"});
-    assert!(f.core.ui_action_status("main", &query).is_err());
+    let query = json!({"op":"get","context":w.context,"requestId":"moving"});
+    assert!(f.core.command_host_request("main", &query).is_err());
     assert_eq!(
-        f.core.ui_action_status("moved", &query).unwrap()["viewId"],
+        f.core.command_host_request("moved", &query).unwrap()["viewId"],
         result["viewId"]
     );
     f.core.workspace_state().disconnected(&w.context).unwrap();
     f.core.workspace_changed();
     assert!(f
         .core
-        .ui_invoke_action(
+        .command_host_request(
             "moved",
-            &json!({"context":w.context,"requestId":"offline","actionKey":"test.ui:create"})
+            &json!({"context":w.context,"requestId":"offline","op":"submit","name":"terminal.open.v1","actionKey":"test.ui:create"})
         )
         .is_err());
     assert_eq!(
-        f.core.ui_action_status("moved", &query).unwrap()["status"],
+        f.core.command_host_request("moved", &query).unwrap()["status"],
         "completed"
     );
     let next = f
@@ -1319,10 +1353,13 @@ fn accepted_behavior_follows_workspace_ownership_and_disconnect_fences_new_creat
         .reconnect(&w.context, "next".into(), "next".into(), None)
         .unwrap();
     f.core.workspace_changed();
-    assert!(f.core.ui_action_status("moved", &query).is_err());
+    assert!(f.core.command_host_request("moved", &query).is_err());
     assert!(f
         .core
-        .ui_action_status("moved", &json!({"context":next,"requestId":"moving"}))
+        .command_host_request(
+            "moved",
+            &json!({"op":"get","context":next,"requestId":"moving"})
+        )
         .is_err());
     {
         let mut state = f.core.workspace_state();
@@ -1410,6 +1447,7 @@ fn missing_plugin_reply_times_out_without_preventing_further_requests() {
         .core
         .ui_event("main", &token, json!({"rpc":"ignore"}))
         .unwrap_err()
+        .message
         .contains("超时"));
     assert!(started.elapsed() < std::time::Duration::from_secs(6));
     assert!(f
@@ -1622,7 +1660,7 @@ fn v2_fixture() -> Fixture {
     let f = Fixture::new();
     let path = f.plugin.join("plugin.json");
     let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    manifest["ui"]["apiVersion"] = json!("2");
+    manifest["ui"].as_object_mut().unwrap().remove("apiVersion");
     manifest["ui"]["views"][1]["locateEntry"] = json!(true);
     manifest["ui"]["views"][1]["defaultPinned"] = json!(true);
     fs::write(path, manifest.to_string()).unwrap();
@@ -1714,7 +1752,7 @@ fn tool_slots_move_without_creating_views_and_receipts_preserve_the_committed_re
     let f = Fixture::new();
     let path = f.plugin.join("plugin.json");
     let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    manifest["ui"]["apiVersion"] = json!("2");
+    manifest["ui"].as_object_mut().unwrap().remove("apiVersion");
     for id in ["second", "third"] {
         manifest["ui"]["views"].as_array_mut().unwrap().push(json!({"id":id,"title":id,"icon":"folder","container":"sidebar","instancePolicy":"perWorkspace","defaultPinned":true}));
     }

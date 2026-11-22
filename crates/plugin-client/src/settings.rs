@@ -1,4 +1,4 @@
-//! Optional settings.v1 cache. This handler never opens a remote resource.
+//! Current settings cache. This handler never opens a remote resource.
 use serde_json::{json, Value};
 use std::{collections::HashMap, sync::Mutex};
 #[derive(Default)]

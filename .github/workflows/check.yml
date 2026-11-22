@@ -86,7 +86,7 @@ jobs:
           node --input-type=module <<'NODE'
           import { spawnSync } from 'node:child_process';
           const p = JSON.parse(process.env.CHECK_PLAN);
-          const manifests = [p.core && 'src-tauri/Cargo.toml', p.sharedClient && 'crates/plugin-client/Cargo.toml', ...p.plugins.map(name => 'plugins/' + name + '/Cargo.toml')].filter(Boolean);
+          const manifests = [p.core && 'src-tauri/Cargo.toml', p.sharedClient && 'crates/plugin-client/Cargo.toml', p.sharedClient && 'crates/plugin-protocol/Cargo.toml', ...p.plugins.map(name => 'plugins/' + name + '/Cargo.toml')].filter(Boolean);
           for (const manifest of manifests) {
             const result = spawnSync('cargo', ['fmt', '--manifest-path', manifest, '--', '--check'], { stdio: 'inherit' });
             if (result.status !== 0) process.exit(result.status || 1);
@@ -122,7 +122,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         if: fromJSON(needs.select.outputs.plan).web
         env:
-          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
+          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml', 'crates/plugin-protocol/Cargo.toml') }}
         with:
           shared-key: check-tests
           env-vars: SODECK_PLUGIN_CLIENT_MANIFEST_HASH
@@ -196,7 +196,7 @@ jobs:
           sudo mkdir -p /run/sshd
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         env:
-          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
+          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml', 'crates/plugin-protocol/Cargo.toml') }}
         with:
           shared-key: network-tests
           env-vars: SODECK_PLUGIN_CLIENT_MANIFEST_HASH
@@ -275,7 +275,7 @@ jobs:
           toolchain: 1.99.1
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         env:
-          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
+          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml', 'crates/plugin-protocol/Cargo.toml') }}
         with:
           shared-key: check-tests
           env-vars: SODECK_PLUGIN_CLIENT_MANIFEST_HASH
@@ -349,7 +349,7 @@ jobs:
           sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev patchelf
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         env:
-          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
+          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml', 'crates/plugin-protocol/Cargo.toml') }}
         with:
           shared-key: check-tests
           env-vars: SODECK_PLUGIN_CLIENT_MANIFEST_HASH
@@ -362,7 +362,9 @@ jobs:
         run: node scripts/test-desktop-open-native.mjs --handler-only
       - name: Shared plugin client source tests
         if: matrix.client
-        run: cargo test --manifest-path crates/plugin-client/Cargo.toml --locked
+        run: |
+          cargo test --manifest-path crates/plugin-protocol/Cargo.toml --locked
+          cargo test --manifest-path crates/plugin-client/Cargo.toml --locked
       - name: Native core source tests
         if: matrix.core
         run: npm run test
@@ -416,7 +418,7 @@ jobs:
           sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev patchelf iproute2
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         env:
-          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml') }}
+          SODECK_PLUGIN_CLIENT_MANIFEST_HASH: ${{ hashFiles('crates/plugin-client/Cargo.toml', 'crates/plugin-protocol/Cargo.toml') }}
         with:
           shared-key: network-tests
           env-vars: SODECK_PLUGIN_CLIENT_MANIFEST_HASH

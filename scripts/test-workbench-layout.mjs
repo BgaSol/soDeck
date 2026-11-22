@@ -1,3 +1,4 @@
+import {fixtureBinary} from './cargo-fixture.mjs';
 import {completedAction} from './component-command-fixture.mjs';
 // Browser input and iframes use the real core and a real UI v2 plugin process.
 // Separate browser pages stand in for native windows; this is not an OS drag test.
@@ -14,17 +15,16 @@ import {recordTrace} from './ui-trace.mjs';
 assert.equal(spawnSync('cargo',['build','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--bin','catalog-fixture','--bin','workspace-ui-fixture','--locked'],{stdio:'inherit'}).status,0);
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-layout-ui-')),plugin=path.join(root,'plugin');fs.mkdirSync(plugin);
 const suffix=process.platform==='win32'?'.exe':'';
-fs.copyFileSync(`src-tauri/target/debug/workspace-ui-fixture${suffix}`,path.join(plugin,`fixture${suffix}`));
+fs.copyFileSync(fixtureBinary('workspace-ui-fixture'),path.join(plugin,`fixture${suffix}`));
 if(process.platform!=='win32')fs.chmodSync(path.join(plugin,`fixture${suffix}`),0o755);
 fs.cpSync('scripts/fixtures/workspace-ui/ui',path.join(plugin,'ui'),{recursive:true});
-for(const file of ['bridge.js','view.js']) {const p=path.join(plugin,'ui',file);fs.writeFileSync(p,fs.readFileSync(p,'utf8').replaceAll('sodeck-ui-v1','sodeck-ui-v2'));}
 // Candidate UI restores state without publishing selection or scroll mutations.
 const view=path.join(plugin,'ui/view.js');fs.writeFileSync(view,fs.readFileSync(view,'utf8').replace("function position() {","function position() { if(current?.readOnly)return;").replace("addEventListener('sodeck:themeChanged'","addEventListener('sodeck:surfaceReady',()=>{current.readOnly=false;});\n  addEventListener('sodeck:themeChanged'"));
-const manifest=JSON.parse(fs.readFileSync('scripts/fixtures/workspace-ui/manifest.json','utf8'));manifest.ui.apiVersion='2';
+const manifest=JSON.parse(fs.readFileSync('scripts/fixtures/workspace-ui/manifest.json','utf8'));
 for(const id of ['spare-one','spare-two'])manifest.ui.views.push({id,title:id,icon:'folder',container:'sidebar',instancePolicy:'perWorkspace',defaultPinned:true});
 const target=spawnSync('rustc',['-vV'],{encoding:'utf8'}).stdout.match(/^host: (.+)$/m)[1];
 fs.writeFileSync(path.join(plugin,'plugin.json'),JSON.stringify({...manifest,target,entry:`fixture${suffix}`}));
-const child=spawn(path.resolve(`src-tauri/target/debug/catalog-fixture${suffix}`),[root],{windowsHide:true,stdio:['pipe','pipe','inherit']});
+const child=spawn(fixtureBinary('catalog-fixture'),[root],{windowsHide:true,stdio:['pipe','pipe','inherit']});
 const queue=[];readline.createInterface({input:child.stdout}).on('line',line=>{const r=JSON.parse(line),p=queue.shift();r.error?p.reject(new Error(r.error)):p.resolve(r.value);});
 child.on('exit',()=>{for(const p of queue.splice(0))p.reject(new Error('Core fixture exited'));});
 const call=(command,args={})=>new Promise((resolve,reject)=>{queue.push({resolve,reject});child.stdin.write(JSON.stringify({command,args})+'\n');});
@@ -58,7 +58,7 @@ async function makePage(window) {
     if(['clipboard_text','close_register_host'].includes(command))return null;
     return call(command,{...args,window});
   });
-  await page.route(url+'__plugin__/**',route=>{const p=path.join(plugin,decodeURIComponent(new URL(route.request().url()).pathname).split('/').slice(3).join('/'));let body=fs.readFileSync(p);if((delayMount||holdMount)&&path.basename(p)==='view.js'){assert(body.toString().includes('sodeck.mounted();'));body=Buffer.from(body.toString().replace('sodeck.mounted();',holdMount?'window.finishMount=()=>sodeck.mounted();':'setTimeout(()=>sodeck.mounted(),800);'));}return route.fulfill({contentType:({'.html':'text/html','.js':'text/javascript','.css':'text/css'})[path.extname(p)],body});});
+  await page.route(url+'__plugin__/**',route=>{const p=path.join(plugin,decodeURIComponent(new URL(route.request().url()).pathname).split('/').slice(3).join('/'));let body=fs.readFileSync(p);if((delayMount||holdMount)&&path.basename(p)==='view.js'){assert(body.toString().includes('sodeck.prepared(true);'));body=Buffer.from(body.toString().replace('sodeck.prepared(true);',holdMount?'window.finishMount=()=>sodeck.prepared(true);':'setTimeout(()=>sodeck.prepared(true),800);'));}return route.fulfill({contentType:({'.html':'text/html','.js':'text/javascript','.css':'text/css'})[path.extname(p)],body});});
   await page.route(url,route=>route.fulfill({contentType:'text/html',body:`<html lang="zh-CN"><head><meta charset="utf-8"></head><body><header class="topbar"><button id="catalog-tab" role="tab">服务器管理</button><div class="tab-navigation"><div id="server-tabs" class="server-tabs" role="tablist"></div><div class="tab-controls"><span class="tab-arrows" hidden></span><button data-tab-action="pick" aria-haspopup="dialog" aria-expanded="false" hidden><span class="tab-count"></span></button></div></div><button id="new-workspace" class="sd-icon" aria-label="选择服务器"></button><div id="drag-region" class="drag-region"></div></header><main class="workspace"><div id="server-catalog"></div><div id="workspace-content"></div></main><div id="notice"></div><script type="module">import '/style.css';import {Workspaces} from '/workspaces.ts';import {tabControls} from '/tab-strip.ts';import {icon} from '/ui.ts';document.querySelector('.topbar .tab-controls').outerHTML=tabControls('服务器标签');document.querySelector('#new-workspace').innerHTML=icon('plus');window.__TAURI_INTERNALS__={convertFileSrc:p=>new URL('/__plugin__/'+p,location.href).href,transformCallback:()=>1,invoke:async(command,args)=>{if(command==='plugin:event|listen')return 1;if(command==='plugin:event|unlisten')return;return bridge(command,args);}};window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};window.manager=new Workspaces(document.querySelector('#server-tabs'),document.querySelector('#workspace-content'),text=>document.querySelector('#notice').textContent=text,bridge);await manager.start();window.ready=true;</script></body></html>`}));
   await page.goto(url);await page.waitForFunction(()=>window.ready);return page;
 }
@@ -247,7 +247,7 @@ try {
 
   await main.setViewportSize({width:1100,height:720});
   const crowdedGroup=(await slots()).host.focusedGroupId;
-  for(let i=0;i<50;i++)await completedAction(call,{window:'main',context:workspace.context,requestId:'overflow-'+i},await call('component_ui',{window:'main',operation:'invokeAction',args:{context:workspace.context,requestId:'overflow-'+i,actionKey:manifest.id+':new-page',groupId:crowdedGroup}}));
+  for(let i=0;i<50;i++)await completedAction(call,{window:'main',context:workspace.context,requestId:'overflow-'+i},await call('component_ui',{window:'main',operation:'command',args:{op:'submit',name:'fixture.create.v1',context:workspace.context,requestId:'overflow-'+i,actionKey:manifest.id+':new-page',groupId:crowdedGroup}}));
   await refresh();await wait(async()=>(await slots()).host.groups[crowdedGroup].viewIds.length>=50);
   const crowdedHeader=board.locator('[data-group="'+crowdedGroup+'"] .component-tabs');
   await crowdedHeader.locator('[data-tab-action="pick"]').click();

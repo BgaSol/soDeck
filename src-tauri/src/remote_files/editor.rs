@@ -4,8 +4,6 @@ use super::*;
 #[derive(Default)]
 pub(super) struct Editor {
     pub document: Option<Document>,
-    pub legacy_upload: Option<Vec<u8>>,
-    pub protocol: bool,
     upload: Option<Upload>,
     surface: String,
     sequence: u64,
@@ -41,15 +39,22 @@ impl Editor {
     pub fn describe(&self) -> Value {
         self.document.as_ref().map(|d|json!({"path":d.path,"size":d.bytes.len(),"version":d.version,"revision":d.revision,"draftRef":reference(d),"savedRevision":self.saved.to_string(),"writeBlock":self.write_block,"saveSequence":self.save_sequence.to_string(),"exportSequence":self.export_sequence.to_string(),"exportState":self.export["state"],"source":self.committed})).unwrap_or(json!({}))
     }
-    pub fn draft(&mut self, surface: &str, p: &Value) -> Result<Value, String> {
+    pub fn draft(
+        &mut self,
+        surface: &str,
+        p: &Value,
+    ) -> Result<Value, sodeck_plugin_protocol::ApiError> {
         let action = string(p, "action")?;
-        let doc = self.document.as_ref().ok_or("尚未打开文件")?;
         if action == "draft.describe" {
             return Ok(self.describe());
         }
+        let doc = self.document.as_ref().ok_or("尚未打开文件")?;
         if action == "draft.chunk" {
             if p["draftRef"] != reference(doc) {
-                return Err("revisionConflict: 草稿版本已变化".into());
+                return Err(sodeck_plugin_protocol::ApiError::session(
+                    "revisionConflict",
+                    "草稿版本已变化".into(),
+                ));
             }
             let offset = number(p, "offset")? as usize;
             if offset > doc.bytes.len() {
@@ -71,7 +76,10 @@ impl Editor {
                 .unwrap_or(json!({"state":"expired"})));
         }
         if p["documentId"] != doc.id {
-            return Err("revisionConflict: 文档身份已变化".into());
+            return Err(sodeck_plugin_protocol::ApiError::session(
+                "revisionConflict",
+                "文档身份已变化".into(),
+            ));
         }
         let id = string(p, "uploadId")?;
         if id.is_empty() || id.len() > 160 {
@@ -138,7 +146,6 @@ impl Editor {
             if sequence <= self.sequence {
                 return Err("expired: 上传序号已退役".into());
             }
-            self.protocol = true;
             self.sequence = sequence;
             self.upload = Some(Upload {
                 id: id.into(),
@@ -189,16 +196,8 @@ pub(super) fn pending(state: &Value) -> bool {
     ["running", "committing", "waitingInput", "writing"]
         .contains(&state["state"].as_str().unwrap_or(""))
 }
-pub(super) fn legacy_job(mut job: Value) -> Value {
-    if job["state"] == "committing" {
-        job["state"] = json!("running");
-    }
-    if job["state"] == "unknown" {
-        job["state"] = json!("failed");
-    }
-    job
-}
-fn same_request(saved: &Value, p: &Value) -> Result<bool, String> {
+
+pub(super) fn same_request(saved: &Value, p: &Value) -> Result<bool, String> {
     if p["requestId"].is_string() && saved["requestId"] == p["requestId"] {
         for key in ["sequence", "expectedDraftRef", "expectedContext"] {
             if saved[key] != p[key] {
@@ -231,17 +230,27 @@ impl AppCore {
                     .resource_view(&r.owner.view)?
                     .context
                     .clone();
-                self.start_file_job(r.clone(), context, None, Some(p))?;
+                self.start_save(r.clone(), context, p)?;
                 editor_status(&r, p)
             }
             "save.status" => editor_status(&r, p),
             "save.cancel" => {
+                let context = self
+                    .ui_state()
+                    .resource_view(&r.owner.view)?
+                    .context
+                    .clone();
                 let mut e = r.editor.lock().unwrap();
                 if e.save_request.is_null() && number(p, "sequence")? > e.save_sequence {
                     string(p, "requestId")?;
+                    if p["expectedContext"] != serde_json::to_value(context).map_err(err)? {
+                        return Err("取消未接纳保存需要原请求上下文".into());
+                    }
+                    cancellation_draft(p)?;
                     e.save_sequence = number(p, "sequence")?;
                     e.save_request = p.clone();
-                    e.save_result = json!({"state":"failed","error":"保存已取消；请求未被接纳"});
+                    e.save_result =
+                        json!({"state":"notCommitted","error":"保存已取消；请求未被接纳"});
                 }
                 verify_receipt(&e.save_request, p)?;
                 if pending(&e.save_result) {
@@ -266,6 +275,7 @@ impl AppCore {
                     && number(p, "sequence")? > e.export_sequence
                 {
                     string(p, "requestId")?;
+                    cancellation_draft(p)?;
                     e.export_sequence = number(p, "sequence")?;
                     e.export = json!({"state":"cancelled","request":p});
                 }
@@ -285,159 +295,20 @@ impl AppCore {
             _ => Err("未知编辑器控制方法".into()),
         }
     }
-    pub fn files_export_legacy_begin(
-        self: &Arc<Self>,
-        window: &str,
-        token: &str,
-        p: &Value,
-    ) -> Result<ExportTask, String> {
-        let v = self.ui_data_view(window, token)?;
-        let r = self.file_resource(&v.plugin_id, &v.plugin_instance_id, string(p, "id")?)?;
-        let request = {
-            let e = r.editor.lock().unwrap();
-            json!({"id":p["id"],"requestId":self.next_id(),"sequence":e.export_sequence.checked_add(1).ok_or("导出序号已用尽")?.to_string(),"expectedDraftRef":e.describe()["draftRef"]})
-        };
-        self.export_begin(window, token, &request, false)?
-            .1
-            .ok_or("导出未接纳".into())
-    }
-    pub fn files_export_begin(
-        self: &Arc<Self>,
-        window: &str,
-        token: &str,
-        p: &Value,
-    ) -> Result<(Value, Option<ExportTask>), String> {
-        self.export_begin(window, token, p, true)
-    }
-    fn export_begin(
-        self: &Arc<Self>,
-        window: &str,
-        token: &str,
-        p: &Value,
-        protocol: bool,
-    ) -> Result<(Value, Option<ExportTask>), String> {
-        let v = self.ui_data_view(window, token)?;
-        let r = self.file_resource(&v.plugin_id, &v.plugin_instance_id, string(p, "id")?)?;
-        if r.owner.view != v.id {
-            return Err("文件资源不属于此页面".into());
-        }
-        let _admission = self.surface_write_admission(window, token)?;
-        let mut e = r.editor.lock().unwrap();
-        if !protocol && e.protocol {
-            return Err("新版草稿必须按固定修订导出".into());
-        }
-        if same_request(&e.export["request"], p)? {
-            return Ok((e.export.clone(), None));
-        }
-        if !e.export.is_null() {
-            return Err("请先确认并释放上次导出回执".into());
-        }
-        let sequence = number(p, "sequence")?;
-        if sequence <= e.export_sequence {
-            return Err("expired: 导出序号已退役".into());
-        }
-        if p["requestId"]
-            .as_str()
-            .is_none_or(|s| s.is_empty() || s.len() > 160)
-        {
-            return Err("导出身份无效".into());
-        }
-        let doc = e.document.as_ref().ok_or("尚未打开文件")?;
-        if p["expectedDraftRef"] != reference(doc) {
-            return Err("revisionConflict: 草稿版本已变化".into());
-        }
-        let bytes = doc.bytes.clone();
-        let task = r.tasks.enter()?;
-        e.export_cancel = r.cancel.child_token();
-        let cancel = e.export_cancel.clone();
-        e.export_sequence = sequence;
-        e.protocol |= protocol;
-        e.export = json!({"state":"waitingInput", "request":p, "draftRef":p["expectedDraftRef"]});
-        let receipt = e.export.clone();
-        drop(e);
-        Ok((
-            receipt,
-            Some(ExportTask {
-                resource: r,
-                bytes,
-                cancel,
-                _task: task,
-                window: window.into(),
-                surface: token.into(),
-            }),
-        ))
-    }
-    pub async fn files_export_finish(
-        &self,
-        task: ExportTask,
-        chosen: Result<Option<PathBuf>, String>,
-    ) -> Value {
-        let r = &task.resource;
-        let result = async {
-            let Some(local) = chosen? else {
-                return Ok(json!({"state":"cancelled"}));
-            };
-            if task.cancel.is_cancelled() {
-                return Ok(json!({"state":"cancelled"}));
-            }
-            drop(self.surface_write_admission(&task.window, &task.surface)?);
-            r.editor.lock().unwrap().export["state"] = json!("writing");
-            let temporary = LocalTemporary(
-                local
-                    .parent()
-                    .ok_or("目标没有父目录")?
-                    .join(format!(".sodeck-{}.part", self.next_id())),
-            );
-            let before = std::fs::metadata(&local)
-                .ok()
-                .map(|m| (m.len(), m.modified().ok()));
-            let mut output = tokio::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&temporary.0)
-                .await
-                .map_err(err)?;
-            output.write_all(&task.bytes).await.map_err(err)?;
-            output.sync_all().await.map_err(err)?;
-            drop(output);
-            let _admission = self.surface_write_admission(&task.window, &task.surface)?;
-            if task.cancel.is_cancelled() {
-                return Ok(json!({"state":"cancelled"}));
-            }
-            if std::fs::metadata(&local)
-                .ok()
-                .map(|m| (m.len(), m.modified().ok()))
-                != before
-            {
-                return Err("本地目标已变化，未覆盖".to_string());
-            }
-            std::fs::rename(&temporary.0, &local).map_err(err)?;
-            Ok(json!({"state":"completed", "path":local, "size":task.bytes.len()}))
-        }
-        .await;
-        let mut e = r.editor.lock().unwrap();
-        let mut result = result.unwrap_or_else(|error| json!({"state":"failed", "error":error}));
-        result["request"] = e.export["request"].clone();
-        result["draftRef"] = e.export["draftRef"].clone();
-        e.export = if e.protocol {
-            result.clone()
-        } else {
-            Value::Null
-        };
-        result
-    }
 }
-pub struct ExportTask {
-    resource: Arc<Resource>,
-    bytes: Arc<[u8]>,
-    cancel: CancellationToken,
-    _task: crate::resource_tasks::Task,
-    window: String,
-    surface: String,
-}
+
 fn verify_receipt(saved: &Value, p: &Value) -> Result<(), String> {
     if !p["requestId"].is_string() || saved["requestId"] != p["requestId"] {
         return Err("expired: 回执不存在或已退役".into());
+    }
+    Ok(())
+}
+fn cancellation_draft(p: &Value) -> Result<(), String> {
+    let reference: sodeck_plugin_protocol::requests::DraftRef =
+        serde_json::from_value(p["expectedDraftRef"].clone())
+            .map_err(|_| "取消未接纳请求需要原草稿引用")?;
+    if reference.document_id.is_empty() || reference.revision.parse::<u64>().is_err() {
+        return Err("原草稿引用无效".into());
     }
     Ok(())
 }
@@ -454,12 +325,6 @@ fn editor_status_locked(e: &Editor) -> Result<Value, String> {
     } else {
         e.save_result.clone()
     };
-    if job["state"] == "completed" {
-        job["state"] = json!("committed");
-    }
-    if job["state"] == "failed" {
-        job["state"] = json!("notCommitted");
-    }
     job["request"] = e.save_request.clone();
     job["draft"] = e.describe();
     Ok(job)
@@ -468,6 +333,20 @@ fn editor_status_locked(e: &Editor) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn an_unopened_editor_describes_without_claiming_a_document() {
+        let mut editor = Editor::default();
+        assert_eq!(
+            editor
+                .draft("surface", &json!({"action":"draft.describe"}))
+                .unwrap(),
+            json!({})
+        );
+        assert!(editor
+            .draft("surface", &json!({"action":"draft.chunk","offset":0}))
+            .is_err());
+        assert!(editor.document.is_none());
+    }
     fn editor() -> Editor {
         Editor {
             document: Some(Document {

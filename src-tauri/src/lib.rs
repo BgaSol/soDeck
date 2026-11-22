@@ -25,7 +25,6 @@ mod resource_tasks;
 pub mod servers;
 mod session_exec;
 mod session_process;
-mod session_stream;
 mod session_target;
 pub mod settings;
 pub mod shared_state;
@@ -44,7 +43,7 @@ pub mod workspaces;
 
 pub use core::AppCore;
 
-pub const API_VERSION: &str = "1";
+pub use sodeck_plugin_protocol::API_VERSION;
 pub const TARGET: &str = env!("SODECK_TARGET");
 
 pub fn app_version() -> String {

@@ -26,7 +26,7 @@ try {
   for (const file of [metadata.file, `plugin-${target}.json`]) fs.copyFileSync(path.join(input, file), path.join(directory, file));
   const checked = validatePluginArchive(directory, { ...metadata, binary: `sodeck-${plugin}` }, target);
   const manifest = JSON.parse(fs.readFileSync(path.join(checked.root, "plugin.json"), "utf8"));
-  assert.equal(manifest.apiVersion, "1"); assert.equal(manifest.ui.apiVersion, "2");
+  assert.equal(manifest.apiVersion, "2.0"); assert.equal(manifest.ui.apiVersion, undefined);
   for(const [name,asset] of Object.entries(manifest.icons ?? {})) {
     assert(/^[a-zA-Z0-9-]{1,64}$/.test(name));
     const root=fs.realpathSync(checked.root), file=fs.realpathSync(path.join(root,asset));
@@ -35,7 +35,7 @@ try {
     assert(fs.readFileSync(file,'utf8').includes('<svg'));
   }
   if(manifest.icons) report.pluginIcons=Object.keys(manifest.icons);
-  for (const file of ["index.html", "shared.css", "text-menu.js", "clipboard-bridge.js"]) assert(fs.statSync(path.join(checked.root, "ui", file)).size > 0, file);
+  for (const file of ["index.html", "shared.css", "text-menu.js", "sdk/index.js", "sdk/state.js", "sdk/clipboard.js"]) assert(fs.statSync(path.join(checked.root, "ui", file)).size > 0, file);
   for (const view of manifest.ui.views) assert(fs.statSync(path.join(checked.root, view.entry ?? manifest.ui.entry ?? "ui/index.html")).size > 0);
   if (["terminal", "files"].includes(plugin)) {
     const fonts = path.join(checked.root, "ui/fonts");
@@ -55,12 +55,11 @@ try {
     assert(fs.readdirSync(vendor, { recursive: true }).some(file => /worker.*\.js$/.test(file)), "Editor worker missing");
   }
   if (plugin === "docker") {
-    const [major,minor]=manifest.version.split('.').map(Number);if(major>0||minor>=7)for(const file of ["ports.js","state.js"])assert(fs.statSync(path.join(checked.root,"ui",file)).size>0);
-    const treeOnly=major>0||minor>=8;
-    assert.equal(manifest.ui.views.length,treeOnly?2:4);
+    for(const file of ["ports.js","sdk/state.js"])assert(fs.statSync(path.join(checked.root,"ui",file)).size>0);
+    assert.equal(manifest.ui.views.length,2);
     const browser=manifest.ui.views.find(view=>view.id==='browser');assert.equal(browser.defaultSide,'right');assert.equal(browser.defaultPinned,true);assert.equal(browser.openOnWorkspace,'none');
-    if(treeOnly){assert.deepEqual(manifest.ui.views.map(v=>v.id),['browser','logs']);assert.equal(manifest.ui.views.find(v=>v.id==='logs').entry,'ui/logs.html');}
-    for(const file of ['style.css','bridge.js','browser.js','connection.js','tree.js','tree-menu.js','dom-update.js',...(treeOnly?['logs.html','logs-page.js','resource-inline.js','tree-layout.js']:['view.js'])])assert(fs.statSync(path.join(checked.root,'ui',file)).size>0);
+    {assert.deepEqual(manifest.ui.views.map(v=>v.id),['browser','logs']);assert.equal(manifest.ui.views.find(v=>v.id==='logs').entry,'ui/logs.html');}
+    for(const file of ['style.css','sdk/index.js','browser.js','connection.js','tree.js','tree-menu.js','dom-update.js',...['logs.html','logs-page.js','resource-inline.js','tree-layout.js']])assert(fs.statSync(path.join(checked.root,'ui',file)).size>0);
 
   }
   if (plugin === "system-status") {
@@ -71,22 +70,19 @@ try {
   peer = pluginPeer(path.join(checked.root, manifest.entry), async (method, params) => {
     calls.push(method);
     if (method === "settings.get") return { values: { dynamicIntervalSeconds: "5", refreshSeconds: "30", logTail: "200", directoryMode: "off",port:String(mcpPort) } };
-    if (method === "session.state") return { context, state: "disconnected" };
     if (method === "session.target.describe") { assert.deepEqual(params.expectedContext,context);return {context,state:"disconnected",closing:false,capabilities:[],target:null,targetSource:"unknown"}; }
     if (["logging.write", "messages.publish", "ui.updateView"].includes(method)) return {};
-    if (method === "terminal.open" || (method === "files.request" && params.action === "open")) { resources.add("fixture"); return { id: "fixture" }; }
-    if (method === "terminal.close" || (method === "files.request" && params.action === "close")) { assert(resources.delete(params.id)); return {}; }
+    if (method === "terminal.open" || method === "files.open") { resources.add("fixture"); return { id: "fixture" }; }
+    if (method === "terminal.close" || method === "files.close") { assert(resources.delete(params.id)); return {}; }
     if (plugin === "network-proxy" && method === "net.poll") return {items:[]};
     if (plugin === "network-proxy" && method === "state.put") return {revision:"1"};
     if (plugin === "network-proxy" && method === "state.get") return {record:{revision:"0",present:false}};
     if (plugin === "network-proxy" && method === "state.remove") return {};
     unexpected.push(method); throw new Error(`Unexpected package RPC: ${method}`);
   });
-  const capabilities = ["sharedState.v1", "commands.v1", "terminal.v1", "viewData.v1", "terminal.history.v1", "files.v1", "files.directoryCursors.v1", "files.operations.v1", "files.operations.v2", "files.copy.v1", "files.editor.v1", "files.localInputs.v1", "net.tcp.v1", "net.listenerLifecycle.v1", "ui.dialog.v1", "session.exec.v1", "session.program.v1", "session.stream.v1", "session.target.v1","session.target.v2","session.stream.process.v1","session.process.v1","files.pluginData.v1","content.export.v1", "ui.background.v1", "settings.v1", "servers.read.v1","servers.write.v1", "connections.v1", "ui.workbench.v2", "ui.openView.v1"];
-  const initialized = await peer.request("initialize", { apiVersion: "1", capabilities, dataDirectory: path.join(directory, "data") });
-  assert.equal(initialized.apiVersion, "1");
+  const initialized = await peer.initialize( { dataDirectory: path.join(directory, "data") });
+  assert.equal(initialized.apiVersion, "2.0");
   if (manifest.commands) {
-    assert.equal(initialized.commandsApiVersion, manifest.commands.apiVersion);
     assert.deepEqual([...initialized.commandHandlers].sort(), [...manifest.commands.handlers].sort());
   }
   const viewType = { terminal: "terminal", files: "files", "network-proxy": "manager", "system-status": "overview", docker: "browser",mcp:"status" }[plugin];
@@ -97,7 +93,7 @@ try {
     const token=fs.readFileSync(path.join(directory,'data/access-token'),'utf8');
     let response;for(let i=0;i<50;i++){try{response=await fetch(mcpUrl,{method:'POST',headers:{Authorization:'Bearer '+token,Accept:'application/json, text/event-stream','Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'package-check',version:'1'}}})});break;}catch{await new Promise(r=>setTimeout(r,50));}}
     assert.equal(response?.status,200);const result=await response.json();assert(result.result.capabilities.tools);
-    const listed=await fetch(mcpUrl,{method:'POST',headers:{Authorization:'Bearer '+token,Accept:'application/json, text/event-stream','Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/list',params:{}})});assert.equal(listed.status,200);assert.equal((await listed.json()).result.tools.length,/^0\.[0-5]\./.test(manifest.version)?6:/^0\.6\./.test(manifest.version)?10:/^0\.[78]\./.test(manifest.version)?11:Number(manifest.version.split('.')[1])>=11?15:12);
+    const listed=await fetch(mcpUrl,{method:'POST',headers:{Authorization:'Bearer '+token,Accept:'application/json, text/event-stream','Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/list',params:{}})});assert.equal(listed.status,200);assert.equal((await listed.json()).result.tools.length,15);
     report.mcpHttp=true;
   }
   if (plugin === "system-status") { await peer.request("ui.event", { ...view, data: { action: "pause" } }); assert.equal((await peer.request("ui.event", { ...view, data: { action: "snapshot" } })).data.paused, true); }
@@ -110,7 +106,7 @@ try {
     const queries=spawnSync(process.execPath,['scripts/test-mcp-process.mjs'],{env:{...process.env,SODECK_TEST_MCP_PLUGIN:checked.root},stdio:'inherit',windowsHide:true,timeout:120000});
     assert.equal(queries.status,0,String(queries.error??'Native task/query process verification failed'));
     report.mcpQueries=true;
-    if (!/^0\.[0-5]\./.test(manifest.version)) {
+    {
       const openings=spawnSync(process.execPath,['scripts/test-mcp-connections.mjs'],{env:{...process.env,SODECK_TEST_MCP_PLUGIN:checked.root},stdio:'inherit',windowsHide:true,timeout:120000});
       assert.equal(openings.status,0,String(openings.error??'Native opening process verification failed'));
       report.mcpConnections=true;

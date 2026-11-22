@@ -11,7 +11,7 @@ import {createReading} from './reading/view.js';
   let id,offset=0,inputSequence=0,chain=Promise.resolve(),inputChain=Promise.resolve(),disposed=false,caughtUp=false,restoring=false,visible=false,enabled=false;
   let savedOffset=0,lastSave=0,escape='normal',utf8=0,inputPending=0,mountKey='';
   let transferFrozen=false,readOnly=false,inputError,restoredDisplay;
-  let ended=false,disconnected=false,opening=false,surfaceReady=false,createParams={},canOpen=false,commandsApi=false;
+  let ended=false,disconnected=false,opening=false,surfaceReady=false,createParams={};
   let snapshotJob,commandTimer,commandPending=false;
   async function commandStatus(result) {
     if(disposed)return;
@@ -28,7 +28,7 @@ import {createReading} from './reading/view.js';
     if(opening||commandPending||readOnly||transferFrozen||disposed||disconnected||!ended)return;
     opening=true;newTerminal.disabled=true;
     const requestId=crypto.randomUUID();
-    void sodeck.request(canOpen?'event':'openView',canOpen?{action:'createTerminal',requestId,params:createParams}:{viewType:'terminal',params:createParams}).then(commandStatus).catch(error=>{fail(error);if(commandsApi)void commandStatus({status:'pending'});}).finally(()=>{opening=false;newTerminal.disabled=disconnected||commandPending;});
+    void sodeck.request('event',{action:'createTerminal',requestId,params:createParams}).then(commandStatus).catch(error=>{fail(error);void commandStatus({status:'pending'});}).finally(()=>{opening=false;newTerminal.disabled=disconnected||commandPending;});
   };
   SoDeckMotion.observeMotion(document);
   const encoder=new TextEncoder();
@@ -134,9 +134,9 @@ import {createReading} from './reading/view.js';
     reading.update();
   }
   addEventListener('sodeck:mount',event=>{
-    const mount=event.detail;readOnly=mount.readOnly===true;surfaceReady=mount.capabilities?.sharedState!==1;id=mount.data.streamId;mountKey=mount.surfaceId+':'+JSON.stringify(mount.context);disconnected=mount.connected===false;visible=mount.visible;theme(mount.tokens);
+    const mount=event.detail;readOnly=mount.readOnly===true;surfaceReady=false;id=mount.data.streamId;mountKey=mount.surfaceId+':'+JSON.stringify(mount.context);disconnected=mount.connected===false;visible=mount.visible;theme(mount.tokens);
     terminal.open(host);
-    commandsApi=mount.data.commandsApi===true;createParams=mount.data.createParams||{};canOpen=mount.capabilities?.uiOpenView===1;newTerminal.textContent=createParams.launch?.kind==='command'?'重新打开终端':'新建终端';if(mount.data.commandPending)void commandStatus({status:'pending'});
+    createParams=mount.data.createParams||{};newTerminal.textContent=createParams.launch?.kind==='command'?'重新打开终端':'新建终端';if(mount.data.commandPending)void commandStatus({status:'pending'});
     appearance.receive(mount.settings);
     location.mount(mount);
     reading.mount(mount);
@@ -160,7 +160,7 @@ import {createReading} from './reading/view.js';
       if(frame.kind==='caughtUp'){
         caughtUp=true;enabled=surfaceReady&&!disconnected&&!ended;status.textContent=recoveryUnavailable?recoveryNotice:'远程终端 · 已连接';status.hidden=!recoveryUnavailable;status.classList.toggle('error',recoveryUnavailable);document.body.dataset.ready='true';
         // Incoming windows may render before ownership commits. Only the owner saves a checkpoint.
-        search.update(true);sodeck.mounted(true);if(restoredDisplay?.ui?.atBottom)terminal.scrollToBottom();else if(restoredDisplay?.ui?.viewportY!=null)terminal.scrollToLine(restoredDisplay.ui.viewportY);else if(restoredDisplay?.viewportY!=null)terminal.scrollToLine(restoredDisplay.viewportY);const selection=restoredDisplay?.ui?.selection!==undefined?restoredDisplay.ui.selection:restoredDisplay?.selection;if(selection){const p=selection;terminal.select(p.start.x,p.start.y,(p.end.y-p.start.y)*terminal.cols+p.end.x-p.start.x);}search.restore(restoredDisplay?.ui);restoredDisplay=undefined;if(surfaceReady){void appearance.apply();void enqueueSize().catch(()=>{});}
+        search.update(true);sodeck.prepared(true);if(restoredDisplay?.ui?.atBottom)terminal.scrollToBottom();else if(restoredDisplay?.ui?.viewportY!=null)terminal.scrollToLine(restoredDisplay.ui.viewportY);else if(restoredDisplay?.viewportY!=null)terminal.scrollToLine(restoredDisplay.viewportY);const selection=restoredDisplay?.ui?.selection!==undefined?restoredDisplay.ui.selection:restoredDisplay?.selection;if(selection){const p=selection;terminal.select(p.start.x,p.start.y,(p.end.y-p.start.y)*terminal.cols+p.end.x-p.start.x);}search.restore(restoredDisplay?.ui);restoredDisplay=undefined;if(surfaceReady){void appearance.apply();void enqueueSize().catch(()=>{});}
         if(surfaceReady&&!disconnected&&!ended)location.ready();
       }
       if(frame.kind==='end'){reading.interrupt();location.unknown(offset,'终端已退出');controls.invalidate();enabled=false;ended=true;stopSize();void enqueueSize().catch(()=>{});status.hidden=false;status.textContent=disconnected?'连接已断开，请在工作台重新连接后新建终端。':frame.metadata?.error||`终端已退出${frame.metadata?.exitCode==null?'':` · ${frame.metadata.exitCode}`}`;newTerminal.hidden=disconnected;}
@@ -174,8 +174,8 @@ import {createReading} from './reading/view.js';
       transferFrozen=event.detail.freeze===true;if(transferFrozen){stopSize();search.pause();reading.pause();}await inputChain;await chain;
       if(inputError)throw inputError;
       await checkpoint(true);
-      parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:event.detail.surfaceId,id:event.detail.id},'*');
-    }catch(error){if(transferFrozen){transferFrozen=false;void resumeDisplay().catch(fail);}parent.postMessage({channel:'sodeck-ui-v2',type:'flushed',surfaceId:event.detail.surfaceId,id:event.detail.id,error:String(error)},'*');}
+      sodeck.flushed(event.detail.id);
+    }catch(error){if(transferFrozen){transferFrozen=false;void resumeDisplay().catch(fail);}sodeck.flushed(event.detail.id,String(error));}
   });
   addEventListener('sodeck:transferCancelled',()=>{transferFrozen=false;void resumeDisplay().catch(fail);});
   addEventListener('sodeck:visibilityChanged',event=>{visible=event.detail.visible;if(!visible){controls.invalidate();stopSize();search.pause();reading.pause();}if(visible)void resumeDisplay().catch(fail);});

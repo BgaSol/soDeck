@@ -1,4 +1,5 @@
 //! Owned command resources and ordered input. The remote runner is shared with terminals.
+mod output;
 use crate::{
     execution_output::{CapturedOutput, OutputTarget},
     remote_execution::{
@@ -7,11 +8,9 @@ use crate::{
     resource_owner::Owner,
     resource_tasks::Tasks,
     streams::capture::Capture,
-    workspaces::Context,
     AppCore,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
@@ -24,23 +23,7 @@ use std::{
 use tokio::sync::{oneshot, Notify};
 use tokio_util::sync::CancellationToken;
 
-#[derive(Clone, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct ProcessStart {
-    pub view_id: String,
-    pub expected_context: Context,
-    pub operation_id: String,
-    pub sequence: String,
-    pub command: String,
-    pub max_output_bytes: usize,
-    pub retention: String,
-    #[serde(default)]
-    pub timeout_ms: Option<u64>,
-    #[serde(default)]
-    pub program_output: Option<String>,
-    #[serde(default)]
-    pub io: ExecutionIo,
-}
+pub(crate) use sodeck_plugin_protocol::session::ProcessStart;
 pub(crate) struct Reader {
     pub ack: Mutex<(u64, u64)>,
     pub changed: Notify,

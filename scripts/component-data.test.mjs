@@ -39,25 +39,25 @@ test('native sequences restart per invocation; a reused Channel loses messages a
 
 test('one surface receives two streams, ACKs, replacement subscriptions and terminal data independently',async()=>{
   const f=fixture(),a=[],b=[],terminal=[];
-  await f.client.request('page',{op:'sessionStream',action:'attach',id:'history'},v=>a.push(v));
-  await f.client.request('page',{op:'sessionStream',action:'attach',id:'live'},v=>b.push(v));
-  await f.client.request('page',{op:'sessionStream',action:'ack',id:'live'},()=>assert.fail('ACK has no frames'));
+  await f.client.request('page',{op:'processOutput',action:'attach',id:'history'},v=>a.push(v));
+  await f.client.request('page',{op:'processOutput',action:'attach',id:'live'},v=>b.push(v));
+  await f.client.request('page',{op:'processOutput',action:'ack',id:'live'},()=>assert.fail('ACK has no frames'));
   f.emit('page','history','historical body');f.emit('page','live','live body');
   const replacement=[];
-  await f.client.request('page',{op:'sessionStream',action:'attach',id:'history'},v=>replacement.push(v));
+  await f.client.request('page',{op:'processOutput',action:'attach',id:'history'},v=>replacement.push(v));
   f.emit('page','history','replayed history');f.emit('page','live','live continues');
   await f.client.request('page',{op:'attach',id:'pty'},v=>terminal.push(v));f.emit('page','pty','prompt');
   assert.deepEqual(a,['history:reset','historical body']);assert.deepEqual(b,['live:reset','live body','live continues']);
   assert.deepEqual(replacement,['history:reset','replayed history']);assert.deepEqual(terminal,['pty:reset','prompt']);
   assert.equal(new Set(f.calls.map(a=>a.channel.id)).size,f.calls.length);
   f.client.detach('page');await tick();assert.equal(f.callbacks.size,0);
-  assert.deepEqual(f.calls.slice(-3).map(a=>a.request),[{op:'sessionStream',action:'detach',id:'history'},{op:'sessionStream',action:'detach',id:'live'},{op:'detach',id:'pty'}]);
+  assert.deepEqual(f.calls.slice(-3).map(a=>a.request),[{op:'processOutput',action:'detach',id:'history'},{op:'processOutput',action:'detach',id:'live'},{op:'detach',id:'pty'}]);
 });
 
 test('surface cleanup owns pending and successful subscriptions, but excludes failed and explicitly detached resources',async()=>{
   const f=fixture();await f.client.request('other',{op:'attach',id:'pty'},()=>{});
-  await f.client.request('page',{op:'sessionStream',action:'attach',id:'live'},()=>{});
-  await f.client.request('page',{op:'sessionStream',action:'detach',id:'live'},()=>{});
+  await f.client.request('page',{op:'processOutput',action:'attach',id:'live'},()=>{});
+  await f.client.request('page',{op:'processOutput',action:'detach',id:'live'},()=>{});
   f.client.detach('page');await tick();assert.equal(f.callbacks.size,1,'other surface remains live');
   let reject;const calls=[];
   const client=new ComponentData(async(_,args)=>{calls.push(args);if(calls.length===1)return new Promise((_,r)=>reject=r);return {};});

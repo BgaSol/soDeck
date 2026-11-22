@@ -413,7 +413,7 @@ addEventListener('sodeck:mount', e => {
   tokens(e.detail.tokens); settingsApplied(e.detail.settings); visible = e.detail.visible !== false;
   renderHistory();
   if (snapshot) { render(); for (const id of snapshot.navigation?.expandedGroups || []) if ($(id)) $(id).open = true; }
-  sodeck.mounted(); void poll(true); schedule();
+  sodeck.prepared(); void poll(true); schedule();
 });
 addEventListener('sodeck:themeChanged', e => tokens(e.detail.tokens));
 addEventListener('sodeck:settingsChanged', e => { settingsApplied(e.detail.settings); void poll(true); });

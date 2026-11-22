@@ -2,19 +2,19 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {test} from 'node:test';
 const bus=new EventTarget();globalThis.addEventListener=bus.addEventListener.bind(bus);globalThis.removeEventListener=bus.removeEventListener.bind(bus);
-const {SharedState}=await import('../plugins/shared/state.js');
-const {parseOsc7,parseIntegration,createLocation}=await import('data:text/javascript;base64,'+Buffer.from(fs.readFileSync('plugins/terminal/ui-src/location.js','utf8').replace("'./state.js'",JSON.stringify(new URL('../plugins/shared/state.js',import.meta.url).href))).toString('base64'));
+const {SharedState}=await import('../packages/plugin-sdk/src/state.js');
+const {parseOsc7,parseIntegration,createLocation}=await import('data:text/javascript;base64,'+Buffer.from(fs.readFileSync('plugins/terminal/ui-src/location.js','utf8').replace("'./sdk/state.js'",JSON.stringify(new URL('../packages/plugin-sdk/src/state.js',import.meta.url).href))).toString('base64'));
 const fixture=JSON.parse(fs.readFileSync('scripts/fixtures/shared-state.json','utf8'));
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 test('JS wire contract applies a multipart batch atomically with decimal revisions and null tombstones',async()=>{
- const requests=[];globalThis.sodeck={request:async(_,p)=>{requests.push(p);return {result:p.op==='subscribe'&&!p.acknowledgedRevision?{subscriptionId:'sub',scope:{state:'active'},revision:fixture.initialRevision,records:[],leaseMs:60000}:{leaseMs:60000}};}};
+ const requests=[];globalThis.sodeck={request:async(_,p)=>{requests.push(p);return p.op==='subscribe'&&!p.acknowledgedRevision?{subscriptionId:'sub',scope:{state:'active'},revision:fixture.initialRevision,records:[],leaseMs:60000}:{leaseMs:60000};}};
  bus.dispatchEvent(new Event('sodeck:surfaceReady'));const client=new SharedState({context:fixture.context,capabilities:{sharedState:1}});const watch=client.watch({topics:['test.v1']},()=>{});await tick();
  for(const [i,raw]of fixture.frames.entries()){watch.receive({...raw,context:fixture.context,subscriptionId:'sub',clientSubscriptionId:watch.clientId});await tick();assert.equal(watch.revision,i?raw.toRevision:fixture.initialRevision);assert.equal(watch.records.size,0);}
  watch.receive({...fixture.frames[1],context:fixture.context,subscriptionId:'sub',clientSubscriptionId:watch.clientId});await tick();assert(watch.valid);assert.equal(requests.filter(p=>p.op==='ack').length,3);assert.equal(requests.find(p=>p.op==='ack').appliedRevision,undefined);
  watch.expires=performance.now()-1;assert.equal(watch.valid,false,'expiry is immediate even before a delayed timer fires');watch.receive({...fixture.frames[1],context:fixture.context,subscriptionId:'sub',clientSubscriptionId:watch.clientId});await tick();assert.equal(requests.filter(p=>p.op==='ack').length,3);client.dispose();
 });
 test('disposing during initialization and reset owns all pending watches and cancels retries',async()=>{
- let release;const requests=[];globalThis.sodeck={request:async(_,p)=>{requests.push(p);if(p.op==='subscribe')return new Promise(resolve=>release=resolve);return {result:{}};}};const client=new SharedState({context:fixture.context,capabilities:{sharedState:1}});const watch=client.watch({topics:['test.v1']},()=>{});await tick();client.dispose();release({result:{}});await tick();assert(watch.disposed);assert(requests.some(p=>p.op==='unsubscribe'));
+ let release;const requests=[];globalThis.sodeck={request:async(_,p)=>{requests.push(p);if(p.op==='subscribe')return new Promise(resolve=>release=resolve);return {};}};const client=new SharedState({context:fixture.context,capabilities:{sharedState:1}});const watch=client.watch({topics:['test.v1']},()=>{});await tick();client.dispose();release({});await tick();assert(watch.disposed);assert(requests.some(p=>p.op==='unsubscribe'));
  const other=new SharedState({context:fixture.context,capabilities:{sharedState:1}});const resetting=other.watch({topics:['test.v1']},()=>{});await tick();resetting.reset(new Error('reset'));other.dispose();assert(resetting.disposed);assert.equal(other.owned.size,0);
 });
 test('OSC 7 verifies host, decoded absolute paths and rejects ambiguous locations',()=>{
@@ -28,9 +28,6 @@ test('automatic reports bind to one shell and keep a filesystem witness',()=>{
  for(const value of ['ff','2f00','2f0a','abcdz',''])assert.equal(parseIntegration(`SODECK;token;ready;${value};2f`,'token').state,'unknown');
  assert.equal(parseIntegration('SODECK;token;busy;','token').activity,'busy');
 });
-test('old cores without shared-state capability keep the enhancement disabled without an RPC',async()=>{
- let called=false;globalThis.sodeck={request:async()=>{called=true;throw new Error('unexpected RPC');}};const client=new SharedState({context:fixture.context,capabilities:{}});assert.equal(client.available,false);await assert.rejects(client.request('get'),error=>error.code==='unsupported');assert.equal(called,false);client.dispose();
-});
 test('local terminal directory context follows confirmed reports and invalidation without shared-state RPC',()=>{
  const handlers=new Map(),locations=[];let called=false;globalThis.sodeck={request:async()=>{called=true;throw new Error('unexpected RPC');}};
  const terminal={parser:{registerOscHandler:(code,handler)=>{handlers.set(code,handler);return {dispose(){}};}}};
@@ -42,7 +39,7 @@ test('same-directory prompts after busy preserve manual browsing; explicit retry
  let emit,count=0;const elements=[];const prior=globalThis.document;
  globalThis.document={createElement:tag=>{const element={tag,setAttribute(){},append(){},replaceChildren(){},remove(){},textContent:''};elements.push(element);return element;}};
  globalThis.FileStateClient=class {available=true;watch(_,change){emit=change;return {valid:true,dispose(){}};}dispose(){}};
- const code=fs.readFileSync('plugins/files/ui/shared-state.js','utf8').replace("import {SharedState} from './state.js';",'const SharedState=globalThis.FileStateClient;');
+ const code=fs.readFileSync('plugins/files/ui/shared-state.js','utf8').replace("import {SharedState} from './sdk/state.js';",'const SharedState=globalThis.FileStateClient;');
  const {connectFileState}=await import('data:text/javascript;base64,'+Buffer.from(code+'\n//manual busy test').toString('base64'));
  const tree={toolbar:{append(){}},setMounts(){},cancelFollow(){},async followLocation(){count++;}};
  const controller=connectFileState(tree,{capabilities:{fileLocation:1,fileLocationProof:1}},async()=>({}),async()=>{});
@@ -54,7 +51,7 @@ test('background observations only cancel a pending follow, preserving manual na
  let emit,release,cancelled=0;const priorDocument=globalThis.document;
  globalThis.document={createElement:()=>({setAttribute(){},append(){},replaceChildren(){},remove(){}})};
  globalThis.FileStateClient=class {available=true;watch(_,change){emit=change;return {valid:true,dispose(){}};}dispose(){}};
- const code=fs.readFileSync('plugins/files/ui/shared-state.js','utf8').replace("import {SharedState} from './state.js';",'const SharedState=globalThis.FileStateClient;');
+ const code=fs.readFileSync('plugins/files/ui/shared-state.js','utf8').replace("import {SharedState} from './sdk/state.js';",'const SharedState=globalThis.FileStateClient;');
  const {connectFileState}=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
  const tree={toolbar:{append(){}},setMounts(){},cancelFollow(){cancelled++;},followLocation:()=>new Promise(resolve=>release=resolve),message(){}};
  const controller=connectFileState(tree,{capabilities:{fileLocation:1}},async()=>({}),async()=>{});
@@ -68,7 +65,7 @@ test('background observations only cancel a pending follow, preserving manual na
 });
 
 test('disabled directory integration ignores OSC7 and OSC633 and publishes only unknown state',async()=>{
- const writes=[],handlers=new Map();globalThis.sodeck={request:async(_,p)=>({result:p.op==='get'?{record:{present:true,revision:'1',value:{state:'known',path:'/old',terminalId:'pty',outputOffset:'0'}}}:writes.push(p)})};
+ const writes=[],handlers=new Map();globalThis.sodeck={request:async(_,p)=>(p.op==='get'?{record:{present:true,revision:'1',value:{state:'known',path:'/old',terminalId:'pty',outputOffset:'0'}}}:writes.push(p))};
  const terminal={parser:{registerOscHandler:(id,handler)=>{handlers.set(id,handler);return {dispose(){}};}}};
  const location=createLocation(terminal);location.mount({context:fixture.context,capabilities:{sharedState:1},settings:{values:{directoryReportHost:'host'}},data:{streamId:'pty',openedContext:fixture.context,integration:{mode:'off',token:'token'}}});
  location.ready();await tick();

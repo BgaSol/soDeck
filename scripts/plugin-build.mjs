@@ -1,3 +1,5 @@
+import {packageSdkAssets} from "./plugin-sdk-assets.mjs";
+import {currentPluginApi} from './plugin-api-version.mjs';
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -28,6 +30,7 @@ export async function buildPlugin({ plugin, target, output, release, installDepe
   if (fs.existsSync(directory)) throw new Error(`Plugin output already exists: ${directory}`);
   const pluginRoot = `plugins/${plugin}`;
   const metadata = fileEditorSettings(JSON.parse(fs.readFileSync(`${pluginRoot}/release.json`, "utf8")));
+  if(metadata.apiVersion!==currentPluginApi())throw new Error('Plugin declaration must target the bundled SDK API');
   const version = cargoPackageVersion(`${pluginRoot}/Cargo.toml`);
   if(metadata.build?.fileEditor)buildFileEditor({install:installDependencies});
   if (fs.existsSync(`${pluginRoot}/package.json`)) {
@@ -50,9 +53,8 @@ export async function buildPlugin({ plugin, target, output, release, installDepe
   const destination = path.join(directory, "bin", executable);
   if (fs.existsSync(`${pluginRoot}/ui`)) fs.cpSync(`${pluginRoot}/ui`, path.join(directory, "ui"), { recursive: true });
   if (metadata.ui) packageStyles(directory);
-  if (metadata.ui) fs.copyFileSync("plugins/shared/clipboard.js", path.join(directory, "ui/clipboard-bridge.js"));
+  if (metadata.ui) packageSdkAssets(directory);
   if (metadata.build?.fileEditor) packageFileEditor(directory);
-  if (['terminal','files','docker'].includes(plugin)) fs.copyFileSync("plugins/shared/state.js", path.join(directory, "ui/state.js"));
   if (metadata.ui) await packageMenuAssets(directory);
   if (['network-proxy','docker'].includes(plugin)) await packageDomAssets(directory);
   packageSettingsAssets(metadata, directory);

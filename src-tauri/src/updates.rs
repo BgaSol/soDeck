@@ -83,7 +83,7 @@ mod tests {
             tag_prefix: "plugin-docker-v".into(),
         };
         let manifest: UpdateManifest = serde_json::from_value(serde_json::json!({
-            "id": "sodeck.docker", "version": "0.1.3", "apiVersion": "1",
+            "id": "sodeck.docker", "version": "0.1.3", "apiVersion": "2.0",
             "source": source, "manifestUrl": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.1.3/plugin-update.json",
             "platforms": { (TARGET): { "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.1.3/package.zip", "sha256": "a".repeat(64) } }
         })).unwrap();
@@ -107,7 +107,7 @@ mod tests {
             let mut changed = manifest.clone();
             match invalid {
                 0 => changed.source.as_mut().unwrap().repository = "other/repo".into(),
-                1 => changed.api_version = "2".into(),
+                1 => changed.api_version = "3.0".into(),
                 2 => changed.platforms.clear(),
                 _ => {
                     changed.platforms.get_mut(TARGET).unwrap().url =
@@ -601,7 +601,7 @@ impl ReleaseClient {
         source: &UpdateSource,
         id: &str,
         current: &str,
-    ) -> Result<Option<UpdateManifest>, String> {
+    ) -> Result<Option<UpdateManifest>, DiscoveryError> {
         validate_source(source)?;
         let current = stable_version(current)?;
         #[cfg(feature = "test-fixtures")]
@@ -618,9 +618,9 @@ impl ReleaseClient {
                 return Ok(None);
             }
             if !manifest.platforms.contains_key(TARGET)
-                || (id != CORE_ID && manifest.api_version.split('.').next() != Some(API_VERSION))
+                || (id != CORE_ID && !sodeck_plugin_protocol::supports(&manifest.api_version))
             {
-                return Err("固定输入平台或 API 不兼容".into());
+                return Err(DiscoveryError::incompatible("固定输入平台或 API 不兼容"));
             }
             self.url(&manifest.manifest_url)?;
             self.url(&manifest.platforms[TARGET].url)?;
@@ -653,17 +653,17 @@ impl ReleaseClient {
             if manifest.id != id || stable_version(&manifest.version)? != version {
                 return Err("发行标签与更新清单的组件或版本不一致".into());
             }
-            if id != CORE_ID && manifest.api_version.split('.').next() != Some(API_VERSION) {
-                return Err(format!(
+            if id != CORE_ID && !sodeck_plugin_protocol::supports(&manifest.api_version) {
+                return Err(DiscoveryError::incompatible(format!(
                     "新版 {} 要求核心 API {}，当前为 {API_VERSION}",
                     manifest.version, manifest.api_version
-                ));
+                )));
             }
             if !manifest.platforms.contains_key(TARGET) {
-                return Err(format!(
+                return Err(DiscoveryError::incompatible(format!(
                     "新版 {} 尚未提供本机平台 {TARGET} 的包",
                     manifest.version
-                ));
+                )));
             }
             self.url(&manifest.platforms[TARGET].url)?;
             manifest.manifest_url = asset.browser_download_url.clone();
@@ -867,6 +867,44 @@ fn unpack(archive: &Path, output: &Path, zip_format: bool) -> Result<PathBuf, St
     }
     Ok(root)
 }
+
+#[derive(Clone, Debug)]
+pub struct DiscoveryError {
+    pub message: String,
+    pub incompatible: bool,
+}
+impl DiscoveryError {
+    fn incompatible(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            incompatible: true,
+        }
+    }
+}
+impl From<String> for DiscoveryError {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            incompatible: false,
+        }
+    }
+}
+impl From<&str> for DiscoveryError {
+    fn from(message: &str) -> Self {
+        message.to_string().into()
+    }
+}
+impl From<DiscoveryError> for String {
+    fn from(error: DiscoveryError) -> Self {
+        error.message
+    }
+}
+impl std::fmt::Display for DiscoveryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+impl std::error::Error for DiscoveryError {}
 
 pub struct Operation {
     core: Arc<AppCore>,
@@ -1077,7 +1115,7 @@ impl AppCore {
                             .zip(stable_version(&m.version).ok())
                             .is_some_and(|(old, new)| new > old)
                         && m.platforms.contains_key(TARGET)
-                        && m.api_version.split('.').next() == Some(API_VERSION)
+                        && sodeck_plugin_protocol::supports(&m.api_version)
                 })
         });
         cache.items.retain(|id, v| {
@@ -1125,16 +1163,7 @@ impl AppCore {
             }
             .into()
         });
-        view.phase = if phase == "error"
-            && error
-                .as_ref()
-                .is_some_and(|e| e.contains("要求核心 API") || e.contains("尚未提供本机平台"))
-        {
-            "incompatible"
-        } else {
-            phase
-        }
-        .into();
+        view.phase = phase.into();
         view.error = error.clone();
         drop(updates);
         if let Some(error) = error {
@@ -1256,10 +1285,18 @@ impl AppCore {
                 }
                 self.changed();
             }
-            Err(error) => self.update_phase(id, "error", Some(error.clone())),
+            Err(error) => self.update_phase(
+                id,
+                if error.incompatible {
+                    "incompatible"
+                } else {
+                    "error"
+                },
+                Some(error.message.clone()),
+            ),
         }
         self.persist_update_cache();
-        result
+        result.map_err(Into::into)
     }
     pub fn download_plugin(
         self: &Arc<Self>,

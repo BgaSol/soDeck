@@ -138,7 +138,7 @@ docker:windows:test 先运行 test:prepare -- docker；需要本机 Docker Deskt
 
 0.11.0 起，进程/原包夹具同时验证十五工具及节点写入转发、目录冲突、准确 annotations 和 HTTP 中断后在途 RPC 位置保留。真实核心三服务器打开流程还通过 MCP 新建节点、部分修改后建连、在用删除拒绝、关闭工作区后删除及磁盘目录核对；不以模拟宿主代替实际提交。核心 servers 回归验证 patch、统一 SSH keep、失败落盘与同修订竞争。
 
-`npm run mcp:test` 在三个隔离 OpenSSH 服务上从零工作区发现保存资料、打开并直接执行/下载，验证主机密钥交接、固定打开回执、重连及插件停止保留接纳会话；另保留真实核心与 MCP 插件的名称/主机/端点/IPv4 尾段目标发现、断开/重连与旧任务恢复、首次采集、补采、任务查找、文本/状态等待、去重和原字节下载；`mcp:process:test` 用实际插件进程验证保存资料完整分页、歧义、共享打开、创建 ACK、换代销毁、延迟接纳前取消，以及原任务接纳回包丢失、归属、稳定收尾、输出模式、分页、等待唤醒/HTTP 中断及容量、最终元数据和清理失败。`mcp:ui:test` 验证摘要与完整详情、主题、窄屏、焦点、接入配置和隐藏/卸载。先执行 `npm run test:prepare -- mcp`。本机可选设 `SODECK_TEST_MCP_BASELINE` 为旧 MCP 0.4.0 包目录，比较同一真实会话范围的全量回包与新定位回包；新核心的 v1 投影供旧包读取，不作为旧核心全套验收。本机可选设 `SODECK_TEST_CODEX` 为已登录的 Codex CLI 路径，在同一真实三服务器夹具中增加实际 Codex 工具调用验收，包括唯一目标两次调用、歧义不执行和重连后查询原任务；此项依赖本机认证，不在无认证 CI 中自动运行。CI 业务矩阵包含前三项；独立插件 package/verify 在五个原生目标验收实际包，并对 MCP 0.6.0 起的原包运行同一打开、进程查询与断开测试。
+`npm run mcp:test` 在三个隔离 OpenSSH 服务上从零工作区发现保存资料、打开并直接执行/下载，验证主机密钥交接、固定打开回执、重连及插件停止保留接纳会话；另保留真实核心与 MCP 插件的名称/主机/端点/IPv4 尾段目标发现、断开/重连与旧任务恢复、首次采集、补采、任务查找、文本/状态等待、去重和原字节下载；`mcp:process:test` 用实际插件进程验证保存资料完整分页、歧义、共享打开、创建 ACK、换代销毁、延迟接纳前取消，以及原任务接纳回包丢失、归属、稳定收尾、输出模式、分页、等待唤醒/HTTP 中断及容量、最终元数据和清理失败。`mcp:ui:test` 验证摘要与完整详情、主题、窄屏、焦点、接入配置和隐藏/卸载。先执行 `npm run test:prepare -- mcp`。本机可选设 `SODECK_TEST_CODEX` 为已登录的 Codex CLI 路径，在同一真实三服务器夹具中增加实际 Codex 工具调用验收，包括唯一目标两次调用、歧义不执行和重连后查询原任务；此项依赖本机认证，不在无认证 CI 中自动运行。CI 业务矩阵包含前三项；独立插件 package/verify 在五个原生目标验收实际包，并对当前 MCP 原包运行同一打开、进程查询与断开测试。
 
 `mcp:test` 还通过真实 pipe 验证多轮问答、9000 字节跨块输入和 EOF，通过 PTY 验证输入与 resize。POSIX 远端另验证无回显原始控制字节、窗口尺寸、持续 shell、Ctrl+C 与 Ctrl+D；Linux 创建一次性账号和 sudo 规则，验证错误密码后继续原任务、实际 root 文件副作用及退出码。夹具使用独立回环 SSH 服务，结束时有界停止服务并删除临时账号和规则，不在用户服务器执行此专项。`mcp:process:test` 覆盖输入去重、回包丢失、迟到观察、接纳前拒绝与 EOF；五平台插件原包验收复用该进程入口，受控宿主不能替代真实 SSH。
 
@@ -203,7 +203,7 @@ Check 始终响应 main push/PR，不使用 workflow 级 `paths` 跳过。`selec
 | 单插件 Rust/清单/锁文件/构建输入 | 该插件格式与五平台原生 Rust 测试、该插件普通业务验收；其他插件不跟随 |
 | desktop_files 的 windows/linux/macos.rs | 对应系统两架构/一个 macOS 架构的核心测试、文件业务；Windows 保留系统专项，普通 UI 不跟随 |
 | network_metrics.rs、settings/declaration.rs | 一次 Linux x86_64 完整核心套件；声明变化另走前端相关回归 |
-| session_stream、session_process、remote_execution、execution_output、content_export | 五平台原生核心、Linux UI、Windows SSH、六插件普通业务验收，与连接/流生命周期相同 |
+| session_process（含 output）、remote_execution、execution_output、content_export | 五平台原生核心、Linux UI、Windows SSH、六插件普通业务验收，与连接/流生命周期相同 |
 | 其他已映射核心系统/更新模块 | 五平台原生核心和相关 UI；网络、文件、终端服务分别追加自己的普通业务验收 |
 | 连接、流、生命周期/RPC、平台进程、服务器路由 | 五平台原生核心、Linux UI、Windows SSH、六插件普通业务验收 |
 | 共享 UI/字体/菜单 | 扩大至核心与六插件 UI/普通业务验收；不因此运行 netem 或旧版升级 |

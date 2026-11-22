@@ -28,7 +28,7 @@ impl Fixture {
         fs::create_dir_all(&plugin).unwrap();
         let binary = format!("fixture{}", std::env::consts::EXE_SUFFIX);
         fs::copy(env!("CARGO_BIN_EXE_plugin-fixture"), plugin.join(&binary)).unwrap();
-        fs::write(plugin.join("plugin.json"),json!({"id":"test.fixture","name":"Fixture","version":"0.1.0","apiVersion":"1","target":TARGET,"entry":binary}).to_string()).unwrap();
+        fs::write(plugin.join("plugin.json"),json!({"id":"test.fixture","name":"Fixture","version":"0.1.0","apiVersion":"2.0","target":TARGET,"entry":binary}).to_string()).unwrap();
         fs::write(plugin.join("mode"), mode).unwrap();
         Self { root, plugin }
     }
@@ -101,10 +101,8 @@ fn load_stop_reload_and_persist() {
     )
     .unwrap();
     assert_eq!(initialization["coreVersion"], "test");
-    assert!(initialization["capabilities"]
-        .as_array()
-        .unwrap()
-        .contains(&json!("rpc.concurrent")));
+    assert_eq!(initialization["coreApiVersion"], "2.0");
+    assert!(initialization.get("capabilities").is_none());
     wait_for(|| !core.messages().is_empty());
     assert_eq!(
         core.messages().len(),
@@ -168,6 +166,52 @@ fn invalid_manifest_and_api_are_rejected_without_starting() {
         fs::write(&path, &original).unwrap();
     }
     core.shutdown().unwrap();
+}
+
+#[test]
+fn retired_installed_plugins_keep_registration_update_source_and_user_data() {
+    for enabled in [false, true] {
+        let f = Fixture::new("");
+        fs::create_dir_all(f.root.join("data/plugin-data/test.fixture")).unwrap();
+        let settings = f.root.join("data/plugin-data/test.fixture/settings.json");
+        fs::write(&settings, b"{\"userValue\":\"keep\"}").unwrap();
+        let mut manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(f.plugin.join("plugin.json")).unwrap()).unwrap();
+        manifest["apiVersion"] = json!("1");
+        manifest["ui"] = json!({"apiVersion":"1","views":[{"legacyField":true}]});
+        manifest["commands"] = json!({"apiVersion":"1","oldHandlers":[]});
+        manifest["settings"] = json!({"apiVersion":"1","schemaVersion":1,"pages":[]});
+        manifest["updateSource"] =
+            json!({"repository":"BgaSol/soDeck","tagPrefix":"plugin-fixture-v"});
+        fs::write(f.plugin.join("plugin.json"), manifest.to_string()).unwrap();
+        let record = json!({"directory":f.plugin,"manifest":manifest,"enabled":enabled,
+            "previous":{"directory":f.plugin,"manifest":manifest}});
+        fs::write(
+            f.root.join("data/plugins.json"),
+            json!([record]).to_string(),
+        )
+        .unwrap();
+        let core = f.open();
+        core.start_enabled();
+        let view = core.snapshot().plugins.remove(0);
+        assert_eq!(view.manifest.id, "test.fixture");
+        assert_eq!(view.enabled, enabled);
+        assert_eq!(view.status, PluginStatus::Failed);
+        assert!(view.pid.is_none());
+        assert!(view.manifest.ui.is_none());
+        assert!(core
+            .update_check_ids()
+            .contains(&"test.fixture".to_string()));
+        assert!(!f.root.join("data/plugin-data/test.fixture/pid").exists());
+        core.shutdown().unwrap();
+        drop(core);
+        let saved: serde_json::Value =
+            serde_json::from_slice(&fs::read(f.root.join("data/plugins.json")).unwrap()).unwrap();
+        assert_eq!(saved[0]["manifest"]["apiVersion"], "1");
+        assert_eq!(saved[0]["previous"]["manifest"]["apiVersion"], "1");
+        assert_eq!(fs::read(&settings).unwrap(), b"{\"userValue\":\"keep\"}");
+        assert_eq!(f.open().snapshot().plugins.len(), 1);
+    }
 }
 #[test]
 fn local_semver_versions_are_registered_and_loaded_unchanged() {

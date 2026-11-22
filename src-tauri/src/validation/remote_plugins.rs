@@ -22,15 +22,26 @@ fn view(core: &AppCore, context: &Context, key: &str) -> Option<String> {
         .as_str()
         .map(str::to_string)
 }
-async fn file_job(core: &Arc<AppCore>, token: &str, id: &str) -> Result<Value, String> {
+async fn file_job(
+    core: &Arc<AppCore>,
+    token: &str,
+    id: &str,
+    request: &str,
+) -> Result<Value, String> {
     tokio::time::timeout(Duration::from_secs(20), async {
         loop {
             let v = core
-                .files_data("main", token, json!({"id":id,"action":"status"}))
+                .files_data(
+                    "main",
+                    token,
+                    json!({"id":id,"action":"save.status","requestId":request}),
+                )
                 .await?;
             match v["state"].as_str() {
-                Some("completed") => return Ok(v["result"].clone()),
-                Some("failed") => return Err(v["error"].as_str().unwrap_or("文件任务失败").into()),
+                Some("committed") => return Ok(v["result"].clone()),
+                Some("notCommitted" | "unknown") => {
+                    return Err(v["error"].as_str().unwrap_or("文件提交未确认").into())
+                }
                 _ => tokio::time::sleep(Duration::from_millis(50)).await,
             }
         }
@@ -43,15 +54,6 @@ async fn terminal_settings(
     view_id: &str,
     surface: &str,
 ) -> Result<(), String> {
-    // Older independently released plugins retain the original smoke protocol.
-    if !core
-        .snapshot()
-        .plugins
-        .iter()
-        .any(|p| p.manifest.id == "sodeck.terminal" && p.manifest.settings.is_some())
-    {
-        return Ok(());
-    }
     let initial = core.settings_page("sodeck.terminal", "appearance")?;
     if std::env::args().any(|a| a == "--verify-persisted")
         && (initial["values"]["fontSize"] != 18
@@ -180,11 +182,7 @@ pub(super) async fn roundtrip(
             .then_some(())
     })
     .await?;
-    let automatic_location = if cfg!(target_os = "linux")
-        && core.settings_page("sodeck.terminal", "appearance")?["values"]
-            .get("directoryMode")
-            .is_some()
-    {
+    let automatic_location = if cfg!(target_os = "linux") {
         Some(wait("自动 shell 目录报告", || {
             let result = core.state_surface_request(&window, &token, &json!({"op":"get","expectedContext":context,"topic":"terminal.location.v1","key":"current"})).ok()?;
             let value = &result["record"]["value"];
@@ -212,7 +210,7 @@ pub(super) async fn roundtrip(
     tokio::time::timeout(Duration::from_secs(15), async {
         loop {
             let d = core
-                .files_data("main", &token, json!({"id":id,"action":"describe"}))
+                .files_data("main", &token, json!({"id":id,"action":"draft.describe"}))
                 .await?;
             if d["size"].as_u64().is_some() {
                 break Ok::<_, String>(());
@@ -222,11 +220,6 @@ pub(super) async fn roundtrip(
     })
     .await
     .map_err(|_| "原生文件正文没有读入".to_string())??;
-    if core
-        .snapshot()
-        .plugins
-        .iter()
-        .any(|p| p.manifest.id == "sodeck.files" && p.manifest.settings.is_some())
     {
         let settings = core.settings_page("sodeck.files", "editor")?;
         // Mounting and describe do not prove that the iframe consumed all chunks.
@@ -243,33 +236,65 @@ pub(super) async fn roundtrip(
         })
         .await??;
     }
+    use sha2::{Digest, Sha256};
     let bytes = b"sodeck-native-file-save\n";
-    core.files_data(
-        "main",
-        &token,
-        json!({"id":id,"action":"stage","data":bytes,"begin":true,"done":true,"offset":0}),
-    )
-    .await?;
-    core.ui_event("main", &token, json!({"action":"staged","revision":1}))?;
-    core.files_data("main", &token, json!({"id":id,"action":"save"}))
+    let draft = core
+        .files_data("main", &token, json!({"id":id,"action":"draft.describe"}))
         .await?;
-    file_job(core, &token, &id).await?;
+    let document = &draft["draftRef"]["documentId"];
+    let upload = "native-save-draft";
+    for p in [
+        json!({"id":id,"action":"draft.begin","documentId":document,"uploadId":upload,"uploadSequence":"1","editRevision":"1","size":bytes.len(),"sha256":Sha256::digest(bytes).iter().map(|b|format!("{b:02x}")).collect::<String>()}),
+        json!({"id":id,"action":"draft.append","documentId":document,"uploadId":upload,"uploadSequence":"1","offset":0,"data":bytes}),
+        json!({"id":id,"action":"draft.commit","documentId":document,"uploadId":upload,"uploadSequence":"1"}),
+    ] {
+        core.files_data("main", &token, p).await?;
+    }
+    let draft = core
+        .files_data("main", &token, json!({"id":id,"action":"draft.describe"}))
+        .await?;
+    core.files_data("main", &token, json!({"id":id,"action":"save.start","requestId":"native-save","sequence":"1","expectedContext":context,"expectedDraftRef":draft["draftRef"]})).await?;
+    file_job(core, &token, &id, "native-save").await?;
     let local = core
         .snapshot()
         .data_directory
         .join("native-file-download.txt");
-    core.files_download(
+    let browser = core.ui_action(
         "main",
-        &token,
-        json!({"id":id,"path":remote}),
-        local.clone(),
-    )
+        context,
+        json!({"op":"open","key":"sodeck.files:files","requestId":"native-file-browser"}),
+    )?;
+    let browser_id = browser["viewId"].as_str().ok_or("没有文件浏览器视图")?;
+    let (_, token) = wait("文件浏览器界面挂载", || {
+        core.ui_ready_surface(browser_id)
+    })
     .await?;
-    file_job(core, &token, &id).await?;
+    let id = core
+        .files
+        .validation_handle(browser_id)
+        .ok_or("文件浏览器原语未创建")?;
+    let input = core
+        .files_register_input("main", &token, &id, vec![local.clone()], true)
+        .map_err(|e| e.to_string())?;
+    let batch = core.ui_event("main", &token, json!({"action":"startBatch","parameters":{"kind":"download","inputId":input["inputId"],"single":true,"roots":[remote]}}))?;
+    wait("原生文件下载", || {
+        let page = core
+            .ui_event("main", &token, json!({"action":"readTasks"}))
+            .ok()?;
+        let value = page["tasks"]
+            .as_array()?
+            .iter()
+            .find(|v| v["id"] == batch["batchId"])?;
+        match value["state"].as_str()? {
+            "completed" => Some(Ok(())),
+            "failed" | "partial" | "needsReview" => Some(Err(format!("下载未完成：{value}"))),
+            _ => None,
+        }
+    })
+    .await??;
     if std::fs::read(&local).map_err(|e| e.to_string())? != bytes {
         return Err("实际包保存/下载内容不一致".into());
     }
     std::fs::remove_file(local).map_err(|e| e.to_string())?;
-    core.ui_event("main", &token, json!({"action":"saved","revision":1}))?;
     Ok(())
 }

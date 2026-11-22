@@ -6,7 +6,7 @@ struct Pending {
     frame: Value,
     deadline: Instant,
     attempts: u8,
-    receiver: Option<mpsc::Receiver<Result<Value, String>>>,
+    receiver: Option<mpsc::Receiver<Result<Value, sodeck_plugin_protocol::ApiError>>>,
 }
 pub(crate) fn start(core: &Arc<AppCore>, wake: mpsc::Receiver<()>) {
     let core = Arc::downgrade(core);

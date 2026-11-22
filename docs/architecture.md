@@ -18,11 +18,13 @@
 | 更新和系统适配 | 下载、官方验签、缓存、默认应用与本地文件：[updates.rs](../src-tauri/src/updates.rs)、[platform.rs](../src-tauri/src/platform.rs)、[desktop_files.rs](../src-tauri/src/desktop_files.rs) |
 | 业务插件 | [terminal](../plugins/terminal/src/main.rs)、[files](../plugins/files/src/main.rs)、[network-proxy](../plugins/network-proxy/src/main.rs)、[system-status](../plugins/system-status/src/main.rs)、[docker](../plugins/docker/src/main.rs)、[mcp](../plugins/mcp/src/main.rs) |
 
-共享 [plugin-client](../crates/plugin-client/src/lib.rs) 提供 RPC、命令票据、设置、共享状态和文件编辑生命周期客户端，不保存连接凭据，也不封装插件之间的直接调用。文件编辑的标准 UI 在 [packages/file-editor](../packages/file-editor/)，随使用组件独立打包；[接入与职责](features/file-editor.md)由通用编辑功能说明维护。
+共享 [plugin-protocol](../crates/plugin-protocol/src/lib.rs) 定义 API 版本、Context、请求和错误，核心与插件客户端使用同一契约。[页面 SDK](../packages/plugin-sdk/src/index.js) 随每个插件独立打包，负责 Surface 身份、等待请求与清理。
 
-短命令、命令捕获和终端通过 [remote_execution.rs](../src-tauri/src/remote_execution.rs) 共用通道启动、读写、退出和取消循环；[execution_output.rs](../src-tauri/src/execution_output.rs) 只包含既有内存结果、Capture 和 Replay 三种输出。各服务仍管理自己的接纳、额度与持久结果，不设第四张全局资源表。[session_process.rs](../src-tauri/src/session_process.rs) 替代原命令流资源表，提供原进程的有界顺序输入；旧流 RPC 为同一资源的适配器。MCP 管理调查任务、调用端输入身份与本地证据；提示解释和输入内容由客户端决定。
+[plugin-client](../crates/plugin-client/src/lib.rs) 提供 RPC、命令票据、设置、共享状态和文件编辑生命周期客户端，不保存连接凭据，也不封装插件之间的直接调用。文件编辑的标准 UI 在 [packages/file-editor](../packages/file-editor/)，随使用组件独立打包；[接入与职责](features/file-editor.md)由通用编辑功能说明维护。
 
-非交互命令流由[session_stream.rs](../src-tauri/src/session_stream.rs)复用核心会话，[capture.rs](../src-tauri/src/streams/capture.rs)管理有界原始字节与固定阅读范围；[content_export.rs](../src-tauri/src/content_export.rs)只负责用户选择的本地字节导出。这两项可选能力从核心 1.1.0 提供，契约统一见[插件API](plugin-api.md)。Docker命令、源时间、级别、历史覆盖和采集代次属于插件后台；解析、搜索、虚拟正文、缩略导航及阅读状态属于Docker UI/Worker。核心不保存容器日志索引，不导入Docker正文样式；颜色和基础控件继续复用packages/ui。
+短命令、命令捕获和终端通过 [remote_execution.rs](../src-tauri/src/remote_execution.rs) 共用通道启动、读写、退出和取消循环；[execution_output.rs](../src-tauri/src/execution_output.rs) 只包含既有内存结果、Capture 和 Replay 三种输出。各服务仍管理自己的接纳、额度与持久结果，不设第四张全局资源表。[session_process.rs](../src-tauri/src/session_process.rs) 替代原命令流资源表，提供原进程的有界顺序输入；正文订阅、固定阅读与 ACK 位于 session_process/output。MCP 管理调查任务、调用端输入身份与本地证据；提示解释和输入内容由客户端决定。
+
+进程正文由[session_process/output.rs](../src-tauri/src/session_process/output.rs)复用核心会话，[capture.rs](../src-tauri/src/streams/capture.rs)管理有界原始字节与固定阅读范围；[content_export.rs](../src-tauri/src/content_export.rs)只负责用户选择的本地字节导出。契约统一见[插件API](plugin-api.md)。Docker命令、源时间、级别、历史覆盖和采集代次属于插件后台；解析、搜索、虚拟正文、缩略导航及阅读状态属于Docker UI/Worker。核心不保存容器日志索引，不导入Docker正文样式；颜色和基础控件继续复用packages/ui。
 
 [Agent MCP插件](features/mcp.md)负责回环 HTTP、Token、字面资料发现、工具参数、原请求的目标准备与证据保存。核心负责非敏感资料投影、实际连接接纳、既有会话、命令流及通用复制，契约见[API](plugin-api.md)。桌面与外部 open 使用同一个连接注册表与实际 Attempt；原请求表保存 attached/accepted/failed/cancelled，current 索引只代表当前尝试。accept 在同一连接/工作台锁边界固定原 Context，取消先登记原身份以阻止迟到派发。凭据不进入选择令牌，路线匹配复用原 trust_scope。
 
@@ -30,17 +32,17 @@ MCP 的打开收据表示取得准确可执行 target，核心收据表示 SSH/�
 
 插件内的运行注册表以任务 ID 与请求键索引同一 Task，Task 统一管理自有阶段、取消与有效 revision；原核心 native JSON 保留。有意义的原生字段在 task 中统一选择，版本变化使用未裁剪事实，普通输出在各自出口简化。目标观察统一取得经过 Context/字段校验的类型化 Observation，Task 的 Record 保存确认时的完整 Descriptor；发现、采集和侧栏不通过旧 JSON 传递内部目标。命令与文件使用两条具体采集路径；上传和下载共用文件收集器、接纳序号和原语回执，接纳域占用不跨 RPC 持锁，也不排队启动新 worker。启动解析分离实际执行参数和本次等待，新正等待先取得位置，再登记并同步完成后台派发；等待许可由接纳层持有并交接，查询层消费许可，不保存响应 JSON 或持久等待状态。启动首读与 task_get 使用同一 watch 循环，分别等待稳定完成与既有变化；等待结束释放位置，再按同次捕获读正文。调用取消不绑定 Collector 或 Task 的取消令牌。统一收尾先封闭取消修改，再保存与清理，最后发布稳定终态。Task 的私有 Record 是唯一运行状态；读取、取消与列表交接不可变身份和该次 Record，不将 JSON 投影作为内部状态。ui 模块组装侧栏，快照的本地身份独立于目标观察成败；response 分别构造 MCP 普通/诊断及 UI 输出，evidence 独立定义磁盘元数据 schema 3，保存时消费指定 Record，不复用展示函数。text/full 正文互斥，不建立 DTO 缓存或通用渲染框架。MCP 与 UI 查询使用同一次状态/已保存水位记录和同一证据 reader，UI 读取及取消检查实际 Context 归属；侧栏只接受文本分页和最近页，完整信封和等待属于 MCP 出口。列表与 async 等待消费既有事实。参数及资源额度只在 [MCP API](mcp-api.md)完整定义。
 
-MCP 上传的主机路径只交给核心只读来源适配，普通文件打开后固定句柄并复核身份；不伪造原生 inputId。核心单文件复制把请求策略、来源读取、提交与状态分开维护，原文件插件和 MCP 共同使用。复制快照独立记录提交与进度，终态合并保留这些事实；MCP 在释放原生回执前持久化最终事实，记录失败时保留资源到原生命周期关闭。上传不经过文件插件，不新增传输协议或任务注册表。契约见[文件复制 API](plugin-api.md#filescopyv1核心-1110)。
+MCP 上传的主机路径只交给核心只读来源适配，普通文件打开后固定句柄并复核身份；不伪造原生 inputId。核心单文件复制把请求策略、来源读取、提交与状态分开维护，原文件插件和 MCP 共同使用。复制快照独立记录提交与进度，终态合并保留这些事实；MCP 在释放原生回执前持久化最终事实，记录失败时保留资源到原生命周期关闭。上传不经过文件插件，不新增传输协议或任务注册表。契约见[文件复制 API](plugin-api.md#文件操作)。
 
 ## 宿主状态与 DOM 边界
 
-插件自有图形由插件清单及包内资产提供。核心负责通用路径/版本检查、主题色展示及失败回退，资源读取独立于业务进程生命周期；各显示入口共用同一图标来源。已安装图标取当前包，官方目录预览取同源仓库资源。完整契约见[插件图标](plugin-api.md#插件图标核心-153)。
+插件自有图形由插件清单及包内资产提供。核心负责通用路径/版本检查、主题色展示及失败回退，资源读取独立于业务进程生命周期；各显示入口共用同一图标来源。已安装图标取当前包，官方目录预览取同源仓库资源。完整契约见[插件图标](plugin-api.md#插件图标)。
 
 Shell 拥有当前管理页/工作台导航意图及应用快照、网络计量；连接服务只接纳真实会话，显示定位由发起窗口的有效意图明确请求。管理台不是伪工作区，核心页草稿继续属于原页面控制器。Workspaces 管理工作区操作，Components 独占 Surface 挂载、消息身份、有效可见性和输入权；壳隐藏宿主时只取消显示手势与焦点意图，不销毁 View 或远端资源。
 
 [正文桥](../src/component-data.ts)为每次原生调用创建独立 Tauri Channel，因为各调用的传输序号独立从零开始。Surface 只管理所属订阅的解绑请求；确认、状态、文件请求及其他订阅不会结束正在接收的正文通道。
 
-公共 CSS、主题值、主题 ID 登记及已发行 token 名称统一维护在 [packages/ui](../packages/ui/README.md)。核心直接编译共享源码，插件独立打包自身 CSS 副本并沿用 UI v1/v2 的 token 下发；宿主尺寸限定在核心容器内，不改变旧插件几何语义。旧插件选择器兼容仅进入插件包的 legacy.css，核心不导入。核心不导入插件业务 UI，不按具体插件 ID 分配入口或业务行为。
+公共 CSS、主题值、主题 ID 登记及已发行 token 名称统一维护在 [packages/ui](../packages/ui/README.md)。核心直接编译共享源码，插件独立打包自身 CSS 副本并沿用 当前 token 下发；宿主尺寸限定在核心容器内。核心不导入插件业务 UI，不按具体插件 ID 分配入口或业务行为。
 
 页面控制器拥有草稿、基线修订与保存结果，核心快照只提供已保存状态。Shell 持有管理台一级导航和固定的设置子导航槽，管理台组合器分别渲染导航与当前页面；设置、插件和更新各自选择内容，设置分区不承载一级页面状态。组件设置独占自己的挂载容器，父级刷新不遍历或搬回其内部节点。切页/关闭设置只结束显示，草稿随宿主保留；退出规则见[生命周期](features/lifecycle.md)。后台读取分区接收，失败保留上次有效状态并展示对应错误，失效请求不能更新新实体。
 
@@ -71,7 +73,7 @@ Workspace 表示服务器会话上下文，Host 表示某个窗口中的显示�
 
 同窗隐藏/排序/分屏保留 iframe，跨窗按准备、flush、排空、恢复、提交交接；失败取消保留源实例。后台逻辑 view 的运行不依赖 iframe 是否存在。纯快照不创建、销毁或恢复业务资源，初始化由明确工作区和插件状态变化触发。
 
-宿主通过本地资源协议加载插件 HTML/JS/CSS，经 postMessage 和核心数据桥交互。业务 UI 不直接持有服务器认证。UI v1/v2、控制帧、数据分片和兼容策略统一维护在[插件 API](plugin-api.md)。
+宿主通过本地资源协议加载插件 HTML/JS/CSS，经 postMessage 和核心数据桥交互。业务 UI 不直接持有服务器认证。统一基线、控制帧、数据分片和版本策略统一维护在[插件 API](plugin-api.md)。
 
 ## 组件协作
 
@@ -79,7 +81,7 @@ Workspace 表示服务器会话上下文，Host 表示某个窗口中的显示�
 
 命令登记表放在 workbench::State，与工作区、布局、关闭保留共用短状态锁。接纳先固定处理实例、来源 Host/Group、指纹和预算，释放锁后加入现有 RPC 队列；commands.submit 不等待另一插件完成。页面登记与命令关联原子提交。回执的逻辑终态和实际 RPC 任务守卫分开，关闭覆盖没有页面的命令，失效调用仍占在途额度直到真实结束。
 
-核心“＋”、默认创建、终端重开和 Docker 进入容器都提交 terminal.open.v1。处理者属于终端进程，不依赖终端 iframe；终端负责创建参数，Docker 负责 socket、Engine、容器身份与 shell。已登记终端归自身 view，来源页的生命周期不收养它。旧 ui.actions 作为同一服务的兼容适配，不保留独立行为执行表。完整字段、限额和失败契约见[命令 API](plugin-api.md#命令默认行为与进程主动创建页面)。
+核心“＋”、默认创建、终端重开和 Docker 进入容器都提交 terminal.open.v1。处理者属于终端进程，不依赖终端 iframe；终端负责创建参数，Docker 负责 socket、Engine、容器身份与 shell。已登记终端归自身 view，来源页的生命周期不收养它。行为声明仅提供展示和命令引用，不保留第二套执行表。完整字段、限额和失败契约见[命令 API](plugin-api.md#命令默认行为与进程主动创建页面)。
 
 ## 核心能力与业务边界
 
@@ -87,13 +89,13 @@ Workspace 表示服务器会话上下文，Host 表示某个窗口中的显示�
 - 核心文件服务负责资源身份、受限本地引用、不可变草稿快照、传输和提交结果；正文内存锁与 SFTP IO 分离。文件插件负责目录 UI、批次编排、冲突交互及编辑器，由核心修订和提交回执投影 dirty/busy，不以通知成功推断保存成功。
 - 核心网络服务提供受管 TCP 监听与通道，按实际任务退出确认清理完成；SOCKS5 入口协商和规则管理在网络插件。插件分开保存运行事实、查询错误和停止意图，RPC 等待不持有整个插件状态锁。
 - 核心短命令提供启动票据、输出分页、取消和期限；系统状态解释计数和指标，Docker 解释 Engine、容器及命令结果。
-- 核心 remote_program 负责当前会话的有界环境探测、POSIX/Windows 程序参数编码和明确启用的启动结果前导，复用原 exec/stream/PTY 服务。Docker 自己解析 CLI/Context/端点，固定不可变 Engine 目标并提供身份检查参数；插件不拼平台 shell 或直接依赖传输实现。契约见[程序 API](plugin-api.md#sessionprogramv1核心-181)。
+- 核心 remote_program 负责当前会话的有界环境探测、POSIX/Windows 程序参数编码和明确启用的启动结果前导，复用原 exec/process/PTY 服务。Docker 自己解析 CLI/Context/端点，固定不可变 Engine 目标并提供身份检查参数；插件不拼平台 shell 或直接依赖传输实现。契约见[程序 API](plugin-api.md#会话目标短命令与终端)。
 - 目录/容量共享由核心控制作用域和版本；终端/状态插件发布，文件插件按自身规则消费。核心不为每对插件增加专用调用关系。
 - 日志与消息分别接入，来源由核心附加，通知由消息参数明确选择。
 
 分进程不等于沙箱隔离。插件按可信扩展运行，无权限清单或审批；API 版本、参数、资源身份及操作系统自身权限继续校验。
 
-核心会话目标摘要与工作区完整 Context 同时接纳，在断开后保留最近真实连接，仅运行内持有；读取和 v1/v2 兼容投影由 session_target 模块统一完成。字段和失败边界见[插件 API](plugin-api.md#sessiontargetv2核心-160)，客户端发现与歧义策略归 Agent MCP。
+核心会话目标摘要与工作区完整 Context 同时接纳，在断开后保留最近真实连接，仅运行内持有；完整目标事实读取由 session_target 模块完成。字段和失败边界见[插件 API](plugin-api.md#会话目标短命令与终端)，客户端发现与歧义策略归 Agent MCP。
 
 ## 数据与平台适配
 

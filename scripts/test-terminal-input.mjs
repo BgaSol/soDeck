@@ -26,8 +26,8 @@ window.testPost=post;window.setTheme=theme=>{document.documentElement.dataset.th
 window.addEventListener('message',async event=>{
  if(event.source!==frame.contentWindow||event.data?.channel!=='sodeck-ui-v2')return;
  const message=event.data;
- if(message.type==='ready'){window.mountTerminal=()=>post({type:'mount',viewId:'A',context:{generation},data:{streamId:'pty'},tokens:themeTokens(),capabilities:{clipboard:1},visible:true});window.mountWaiting=true;if(!window.holdMount)window.mountTerminal();return;}
- if(message.type==='prepared'){window.ready=true;return;}
+ if(message.type==='ready'){window.mountTerminal=()=>post({type:'mount',viewId:'A',context:{generation},data:{streamId:'pty'},tokens:themeTokens(),visible:true});window.mountWaiting=true;if(!window.holdMount)window.mountTerminal();return;}
+ if(message.type==='prepared'){post({type:'surfaceReady',readOnly:false});window.ready=true;return;}
  if(message.type==='flushed'){window.flushed.push(message.id);return;}
  if(message.type!=='request')return;
  try{
@@ -41,7 +41,7 @@ window.addEventListener('message',async event=>{
    if(p.op==='attach'){post({type:'data',data:{kind:'caughtUp',packet:1,offset:0,data:[]}});}
   }
   post({type:'response',id:message.id,data});
- }catch(error){post({type:'response',id:message.id,error:String(error)});}
+ }catch(error){post({type:'response',id:message.id,error:{code:-32000,message:String(error),data:{}}});}
 });
 frame.src='/__terminal__/index.html';
 window.hideTerminal=()=>{visible=false;generation++;host.discard(token);post({type:'visibilityChanged',visible:false});};

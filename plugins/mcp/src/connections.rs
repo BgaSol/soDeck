@@ -172,6 +172,7 @@ fn business(e: Value) -> Value {
     }
 }
 
+use sodeck_plugin_client::protocol::requests as api;
 async fn rpc(
     app: Arc<App>,
     method: &'static str,
@@ -186,7 +187,19 @@ async fn rpc(
     };
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        app.rpc(method, p)
+        let invalid = |_| failure("invalidParams", "连接参数无效");
+        match method {
+            "connections.open" => app.rpc(api::call::ConnectionOpen(
+                serde_json::from_value(p).map_err(invalid)?,
+            )),
+            "connections.get" => app.rpc(api::call::ConnectionGet(
+                serde_json::from_value(p).map_err(invalid)?,
+            )),
+            "connections.cancel" => app.rpc(api::call::ConnectionCancel(
+                serde_json::from_value(p).map_err(invalid)?,
+            )),
+            _ => unreachable!(),
+        }
     })
     .await
     .map_err(|e| failure("unavailable", e.to_string()))?

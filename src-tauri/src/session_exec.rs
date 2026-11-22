@@ -1,4 +1,4 @@
-//! Legacy bounded commands and environment probes on the common remote runner.
+//! Bounded commands and environment probes on the common remote runner.
 use crate::{
     execution_output::{MemoryOutput, OutputTarget},
     remote_execution::{self, Execution, ExecutionIo, Launch, Options},
@@ -174,9 +174,6 @@ impl AppCore {
                 .ok_or_else(|| error("invalidParams", format!("缺少 {name}")))
         };
         match method {
-            "session.state" => {
-                return self.target_facts(plugin, instance, text("viewId")?, None, false)
-            }
             "session.target.describe" => return self.describe_target(plugin, instance, p),
             "session.program.prepare" => return self.prepare_program(plugin, instance, p),
             _ => {}

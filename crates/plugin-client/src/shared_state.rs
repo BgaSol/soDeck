@@ -1,4 +1,4 @@
-//! Optional sharedState.v1 client. Delivery commits a projection before acknowledging.
+//! Shared state client. Delivery commits a projection before acknowledging.
 use super::*;
 use std::time::Instant;
 #[derive(Default)]
@@ -148,7 +148,18 @@ pub fn request(
         .ok_or_else(|| RpcError::local("共享参数必须为对象"))?;
     params.insert("viewId".into(), json!(view));
     params.insert("expectedContext".into(), context.clone());
-    client.call_detailed(&format!("state.{op}"), json!(params))
+    let params =
+        serde_json::from_value(json!(params)).map_err(|_| RpcError::invalid("共享状态请求无效"))?;
+    use crate::protocol::requests::call;
+    match op {
+        "get" => client.request(call::StateGet(params)),
+        "put" => client.request(call::StatePut(params)),
+        "remove" => client.request(call::StateRemove(params)),
+        "list" => client.request(call::StateList(params)),
+        "subscribe" => client.request(call::StateSubscribe(params)),
+        "unsubscribe" => client.request(call::StateUnsubscribe(params)),
+        _ => Err(RpcError::invalid("未知共享状态请求")),
+    }
 }
 pub struct Watch {
     client: Client,

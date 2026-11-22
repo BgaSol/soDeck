@@ -1,13 +1,14 @@
+import {withProcessFacts,processFacts} from './process-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
 import {spawnSync} from 'node:child_process';
-import {pluginPeer,context,capabilities,until,packageRoot} from './docker-process.mjs';
+import {pluginPeer,context,until,packageRoot} from './docker-process.mjs';
 const windows=process.argv.includes('--windows')||process.argv.includes('--windows-engine'),engineOs=process.argv.includes('--windows-engine')?'windows':'linux',shell=engineOs==='windows'?'cmd.exe':'/bin/sh';
 const environment=windows?{kind:'windows',launcher:'powershell.exe',exitMode:'native'}:{kind:'posix'},rootDir=engineOs==='windows'?'C:\\ProgramData\\Docker':'/srv/docker-data';
 const root=packageRoot();
 const manifest=JSON.parse(fs.readFileSync(path.join(root,'plugin.json')));
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-docker-process-'));
-const tickets=new Map(),submissions=[],streams=new Map(),streamRequests=[],streamLookups=[];let loseCommandReceipt=true,loseStreamReceipts=6,tunnelOutcome='accepted';
+const tickets=new Map(),submissions=[],streams=new Map(),streamRequests=[],streamLookups=[];let loseCommandReceipt=true,loseStreamReceipts=2,tunnelOutcome='accepted';
 const id='a'.repeat(64),tasks=new Map(),commands=[],diagnostics=[];let number=0,hold=false,holdMutation=false,loseReceipt=true,malformed=false,engineId='engine',peer;
 const programs=new Map();
 const inspect={Id:id,Name:'/service-中文',Image:'sha256:'+'b'.repeat(64),Config:{Image:'demo:1',Env:['TOKEN=a=b'],Labels:{}},State:{Status:'running',Running:true,Health:{Status:'unhealthy',Log:[]}},Mounts:[],NetworkSettings:{Ports:{'80/tcp':[{HostIp:'0.0.0.0',HostPort:'8080'},{HostIp:'::',HostPort:'8080'}]},Networks:{}}};
@@ -37,7 +38,7 @@ const output=command=>{
   if(command.includes("'start'")||command.includes("'restart'")){inspect.State.Status='running';inspect.State.Running=true;}
   return id+'\n';
 };
-peer=pluginPeer(path.join(root,manifest.entry),async(method,p)=>{
+peer=pluginPeer(path.join(root,manifest.entry),withProcessFacts(async(method,p)=>{
   if(method==='session.program.prepare'){
     assert.deepEqual(p.expectedContext,context);
     assert.deepEqual(p.environment,environment);
@@ -45,7 +46,7 @@ peer=pluginPeer(path.join(root,manifest.entry),async(method,p)=>{
     if(p.program.checks.length===2)assert.match(p.program.checks[1].expectedStdout,/^[a-f0-9]{64}$/,'only a complete container ID can receive a container startup check');
     const command=p.program.argv.map(a=>"'"+a.replaceAll("'","'\\''")+"'").join(' ')+' checks='+JSON.stringify(p.program.checks);
     programs.set(command,p.program);
-    return {command,mode:p.mode,programOutput:p.mode==='terminal'?null:'startup-v1'};
+    return {command,length:command.length,mode:p.mode,programOutput:p.mode==='terminal'?null:'startup-v1'};
   }
   if(method==='session.environment.start'){
     const taskId=String(++number),bytes=Buffer.from(JSON.stringify({environment,values:{DOCKER_HOST:'',DOCKER_CONTEXT:'',DOCKER_CONFIG:''}}));
@@ -55,43 +56,43 @@ peer=pluginPeer(path.join(root,manifest.entry),async(method,p)=>{
   if(method==='commands.submit'){
     submissions.push(p);let receipt=tickets.get(p.requestId);
     if(!receipt){receipt={...(p.name==='network.tcpForward.ensure.v1'?{result:{version:1,outcome:tunnelOutcome,disposition:'created',ruleId:'rule',runId:'run',state:'starting'}}:{}),status:'pending',commandId:'command-'+p.requestId,viewId:'terminal-'+p.requestId};tickets.set(p.requestId,receipt);}
-    if(loseCommandReceipt){loseCommandReceipt=false;throw Object.assign(new Error('lost command receipt'),{code:-32003});}
+    if(loseCommandReceipt){loseCommandReceipt=false;throw Object.assign(new Error('lost command receipt'),{code:-32003,data:{dispatch:'unknown'}});}
     return receipt;
   }
   if(method==='commands.get'){const receipt=tickets.get(p.requestId);assert(receipt);return {...receipt,status:'completed'};}
   if(method==='settings.get')return {values:{refreshSeconds:'30',showLogMinimap:true}};
-  if(method==='session.state')return {state:'connected',context};
+  if(method==='session.target.describe')return {state:'connected',context,targetSource:'current',target:{name:'host',protocol:'ssh',host:'host',port:22,endpoint:'host:22',username:'ops'},closing:false,capabilities:['exec','files']};
   if(method==='logging.write'||method==='messages.publish'){diagnostics.push({method,...p});return {};}
   if(method==='ui.updateView')return {};
   if(method==='ui.openView')return {viewId:'opened'};
-  if(method==='session.stream.open'){
-    let old=streamRequests.find(r=>r.operationId===p.operationId);if(old){const {streamId,...original}=old;assert.deepEqual(p,original);}else{
-      const streamId='stream-'+(++number);old={...p,streamId};streamRequests.push(old);const pull=p.command.includes("'image' 'pull'");streams.set(streamId,{state:p.retention==='rolling'||pull&&holdPull?'running':'completed',finished:p.retention!=='rolling'&&!(pull&&holdPull),producedBytes:'100',earliestAvailableOffset:'0',...(pull&&streamConfirmed?{remoteExitConfirmed:true,exitCode:0}:{})});
+  if(method==='session.process.start'){
+    let old=streamRequests.find(r=>r.operationId===p.operationId);if(old){const {processId,...original}=old;assert.deepEqual(p,original);}else{
+      const processId='stream-'+(++number);old={...p,processId};streamRequests.push(old);const pull=p.command.includes("'image' 'pull'");streams.set(processId,{state:p.retention==='rolling'||pull&&holdPull?'running':'completed',finished:p.retention!=='rolling'&&!(pull&&holdPull),producedBytes:'100',earliestAvailableOffset:'0',...(pull&&streamConfirmed?{remoteExitConfirmed:true,exitCode:0}:{})});
     }
-    if(loseStreamReceipts>0){loseStreamReceipts--;throw Object.assign(new Error('lost stream receipt'),{code:-32003});}return {streamId:old.streamId,state:'running'};
+    if(loseStreamReceipts>0){loseStreamReceipts--;throw Object.assign(new Error('lost stream receipt'),{code:-32003,data:{dispatch:'unknown'}});}return {processId:old.processId,status:streams.get(old.processId)};
   }
-  if(method==='session.stream.lookup'){
-    streamLookups.push(p);const old=streamRequests.find(r=>r.operationId===p.operationId);if(!old)return {known:false};const {streamId,...original}=old;assert.deepEqual(p,original);return {known:true,streamId,status:streams.get(streamId)};
+  if(method==='session.process.lookup'){
+    streamLookups.push(p);const old=streamRequests.find(r=>r.operationId===p.operationId);if(!old)return {known:false};const {processId,...original}=old;assert.deepEqual(p,original);return {known:true,processId,status:streams.get(processId)};
   }
-  if(method==='session.stream.status'){assert(streams.has(p.streamId));return streams.get(p.streamId);}
-  if(method==='session.stream.close'){streams.set(p.streamId,{...streams.get(p.streamId),state:'cancelled',finished:true});return {accepted:true};}
-  if(method==='session.stream.release'){streams.delete(p.streamId);return {released:true};}
+  if(method==='session.process.status'){assert(streams.has(p.processId));return streams.get(p.processId);}
+  if(method==='session.process.cancel'){streams.set(p.processId,{...streams.get(p.processId),state:'cancelled',finished:true});return streams.get(p.processId);}
+  if(method==='session.process.release'){const status=streams.get(p.processId);streams.delete(p.processId);return {releaseRequested:true,resourceReleased:true,status};}
   if(method==='session.exec.start'){
     const old=[...tasks.values()].find(t=>t.operationId===p.operationId);if(old)return {taskId:old.id,state:'running'};
     const taskId=String(++number),bytes=Buffer.from(output(p.command));commands.push(p.command);tasks.set(taskId,{id:taskId,operationId:p.operationId,bytes,command:p.command});
-    if(loseReceipt&&p.command.includes("'stop'")){loseReceipt=false;throw Object.assign(new Error('Lost start receipt'),{code:-32003});}
+    if(loseReceipt&&p.command.includes("'stop'")){loseReceipt=false;throw Object.assign(new Error('Lost start receipt'),{code:-32003,data:{dispatch:'unknown'}});}
     return {taskId,state:'running'};
   }
   if(method==='session.exec.poll'){
     const t=tasks.get(p.taskId);assert(t);
-    if(hold||(holdMutation&&t.command.includes("'stop'")))return {state:'running',stdout:{dataBase64:'',nextOffset:'0'},stderr:{dataBase64:'',nextOffset:'0'},outputComplete:false};
+    if(hold||(holdMutation&&t.command.includes("'stop'")))return {state:'running',execSent:true,elapsedMs:1,outputLimitExceeded:false,exitCode:null,exitSignal:null,error:null,remoteExitConfirmed:false,stdout:{dataBase64:'',nextOffset:'0'},stderr:{dataBase64:'',nextOffset:'0'},outputComplete:false};
     const start=Number(p.stdoutOffset),end=Math.min(start+8192,t.bytes.length);
     const imageConflict=t.command.includes("'image' 'rm'");const stderr=imageConflict&&p.stderrOffset==='0'?Buffer.from('conflict: image referenced in multiple repositories'):Buffer.alloc(0);
-    return {state:'completed',stdout:{dataBase64:malformed ? 'Zg=a' : t.bytes.subarray(start,end).toString('base64'),nextOffset:String(end)},stderr:{dataBase64:stderr.toString('base64'),nextOffset:String(imageConflict?54:0)},outputComplete:end===t.bytes.length,remoteExitConfirmed:true,exitCode:imageConflict?1:0,error:null};
+    return {state:'completed',execSent:true,elapsedMs:1,outputLimitExceeded:false,exitSignal:null,stdout:{dataBase64:malformed ? 'Zg=a' : t.bytes.subarray(start,end).toString('base64'),nextOffset:String(end)},stderr:{dataBase64:stderr.toString('base64'),nextOffset:String(imageConflict?54:0)},outputComplete:end===t.bytes.length,remoteExitConfirmed:true,exitCode:imageConflict?1:0,error:null};
   }
   if(method==='session.exec.release'){tasks.delete(p.taskId);return {};}
   throw new Error('Unexpected core call: '+method);
-});
+}));
 const request=async(method,viewId,extra={})=>{
    if(method==='ui.event'&&['openTerminal','operate','tunnel.create','tunnel.reveal','openLogs'].includes(extra.data?.action)){
      const current=(await peer.request('ui.getView',{viewId,context})).data;
@@ -102,8 +103,8 @@ const request=async(method,viewId,extra={})=>{
 const state=id=>request('ui.getView',id).then(r=>r.data);
 const idle=id=>until(()=>state(id),s=>!s.busy&&(s.kind!=='browser'||s.state!=='ready'||!['loading','unloaded'].includes(s.indexes?.container?.phase)));
 try{
-  await assert.rejects(peer.request('initialize',{dataDirectory:directory,capabilities:[]}),/核心缺少/);
-  await peer.request('initialize',{dataDirectory:directory,capabilities});
+  await assert.rejects(peer.initialize({dataDirectory:directory,coreApiVersion:"1.0"}),/API/);
+  await peer.initialize({dataDirectory:directory});
   await request('ui.createView','browser',{viewType:'browser'});let browser=await idle('browser');assert.equal(browser.state,'ready');
   const initialPage=(await request('ui.event','browser',{data:{action:'browser.page',status:'abnormal',query:'中文'}})).data;
   assert(initialPage.nodes.some(n=>n.resource?.id===id));
@@ -242,8 +243,8 @@ try{
   await request('ui.event','browser',{data:{action:'refresh'}});await idle('browser');await load('network');await load(null,{kind:'network',id:systemNetwork});await request('ui.event','browser',{data:await resourceInput({kind:'network',id:systemNetwork})});browser=await idle('browser');assert.equal(browser.operation.state,'failed');assert(!commands.some(c=>c.includes("'network' 'rm'")),'system networks cannot be deleted');
   await request('ui.event','browser',{data:{action:'refresh'}});browser=await idle('browser');
   const pullInput=async(view,reference)=>{const s=await state(view);return {action:'pull.start',reference,engineId:s.engine.id,endpoint:s.endpoint,expectedContext:context,scopeEpoch:s.scopeEpoch,requestId:'pull-'+view+'-'+s.nextIntent,intentSequence:s.nextIntent};};
-  loseStreamReceipts=3;const pull=await pullInput('browser','public/demo');await request('ui.event','browser',{data:pull});await request('ui.event','browser',{data:pull});browser=await until(()=>state('browser'),s=>s.pull?.state==='unknown');assert.equal(streamRequests.filter(r=>r.command.includes("'image' 'pull'")).length,1,'lost pull receipt resolves original ticket');assert(streamLookups.some(r=>r.operationId.startsWith('pull-')));await request('ui.event','browser',{data:pull});assert.equal(streamRequests.filter(r=>r.command.includes("'image' 'pull'")).length,1);
-  streamConfirmed=true;const successfulPull=await pullInput('browser','public/demo:stable');await request('ui.event','browser',{data:successfulPull});browser=await until(()=>state('browser'),s=>s.pull?.state==='succeeded');assert(browser.pull.streamId);await idle('browser');
+  loseStreamReceipts=1;const pull=await pullInput('browser','public/demo');await request('ui.event','browser',{data:pull});await request('ui.event','browser',{data:pull});browser=await until(()=>state('browser'),s=>s.pull?.state==='unknown');assert.equal(streamRequests.filter(r=>r.command.includes("'image' 'pull'")).length,1,'lost pull receipt resolves original ticket');assert(streamLookups.some(r=>r.operationId.startsWith('pull-')));await request('ui.event','browser',{data:pull});assert.equal(streamRequests.filter(r=>r.command.includes("'image' 'pull'")).length,1);
+  streamConfirmed=true;const successfulPull=await pullInput('browser','public/demo:stable');await request('ui.event','browser',{data:successfulPull});browser=await until(()=>state('browser'),s=>s.pull?.state==='succeeded');assert(browser.pull.processId);await idle('browser');
   await request('ui.createView','browser2',{viewType:'browser'});await idle('browser2');await request('ui.createView','browser3',{viewType:'browser'});await idle('browser3');holdPull=true;streamConfirmed=false;
   await request('ui.event','browser',{data:await pullInput('browser','public/a')});await until(()=>state('browser'),s=>s.pull?.state==='running');await request('ui.event','browser2',{data:await pullInput('browser2','public/b')});await until(()=>state('browser2'),s=>s.pull?.state==='running');await assert.rejects(request('ui.event','browser3',{data:await pullInput('browser3','public/c')}),/两个镜像拉取/);
   await assert.rejects(request('ui.event','browser',{data:{action:'setEndpoint',endpoint:'unix:///run/other.sock'}}),/镜像拉取/);

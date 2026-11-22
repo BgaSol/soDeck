@@ -1,3 +1,4 @@
+import {fixtureBinary} from './cargo-fixture.mjs';
 // Actual DOM -> desktop API -> Rust catalog -> isolated local files. No server connections.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -12,7 +13,7 @@ import { recordTrace } from './ui-trace.mjs';
 const build = spawnSync("cargo", ["build", "--manifest-path", "src-tauri/Cargo.toml", "--features", "test-fixtures", "--bin", "catalog-fixture", "--locked"], { stdio: "inherit" });
 if (build.status !== 0) throw new Error("Catalog test bridge build failed");
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-ui-"));
-const executable = path.resolve(`src-tauri/target/debug/catalog-fixture${process.platform === "win32" ? ".exe" : ""}`);
+const executable = fixtureBinary('catalog-fixture');
 function startBridge() {
   const child = spawn(executable, [directory], { stdio: ["pipe", "pipe", "inherit"], windowsHide: true });
   const queue = [];

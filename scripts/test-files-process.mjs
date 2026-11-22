@@ -13,11 +13,11 @@ const operations = new Map(), mutations = [];
 let number = 0, losePoll = true, loseRelease = true;
 const peer = pluginPeer(executable, async (method, p) => {
   if (method === 'logging.write' || method === 'messages.publish') return {};
-  if (method !== 'files.request' && method !== 'files.operations') throw new Error('Unexpected call: '+method);
-  const action = method === 'files.operations' ? 'op.'+p.action : p.action;
+  if (!method.startsWith('files.')) throw new Error('Unexpected call: '+method);
+  const action = method === 'files.operations' ? 'operation.'+p.action : method.slice('files.'.length);
   if (action === 'open') return {id:'files'};
   if (action.startsWith('batch.')) return {};
-  if (action === 'op.start') {
+  if (action === 'operation.start') {
     const id = String(++number);
     const mutation = p.operation.kind === 'createEmpty';
     if (mutation) mutations.push(p.requestId);
@@ -25,25 +25,25 @@ const peer = pluginPeer(executable, async (method, p) => {
     operations.set(id,{id,state:'completed',result,requestId:p.requestId,mutation});
     return {id,state:'running'};
   }
-  if (action === 'op.poll' || action === 'op.lookup') {
-    const op = action === 'op.lookup' ? [...operations.values()].find(v=>v.requestId===p.requestId) : operations.get(p.operationId);
+  if (action === 'operation.poll' || action === 'operation.lookup') {
+    const op = action === 'operation.lookup' ? [...operations.values()].find(v=>v.requestId===p.requestId) : operations.get(p.operationId);
     assert(op, 'Original operation must still be available');
-    if (op.mutation && losePoll) throw Object.assign(new Error('Simulated connection interruption'),{code:-32003});
+    if (op.mutation && losePoll) throw Object.assign(new Error('Simulated connection interruption'),{code:-32003,data:{dispatch:'unknown'}});
     return op;
   }
-  if (action === 'op.release') {
+  if (action === 'operation.release') {
     const op=operations.get(p.operationId);operations.delete(p.operationId);
-    if (op?.mutation&&loseRelease) { loseRelease=false;throw Object.assign(new Error('Release reply lost'),{code:-32003}); }
+    if (op?.mutation&&loseRelease) { loseRelease=false;throw Object.assign(new Error('Release reply lost'),{code:-32003,data:{dispatch:'unknown'}}); }
     if (!op) throw Object.assign(new Error('Already released'),{code:-32003,data:{code:'expired'}});
     return {};
   }
-  if (action === 'op.cancel') return {};
+  if (action === 'operation.cancel') return {};
   throw new Error('Unexpected files action: '+action);
 });
 const request = (method, data={}) => peer.request(method,{viewId:'browser',viewType:'files',context,...data});
 const event = data => request('ui.event',{data}).then(r=>r.data);
 try {
-  await peer.request('initialize',{dataDirectory:directory,capabilities:['files.v1','files.directoryCursors.v1','files.operations.v1','files.operations.v2','files.localInputs.v1','files.editor.v1','viewData.v1','ui.workbench.v2','ui.openView.v1']});
+  await peer.initialize({dataDirectory:directory,});
   await request('ui.createView');
   const {batchId} = await event({action:'startBatch',parameters:{kind:'createEmpty',path:'/new.txt'}});
   const batch = await until(()=>event({action:'readTasks'}),r=>r.tasks.some(t=>t.id===batchId&&['failed','partial','needsReview'].includes(t.state)));

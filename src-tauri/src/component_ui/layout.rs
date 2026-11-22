@@ -405,17 +405,9 @@ impl AppCore {
         let mut preferences = ui.preferences.clone();
         for p in plugins.iter().filter(|p| p.status == PluginStatus::Running) {
             if let Some(declaration) = &p.manifest.ui {
-                let available = self
-                    .instances
-                    .lock()
-                    .unwrap()
-                    .get(&p.manifest.id)
-                    .is_some_and(|i| i.ui_actions_api.load(std::sync::atomic::Ordering::Acquire));
+                let available = true;
                 for a in &declaration.actions {
-                    let command_error = a
-                        .command
-                        .as_ref()
-                        .and_then(|name| self.command_provider(name).err());
+                    let command_error = self.command_provider(&a.command).err();
                     let available = available && command_error.is_none();
                     let key = format!("{}:{}", p.manifest.id, a.id);
                     ui.actions.insert(
@@ -459,7 +451,6 @@ impl AppCore {
                             plugin_instance_id: p.instance_id.clone().unwrap(),
                             entry: declaration.entry.clone(),
                             available: true,
-                            ui_api_version: declaration.api_version.clone(),
                             icon_url: crate::plugin_icons::url(&p.manifest, &d.icon),
                         },
                     );
@@ -572,10 +563,9 @@ impl AppCore {
                             if let Some(action) =
                                 ui.actions.get(&format!("{}:{action_id}", d.plugin_id))
                             {
-                                if let Some(name) = &action.definition.command {
-                                    startup_commands.push((window.clone(),json!({"op":"submit","expectedContext":context,"name":name,"requestId":format!("startup:{}",d.definition.id),"startupDefinition":d.key,"payload":null})));
-                                    continue;
-                                }
+                                let name = &action.definition.command;
+                                startup_commands.push((window.clone(),json!({"op":"submit","expectedContext":context,"name":name,"requestId":format!("startup:{}",d.definition.id),"startupDefinition":d.key,"payload":null})));
+                                continue;
                             }
                             continue;
                         }
@@ -783,7 +773,13 @@ impl AppCore {
                         .map(|id| format!("{}:{id}", d.plugin_id))
                 });
             if let Some(key) = binding {
-                return self.ui_invoke_action(window,&json!({"context":context,"requestId":action["requestId"],"actionKey":key,"groupId":action["groupId"],"data":action["params"]}));
+                let command = self
+                    .ui_state()
+                    .actions
+                    .get(&key)
+                    .map(|a| a.definition.command.clone())
+                    .ok_or("行为没有登记命令")?;
+                return self.command_host_request(window,&json!({"op":"submit","name":command,"context":context,"requestId":action["requestId"],"actionKey":key,"groupId":action["groupId"],"payload":action["params"]})).map_err(|e|e.to_string());
             }
         }
         if action["op"] == "moveTool" {

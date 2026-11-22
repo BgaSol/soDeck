@@ -41,7 +41,7 @@
       this.showHidden = true;
       this.navigationEpoch=0;this.contextEpoch=0;this.mounts=new Map();this.disposed=false;
       host.className = 'file-browser';
-      const pathbar = document.createElement('div'); pathbar.className = 'pathbar';
+      const pathbar = document.createElement('div'); pathbar.className = 'pathbar sd-control';
       this.input = document.createElement('input'); this.input.setAttribute('aria-label', '远端路径'); this.input.placeholder = '输入路径并回车定位'; this.input.disabled = true;
       this.input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); void this.run(() => this.locate(this.input.value)); } });
       pathbar.append(icon('folder'), this.input);
@@ -130,7 +130,7 @@
       const context=this.contextEpoch;
       const work = (async () => {
         try {
-          const result = await this.data('list', { path: n.path, independent: true, next, ...(n.cursor ? { cursor: n.cursor } : {}) });
+          const result = await this.data('list', { path: n.path,  next, ...(n.cursor ? { cursor: n.cursor } : {}) });
           if(context!==this.contextEpoch||this.disposed){if(result.cursor)void this.data('closeDirectory',{cursor:result.cursor}).catch(()=>{});return;}
           if (!next) n.children = [];
           for (const entry of result.entries) {

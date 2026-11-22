@@ -31,12 +31,12 @@ fn dispatch(
         views.remove(id);
         return Ok(json!({}));
     }
-    if matches!(method, "ui.mount" | "ui.createView") && !views.contains_key(id) {
+    if method == "ui.createView" && !views.contains_key(id) {
         let kind = p["viewType"].as_str().ok_or("缺少视图类型")?;
         let title = match kind {
             "files" => "文件".into(),
             "forwarding" => "网络转发".into(),
-            "terminal" => {
+            "terminal" | "alternative" => {
                 *serial += 1;
                 format!("终端 {}", serial)
             }
@@ -97,7 +97,7 @@ fn dispatch(
             }
             v.saved = v.text.clone();
         }
-        "ui.mount" | "ui.getView" | "ui.createView" | "ui.beforeClose" => (),
+        "ui.getView" | "ui.createView" | "ui.beforeClose" => (),
         _ => return Err("未知插件 UI 方法".into()),
     }
     Ok(
@@ -113,10 +113,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let frame: Value = serde_json::from_str(&line?)?;
         let result = match frame["method"].as_str() {
             Some("initialize") => {
-                Ok(json!({"apiVersion":"1","uiApiVersion":"2","uiActionsApiVersion":"1"}))
+                let manifest: Value = serde_json::from_slice(&std::fs::read("plugin.json")?)?;
+                Ok(json!({"apiVersion":"2.0","commandHandlers":manifest["commands"]["handlers"]}))
             }
-            Some("ui.action") => {
-                if frame["params"]["data"]["none"] == true {
+            Some("commands.handle") => {
+                if frame["params"]["payload"]["none"] == true {
                     send(json!({"jsonrpc":"2.0","id":frame["id"],"result":{}}))?;
                     continue;
                 }
@@ -124,8 +125,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let id = format!("open-{sequence}");
                 pending.insert(id.clone(), frame["id"].clone());
                 let p = &frame["params"];
-                let open = json!({"jsonrpc":"2.0","id":id,"method":"ui.openView","params":{"expectedContext":p["context"],"requestId":p["requestId"],"viewType":"terminal","params":p["data"]}});
-                let delay = p["data"]["delayMs"].as_u64().unwrap_or(0);
+                let open = json!({"jsonrpc":"2.0","id":id,"method":"ui.openView","params":{"expectedContext":p["context"],"requestId":format!("open:{}",p["commandId"].as_str().unwrap()),"commandId":p["commandId"],"viewType":if p["name"]=="fixture.alternative.v1" {"alternative"} else {"terminal"},"params":p["payload"]}});
+                let delay = p["payload"]["delayMs"].as_u64().unwrap_or(0);
                 std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_millis(delay));
                     let _ = send(open);

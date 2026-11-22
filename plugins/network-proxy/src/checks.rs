@@ -4,6 +4,7 @@ use socker::socks5::{
     Address, AuthenticationMethod, ClientGreeting, CommandType, Request, Response, ServerChoice,
     VERSION,
 };
+use sodeck_plugin_client::protocol::requests as api;
 use sodeck_plugin_client::Client;
 use std::{
     io::{Read, Write},
@@ -26,12 +27,18 @@ pub fn check(
                 .unwrap()
                 .as_nanos()
         );
-        c.call(
-            "net.listener.probe",
+        serde_json::from_value::<api::ListenerProbe>(
             json!({"listenerId":listener,"operationId":probe}),
-        )?;
+        )
+        .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+        .and_then(|params| c.request(api::call::ListenerProbe(params)))
+        .map_err(|e| e.message)?;
         while began.elapsed() < Duration::from_secs(11) {
-            let s = c.call("net.listener.snapshot", json!({"listenerId":listener}))?;
+            let s = c
+                .request(api::call::ListenerSnapshot(api::Listener {
+                    listener_id: listener.to_string(),
+                }))
+                .map_err(|e| e.message)?;
             if s["state"] != "running" {
                 return Err("隧道已停止，检查未完成".into());
             }
@@ -45,13 +52,23 @@ pub fn check(
                     // Wait until the plugin has handed off both streams before
                     // closing the probe, so cleanup cannot race its splice.
                     Some("relaying" | "closed") => {
-                        let _ = c.call("net.close", json!({"id":client["id"]}));
+                        let _ = serde_json::from_value::<api::Resource>(json!({"id":client["id"]}))
+                            .map_err(|_| {
+                                sodeck_plugin_client::RpcError::invalid("核心请求参数无效")
+                            })
+                            .and_then(|params| c.request(api::call::StreamClose(params)))
+                            .map_err(|e| e.message);
                         return Ok(
                             json!({"ok":true,"message":"目标 TCP 可达","listenerId":listener}),
                         );
                     }
                     Some("failed") => {
-                        let _ = c.call("net.close", json!({"id":client["id"]}));
+                        let _ = serde_json::from_value::<api::Resource>(json!({"id":client["id"]}))
+                            .map_err(|_| {
+                                sodeck_plugin_client::RpcError::invalid("核心请求参数无效")
+                            })
+                            .and_then(|params| c.request(api::call::StreamClose(params)))
+                            .map_err(|e| e.message);
                         return Err(client["target"]["error"]
                             .as_str()
                             .unwrap_or("目标不可达")

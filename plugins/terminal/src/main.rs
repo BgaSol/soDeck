@@ -1,106 +1,60 @@
 use creation::{CreateParams, DirectoryIntegration, Launch};
 use serde_json::{json, Value};
+use sodeck_plugin_client::protocol::requests as api;
+use sodeck_plugin_client::RpcError;
 use std::{
     collections::HashMap,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex, OnceLock,
-    },
+    sync::{Arc, Mutex, OnceLock},
 };
 mod creation;
 mod integration;
 
-fn resolve(
-    client: &sodeck_plugin_client::Client,
-    input: &Value,
-    can_command: bool,
-) -> Result<CreateParams, String> {
-    CreateParams::parse(
-        input,
-        || {
-            client
-                .call("settings.get", json!({"pageId":"appearance"}))
-                .unwrap_or(Value::Null)["values"]["directoryMode"]
-                .as_str()
-                .unwrap_or("auto")
-                .into()
-        },
-        can_command,
-    )
-}
-fn create(
-    client: &sodeck_plugin_client::Client,
-    context: &Value,
-    request: &Value,
-    input: &Value,
-    can_command: bool,
-) -> Result<Value, String> {
-    let params = resolve(client, input, can_command)?;
-    client.call("ui.openView", json!({"expectedContext":context,"requestId":request,"viewType":"terminal","params":params.value()}))
+fn resolve(client: &sodeck_plugin_client::Client, input: &Value) -> Result<CreateParams, RpcError> {
+    CreateParams::parse(input, || {
+        let settings = client.request(api::call::Settings(api::Page {
+            page_id: "appearance".to_string(),
+        }))?;
+        settings["values"]["directoryMode"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or("终端目录设置无效".into())
+    })
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    type Slot = Arc<OnceLock<Result<TerminalView, String>>>;
+    type Slot = Arc<OnceLock<Result<TerminalView, RpcError>>>;
     let terminals = Mutex::new(HashMap::<String, Slot>::new());
     let settings = sodeck_plugin_client::settings::SettingsCache::default();
-    let can_command = AtomicBool::new(false);
-    let can_integrate = AtomicBool::new(false);
-    let can_open = AtomicBool::new(false);
-    let commands_api = AtomicBool::new(false);
     let tickets = Mutex::new(HashMap::<String, OpenIntent>::new());
-    sodeck_plugin_client::run_with_commands(&["terminal.open.v1"], move |client, method, p| {
+    sodeck_plugin_client::run_with_commands(&["terminal.open.v1"], move |client, callback| {
+        let (method, p) = callback.into_parts();
         if method == "initialize" {
-            let supports = |wanted: &str| {
-                p["capabilities"]
-                    .as_array()
-                    .is_some_and(|c| c.iter().any(|v| v == wanted))
-            };
-            can_command.store(supports("terminal.launch.v1"), Ordering::Relaxed);
-            can_integrate.store(
-                supports("terminal.launch.v1") && supports("session.exec.v1"),
-                Ordering::Relaxed,
-            );
-            can_open.store(supports("ui.openView.v1"), Ordering::Relaxed);
-            commands_api.store(supports("commands.v1"), Ordering::Relaxed);
-            for capability in ["terminal.v1", "viewData.v1", "terminal.history.v1"] {
-                if !supports(capability) {
-                    return Err(format!("核心缺少 {capability}，请先升级 SoDeck").into());
-                }
-            }
-            return Ok(
-                json!({"apiVersion":"1","settingsApiVersion":"1","uiApiVersion":"2","uiActionsApiVersion":"1"}),
-            );
+            return Ok(json!({}));
         }
         if method == "settings.changed" {
             return settings.changed(&p, &["appearance"]).map_err(Into::into);
         }
         if method == "commands.handle" {
             let command = p["commandId"].as_str().ok_or("缺少 commandId")?;
-            let params = resolve(client, &p["payload"], can_command.load(Ordering::Relaxed))?;
-            return client.call_detailed("ui.openView",json!({"expectedContext":p["context"],"commandId":command,"requestId":format!("open:{command}"),"viewType":"terminal","params":params.value()}));
+            let params = resolve(client, &p["payload"])?;
+            let opened = client.request(api::call::OpenView(api::OpenView {
+                expected_context: serde_json::from_value(p["context"].clone())
+                    .map_err(|_| RpcError::invalid("终端上下文无效"))?,
+                command_id: Some(command.into()),
+                request_id: format!("open:{command}"),
+                view_type: "terminal".into(),
+                params: Some(params.value()),
+                source_view_id: None,
+                resource_key: None,
+            }))?;
+            return Ok(json!({"viewId":opened.view_id}));
         }
-        if method == "ui.action" {
-            if p["actionId"] != "new-terminal" {
-                return Err("未知终端行为".into());
-            }
-            if !can_open.load(Ordering::Relaxed) {
-                return Err("核心缺少 ui.openView.v1".into());
-            }
-            return create(
-                client,
-                &p["context"],
-                &p["requestId"],
-                &p["data"],
-                can_command.load(Ordering::Relaxed),
-            )
-            .map_err(Into::into);
-        }
+
         let view = p["viewId"].as_str().ok_or("缺少 viewId")?;
         if method == "ui.event"
             && matches!(
                 p["data"]["action"].as_str(),
                 Some("createTerminal" | "terminalCommandStatus")
             )
-            && commands_api.load(Ordering::Relaxed)
         {
             let ticket = {
                 let mut all = tickets.lock().unwrap();
@@ -163,25 +117,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             return Ok(json!({"data":result}));
         }
-        if method == "ui.event" && p["data"]["action"] == "createTerminal" {
-            if !can_open.load(Ordering::Relaxed) {
-                return Err("核心缺少 ui.openView.v1".into());
-            }
-            return create(
-                client,
-                &p["context"],
-                &p["data"]["requestId"],
-                &p["data"]["params"],
-                can_command.load(Ordering::Relaxed),
-            )
-            .map(|result| json!({"data":result}))
-            .map_err(Into::into);
-        }
+
         if method == "ui.disposeView" {
             tickets.lock().unwrap().remove(view);
             let slot = terminals.lock().unwrap().remove(view);
             if let Some(Ok(terminal)) = slot.as_ref().and_then(|slot| slot.get()) {
-                client.call("terminal.close", json!({"id":terminal.id}))?;
+                client.request(api::call::TerminalClose(api::Resource {
+                    id: terminal.id.to_string(),
+                }))?;
             }
             return Ok(json!({}));
         }
@@ -198,7 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .as_ref()
                 .map_err(Clone::clone)?;
             return Ok(
-                json!({"data":{"streamId":terminal.id,"title":terminal.title,"openedContext":terminal.context,"integration":terminal.integration,"createParams":terminal.create_params,"commandsApi":commands_api.load(Ordering::Relaxed),"commandPending":tickets.lock().unwrap().get(view).is_some_and(|t|t.result.as_ref().is_none_or(|r|r["status"]=="pending"))},"metadata":{"title":terminal.title,"dirty":false,"busy":false}}),
+                json!({"data":{"streamId":terminal.id,"title":terminal.title,"openedContext":terminal.context,"integration":terminal.integration,"createParams":terminal.create_params,"commandPending":tickets.lock().unwrap().get(view).is_some_and(|t|t.result.as_ref().is_none_or(|r|r["status"]=="pending"))},"metadata":{"title":terminal.title,"dirty":false,"busy":false}}),
             );
         }
         if method == "ui.createView" {
@@ -214,26 +157,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             let terminal = slot
                 .get_or_init(|| {
-                    let resolved =
-                        resolve(client, &p["params"], can_command.load(Ordering::Relaxed))?;
+                    let resolved = resolve(client, &p["params"])?;
                     let mut params = json!({"viewId":view,"cols":80,"rows":24});
+                    let reading_auto = if resolved.launch == Launch::LoginShell && resolved.directory != DirectoryIntegration::Auto {
+                        let settings = client.request(api::call::Settings(api::Page { page_id: "appearance".into() }))?;
+                        settings["values"]["readingMode"].as_str().ok_or("终端阅读设置无效")? == "auto"
+                    } else { true };
                     let integration = match &resolved.launch {
                         Launch::Command(command) => {
                             params["command"] = json!(command);
                             json!({"mode":"off"})
                         }
                         Launch::LoginShell
-                            if resolved.directory != DirectoryIntegration::Auto
-                                && client
-                                    .call("settings.get", json!({"pageId":"appearance"}))
-                                    .unwrap_or(Value::Null)["values"]["readingMode"]
-                                    .as_str()
-                                    .is_some_and(|v| v != "auto") =>
+                            if !reading_auto =>
                         {
                             json!({"mode":resolved.directory.name()})
-                        }
-                        Launch::LoginShell if !can_integrate.load(Ordering::Relaxed) => {
-                            json!({"mode":"unavailable","reasonCode":"old-core"})
                         }
                         Launch::LoginShell => {
                             match integration::prepare(client, view, &p["context"]) {
@@ -245,13 +183,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                     state
                                 }
-                                Err(reason) => json!({"mode":"unavailable","reasonCode":reason}),
+                                Err(reason) => json!({"mode":if resolved.directory==DirectoryIntegration::Auto {"unavailable"} else {resolved.directory.name()},"reasonCode":reason}),
                             }
                         }
                     };
-                    let result = client.call("terminal.open", params)?;
+                    let result = serde_json::from_value::<api::TerminalOpen>(params)
+                        .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+                        .and_then(|params| client.request(api::call::TerminalOpen(params)))?;
                     Ok(TerminalView {
-                        id: result["id"].as_str().ok_or("核心没有返回终端 ID")?.into(),
+                        id: result.id,
                         title: resolved
                             .title
                             .clone()
@@ -269,11 +209,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .get(view)
                 .is_some_and(|current| Arc::ptr_eq(current, &slot))
             {
-                let _ = client.call("terminal.close", json!({"id":terminal.id}));
+                let _ = client.request(api::call::TerminalClose(api::Resource {
+                    id: terminal.id.to_string(),
+                }));
                 return Err("终端页面已关闭".into());
             }
             return Ok(
-                json!({"data":{"streamId":terminal.id,"title":terminal.title,"openedContext":terminal.context,"integration":terminal.integration,"createParams":terminal.create_params,"commandsApi":commands_api.load(Ordering::Relaxed),"commandPending":tickets.lock().unwrap().get(view).is_some_and(|t|t.result.as_ref().is_none_or(|r|r["status"]=="pending"))},"metadata":{"title":terminal.title,"dirty":false,"busy":false}}),
+                json!({"data":{"streamId":terminal.id,"title":terminal.title,"openedContext":terminal.context,"integration":terminal.integration,"createParams":terminal.create_params,"commandPending":tickets.lock().unwrap().get(view).is_some_and(|t|t.result.as_ref().is_none_or(|r|r["status"]=="pending"))},"metadata":{"title":terminal.title,"dirty":false,"busy":false}}),
             );
         }
         match method {

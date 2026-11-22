@@ -9,18 +9,16 @@ function validRecord(r){
 }
 export class SharedState {
   constructor(mount){
-    this.context=mount.context;this.available=mount.capabilities?.sharedState===1;this.watches=new Map();this.owned=new Set();this.waiters=[];this.disposed=false;
+    this.context=mount.context;this.watches=new Map();this.owned=new Set();this.waiters=[];this.disposed=false;
     this.ready=()=>{for(const resolve of this.waiters.splice(0))resolve();};
     this.changed=event=>{const frame=event.detail.data;this.watches.get(frame?.clientSubscriptionId)?.receive(frame);};
     addEventListener('sodeck:surfaceReady',this.ready);addEventListener('sodeck:stateChanged',this.changed);
   }
   async request(op,input={}){
-    if(this.disposed||!this.available)throw Object.assign(new Error('共享状态不可用'),{code:'unsupported'});
+    if(this.disposed)throw Object.assign(new Error('共享状态挂载已结束'),{code:'surfaceClosed'});
     if(!surfaceReady)await new Promise(resolve=>this.waiters.push(resolve));
     if(this.disposed)throw new Error('共享状态挂载已结束');
-    const envelope=await sodeck.request('state',{op,...input,expectedContext:this.context});
-    if(envelope.error)throw Object.assign(new Error(envelope.error.message),envelope.error);
-    return envelope.result;
+    return sodeck.request('state',{op,...input,expectedContext:this.context});
   }
   watch(filter,change){const watch=new Watch(this,filter,change);this.owned.add(watch);watch.start();return watch;}
   dispose(){for(const watch of [...this.owned])watch.dispose();this.disposed=true;this.ready();removeEventListener('sodeck:surfaceReady',this.ready);removeEventListener('sodeck:stateChanged',this.changed);}
@@ -85,7 +83,7 @@ class Watch {
     if(this.disposed)return;
     ++this.epoch;this.active=false;this.batch=undefined;this.records.clear();this.notify();clearTimeout(this.leaseTimer);clearTimeout(this.renewTimer);clearTimeout(this.retryTimer);
     const id=this.clientId;this.client.watches.delete(id);void this.client.request('unsubscribe',{clientSubscriptionId:id}).catch(()=>{});
-    if(!['staleContext','scopeClosed','sourceStopped','unsupported'].includes(error.code))this.retryTimer=setTimeout(()=>this.start(),Math.min(5000,1000*2**this.retry++));
+    if(error.code!=='surfaceClosed'&&!['staleContext','scopeClosed','sourceStopped'].includes(error.data?.code))this.retryTimer=setTimeout(()=>this.start(),Math.min(5000,1000*2**this.retry++));
   }
   dispose(){if(this.disposed)return;this.disposed=true;++this.epoch;clearTimeout(this.leaseTimer);clearTimeout(this.renewTimer);clearTimeout(this.retryTimer);this.client.owned.delete(this);this.client.watches.delete(this.clientId);void this.client.request('unsubscribe',{clientSubscriptionId:this.clientId}).catch(()=>{});}
 }

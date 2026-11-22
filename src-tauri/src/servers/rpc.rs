@@ -1,46 +1,9 @@
 use super::{
-    change::{CatalogError, RouteInput, WriteAuthentication},
+    change::{AuthInputExt, CatalogError},
     *,
 };
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Create {
-    catalog_revision: String,
-    server: NewServer,
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Update {
-    catalog_revision: String,
-    server_id: String,
-    patch: ServerPatch,
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Delete {
-    catalog_revision: String,
-    server_id: String,
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct NewServer {
-    #[serde(default)]
-    name: String,
-    host: String,
-    #[serde(default = "ssh_port")]
-    port: u16,
-    username: String,
-    #[serde(default)]
-    tag_ids: Vec<String>,
-    #[serde(default)]
-    route: Vec<RouteInput>,
-    #[serde(default)]
-    authentication: Option<WriteAuthentication>,
-}
-fn ssh_port() -> u16 {
-    22
-}
+use sodeck_plugin_protocol::servers::{Create, Delete, Update};
 fn revision(s: &str) -> Result<u64, CatalogError> {
     if s.is_empty() || s.len() > 20 || !s.bytes().all(|c| c.is_ascii_digit()) {
         return Err(CatalogError::new(
@@ -158,7 +121,7 @@ impl AppCore {
                             username: s.username,
                             tag_ids: s.tag_ids,
                             new_tag_names: vec![],
-                            route: s.route.into_iter().map(RouteInput::step).collect(),
+                            route: s.route.into_iter().map(RouteStep::from).collect(),
                             authentication,
                         },
                     },

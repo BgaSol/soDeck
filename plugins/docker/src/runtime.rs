@@ -9,6 +9,7 @@ use crate::{
     resources::{self, Kind, ResourceRef},
 };
 use serde_json::{json, Value};
+use sodeck_plugin_client::protocol::requests as api;
 use sodeck_plugin_client::Client;
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -1141,9 +1142,12 @@ fn execute_prepared(
     prepared.apply(&mut params)?;
     let mut task = None;
     for _ in 0..3 {
-        match client.call_detailed("session.exec.start", params.clone()) {
+        match serde_json::from_value::<api::ExecStart>(params.clone())
+            .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+            .and_then(|params| client.request(api::call::ExecStart(params)))
+        {
             Ok(result) => {
-                task = result["taskId"].as_str().map(str::to_owned);
+                task = Some(result.task_id);
                 break;
             }
             Err(error) if error.code == -32003 => continue,
@@ -1173,46 +1177,41 @@ fn wait_exec(
             if !alive(app, job, client) || Instant::now() > end {
                 return Err("本地等待已取消或超时；已发送操作的结果未确认".into());
             }
-            let r = match client.call_detailed(
-                "session.exec.poll",
-                json!({"taskId":task,"stdoutOffset":a,"stderrOffset":b}),
-            ) {
+            let r = match client.request(api::call::ExecPoll(api::ExecPoll {
+                task_id: task.to_string(),
+                stdout_offset: a.to_string(),
+                stderr_offset: b.to_string(),
+            })) {
                 Ok(r) => r,
                 Err(e) if e.code == -32003 => continue,
                 Err(e) => return Err(e.message),
             };
-            let out = sodeck_plugin_client::encoding::unbase64(
-                r["stdout"]["dataBase64"].as_str().ok_or("缺少 stdout")?,
-            )
-            .map_err(|_| "核心输出编码无效")?;
-            let err = sodeck_plugin_client::encoding::unbase64(
-                r["stderr"]["dataBase64"].as_str().ok_or("缺少 stderr")?,
-            )
-            .map_err(|_| "核心输出编码无效")?;
+            let out = sodeck_plugin_client::encoding::unbase64(&r.stdout.data_base64)
+                .map_err(|_| "核心输出编码无效")?;
+            let err = sodeck_plugin_client::encoding::unbase64(&r.stderr.data_base64)
+                .map_err(|_| "核心输出编码无效")?;
             if stdout.len() + stderr.len() + out.len() + err.len() > budget {
                 return Err("命令输出超过本地预算".into());
             }
             stdout.extend(out);
             stderr.extend(err);
-            a = r["stdout"]["nextOffset"]
-                .as_str()
-                .ok_or("输出偏移无效")?
-                .into();
-            b = r["stderr"]["nextOffset"]
-                .as_str()
-                .ok_or("输出偏移无效")?
-                .into();
-            if r["outputComplete"] == true {
+            a = r.stdout.next_offset.clone();
+            b = r.stderr.next_offset.clone();
+            if r.output_complete {
                 return Ok(Exec {
                     bytes: stdout,
                     stderr,
-                    response: r,
+                    response: json!(r),
                 });
             }
             std::thread::sleep(Duration::from_millis(50));
         }
     })();
-    let _ = client.call("session.exec.release", json!({"taskId":task}));
+    let _ = client
+        .request(api::call::ExecRelease(api::Task {
+            task_id: task.to_string(),
+        }))
+        .map_err(|e| e.message);
     result
 }
 fn remaining(job: &Job) -> Result<u64, String> {
@@ -1228,8 +1227,15 @@ fn remaining(job: &Job) -> Result<u64, String> {
     }
 }
 fn discover_target(app: &Shared, job: &Job, client: &Client) -> Result<Snapshot, String> {
-    let state = client.call("session.state", json!({"viewId":job.view}))?;
-    if state["state"] != "connected" || state["context"] != job.context || state["closing"] == true
+    let state = serde_json::from_value::<api::ViewContext>(
+        json!({"viewId":job.view,"expectedContext":job.context}),
+    )
+    .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+    .and_then(|params| client.request(api::call::Target(params)))
+    .map_err(|e| e.message)?;
+    if state.state != sodeck_plugin_client::protocol::replies::ConnectionState::Connected
+        || json!(state.context) != job.context
+        || state.closing
     {
         return Err("服务器已断开或连接代次改变，请重新连接并刷新".into());
     }
@@ -1260,13 +1266,7 @@ fn discover_target(app: &Shared, job: &Job, client: &Client) -> Result<Snapshot,
     )
     .map_err(|e| e.message)?;
     drop(guard);
-    let environment_result = wait_exec(
-        app,
-        &probe,
-        client,
-        reply["taskId"].as_str().ok_or("核心未返回探测任务")?,
-        16 * 1024,
-    )?;
+    let environment_result = wait_exec(app, &probe, client, &reply.task_id, 16 * 1024)?;
     if environment_result.response["state"] != "completed"
         || environment_result.response["remoteExitConfirmed"] != true
     {
@@ -1513,14 +1513,13 @@ pub fn open_stream(
         json!({"viewId":view,"expectedContext":target.context,"sequence":v.command_sequence().to_string(),"operationId":format!("{prefix}-{}-{}",v.epoch,v.command_sequence()),"maxOutputBytes":budget,"retention":if fixed{"fixed"}else{"rolling"}})
     };
     prepared.apply(&mut params)?;
-    for _ in 0..3 {
-        match client.call_detailed("session.stream.open", params.clone()) {
-            Ok(r) => return Ok((params, Some(r))),
-            Err(e) if e.code == -32003 => {}
-            Err(e) => return Err(e.message),
-        }
+    let request: sodeck_plugin_client::protocol::session::ProcessStart =
+        serde_json::from_value(params.clone()).map_err(|_| "进程启动参数无效")?;
+    match client.request(api::call::ProcessStart(request)) {
+        Ok(response) => Ok((params, Some(json!(response)))),
+        Err(error) if error.data["dispatch"] == "unknown" => Ok((params, None)),
+        Err(error) => Err(error.message),
     }
-    Ok((params, None))
 }
 fn inspect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
     let out = checked(execute(
@@ -1594,8 +1593,15 @@ fn collaboration_request(app: &Shared, job: &Job, client: &Client) -> Result<Val
     collaboration::dispatch(client, &ticket, work.submit)
 }
 fn collect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
-    let session = client.call("session.state", json!({"viewId":job.view}))?;
-    if session["state"] != "connected" || session["context"] != job.context {
+    let session = serde_json::from_value::<api::ViewContext>(
+        json!({"viewId":job.view,"expectedContext":job.context}),
+    )
+    .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+    .and_then(|params| client.request(api::call::Target(params)))
+    .map_err(|e| e.message)?;
+    if session.state != sodeck_plugin_client::protocol::replies::ConnectionState::Connected
+        || json!(session.context) != job.context
+    {
         return Err("服务器连接已断开或代次改变，请重新连接并刷新".into());
     }
     let version = commands::object(&checked(execute(
@@ -2477,9 +2483,9 @@ pub fn start(app: Shared, client: Client) {
                     };
                     let state = operation["state"].as_str().unwrap_or("unknown");
                     let fields = json!({"viewId":job.view,"serverId":job.context["serverId"],"containerId":job.container,"resource":job.resource,"engineId":job.engine,"action":job.action,"result":state});
-                    let _ = client.call("logging.write", json!({"level":if ["failed","unknown"].contains(&state){"warn"}else{"info"},"message":"Docker 资源操作完成","fields":fields}));
+                    let _ = serde_json::from_value::<api::Log>(json!({"level":if ["failed","unknown"].contains(&state){"warn"}else{"info"},"message":"Docker 资源操作完成","fields":fields})).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| client.request(api::call::Log(params))).map_err(|e|e.message);
                     if ["failed", "unknown"].contains(&state) {
-                        let _ = client.call("messages.publish", json!({"title":"Docker 资源操作未完成","body":format!("{} · {}：请在 Docker 资源树查看结果并刷新状态",commands::operation_name(job.action.as_str()),job.container.get(..12).unwrap_or(&job.container)),"level":"warning","notify":false}));
+                        let _ = serde_json::from_value::<api::Message>(json!({"title":"Docker 资源操作未完成","body":format!("{} · {}：请在 Docker 资源树查看结果并刷新状态",commands::operation_name(job.action.as_str()),job.container.get(..12).unwrap_or(&job.container)),"level":"warning","notify":false})).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| client.request(api::call::Message(params))).map_err(|e|e.message);
                     }
                 }
                 let removed = ["remove", "resource.remove"].contains(&job.action.as_str())
@@ -2636,7 +2642,10 @@ pub fn start(app: Shared, client: Client) {
                     a.repage(&job.view);
                 }
                 if let Some(metadata) = metadata {
-                    let _ = client.call("ui.updateView", metadata);
+                    let _ = serde_json::from_value::<api::UpdateView>(metadata)
+                        .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+                        .and_then(|params| client.request(api::call::UpdateView(params)))
+                        .map_err(|e| e.message);
                 }
             } else {
                 std::thread::sleep(Duration::from_millis(100));

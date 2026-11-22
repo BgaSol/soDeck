@@ -1,4 +1,4 @@
-import {SharedState} from './state.js';
+import {SharedState} from './sdk/state.js';
 const serviceTopic='network.tunnelService.v1',rulesTopic='network.tunnelRules.v1';
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const address=value=>value?.host&&value.port?`${value.host.includes(':')?'['+value.host+']':value.host}:${value.port}`:'';
@@ -19,16 +19,16 @@ export class PortController{
   enabled(value){this.inputEnabled=value;if(!value)this.unwatch();else if(this.show)this.watch();this.render();}
   mount(mount){this.dispose();this.mountData=mount;this.inputEnabled=false;this.show=false;this.rows=[];this.snapshot=null;this.root.hidden=true;this.epoch++;this.selected.clear();this.message='';}
   update(rows,snapshot,show){this.rows=rows||[];this.snapshot=snapshot;this.root.hidden=!show;this.show=show;if(show)this.watch();else this.unwatch();this.render();}
-  watch(){if(this.client||!this.mountData||!this.inputEnabled)return;const epoch=this.epoch;this.client=new SharedState(this.mountData);this.supported=this.client.available;
-    if(this.supported)this.subscription=this.client.watch({topics:[serviceTopic,rulesTopic]},projection=>{if(epoch!==this.epoch||!this.show)return;this.projection=projection;const records=projection?.records?.filter(r=>r.present&&r.producer.kind==='plugin'&&r.producer.pluginId==='sodeck.network-proxy'&&r.value?.version===1)||[];const providers=records.filter(r=>r.topic===serviceTopic&&r.key==='current');this.provider=providers.length===1?providers[0]:null;const producer=this.provider&&JSON.stringify(this.provider.producer);this.records=records.filter(r=>r.topic===rulesTopic&&JSON.stringify(r.producer)===producer).map(r=>r.value);this.render();});
+  watch(){if(this.client||!this.mountData||!this.inputEnabled)return;const epoch=this.epoch;this.client=new SharedState(this.mountData);
+    this.subscription=this.client.watch({topics:[serviceTopic,rulesTopic]},projection=>{if(epoch!==this.epoch||!this.show)return;this.projection=projection;const records=projection?.records?.filter(r=>r.present&&r.producer.kind==='plugin'&&r.producer.pluginId==='sodeck.network-proxy'&&r.value?.version===1)||[];const providers=records.filter(r=>r.topic===serviceTopic&&r.key==='current');this.provider=providers.length===1?providers[0]:null;const producer=this.provider&&JSON.stringify(this.provider.producer);this.records=records.filter(r=>r.topic===rulesTopic&&JSON.stringify(r.producer)===producer).map(r=>r.value);this.render();});
     this.timer=setInterval(()=>{const ready=this.available();if(ready!==this.lastReady){this.lastReady=ready;this.render();}},1000);
   }
-  available(){return !!(this.supported&&this.provider?.value.ready&&this.provider.value.publishState==='synced'&&this.projection?.scope.connected&&!this.projection.scope.frozen&&Date.now()-this.provider.value.observedAt<15000);}
+  available(){return !!(this.provider?.value.ready&&this.provider.value.publishState==='synced'&&this.projection?.scope.connected&&!this.projection.scope.frozen&&Date.now()-this.provider.value.observedAt<15000);}
   unwatch(){clearInterval(this.timer);this.client?.dispose();this.client=null;this.subscription=null;this.provider=null;this.records=[];this.projection=null;}
   dispose(){this.epoch++;this.unwatch();}
   notice(message){this.message=message||'';this.render();}
   render(){if(!this.show||!this.snapshot)return;const ready=this.available()&&this.inputEnabled,intent=this.snapshot.tunnel;const waiting=this.snapshot.blockingTunnel||['pending','unknown'].includes(intent?.status);const writable=this.snapshot.state==='ready'&&this.snapshot.status==='running'&&!this.snapshot.busy;
-    const unavailable=!this.supported?'当前核心不支持隧道联动':!this.provider?'需要启用支持端口联动的网络隧道插件，重启后可用':'网络隧道状态尚未同步或已过期';
+    const unavailable=!this.provider?'需要启用支持端口联动的网络隧道插件，重启后可用':'网络隧道状态尚未同步或已过期';
     const result=intent?.result;let feedback=this.message;
     if(!feedback&&waiting)feedback=this.snapshot.blockingTunnel?'另一个容器的隧道请求待确认，请查询原请求':intent.status==='unknown'?'创建结果待确认，请查询原请求':'正在核对端口并办理隧道请求…';
     if(!feedback&&intent?.status==='failed')feedback=intent.error?.message||'隧道请求失败';

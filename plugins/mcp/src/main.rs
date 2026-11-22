@@ -1,3 +1,4 @@
+use sodeck_plugin_client::protocol::requests as api;
 mod app;
 mod collector;
 mod connections;
@@ -54,32 +55,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state = Arc::new(Mutex::new(None::<Arc<app::App>>));
     let app_state = state.clone();
     let settings_cache = sodeck_plugin_client::settings::SettingsCache::default();
-    let result = sodeck_plugin_client::run(move |client, method, p| {
+    let result = sodeck_plugin_client::run(move |client, callback| {
+        let (method, p) = callback.into_parts();
         if method == "initialize" {
-            for cap in [
-                "session.target.v2",
-                "servers.read.v1",
-                "servers.write.v1",
-                "connections.v1",
-                "session.process.v1",
-                "files.pluginData.v1",
-                "files.operations.v2",
-                "files.copy.v1",
-                "ui.background.v1",
-                "settings.v1",
-            ] {
-                if !p["capabilities"]
-                    .as_array()
-                    .is_some_and(|caps| caps.iter().any(|v| v == cap))
-                {
-                    return Err(format!("核心缺少 {cap}，请升级 SoDeck"));
-                }
-            }
             let root =
                 std::path::PathBuf::from(p["dataDirectory"].as_str().ok_or("缺少插件数据目录")?);
             fs::create_dir_all(&root).map_err(|e| e.to_string())?;
             fs::create_dir_all(root.join("evidence")).map_err(|e| e.to_string())?;
-            let settings = client.call("settings.get", json!({"pageId":"connection"}))?;
+            let settings = client.request(api::call::Settings(api::Page {
+                page_id: "connection".to_string(),
+            }))?;
             let port = settings["values"]["port"]
                 .as_u64()
                 .or_else(|| {
@@ -103,17 +88,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Err(e) = mcp::serve(app.clone()).await {
                     *app.http_state.lock().unwrap() = e.clone();
                     let _ = tokio::task::spawn_blocking(move || {
-                        app.client
-                            .call("logging.write", json!({"level":"error","message":e}))
+                        serde_json::from_value::<api::Log>(json!({"level":"error","message":e}))
+                            .map_err(|_| {
+                                sodeck_plugin_client::RpcError::invalid("核心请求参数无效")
+                            })
+                            .and_then(|params| app.client.request(api::call::Log(params)))
                     })
                     .await;
                 }
             });
-            return Ok(json!({"apiVersion":"1","uiApiVersion":"2","settingsApiVersion":"1"}));
+            return Ok(json!({}));
         }
         let app = app_state.lock().unwrap().clone().ok_or("插件未初始化")?;
         if method == "settings.changed" {
-            return settings_cache.changed(&p, &["connection"]);
+            return settings_cache
+                .changed(&p, &["connection"])
+                .map_err(Into::into);
         }
         if method == "connections.changed" {
             app.core_changes.send_modify(|n| *n += 1);

@@ -380,7 +380,7 @@ impl AppCore {
         p: &Value,
     ) -> Result<Value, OperationError> {
         let action = string(p, "action")?;
-        if action == "op.start" {
+        if action == "operation.start" {
             let registry = r.operations.registry.lock().unwrap();
             if let Some(op) = registry
                 .entries
@@ -397,7 +397,7 @@ impl AppCore {
                 return Ok(op.state.lock().unwrap().clone());
             }
         }
-        let _task = if matches!(action, "op.start" | "batch.begin") {
+        let _task = if matches!(action, "operation.start" | "batch.begin") {
             Some(r.tasks.enter()?)
         } else {
             None
@@ -506,7 +506,7 @@ impl AppCore {
                 json!({"entries":entries,"next":if next<input.roots.len(){Some(next)}else{None}}),
             );
         }
-        if action != "op.start" {
+        if action != "operation.start" {
             let cancelled = r.operations.cancelled_batches.lock().unwrap();
             let mut registry = r.operations.registry.lock().unwrap();
             let key = registry
@@ -514,12 +514,12 @@ impl AppCore {
                 .iter()
                 .find(|(_, op)| {
                     p["operationId"].as_str() == Some(&op.id)
-                        || (action == "op.lookup" && p["requestId"] == op.request["requestId"])
+                        || (action == "operation.lookup"
+                            && p["requestId"] == op.request["requestId"])
                 })
                 .map(|(key, _)| key.clone());
             let Some(key) = key else {
-                if action == "op.lookup"
-                    && p["protocolVersion"] == 2
+                if action == "operation.lookup"
                     && cancelled.contains(p["batchId"].as_str().unwrap_or(""))
                 {
                     return Ok(
@@ -529,12 +529,12 @@ impl AppCore {
                 return Err(failure("expired", "文件操作结果已释放或不存在"));
             };
             let op = registry.entries[&key].clone();
-            if action == "op.cancel" {
+            if action == "operation.cancel" {
                 op.cancel.cancel();
                 return Ok(json!({}));
             }
             let state = op.state.lock().unwrap().clone();
-            if action == "op.release" {
+            if action == "operation.release" {
                 if ["running", "committing", "waitingInput"]
                     .contains(&state["state"].as_str().unwrap_or(""))
                 {
@@ -543,7 +543,7 @@ impl AppCore {
                 registry.entries.remove(&key);
                 return Ok(json!({}));
             }
-            if !["op.poll", "op.result", "op.lookup"].contains(&action) {
+            if !["operation.poll", "operation.lookup"].contains(&action) {
                 return Err(failure("invalid", "未知文件操作"));
             }
             return Ok(state);
@@ -590,13 +590,12 @@ impl AppCore {
             return Err(failure("contextChanged", "文件页面已关闭或更换上下文"));
         }
         let cancellation_guard = r.operations.cancelled_batches.lock().unwrap();
-        if p["protocolVersion"] == 2
-            && r.operations
-                .batches
-                .lock()
-                .unwrap()
-                .get(p["batchId"].as_str().unwrap_or(""))
-                != Some(&owner.context)
+        if r.operations
+            .batches
+            .lock()
+            .unwrap()
+            .get(p["batchId"].as_str().unwrap_or(""))
+            != Some(&owner.context)
         {
             return Err(failure("expired", "文件批次已结束或上下文改变"));
         }
@@ -625,7 +624,7 @@ impl AppCore {
         let sequence = p["sequence"]
             .as_str()
             .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(registry.last.saturating_add(1));
+            .ok_or_else(|| failure("invalid", "操作序号必须是 u64 十进制字符串"))?;
         if sequence <= registry.last {
             return Err(failure("expired", "操作序号已退役，请核对已有结果"));
         }
@@ -961,22 +960,18 @@ impl Io {
             ("removeDirectory", Endpoint::Remote(path)) => {
                 self.session.raw.rmdir(path).await.map_err(mutation_error)?;
             }
-            ("rename", Endpoint::Remote(path)) => {
-                let Endpoint::Remote(target) = self.endpoint(&p["destination"])? else {
-                    return Err(failure("invalid", "移动目标必须在同一服务器"));
-                };
-                self.check_guard(&Endpoint::Remote(target.clone()), &json!({"kind":"absent"}))
-                    .await?;
-                *self.operation.state.lock().unwrap() =
-                    json!({"id":self.operation.id,"state":"committing"});
-                self.session
-                    .raw
-                    .rename(path, target)
-                    .await
-                    .map_err(mutation_error)?;
-            }
             _ => return Err(failure("invalid", "未知文件操作")),
         }
         Ok(json!({"done":true}))
+    }
+}
+
+impl From<OperationError> for sodeck_plugin_protocol::ApiError {
+    fn from(error: OperationError) -> Self {
+        Self {
+            code: -32000,
+            message: error.message.clone(),
+            data: error.value(),
+        }
     }
 }

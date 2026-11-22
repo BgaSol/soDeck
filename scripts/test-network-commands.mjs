@@ -13,7 +13,7 @@ export async function verifyNetworkCommands(executable){
   const key=p=>JSON.stringify([p.viewId,p.expectedContext,p.topic,p.key]);
   const snapshot=entry=>({state:'observed',listenerId:entry.id,cleanupComplete:entry.closed,snapshot:{state:entry.closed?'closed':'running',cleanupComplete:entry.closed,address:entry.address,clients:[...probes].map(probeId=>({id:'probe-client',probeId,target:{state:'relaying'}}))}});
   const peer=pluginPeer(executable,async(method,p)=>{
-    if(['logging.write','messages.publish','net.close'].includes(method))return {};
+    if(['logging.write','messages.publish','net.stream.close'].includes(method))return {};
     if(method==='state.put'){
       const old=records.get(key(p));if((old?.revision||'0')!==p.expectedRevision)throw new Error('revisionConflict');
       const value={revision:String(BigInt(old?.revision||'0')+1n),value:p.value,present:true};records.set(key(p),value);
@@ -43,7 +43,7 @@ export async function verifyNetworkCommands(executable){
   const row=async id=>(await catalog()).rules.find(row=>row.rule.id===id);
   const save=async rule=>{await request('ui.createView','editor',{viewType:'rule-editor',params:{rule}});await request('ui.event','editor',{data:{action:'draft',rule}});await request('ui.event','editor',{data:{action:'save'}});await request('ui.disposeView','editor');};
   try{
-    const initialized=await peer.request('initialize',{dataDirectory:directory,capabilities:['net.tcp.v1','net.listenerLifecycle.v1','ui.dialog.v1','commands.v1','sharedState.v1','ui.background.v1','ui.openView.v1']});
+    const initialized=await peer.initialize({dataDirectory:directory,capabilities:['net.tcp.v1','net.listenerLifecycle.v1','ui.dialog.v1','commands.v1','sharedState.v1','ui.background.v1','ui.openView.v1']});
     assert.deepEqual(initialized.commandHandlers,['network.tcpForward.ensure.v1','network.rule.reveal.v1']);
     await assert.rejects(ensure(),/managerNotReady/);
     await request('ui.createView','manager',{viewType:'manager'});

@@ -17,6 +17,7 @@ updates:
     directories:
       - "/src-tauri"
       - "/crates/plugin-client"
+      - "/crates/plugin-protocol"
       - "/plugins/terminal"
       - "/plugins/files"
       - "/plugins/network-proxy"

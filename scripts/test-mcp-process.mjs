@@ -1,3 +1,4 @@
+import {withProcessFacts,processFacts} from './process-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -14,13 +15,12 @@ assert.equal(manifest.name,'Agent MCP');assert.equal(manifest.ui.views[0].title,
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-mcp-process-'));
 const socket=net.createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r));
 const contexts=Object.fromEntries(['a','b','c'].map(view=>[view,{workspaceId:view,serverId:'server-'+view,connectionId:'connection-'+view,generation:1}]));
-const capabilities=['session.target.v2','session.process.v1','files.pluginData.v1','files.operations.v2','files.copy.v1','ui.background.v1','settings.v1','servers.read.v1','servers.write.v1','connections.v1'];
 const descriptions=Object.fromEntries(Object.keys(contexts).map(view=>[view,{name:view,protocol:'ssh',host:view==='a'?'10.0.0.187':view==='b'?'10.0.1.187':'db187.example.com',port:22,username:'ops'}]));
 const targetFaults=new Map(),targetStates=new Map(),targetCalls=[],targetGates=[];let gateTargets=false;
 function targetReply(view){const state=targetStates.get(view)??'connected',target=descriptions[view];return {context:contexts[view],state,closing:false,capabilities:state==='connected'?['exec','files']:[],targetSource:state==='connected'?'current':'lastConnected',target:{...target,endpoint:`${target.host.includes(':')?'['+target.host+']':target.host}:${target.port}`}};}
 const streams=new Map(),requests=[],releases=[],files=new Map(),batches=new Set(),failedBatches=new Set();let number=0,lost=true,peer,confirmUnknown=false,releaseGate;
 const bytes=Buffer.from('Architecture: x86_64\nCPU(s): 56\nThread(s) per core: 2\nCore(s) per socket: 14\nSocket(s): 2\nModel name: Intel(R) Xeon(R) Gold 5117 CPU @ 2.00GHz\nL3 cache: 38.5 MiB\nVirtualization: VT-x\n'),chunk={v:1,sequence:'1',source:'stdout',receivedAt:Date.now(),dataBase64:bytes.toString('base64')};
-peer=pluginPeer(path.join(root,manifest.entry),(method,p)=>{
+peer=pluginPeer(path.join(root,manifest.entry),withProcessFacts((method,p)=>{
   if(method==='settings.get')return {values:{port:String(port)}};
   if(['logging.write','messages.publish'].includes(method))return {};
   if(method==='session.target.describe'){
@@ -35,8 +35,8 @@ peer=pluginPeer(path.join(root,manifest.entry),(method,p)=>{
     const stream={p,held:interactive||['hold','hang','quiet','changing','unknown'].includes(p.command)||p.command.startsWith('large-error'),started:Date.now(),interactive,frames:interactive?[{...chunk,v:p.io.kind==='pty'?2:1,source:p.io.kind==='pty'?'terminal':'stdout',dataBase64:Buffer.from('first? ').toString('base64')}]:[],writes:[],next:1,last:null};
     streams.set(processId,stream);
     const status={state:'opening',execSent:true,launchAccepted:true,workerFinished:false,input:{state:p.io.stdin==='closed'?'closed':'open',available:interactive,nextInputSequence:'1',last:null}};
-    if(p.command==='unknown')throw Object.assign(new Error('unknown receipt'),{code:-32003});
-    if(lost){lost=false;throw Object.assign(new Error('lost receipt'),{code:-32003});}
+    if(p.command==='unknown')throw Object.assign(new Error('unknown receipt'),{code:-32003,data:{dispatch:'unknown'}});
+    if(lost){lost=false;throw Object.assign(new Error('lost receipt'),{code:-32003,data:{dispatch:'unknown'}});}
     if(p.command==='delayed')return delay(300).then(()=>({processId,status}));return {processId,status};
   }
   if(method==='session.process.lookup'){
@@ -47,14 +47,14 @@ peer=pluginPeer(path.join(root,manifest.entry),(method,p)=>{
   if(method==='session.process.read'){
     const s=streams.get(p.processId);assert(s);
     if(s.interactive){
-      const done=!s.held||s.cancelled,offset=Number(p.offset),frames=s.frames.slice(offset);
-      return {chunks:frames,nextOffset:String(s.frames.length),watermark:String(s.frames.length),status:{state:s.cancelled?'cancelled':done?'completed':'running',phase:done?'finished':'running',execSent:true,launchAccepted:true,remoteExitConfirmed:done&&!s.cancelled,workerFinished:done,finished:done,outputComplete:done&&!s.cancelled,exitCode:done?0:null,error:null,input:{state:done?'closed':'open',available:!done&&s.last?.state!=='pending',nextInputSequence:String(s.next),last:s.last}}};
+      const done=Boolean(!s.held||s.cancelled),offset=Number(p.offset),frames=s.frames.slice(offset);
+      return {earliestAvailableOffset:'0',chunks:frames,nextOffset:String(s.frames.length),watermark:String(s.frames.length),status:{state:s.cancelled?'cancelled':done?'completed':'running',phase:done?'finished':'running',execSent:true,launchAccepted:true,remoteExitConfirmed:done&&!s.cancelled,workerFinished:done,finished:done,outputComplete:done&&!s.cancelled,exitCode:done?0:null,error:null,input:{state:done?'closed':'open',available:!done&&s.last?.state!=='pending',nextInputSequence:String(s.next),last:s.last}}};
     }
     if(s.p.command.startsWith('large-error'))throw Object.assign(new Error('diagnostic payload'),{code:-32000,data:{payload:'\\'.repeat(26000)}});
-    const done=!s.held||s.cancelled;
-    if(s.p.command==='changing'){const n=Number(p.offset)+1,finished=s.cancelled||Date.now()-s.started>=3000;return {chunks:[{...chunk,sequence:String(n),dataBase64:Buffer.from('line-'+n+'\n').toString('base64')}],nextOffset:String(n),watermark:String(n),status:{state:finished?'completed':'running',workerFinished:finished,execSent:true,launchAccepted:true,exitCode:0,remoteExitConfirmed:true,outputComplete:true,received:n}};}
-    if(s.p.command==='pages')return {chunks:p.offset==='0'?[1,2].map(n=>({...chunk,sequence:String(n),dataBase64:Buffer.from(String(n).repeat(9000)).toString('base64')})):[],nextOffset:'2',watermark:'2',status:{state:'completed',workerFinished:true,execSent:true,launchAccepted:true,exitCode:0,remoteExitConfirmed:true,outputComplete:true}};
-    const quiet=s.p.command==='quiet';return {chunks:s.p.command==='malformed'?null:!quiet&&p.offset==='0'?[chunk]:[],nextOffset:quiet?'0':'100',watermark:quiet?'0':'100',status:{state:s.cancelled?'cancelled':done?'completed':'running',execSent:true,launchAccepted:true,remoteExitConfirmed:done&&!s.cancelled,workerFinished:done,finished:done,elapsedMs:Date.now(),outputComplete:done&&!s.cancelled&&s.p.command!=='output limit',error:s.p.command==='output limit'?{code:'outputLimit',message:'output limit'}:null,exitCode:s.p.command==='exit 7'?7:0}};
+    const done=Boolean(!s.held||s.cancelled);
+    if(s.p.command==='changing'){const n=Number(p.offset)+1,finished=s.cancelled||Date.now()-s.started>=3000;return {earliestAvailableOffset:'0',chunks:[{...chunk,sequence:String(n),dataBase64:Buffer.from('line-'+n+'\n').toString('base64')}],nextOffset:String(n),watermark:String(n),status:{state:finished?'completed':'running',workerFinished:finished,execSent:true,launchAccepted:true,exitCode:0,remoteExitConfirmed:true,outputComplete:true,received:n}};}
+    if(s.p.command==='pages')return {earliestAvailableOffset:'0',chunks:p.offset==='0'?[1,2].map(n=>({...chunk,sequence:String(n),dataBase64:Buffer.from(String(n).repeat(9000)).toString('base64')})):[],nextOffset:'2',watermark:'2',status:{state:'completed',workerFinished:true,execSent:true,launchAccepted:true,exitCode:0,remoteExitConfirmed:true,outputComplete:true}};
+    const quiet=s.p.command==='quiet';return {earliestAvailableOffset:'0',chunks:s.p.command==='malformed'?null:!quiet&&p.offset==='0'?[chunk]:[],nextOffset:quiet?'0':'100',watermark:quiet?'0':'100',status:{state:s.cancelled?'cancelled':done?'completed':'running',execSent:true,launchAccepted:true,remoteExitConfirmed:done&&!s.cancelled,workerFinished:done,finished:done,elapsedMs:Date.now(),outputComplete:done&&!s.cancelled&&s.p.command!=='output limit',error:s.p.command==='output limit'?{code:'outputLimit',message:'output limit'}:null,exitCode:s.p.command==='exit 7'?7:0}};
   }
   if(method==='session.process.input'){
     const s=streams.get(p.processId);assert(s?.interactive);const sequence=Number(p.inputSequence),body=JSON.stringify({...p,processId:undefined});
@@ -65,20 +65,20 @@ peer=pluginPeer(path.join(root,manifest.entry),(method,p)=>{
     if(p.action==='write'){const data=Buffer.from(p.dataBase64,'base64');s.writes.push(data);s.frames.push({...s.frames[0],sequence:String(s.frames.length+1),dataBase64:Buffer.from('received:'+data.toString('hex')+'\nsecond? ').toString('base64')});if(s.writes.length===2)s.held=false;}
     if(p.action==='eof')s.held=false;
     const result=()=>({state:s.held?'running':'completed',execSent:true,launchAccepted:true,workerFinished:!s.held,remoteExitConfirmed:!s.held,outputComplete:!s.held,exitCode:s.held?null:0,input:{state:s.held?'open':'closed',available:s.held,nextInputSequence:String(s.next),last:s.last}});
-    if(s.p.command==='interactive-lost'&&sequence===1)throw Object.assign(new Error('lost input receipt'),{code:-32003});
+    if(s.p.command==='interactive-lost'&&sequence===1)throw Object.assign(new Error('lost input receipt'),{code:-32003,data:{dispatch:'unknown'}});
     if(s.p.command==='interactive-delayed'&&sequence===1){s.last.state='pending';return delay(300).then(()=>{s.last.state='sent';return result();});}
     return result();
   }
-  if(method==='session.process.status'){const s=streams.get(p.processId);if(s.p.command.startsWith('large-error'))throw Object.assign(new Error('diagnostic payload'),{code:-32000,data:{payload:'\\'.repeat(26000)}});return {state:s.cancelled?'cancelled':!s.held?'completed':'running',workerFinished:!s.held||s.cancelled,execSent:true,launchAccepted:true,remoteExitConfirmed:!s.held,outputComplete:!s.held};}
-  if(method==='session.process.cancel'){streams.get(p.processId).cancelled=true;return {accepted:true};}
-  if(method==='session.process.release'){releases.push(p.processId);const stream=streams.get(p.processId);streams.delete(p.processId);if(stream.p.command==='final-save-fail')return new Promise(resolve=>{releaseGate=resolve;});return {releaseRequested:true,resourceReleased:true};}
-  if(method==='files.request'){if(p.action==='open')return {id:'file-'+p.viewId};if(p.action==='close')return {};if(p.action==='batch.begin'){batches.add(p.batchId);return {};}if(p.action==='batch.end'){batches.delete(p.batchId);if(failedBatches.delete(p.batchId))throw new Error('batch end failed');return {};}}
+  if(method==='session.process.status'){const s=streams.get(p.processId);if(s.p.command.startsWith('large-error'))throw Object.assign(new Error('diagnostic payload'),{code:-32000,data:{payload:'\\'.repeat(26000)}});return {state:s.cancelled?'cancelled':!s.held?'completed':'running',workerFinished:Boolean(!s.held||s.cancelled),execSent:true,launchAccepted:true,remoteExitConfirmed:!s.held,outputComplete:!s.held};}
+  if(method==='session.process.cancel'){streams.get(p.processId).cancelled=true;return {state:'cancelled',finished:true};}
+  if(method==='session.process.release'){releases.push(p.processId);const stream=streams.get(p.processId);streams.delete(p.processId);if(stream.p.command==='final-save-fail')return new Promise(resolve=>{releaseGate=resolve;});return {releaseRequested:true,resourceReleased:true,status:{workerFinished:true,state:'completed'}};}
+  if(method==='files.open')return {id:'file-'+p.viewId};if(method==='files.close')return {};if(method==='files.batch.begin'){batches.add(p.batchId);return {};}if(method==='files.batch.end'){batches.delete(p.batchId);if(failedBatches.delete(p.batchId))throw new Error('batch end failed');return {};}
   if(method==='files.operations'){
     if(p.action==='start'){
       if(p.operation.source.path==='/missing')throw Object.assign(new Error('missing'),{code:-32000});
       if(p.operation.source.side==='localPath') {
         requests.push(p);assert.equal(p.operation.destination.side,'remote');assert.equal(p.operation.metadataPolicy,'contentOnly');
-        const id='upload-'+(++number);files.set(id,p);if(p.operation.destination.path==='/lost-upload')throw Object.assign(new Error('lost upload receipt'),{code:-32003});return {id,state:'running'};
+        const id='upload-'+(++number);files.set(id,p);if(p.operation.destination.path==='/lost-upload')throw Object.assign(new Error('lost upload receipt'),{code:-32003,data:{dispatch:'unknown'}});return {id,state:'running'};
       }
       assert.equal(p.operation.destination.side,'pluginData');assert.equal(p.operation.destinationGuard.kind,'absent');
       const id='download-'+(++number);const output=path.join(directory,...p.operation.destination.relative);fs.writeFileSync(output,bytes);files.set(id,p);if(p.operation.source.path==='/cleanup-failure')failedBatches.add(p.batchId);return {id,state:'running'};
@@ -92,7 +92,7 @@ peer=pluginPeer(path.join(root,manifest.entry),(method,p)=>{
     if(p.action==='cancel'){files.get(p.operationId).cancelled=true;return {};}
   }
   throw new Error('Unexpected RPC: '+method);
-});
+}));
 const samples=[],shortRuns=[],targetSamples=[];let token,sequence=0;
 async function call(method,params,headers={},signal){
   const started=performance.now();
@@ -100,7 +100,7 @@ async function call(method,params,headers={},signal){
   assert.equal(response.status,200,await response.clone().text());const envelope=await response.json(),r=envelope.result??envelope;if(method==='tools/call'){const list=params.name==='sodeck_targets_list'?targetSamples:samples;if(list.length<64)list.push({tool:params.name,args:params.arguments,elapsedMs:performance.now()-started,bytes:Buffer.byteLength(JSON.stringify(r)),result:r});}return r;
 }
 async function tool(name,arguments_={},signal){const result=await call('tools/call',{name,arguments:arguments_},{},signal);assert(!('structuredContent' in result));assert.equal(result.content.length,1);assert.equal(result.content[0].type,'text');assert(Buffer.byteLength(JSON.stringify(result))<=256*1024);return {value:JSON.parse(result.content[0].text),error:result.isError};}
-async function until(read,predicate){const end=Date.now()+10000;while(Date.now()<end){const value=await read();if(predicate(value))return value;await delay(30);}throw new Error('MCP task timeout');}
+async function until(read,predicate){const end=Date.now()+10000;let value;while(Date.now()<end){value=await read();if(predicate(value))return value;await delay(30);}if(value?.taskId)value=(await tool('sodeck_task_get',{taskId:value.taskId,detail:true})).value;throw new Error('MCP task timeout: '+JSON.stringify(value).slice(0,12000));}
 async function discoveryChecks(){
   const read=async p=>(await tool('sodeck_targets_list',p)).value;
   const all=await read({});assert.equal(all.resolution,'ambiguous');assert.equal(all.registryChanged,false);assert.equal(all.unresolved.length,0);
@@ -117,7 +117,7 @@ async function discoveryChecks(){
   assert.equal((await read({query:'187',match:'contains'})).targets.length,3);assert.equal((await read({query:'0187'})).resolution,'none');
   const detail=await read({targetId:a.targetId,detail:true});assert.deepEqual(detail.targets[0].context,contexts.a);assert.equal(detail.targets[0].state,'connected');assert(!('rpc'in detail.targets[0]));
   assert.equal((await read({targetId:'missing'})).resolution,'none');assert.equal((await tool('sodeck_targets_list',{targetId:a.targetId,query:'187'})).value.error.code,'invalidParams');
-  await assert.rejects(peer.request('ui.createView',{viewId:'a',viewType:'status',context:{workspaceId:'a',serverId:'server-a',generation:2}}),/上下文无效/);
+  await assert.rejects(peer.request('ui.createView',{viewId:'a',viewType:'status',context:{workspaceId:'a',serverId:'server-a',generation:2}}),/回调参数不符合当前协议/);
   assert.equal((await read({targetId:a.targetId})).targets[0].availability,'ready','invalid mount keeps the original target');
   targetFaults.set('b',Object.assign(new Error('中'.repeat(200)),{code:-32000,data:{code:'unavailable',diagnostic:'retained'}}));
   const partial=await read({query:'187'});assert.equal(partial.resolution,'incomplete');assert.equal(partial.targets.length,1);assert.equal(partial.unresolved.length,1);assert.equal(partial.unresolved[0].error.code,-32000);assert(partial.unresolved[0].error.messageTruncated);assert(Buffer.byteLength(partial.unresolved[0].error.message)<=512);assert(partial.unresolved[0].error.detailsAvailable);
@@ -126,7 +126,7 @@ async function discoveryChecks(){
   assert.equal(failedSidebar.targetId,b.targetId);assert.equal(failedSidebar.target.descriptor,null);assert.equal(failedSidebar.target.capabilities,null);assert.equal(failedSidebar.target.error.code,-32000);assert.equal(failedSidebar.target.error.messageTruncated,true);
   const fullError=await read({targetId:b.targetId,detail:true});assert.equal(fullError.targets[0].error.details.diagnostic,'retained');
   targetFaults.set('b',{...targetReply('b'),target:null});assert.equal((await read({query:'187'})).resolution,'incomplete');targetFaults.clear();
-  const before=targetCalls.length;targetFaults.set('a',Object.assign(new Error('local transport failed'),{code:-32003}));const stopped=await read({query:'187'});assert.equal(stopped.resolution,'incomplete');assert.equal(stopped.unresolved.length,3);assert.equal(targetCalls.length,before+1);assert.equal(stopped.unresolved[1].error.code,'notObserved');assert.equal((await read({targetId:b.targetId})).targets[0].availability,'ready');targetFaults.clear();
+  const before=targetCalls.length;targetFaults.set('a',Object.assign(new Error('local transport failed'),{code:-32003,data:{dispatch:'unknown'}}));const stopped=await read({query:'187'});assert.equal(stopped.resolution,'incomplete');assert.equal(stopped.unresolved.length,3);assert.equal(targetCalls.length,before+1);assert.equal(stopped.unresolved[1].error.code,'notObserved');assert.equal((await read({targetId:b.targetId})).targets[0].availability,'ready');targetFaults.clear();
   const savedContext={...contexts.b};contexts.b={...savedContext,serverId:contexts.a.serverId,generation:savedContext.generation+1};await peer.request('ui.createView',{viewId:'b',viewType:'status',context:contexts.b});const sameServer=await read({serverId:contexts.a.serverId});assert.equal(sameServer.resolution,'ambiguous');assert.equal(sameServer.targets.length,2);assert.equal((await read({serverId:contexts.a.serverId,workspaceId:'a'})).resolution,'unique');contexts.b={...savedContext,generation:savedContext.generation+2};await peer.request('ui.createView',{viewId:'b',viewType:'status',context:contexts.b});
   gateTargets=true;const oldSnapshot=peer.request('ui.getView',{viewId:'a'});const oldSnapshotFailure=assert.rejects(oldSnapshot,/连接代次已改变/);
   await until(async()=>targetGates.length,n=>n===1);gateTargets=false;contexts.a={...contexts.a,connectionId:'rebound-a',generation:2};
@@ -147,13 +147,12 @@ async function discoveryChecks(){
   assert.equal(requests.length,0,'discovery never starts native operations');assert.equal((await tool('sodeck_tasks_list')).value.tasks.length,0);assert.deepEqual(fs.readdirSync(path.join(directory,'evidence')),[]);
 }
 try{
-  await assert.rejects(peer.request('initialize',{dataDirectory:directory,capabilities:[]}),/核心缺少/);
-  await assert.rejects(peer.request('initialize',{dataDirectory:directory,capabilities:capabilities.map(c=>c==='session.target.v2'?'session.target.v1':c)}),/session.target.v2/);
-  await peer.request('initialize',{dataDirectory:directory,capabilities});token=fs.readFileSync(path.join(directory,'access-token'),'utf8');
+  await assert.rejects(peer.initialize({dataDirectory:directory,coreApiVersion:"1.0"}),/API/);
+  await peer.initialize({dataDirectory:directory});token=fs.readFileSync(path.join(directory,'access-token'),'utf8');
   for(const [viewId,context]of Object.entries(contexts))assert.equal((await peer.request('ui.createView',{viewId,viewType:'status',context})).metadata.title,'Agent MCP');
   await until(async()=>(await peer.request('ui.getView',{viewId:'a'})).data,s=>s.service==='ready');
   const initialized=await call('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'sodeck-test',version:'1'}});assert(initialized.capabilities.tools);
-  const list=await call('tools/list',{});assert.equal(list.tools.length,Number(manifest.version.split('.')[1])>=11?15:12);assert.equal(list.tools.find(t=>t.name==='sodeck_exec_start').annotations.readOnlyHint,false);
+  const list=await call('tools/list',{});assert.equal(list.tools.length,15);assert.equal(list.tools.find(t=>t.name==='sodeck_exec_start').annotations.readOnlyHint,false);
   assert(list.tools.find(t=>t.name==='sodeck_targets_list').inputSchema.properties.query);
   await discoveryChecks();
   const targets=(await tool('sodeck_targets_list')).value.targets;assert.equal(targets.length,3);
@@ -324,7 +323,7 @@ try{
   const failing=(await tool('sodeck_exec_start',{...input,requestId:'final-save-fail',command:'final-save-fail',waitMs:0})).value;await until(async()=>typeof releaseGate==='function',Boolean);
   const finalizing=(await tool('sodeck_task_get',{taskId:failing.taskId,detail:true,outputMode:'none'})).value;assert.equal(finalizing.phase,'finalizing');assert.equal(finalizing.done,false);assert.equal(finalizing.evidence.complete,false);
   assert.equal((await tool('sodeck_task_cancel',{taskId:failing.taskId})).value.cancelRequested,false);
-  fs.mkdirSync(path.join(finalizing.directory,'metadata.tmp'));releaseGate({releaseRequested:true,resourceReleased:true});const failed=await until(async()=>(await tool('sodeck_task_get',{taskId:failing.taskId,outputMode:'none'})).value,s=>s.done);assert.equal(failed.evidence.state,'failed');assert.equal(failed.evidence.complete,false);assert.equal(failed.resourceReleased,true);
+  fs.mkdirSync(path.join(finalizing.directory,'metadata.tmp'));releaseGate({releaseRequested:true,resourceReleased:true,status:processFacts({workerFinished:true,state:'completed'})});const failed=await until(async()=>(await tool('sodeck_task_get',{taskId:failing.taskId,outputMode:'none'})).value,s=>s.done);assert.equal(failed.evidence.state,'failed');assert.equal(failed.evidence.complete,false);assert.equal(failed.resourceReleased,true);
   fs.rmdirSync(path.join(finalizing.directory,'metadata.tmp'));assert.deepEqual((await tool('sodeck_task_get',{taskId:failing.taskId,outputMode:'none'})).value,failed);assert.equal(JSON.parse(fs.readFileSync(path.join(finalizing.directory,'metadata.json'))).phase,'finalizing','failed final save leaves last valid disk facts');
   const huge=(await tool('sodeck_exec_start',{...input,requestId:'large-error',command:'large-error '+ '\\'.repeat(16000)})).value;
   const hugeResult=await until(async()=>(await tool('sodeck_task_get',{taskId:huge.taskId})).value,s=>s.done);assert.equal(hugeResult.native.error.detailsAvailable,true);assert.equal(hugeResult.native.error.code,-32000);
@@ -349,5 +348,5 @@ try{
   for(const viewId of Object.keys(contexts))await peer.request('ui.disposeView',{viewId,context:contexts[viewId]});
   await peer.close();peer=null;await assert.rejects(fetch(`http://127.0.0.1:${port}/mcp`));
   if(process.env.SODECK_TEST_MCP_REPORT)fs.writeFileSync(process.env.SODECK_TEST_MCP_REPORT,JSON.stringify({version:manifest.version,fixture:'representative lscpu output and controlled core v2 facts, not a live server',stdout:bytes.toString(),samples,shortRuns,targetSamples},null,2)+'\n');
-  console.log('MCP: twelve tools, upload recovery, scopes, stable finalization, text/none, keyset paging, wait timeout/wake/disconnect quotas, unknown admission, cleanup failures and exit passed');
+  console.log('MCP: fifteen tools, upload recovery, scopes, stable finalization, text/none, keyset paging, wait timeout/wake/disconnect quotas, unknown admission, cleanup failures and exit passed');
 }finally{if(peer)await peer.kill();assert.equal(path.dirname(directory),os.tmpdir());fs.rmSync(directory,{recursive:true,force:true});}

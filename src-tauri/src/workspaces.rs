@@ -3,14 +3,7 @@ use crate::AppCore;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Context {
-    pub workspace_id: String,
-    pub server_id: String,
-    pub connection_id: String,
-    pub generation: u64,
-}
+pub use sodeck_plugin_protocol::Context;
 
 /// Non-sensitive identity of an authenticated connection, retained by its workspace.
 #[derive(Clone, Debug, PartialEq)]

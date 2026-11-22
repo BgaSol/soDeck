@@ -1,15 +1,6 @@
 //! Declared UI behaviors adapt to commands; own-page opens retain their original contract.
 use super::*;
 use sha2::{Digest, Sha256};
-fn legacy_command(mut result: Value) -> Value {
-    if result["status"] == "unknown" {
-        result["status"] = json!("invalidated");
-    }
-    if let Some(message) = result["error"]["message"].as_str() {
-        result["error"] = json!(message);
-    }
-    result
-}
 
 pub(super) struct OpenRequest {
     context: Context,
@@ -73,50 +64,12 @@ impl Runtime {
     }
 }
 impl AppCore {
-    pub fn ui_invoke_action(&self, window: &str, p: &Value) -> Result<Value, String> {
-        let action = self
-            .ui_state()
-            .actions
-            .get(p["actionKey"].as_str().unwrap_or_default())
-            .cloned()
-            .ok_or("行为未登记")?;
-        let mut params = p.clone();
-        params["op"] = json!("submit");
-        params["name"] = json!(action
-            .definition
-            .command
-            .as_deref()
-            .unwrap_or("ui.action.v1"));
-        params["payload"] = p.get("data").cloned().unwrap_or(Value::Null);
-        self.command_host_request(window, &params)
-            .map(legacy_command)
-            .map_err(|e| e.to_string())
-    }
-    pub fn ui_action_status(&self, window: &str, p: &Value) -> Result<Value, String> {
-        let mut params = p.clone();
-        params["op"] = json!("get");
-        self.command_host_request(window, &params)
-            .map(legacy_command)
-            .map_err(|e| e.to_string())
-    }
     pub fn ui_process_open(
         &self,
         plugin: &str,
         instance: &str,
         p: &Value,
     ) -> Result<Value, String> {
-        if let Some(input) = self.command_legacy_open(plugin, instance, p) {
-            return self
-                .command_open(plugin, instance, &input)
-                .map_err(|e| e.to_string())
-                .and_then(|result| {
-                    if result["closed"] == true {
-                        Err("viewClosed：原页面已关闭".into())
-                    } else {
-                        Ok(result)
-                    }
-                });
-        }
         if p.get("commandId").is_some() {
             return self
                 .command_open(plugin, instance, p)

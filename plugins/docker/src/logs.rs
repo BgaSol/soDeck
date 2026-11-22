@@ -1,6 +1,7 @@
 //! Docker log capture metadata. Output lives in the core, never in this process.
 use crate::{cli, commands, connection::Snapshot, runtime};
 use serde_json::{json, Value};
+use sodeck_plugin_client::protocol::requests as api;
 use sodeck_plugin_client::Client;
 use std::{
     collections::BTreeMap,
@@ -195,14 +196,18 @@ impl Logs {
             }
         }
         for id in ids {
-            let _ = client.call(
-                if release {
-                    "session.stream.release"
-                } else {
-                    "session.stream.close"
-                },
-                json!({"streamId":id}),
-            );
+            let request = api::Process {
+                process_id: id.clone(),
+            };
+            let _ = if release {
+                client
+                    .request(api::call::ProcessRelease(request))
+                    .map(|_| ())
+            } else {
+                client
+                    .request(api::call::ProcessCancel(request))
+                    .map(|_| ())
+            };
         }
     }
     fn start(&self, client: &Client, view: &str, target: Value, binding: Snapshot, input: Value) {
@@ -300,7 +305,11 @@ impl Logs {
         self.pending.lock().unwrap().remove(view);
         if !self.app.lock().unwrap().views.contains_key(view) {
             for r in &c.resources {
-                let _ = client.call("session.stream.release", json!({"streamId":r.id}));
+                let _ = client
+                    .request(api::call::ProcessRelease(api::Process {
+                        process_id: r.id.to_string(),
+                    }))
+                    .map_err(|e| e.message);
             }
             return;
         }
@@ -403,9 +412,9 @@ impl Logs {
         };
         for (view, mut id, created, end, tail, ticket, stopped) in reads {
             if let Some(ticket) = ticket {
-                match client.call("session.stream.lookup", ticket.clone()) {
-                    Ok(found) if found["known"] == true => {
-                        id = found["streamId"].as_str().unwrap_or("").into();
+                match serde_json::from_value::<sodeck_plugin_client::protocol::session::ProcessStart>(ticket.clone()).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| client.request(api::call::ProcessLookup(params))).map_err(|e|e.message) {
+                    Ok(found) if found.known && found.process_id.is_some() => {
+                        id = found.process_id.unwrap();
                         if let Some(c) = self.views.lock().unwrap().get_mut(&view) {
                             if let Some(r) = c
                                 .resources
@@ -417,7 +426,7 @@ impl Logs {
                             }
                         }
                         if stopped {
-                            let _ = client.call("session.stream.close", json!({"streamId":id}));
+                            let _ = client.request(api::call::ProcessCancel(api::Process { process_id: id.to_string() })).map_err(|e|e.message);
                         }
                     }
                     _ => continue,
@@ -425,9 +434,18 @@ impl Logs {
             }
             if end.is_some() && created.elapsed() > Duration::from_secs(if tail { 30 } else { 120 })
             {
-                let _ = client.call("session.stream.close", json!({"streamId":id}));
+                let _ = client
+                    .request(api::call::ProcessCancel(api::Process {
+                        process_id: id.to_string(),
+                    }))
+                    .map_err(|e| e.message);
             }
-            let result = client.call("session.stream.status", json!({"streamId":id}));
+            let result = client
+                .request(api::call::ProcessStatus(api::Process {
+                    process_id: id.to_string(),
+                }))
+                .map(|status| json!(status))
+                .map_err(|e| e.message);
             if let Some(c) = self.views.lock().unwrap().get_mut(&view) {
                 if let Some(r) = c.resources.iter_mut().find(|r| r.id == id) {
                     r.status = result.unwrap_or_else(
@@ -485,7 +503,7 @@ fn open(
     )?;
     let id = response
         .as_ref()
-        .map(|r| r["streamId"].as_str().ok_or("核心没有返回日志资源"))
+        .map(|r| r["processId"].as_str().ok_or("核心没有返回日志资源"))
         .transpose()?
         .unwrap_or("")
         .into();

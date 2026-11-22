@@ -25,7 +25,7 @@ export function pluginPeer(executable, core, { args = [], timeout = 10000 } = {}
         const item = pending.get(frame.id);
         if (!item) return;
         pending.delete(frame.id); clearTimeout(item.timer);
-        frame.error ? item.reject(new Error(frame.error.message)) : item.resolve(frame.result);
+        frame.error ? item.reject(Object.assign(new Error(frame.error.message), {code:frame.error.code,data:frame.error.data})) : item.resolve(frame.result);
       }
     } catch (error) { fail(error); child.kill(); }
   });
@@ -36,6 +36,9 @@ export function pluginPeer(executable, core, { args = [], timeout = 10000 } = {}
   }
   return {
     child,
+    initialize({dataDirectory = '.', settings = [], coreVersion = '2.0.0', coreApiVersion = '2.0'} = {}) {
+      return this.request('initialize', {coreApiVersion, coreVersion, dataDirectory, settings});
+    },
     request(method, params = {}) {
       if (failure) return Promise.reject(failure);
       return new Promise((resolve, reject) => {

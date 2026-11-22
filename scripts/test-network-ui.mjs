@@ -1,18 +1,20 @@
+import {fixtureBinary} from './cargo-fixture.mjs';
+import {pluginUiFile,fixtureError} from './plugin-ui-fixture.mjs';
 // Shipped network plugin UI, actual core service, and isolated OpenSSH.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import net from 'node:net';import readline from 'node:readline';
 import {spawn,spawnSync} from 'node:child_process';import {createServer} from 'vite';import {chromium} from 'playwright';
 const build=spawnSync('cargo',['build','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--locked','--bin','catalog-fixture'],{stdio:'inherit',windowsHide:true});if(build.status!==0)throw new Error('Fixture build failed');
 const data=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-network-ui-'));
-const child=spawn(path.resolve(`src-tauri/target/debug/catalog-fixture${process.platform==='win32'?'.exe':''}`),[data],{stdio:['pipe','pipe','inherit'],windowsHide:true});
+const child=spawn(fixtureBinary('catalog-fixture'),[data],{stdio:['pipe','pipe','inherit'],windowsHide:true});
 const pending=[],errors=[],actions=[];let clipboard='';child.on('exit',()=>{for(const p of pending.splice(0))p.reject(new Error('Core fixture exited'));});
-readline.createInterface({input:child.stdout}).on('line',line=>{const r=JSON.parse(line),p=pending.shift();if(!p)throw new Error('Unexpected fixture response');r.error?p.reject(new Error(r.error)):p.resolve(r.value);});
+readline.createInterface({input:child.stdout}).on('line',line=>{const r=JSON.parse(line),p=pending.shift();if(!p)throw new Error('Unexpected fixture response');r.error?p.reject(fixtureError(r.error)):p.resolve(r.value);});
 const call=(command,args={})=>new Promise((resolve,reject)=>{pending.push({resolve,reject});child.stdin.write(JSON.stringify({command,args})+'\n');});
 const service=net.createServer(socket=>socket.pipe(socket));await new Promise(r=>service.listen(0,'127.0.0.1',r));
 const vite=await createServer({server:{host:'127.0.0.1',port:0}});await vite.listen();const url=vite.resolvedUrls.local[0];const browser=await chromium.launch({headless:true});
 const page=await browser.newPage({viewport:{width:1180,height:760}});page.on('pageerror',e=>errors.push(String(e)));
 await page.exposeBinding('testInvoke',(_,command,args={})=>{if(command==='clipboard_text'){clipboard=args.text;return null;}if(command==='component_ui'&&args.operation==='event')actions.push(args.args);return call(command,{...args,window:'main'});});
-await page.route(url+'__plugin__/**',route=>{const relative=new URL(route.request().url()).pathname.split('/').slice(3).join('/');return route.fulfill({contentType:{'.js':'text/javascript','.css':'text/css','.html':'text/html'}[path.extname(relative)]||'application/octet-stream',body:fs.readFileSync(path.join(process.env.SODECK_TEST_NETWORK_PLUGIN,relative))});});
+await page.route(url+'__plugin__/**',route=>{const relative=new URL(route.request().url()).pathname.split('/').slice(3).join('/');return route.fulfill({contentType:{'.js':'text/javascript','.css':'text/css','.html':'text/html','.svg':'image/svg+xml'}[path.extname(relative)]||'application/octet-stream',body:fs.readFileSync(pluginUiFile(process.env.SODECK_TEST_NETWORK_PLUGIN,relative))});});
 await page.route(url+'__fixture_events.js',route=>route.fulfill({contentType:'text/javascript',body:fs.readFileSync('scripts/fixtures/events.js')}));
 await page.route(url,route=>route.fulfill({contentType:'text/html',body:`<!doctype html><html lang="zh-CN" data-theme="dopamine"><head><meta charset="utf-8"></head><body><header class="topbar"><button id="catalog-tab">服务器管理</button><div id="server-tabs" class="server-tabs"></div></header><main class="workspace"><div id="server-catalog"></div><div id="workspace-content"></div></main><div id="notice"></div><script type="module">import '/style.css';import {Workspaces} from '/workspaces.ts';import {installFixtureEvents} from '/__fixture_events.js';window.__TAURI_INTERNALS__={convertFileSrc:p=>new URL('/__plugin__/'+p,location.href).href,transformCallback:()=>1};window.adapter=(command,args={})=>window.testInvoke(command,args);installFixtureEvents();window.manager=new Workspaces(document.querySelector('#server-tabs'),document.querySelector('#workspace-content'),m=>document.querySelector('#notice').textContent=m,window.adapter);await window.manager.start();window.ready=true;</script></body></html>`}));
 const wait=async fn=>{const end=Date.now()+25000;while(!await fn()){if(Date.now()>end)throw new Error('Condition timed out');await new Promise(r=>setTimeout(r,50));}};

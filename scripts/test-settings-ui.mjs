@@ -1,3 +1,4 @@
+import {fixtureBinary} from './cargo-fixture.mjs';
 import {fileEditorSettings} from './plugin-file-editor-assets.mjs';
 // Core-backed declaration forms and committed offline fonts. No business process is launched.
 import assert from 'node:assert/strict';
@@ -9,7 +10,7 @@ const build=spawnSync('cargo',['build','--manifest-path','src-tauri/Cargo.toml',
 if(build.status!==0)throw new Error('Settings core fixture build failed');
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-settings-ui-'));
 const target=spawnSync('rustc',['-vV'],{encoding:'utf8'}).stdout.match(/^host: (.+)$/m)[1];
-const child=spawn(path.resolve(`src-tauri/target/debug/catalog-fixture${process.platform==='win32'?'.exe':''}`),[path.join(root,'data')],{stdio:['pipe','pipe','inherit'],windowsHide:true});
+const child=spawn(fixtureBinary('catalog-fixture'),[path.join(root,'data')],{stdio:['pipe','pipe','inherit'],windowsHide:true});
 const pending=[];
 readline.createInterface({input:child.stdout}).on('line',line=>{const response=JSON.parse(line),p=pending.shift();response.error?p.reject(new Error(response.error)):p.resolve(response.value);});
 child.on('exit',()=>{for(const p of pending.splice(0))p.reject(new Error('Settings core exited'));});

@@ -12,7 +12,7 @@ struct Plugin {
     frames: Receiver<Value>,
 }
 impl Plugin {
-    fn new(launch: bool, open: bool) -> Self {
+    fn new() -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_sodeck-terminal"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -37,17 +37,17 @@ impl Plugin {
             input,
             frames,
         };
-        let mut caps = vec!["terminal.v1", "viewData.v1", "terminal.history.v1"];
-        if launch {
-            caps.push("terminal.launch.v1");
-        }
-        if open {
-            caps.push("ui.openView.v1");
-        }
-        plugin.request("init", "initialize", json!({"capabilities":caps}));
+        plugin.request(
+            "init",
+            "initialize",
+            json!({"coreApiVersion":"2.0","coreVersion":"2.0.0","dataDirectory":".","settings":[]}),
+        );
         let initialized = plugin.next();
-        assert_eq!(initialized["result"]["uiActionsApiVersion"], "1");
-        assert_eq!(initialized["result"]["uiApiVersion"], "2");
+        assert_eq!(initialized["result"]["apiVersion"], "2.0");
+        assert_eq!(
+            initialized["result"]["commandHandlers"],
+            json!(["terminal.open.v1"])
+        );
         plugin
     }
     fn send(&mut self, frame: Value) {
@@ -76,15 +76,50 @@ fn config() -> Value {
     json!({"version":1,"title":"container shell","launch":{"kind":"command","command":"container exec --interactive shell"},"directoryIntegration":"off"})
 }
 #[test]
-fn commands_register_pages_and_reopen_preserves_ticket_across_lost_receipts() {
-    let mut plugin = Plugin::new(true, true);
-    plugin.request("commands-init","initialize",json!({"capabilities":["commands.v1","terminal.v1","terminal.launch.v1","viewData.v1","terminal.history.v1","ui.openView.v1"]}));
-    let init = plugin.next();
-    assert_eq!(init["result"]["commandsApiVersion"], "1");
-    assert_eq!(
-        init["result"]["commandHandlers"],
-        json!(["terminal.open.v1"])
+fn shell_probes_use_plain_task_ids_and_increasing_sequences() {
+    let mut p = Plugin::new();
+    p.request(
+        "create",
+        "ui.createView",
+        mount("probe", json!({"directoryIntegration":"manual"})),
     );
+    let settings = p.next();
+    assert_eq!(settings["method"], "settings.get");
+    p.reply(&settings, json!({"values":{"readingMode":"auto"}}));
+    for (sequence, task, output, exit) in [
+        ("1", "posix-task", "", 1),
+        (
+            "2",
+            "windows-task",
+            "SODECK-POWERSHELL:C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\n",
+            0,
+        ),
+    ] {
+        let start = p.next();
+        assert_eq!(start["method"], "session.exec.start");
+        assert_eq!(start["params"]["sequence"], sequence);
+        p.reply(&start, json!({"taskId":task,"state":"running"}));
+        let poll = p.next();
+        assert_eq!(poll["method"], "session.exec.poll");
+        assert_eq!(poll["params"]["taskId"], task);
+        p.reply(&poll, json!({"state":"completed","outputComplete":true,"exitCode":exit,"exitSignal":null,"error":null,"remoteExitConfirmed":true,"execSent":true,"elapsedMs":1,"outputLimitExceeded":false,"stdout":{"dataBase64":sodeck_plugin_client::encoding::base64(output.as_bytes()),"nextOffset":output.len().to_string()},"stderr":{"dataBase64":"","nextOffset":"0"}}));
+        let release = p.next();
+        assert_eq!(release["method"], "session.exec.release");
+        assert_eq!(release["params"]["taskId"], task);
+        p.reply(&release, json!({"released":true}));
+    }
+    let open = p.next();
+    assert_eq!(open["method"], "terminal.open");
+    assert!(open["params"]["command"]
+        .as_str()
+        .unwrap()
+        .contains("-EncodedCommand"));
+    p.reply(&open, json!({"id":"pty"}));
+    assert_eq!(p.next()["result"]["data"]["integration"]["mode"], "manual");
+}
+#[test]
+fn commands_register_pages_and_reopen_preserves_ticket_across_lost_receipts() {
+    let mut plugin = Plugin::new();
     let context = json!({"workspaceId":"w","serverId":"s","connectionId":"c","generation":1});
     plugin.request("command","commands.handle",json!({"commandId":"command-1","context":context,"name":"terminal.open.v1","payload":config()}));
     let open = plugin.next();
@@ -130,17 +165,15 @@ fn mount(view: &str, params: Value) -> Value {
 }
 
 #[test]
-fn a_core_without_large_history_support_is_rejected_before_creating_a_pty() {
-    let mut plugin = Plugin::new(false, false);
+fn a_mismatched_core_api_is_rejected_without_creating_a_pty() {
+    let mut plugin = Plugin::new();
     plugin.request(
         "legacy",
         "initialize",
-        json!({"capabilities":["terminal.v1","viewData.v1"]}),
+        json!({"coreApiVersion":"1.0","coreVersion":"1.12.0","dataDirectory":".","settings":[]}),
     );
     let response = plugin.next();
-    assert!(response["error"]
-        .to_string()
-        .contains("terminal.history.v1"));
+    assert!(response["error"].to_string().contains("API"));
     assert!(plugin
         .frames
         .recv_timeout(Duration::from_millis(100))
@@ -149,12 +182,12 @@ fn a_core_without_large_history_support_is_rejected_before_creating_a_pty() {
 
 #[test]
 fn action_and_reopen_create_pages_before_pty_and_preserve_config() {
-    let mut p = Plugin::new(true, true);
+    let mut p = Plugin::new();
     let context = mount("v", Value::Null)["context"].clone();
     p.request(
         "action",
-        "ui.action",
-        json!({"context":context,"requestId":"r","actionId":"new-terminal","data":config()}),
+        "commands.handle",
+        json!({"context":context,"commandId":"r","name":"terminal.open.v1","payload":config()}),
     );
     let open = p.next();
     assert_eq!(open["method"], "ui.openView");
@@ -181,14 +214,14 @@ fn action_and_reopen_create_pages_before_pty_and_preserve_config() {
     assert_eq!(p.next()["result"]["data"]["streamId"], "pty");
     p.request("reopen","ui.event",json!({"viewId":"v","context":context,"data":{"action":"createTerminal","requestId":"r2","params":config()}}));
     let reopen = p.next();
-    assert_eq!(reopen["method"], "ui.openView");
-    assert_eq!(reopen["params"]["params"], config());
-    p.reply(&reopen, json!({"viewId":"v2"}));
+    assert_eq!(reopen["method"], "commands.submit");
+    assert_eq!(reopen["params"]["payload"], config());
+    p.reply(&reopen, json!({"status":"completed","viewId":"v2"}));
     assert_eq!(p.next()["result"]["data"]["viewId"], "v2");
 }
 #[test]
 fn concurrent_creates_share_one_initialization_and_reads_do_not_create() {
-    let mut p = Plugin::new(true, true);
+    let mut p = Plugin::new();
     p.request("first", "ui.createView", mount("one", config()));
     let first = p.next();
     assert_eq!(first["method"], "terminal.open");
@@ -211,7 +244,7 @@ fn concurrent_creates_share_one_initialization_and_reads_do_not_create() {
 }
 #[test]
 fn disposal_during_initialization_closes_late_pty_and_failure_is_cached() {
-    let mut p = Plugin::new(true, true);
+    let mut p = Plugin::new();
     p.request("create", "ui.createView", mount("closing", config()));
     let launch = p.next();
     p.request("dispose", "ui.disposeView", json!({"viewId":"closing"}));
@@ -234,20 +267,25 @@ fn disposal_during_initialization_closes_late_pty_and_failure_is_cached() {
     assert!(repeated.get("error").is_some());
 }
 #[test]
-fn missing_optional_launch_capability_rejects_command_and_opens_plain_shell() {
-    let mut p = Plugin::new(false, false);
-    p.request("command", "ui.createView", mount("command", config()));
+fn explicit_off_opens_a_plain_shell_when_reading_integration_is_manual() {
+    let mut p = Plugin::new();
+    p.request(
+        "invalid",
+        "ui.createView",
+        mount("invalid", json!({"launch":{"kind":"command","command":""}})),
+    );
     assert!(p.next().get("error").is_some());
-    p.request("host", "ui.createView", mount("host", Value::Null));
+    p.request(
+        "host",
+        "ui.createView",
+        mount("host", json!({"directoryIntegration":"off"})),
+    );
     let settings = p.next();
     assert_eq!(settings["method"], "settings.get");
-    p.reply(&settings, json!({"values":{"directoryMode":"auto"}}));
+    p.reply(&settings, json!({"values":{"readingMode":"manual"}}));
     let launch = p.next();
     assert_eq!(launch["method"], "terminal.open");
     assert!(launch["params"].get("command").is_none());
     p.reply(&launch, json!({"id":"host-pty"}));
-    assert_eq!(
-        p.next()["result"]["data"]["integration"]["reasonCode"],
-        "old-core"
-    );
+    assert_eq!(p.next()["result"]["data"]["integration"]["mode"], "off");
 }

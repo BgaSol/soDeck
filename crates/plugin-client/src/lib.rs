@@ -4,12 +4,12 @@ use std::{
     collections::HashMap,
     io::{self, BufRead, Read, Write},
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
         mpsc, Arc, Mutex,
     },
     time::Duration,
 };
-const MAX: usize = 64 * 1024;
+const MAX: usize = sodeck_plugin_protocol::FRAME_LIMIT;
 #[derive(Clone)]
 pub struct Client {
     inner: Arc<Inner>,
@@ -17,32 +17,41 @@ pub struct Client {
 struct Inner {
     state: shared_state::Inbox,
     closed: AtomicBool,
+    initialized: AtomicU8,
     writer: Mutex<io::Stdout>,
     pending: Mutex<HashMap<String, mpsc::SyncSender<Result<Value, RpcError>>>>,
     sequence: AtomicU64,
 }
 impl Client {
+    pub fn request<R: sodeck_plugin_protocol::requests::Call>(
+        &self,
+        request: R,
+    ) -> Result<R::Reply, RpcError> {
+        let frame = serde_json::to_value(request.into_request())
+            .map_err(|e| RpcError::invalid(e.to_string()))?;
+        R::decode_reply(
+            self.send_request(frame["method"].as_str().unwrap(), frame["params"].clone())?,
+        )
+    }
     pub fn is_closed(&self) -> bool {
         self.inner.closed.load(Ordering::Acquire)
     }
-    fn send(&self, frame: Value) -> Result<(), String> {
+    fn send(&self, frame: Value) -> Result<(), RpcError> {
         if self.inner.closed.load(Ordering::Acquire) {
-            return Err("核心通信已结束".into());
+            return Err(RpcError::not_sent("核心通信已结束"));
         }
-        let mut bytes = serde_json::to_vec(&frame).map_err(|e| e.to_string())?;
+        let mut bytes =
+            serde_json::to_vec(&frame).map_err(|e| RpcError::not_sent(e.to_string()))?;
         bytes.push(b'\n');
         if bytes.len() > MAX {
-            return Err("控制帧超过 64 KiB".into());
+            return Err(RpcError::not_sent("控制帧超过 64 KiB"));
         }
         let mut out = self.inner.writer.lock().unwrap();
         out.write_all(&bytes)
             .and_then(|_| out.flush())
-            .map_err(|e| e.to_string())
+            .map_err(|e| RpcError::local(e.to_string()))
     }
-    pub fn call(&self, method: &str, params: Value) -> Result<Value, String> {
-        self.call_detailed(method, params).map_err(|e| e.message)
-    }
-    pub fn call_detailed(&self, method: &str, params: Value) -> Result<Value, RpcError> {
+    fn send_request(&self, method: &str, params: Value) -> Result<Value, RpcError> {
         let id = format!(
             "plugin-{}",
             self.inner.sequence.fetch_add(1, Ordering::Relaxed)
@@ -51,16 +60,18 @@ impl Client {
         {
             let mut pending = self.inner.pending.lock().unwrap();
             if pending.len() >= 32 {
-                return Err(RpcError::local("插件请求已满"));
+                return Err(RpcError::busy());
             }
             pending.insert(id.clone(), tx);
         }
         let result = self
             .send(json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))
-            .map_err(RpcError::local)
             .and_then(|_| {
-                rx.recv_timeout(Duration::from_secs(4))
-                    .map_err(|_| RpcError::local("核心请求超时"))?
+                rx.recv_timeout(sodeck_plugin_protocol::REQUEST_TIMEOUT)
+                    .map_err(|error| match error {
+                        mpsc::RecvTimeoutError::Timeout => RpcError::timeout(),
+                        mpsc::RecvTimeoutError::Disconnected => RpcError::local("核心通信已结束"),
+                    })?
             });
         self.inner.pending.lock().unwrap().remove(&id);
         result
@@ -72,20 +83,25 @@ fn read_control_line(input: &mut impl BufRead) -> io::Result<Vec<u8>> {
     Ok(line)
 }
 pub fn run(
-    handler: impl Fn(&Client, &str, Value) -> Result<Value, String> + Send + Sync + 'static,
+    handler: impl Fn(&Client, sodeck_plugin_protocol::callbacks::Callback) -> Result<Value, RpcError>
+        + Send
+        + Sync
+        + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    run_with_commands(&[], move |client, method, params| {
-        handler(client, method, params).map_err(RpcError::from)
-    })
+    run_with_commands(&[], handler)
 }
 /// Static process-scoped handlers, dispatched by the existing bounded worker set.
 pub fn run_with_commands(
     names: &'static [&'static str],
-    handler: impl Fn(&Client, &str, Value) -> Result<Value, RpcError> + Send + Sync + 'static,
+    handler: impl Fn(&Client, sodeck_plugin_protocol::callbacks::Callback) -> Result<Value, RpcError>
+        + Send
+        + Sync
+        + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = Arc::new(Client {
         inner: Arc::new(Inner {
             closed: AtomicBool::new(false),
+            initialized: AtomicU8::new(0),
             writer: Mutex::new(io::stdout()),
             pending: Mutex::new(HashMap::new()),
             sequence: AtomicU64::new(0),
@@ -103,24 +119,40 @@ pub fn run_with_commands(
             let frame = { rx.lock().unwrap().recv() };
             let Ok(frame) = frame else { break };
             let method = frame["method"].as_str().unwrap_or_default();
-            let mut result = if method == "commands.handle"
-                && !names.iter().any(|name| frame["params"]["name"] == *name)
-            {
-                Err("未登记的命令处理者".into())
-            } else {
-                handler(&client, method, frame["params"].clone())
-            };
-            if method == "initialize"
-                && !names.is_empty()
-                && frame["params"]["capabilities"]
-                    .as_array()
-                    .is_some_and(|caps| caps.iter().any(|c| c == "commands.v1"))
-            {
-                if let Ok(value) = &mut result {
-                    value["commandsApiVersion"] = json!("1");
-                    value["commandHandlers"] = json!(names);
+            let result = (|| -> Result<Value, RpcError> {
+                let callback = sodeck_plugin_protocol::callbacks::Callback::decode(
+                    method,
+                    frame["params"].clone(),
+                )?;
+                if method == "initialize" {
+                    let init: sodeck_plugin_protocol::Initialize =
+                        serde_json::from_value(frame["params"].clone())
+                            .map_err(|e| RpcError::invalid(e.to_string()))?;
+                    if !sodeck_plugin_protocol::compatible(&init.core_api_version, API_VERSION) {
+                        return Err(RpcError::invalid("核心 API 不匹配，需要 API 2.0"));
+                    }
+                    client
+                        .inner
+                        .initialized
+                        .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+                        .map_err(|_| RpcError::invalid("初始化已经开始或完成"))?;
+                    if let Err(error) = handler(&client, callback) {
+                        client.inner.initialized.store(0, Ordering::Release);
+                        return Err(error);
+                    }
+                    client.inner.initialized.store(2, Ordering::Release);
+                    return Ok(json!({"apiVersion":API_VERSION,"commandHandlers":names}));
                 }
-            }
+                if client.inner.initialized.load(Ordering::Acquire) != 2 {
+                    return Err(RpcError::invalid("插件尚未初始化"));
+                }
+                if method == "commands.handle"
+                    && !names.iter().any(|name| frame["params"]["name"] == *name)
+                {
+                    return Err(RpcError::invalid("未登记的命令处理者"));
+                }
+                handler(&client, callback)
+            })();
             let response = match result {
                 Ok(value) => json!({"jsonrpc":"2.0","id":frame["id"],"result":value}),
                 Err(error) => {
@@ -183,47 +215,34 @@ pub mod program;
 pub mod settings;
 pub mod shared_state;
 
-#[derive(Debug, Clone)]
-pub struct RpcError {
-    pub code: i64,
-    pub message: String,
-    pub data: Value,
-}
-impl From<String> for RpcError {
-    fn from(message: String) -> Self {
-        Self {
-            code: -32000,
-            message,
-            data: Value::Null,
-        }
-    }
-}
-impl From<&str> for RpcError {
-    fn from(message: &str) -> Self {
-        message.to_owned().into()
-    }
-}
-impl RpcError {
-    fn local(message: impl Into<String>) -> Self {
-        Self {
-            code: -32003,
-            message: message.into(),
-            data: Value::Null,
-        }
-    }
-    fn from_frame(error: &Value) -> Self {
-        Self {
-            code: error["code"].as_i64().unwrap_or(-32000),
-            message: error["message"].as_str().unwrap_or("核心调用失败").into(),
-            data: error["data"].clone(),
-        }
-    }
-}
+pub use sodeck_plugin_protocol::{ApiError as RpcError, Context, API_VERSION};
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::{collections::VecDeque, io::BufReader};
+
+    #[test]
+    fn locally_rejected_requests_never_claim_an_unknown_effect() {
+        let client = Client {
+            inner: Arc::new(Inner {
+                state: shared_state::Inbox::default(),
+                closed: AtomicBool::new(false),
+                initialized: AtomicU8::new(2),
+                writer: Mutex::new(io::stdout()),
+                pending: Mutex::new(HashMap::new()),
+                sequence: AtomicU64::new(1),
+            }),
+        };
+        let large = json!({"bytes":"x".repeat(MAX)});
+        assert_eq!(client.send(large).unwrap_err().data["dispatch"], "notSent");
+        client.inner.closed.store(true, Ordering::Release);
+        assert_eq!(
+            client.send(json!({})).unwrap_err().data["dispatch"],
+            "notSent"
+        );
+        assert_eq!(RpcError::timeout().data["dispatch"], "unknown");
+    }
 
     enum ReadStep {
         Data(io::Cursor<Vec<u8>>),
@@ -382,7 +401,7 @@ mod tests {
     }
 
     #[test]
-    fn structured_errors_keep_recovery_code_and_legacy_message() {
+    fn structured_errors_keep_recovery_code_and_message() {
         let e = RpcError::from_frame(
             &json!({"code":-32000,"message":"过期","data":{"code":"staleContext"}}),
         );
@@ -390,3 +409,5 @@ mod tests {
         assert_eq!(e.message, "过期");
     }
 }
+
+pub use sodeck_plugin_protocol as protocol;

@@ -1,14 +1,7 @@
 //! Read-only target facts captured under the connection/workbench lock order.
 use crate::{session_exec::Error, workspaces::Context, AppCore};
-use serde::Deserialize;
 use serde_json::{json, Value};
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Describe {
-    view_id: String,
-    expected_context: Context,
-}
+use sodeck_plugin_protocol::requests::ViewContext as Describe;
 fn error(code: &'static str, message: impl Into<String>) -> Error {
     Error {
         code,
@@ -44,15 +37,14 @@ impl AppCore {
         {
             return Err(error("invalidParams", "目标查询身份无效"));
         }
-        self.target_facts(plugin, instance, &request.view_id, Some(context), true)
+        self.target_facts(plugin, instance, &request.view_id, context)
     }
     pub(crate) fn target_facts(
         &self,
         plugin: &str,
         instance: &str,
         view_id: &str,
-        expected: Option<&Context>,
-        detailed_target: bool,
+        expected: &Context,
     ) -> Result<Value, Error> {
         let registry = self.connections.registry.lock().unwrap();
         let state = self.workbench_state();
@@ -64,17 +56,17 @@ impl AppCore {
             return Err(error("staleContext", "视图不属于此实例"));
         }
         let context = view.context.clone();
-        if expected.is_some_and(|expected| expected != &context) {
+        if expected != &context {
             return Err(error("staleContext", "连接代次已改变"));
         }
         let closing = state.ui.lifecycle.view_frozen(&view.id);
-        target_context_facts(&registry, &state, &context, closing, detailed_target)
+        target_context_facts(&registry, &state, &context, closing)
     }
     pub(crate) fn context_target_facts(&self, context: &Context) -> Result<Value, Error> {
         let registry = self.connections.registry.lock().unwrap();
         let state = self.workbench_state();
         let closing = state.ui.frozen(&context.workspace_id);
-        target_context_facts(&registry, &state, context, closing, true)
+        target_context_facts(&registry, &state, context, closing)
     }
 }
 
@@ -83,7 +75,6 @@ fn target_context_facts(
     state: &crate::workbench::State,
     context: &Context,
     closing: bool,
-    detailed_target: bool,
 ) -> Result<Value, Error> {
     let workspace = state
         .workspaces
@@ -101,22 +92,18 @@ fn target_context_facts(
     let target = session
         .as_ref()
         .map(|s| &s.target)
-        .or_else(|| {
-            detailed_target
-                .then_some(workspace.connection_target.as_ref())
-                .flatten()
-        })
+        .or(workspace.connection_target.as_ref())
         .cloned();
     let name = workspace.name.clone();
 
     let target = target.map(|t| {
             let mut value = json!({"name":name,"protocol":t.protocol,"endpoint":t.endpoint(),"username":t.username});
-            if detailed_target { value["host"] = json!(t.host); value["port"] = json!(t.port); }
+            value["host"] = json!(t.host); value["port"] = json!(t.port);
             value
         });
     let mut value = json!({"context":context,"target":target,"state":if connected {"connected"}else{"disconnected"},
             "closing":closing,"capabilities":if connected {vec!["exec","files"]}else{vec![]}});
-    if detailed_target {
+    {
         value["targetSource"] = json!(if value["target"].is_null() {
             "unknown"
         } else if connected {

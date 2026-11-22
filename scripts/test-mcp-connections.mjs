@@ -11,7 +11,6 @@ const root=testPluginDirectory('mcp'),manifest=JSON.parse(fs.readFileSync(path.j
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-mcp-open-'));
 const socket=net.createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r));
 const servers=[{id:'a',name:'187',host:'10.0.0.187'},{id:'b',name:'backup',host:'10.0.1.187'},{id:'c',name:'third',host:'node.example.com'},{id:'late',name:'late',host:'late.example.com'}];
-const management=Number(manifest.version.split('.')[1])>=11;
 const writes=[],writeGates=[];let gateWrites=false;
 let revision='1',sequence=0,created=0,cancelCalls=0,lateRelease;
 const requests=new Map(),sessions=new Map(),backgrounds=new Map();
@@ -67,10 +66,10 @@ async function tool(name,args={},signal){const r=await call('tools/call',{name,a
 async function until(read,check){const end=Date.now()+12000;let result;do{result=await read();if(check(result))return result;await delay(20);}while(Date.now()<end);throw new Error('Did not settle: '+JSON.stringify(result));}
 const open=(id,requestId,waitMs=0)=>tool('sodeck_connection_open',{serverId:'server-'+id,expectedProfileToken:'token-'+id,requestId,waitMs});
 try{
-  await peer.request('initialize',{capabilities:['session.target.v2','session.process.v1','files.pluginData.v1','files.operations.v2','files.copy.v1','ui.background.v1','settings.v1','servers.read.v1','servers.write.v1','connections.v1'],dataDirectory:directory});
+  await peer.initialize({dataDirectory:directory});
   token=fs.readFileSync(path.join(directory,'access-token'),'utf8');
   await until(()=>call('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'opening-regression',version:'1'}}).catch(()=>null),Boolean);
-  if(management){
+  {
     const listed=await call('tools/list',{});assert.equal(listed.tools.length,15);
     for(const name of ['create','update','delete']){const annotations=listed.tools.find(t=>t.name==='sodeck_server_'+name).annotations;assert.equal(annotations.readOnlyHint,false);assert.equal(annotations.idempotentHint,false);if(name!=='create')assert.equal(annotations.destructiveHint,true);}
     const createdNode=(await tool('sodeck_server_create',{catalogRevision:revision,server:{host:'created.invalid',username:'ops'}})).value;assert.equal(createdNode.serverId,'server-created');

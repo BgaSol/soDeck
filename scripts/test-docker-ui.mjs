@@ -17,7 +17,7 @@ let logCapture={generation:1,loading:false,navigation:{},resources:[{id:'history
 const subscriptions=new Map();
 const bytesFor=rows=>Buffer.from(rows.map((row,i)=>JSON.stringify({v:1,sequence:String(i+1),source:row.stream,receivedAt:Date.now(),dataBase64:Buffer.from(row.text+'\n').toString('base64')})+'\n').join(''));
 const capturedBytes=new Map([['history',bytesFor(logs)],['live',Buffer.alloc(0)]]);
-async function sendFrame(id,kind,bytes=Buffer.alloc(0)) {const s=subscriptions.get(id);if(!s)return;s.packet++;s.offset+=bytes.length;await page.evaluate(frame=>window.post('data',{data:frame}),{kind,packet:s.packet,offset:s.offset,data:[...bytes],metadata:{streamId:id}});}
+async function sendFrame(id,kind,bytes=Buffer.alloc(0)) {const s=subscriptions.get(id);if(!s)return;s.packet++;s.offset+=bytes.length;await page.evaluate(frame=>window.post('data',{data:frame}),{kind,packet:s.packet,offset:s.offset,data:[...bytes],metadata:{processId:id}});}
 async function appendLive(rows) {const bytes=bytesFor(rows);capturedBytes.set('live',Buffer.concat([capturedBytes.get('live'),bytes]));await sendFrame('live','data',bytes);}
 const server=createServer((req,res)=>{
   if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><html><body style="margin:0"><iframe title="Docker 测试" style="border:0;width:100vw;height:100vh" src="/ui/logs.html"></iframe></body></html>');return;}
@@ -62,7 +62,7 @@ await page.exposeFunction('mock',async d=>{
   throw new Error('Unexpected UI action '+d.action);
 });
 await page.exposeFunction('mockData',async d=>{
-  if(d.op==='sessionStream'){
+  if(d.op==='processOutput'){
     if(d.action==='attach'){const offset=Number(d.offset||0);subscriptions.set(d.id,{packet:0,offset});await sendFrame(d.id,'reset');const bytes=capturedBytes.get(d.id)||Buffer.alloc(0);for(let at=offset;at<bytes.length;at+=16384)await sendFrame(d.id,'data',bytes.subarray(at,at+16384));await sendFrame(d.id,'caughtUp');if(logCapture.resources.find(r=>r.id===d.id)?.status.finished)await sendFrame(d.id,'end');return {};}
     if(d.action==='detach'){subscriptions.delete(d.id);return {};}
     if(d.action==='pin')return {pinId:'pin-'+d.id};
@@ -83,7 +83,7 @@ await page.addInitScript(({snapshot,tokens})=>{
     if(m.type==='flushed')window.flushed.push(m);
     if(m.type==='request'){
       try{const data=m.method==='event'?await window.mock(m.params):m.method==='data'?await window.mockData(m.params):{};if(m.method==='event')window.responses.push(m.params);window.post('response',{id:m.id,data});}
-      catch(error){window.post('response',{id:m.id,error:error.message});}
+      catch(error){window.post('response',{id:m.id,error:{code:-32000,message:error.message,data:error.data}});}
     }
   });
 },{snapshot,tokens:themes.light});

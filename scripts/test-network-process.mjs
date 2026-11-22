@@ -18,25 +18,25 @@ const peer=pluginPeer(executable,async(method,p)=>{
   if(method==='state.remove')return {};
   if(method==='net.poll')return {items:[]};
   if(method==='net.listener.create'){
-    createCount++;assert.equal(createCount,1,'Lost create response must never cause a second listener');listener=net.createServer();await new Promise(resolve=>listener.listen(0,'127.0.0.1',resolve));throw Object.assign(new Error('Create accepted; reply lost'),{code:-32003});
+    createCount++;assert.equal(createCount,1,'Lost create response must never cause a second listener');listener=net.createServer();await new Promise(resolve=>listener.listen(0,'127.0.0.1',resolve));throw Object.assign(new Error('Create accepted; reply lost'),{code:-32003,data:{dispatch:'unknown'}});
   }
   if(method==='net.listener.lookup'){
     if(holdQuery){enteredQuery?.();await holdQuery;}
-    if(failQuery)throw Object.assign(new Error('Query reply lost'),{code:-32003});
+    if(failQuery)throw Object.assign(new Error('Query reply lost'),{code:-32003,data:{dispatch:'unknown'}});
     return observed();
   }
   if(method==='net.listener.cancel'){
     if(allowCleanup&&!stopped){await new Promise(resolve=>listener.close(resolve));stopped=true;}
     return observed();
   }
-  if(method==='net.listener.release'){if(failRelease)throw Object.assign(new Error('Release reply lost'),{code:-32003});return {released:true};}
+  if(method==='net.listener.release'){if(failRelease)throw Object.assign(new Error('Release reply lost'),{code:-32003,data:{dispatch:'unknown'}});return {released:true};}
   throw new Error('Unexpected call: '+method);
 });
 const request=(method,viewId,extra={})=>peer.request(method,{viewId,context,...extra});
 const event=(data)=>request('ui.event','manager',{data});
 const row=()=>request('ui.getView','manager').then(r=>r.data.catalog.rules[0]);
 try{
-  await peer.request('initialize',{dataDirectory:directory,capabilities:['net.tcp.v1','net.listenerLifecycle.v1','ui.dialog.v1','commands.v1','sharedState.v1','ui.background.v1','ui.openView.v1']});
+  await peer.initialize({dataDirectory:directory,});
   await request('ui.createView','manager',{viewType:'manager'});
   await request('ui.createView','editor',{viewType:'rule-editor',params:{rule:{id:'rule',serverId:'server',name:'test',revision:0,type:'socks5',bind:{host:'127.0.0.1',port:0}}}});
   const rule={id:'rule',serverId:'server',name:'test',revision:0,type:'socks5',bind:{host:'127.0.0.1',port:0}};

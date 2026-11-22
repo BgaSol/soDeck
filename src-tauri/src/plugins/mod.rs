@@ -1,4 +1,5 @@
 //! External plugin processes and their versioned control channel.
+use sodeck_plugin_protocol::ApiError;
 mod dispatch;
 mod manifest;
 mod process;
@@ -24,16 +25,16 @@ use std::{
 pub(crate) struct Call {
     method: String,
     params: Value,
-    reply: Sender<Result<Value, String>>,
+    reply: Sender<Result<Value, ApiError>>,
     deadline: Instant,
     task: Option<crate::resource_tasks::Task>,
     observation: Observation,
     expire_at_deadline: bool,
 }
-pub(crate) type Receipt = Arc<Mutex<Option<Result<Value, String>>>>;
+pub(crate) type Receipt = Arc<Mutex<Option<Result<Value, ApiError>>>>;
 /// A timed-out caller keeps its receipt until the real reply or process cleanup.
 struct Observation {
-    legacy: Option<Receipt>,
+    completion: Option<Receipt>,
     command: Option<crate::commands::Delivery>,
 }
 impl Observation {
@@ -48,19 +49,19 @@ impl Observation {
             command.log(core);
         }
     }
-    fn complete(&self, result: &Result<Value, String>) {
-        if let Some(receipt) = &self.legacy {
+    fn complete(&self, result: &Result<Value, ApiError>) {
+        if let Some(receipt) = &self.completion {
             *receipt.lock().unwrap() = Some(result.clone());
         }
     }
 }
 impl Drop for Observation {
     fn drop(&mut self) {
-        if let Some(receipt) = &self.legacy {
+        if let Some(receipt) = &self.completion {
             receipt
                 .lock()
                 .unwrap()
-                .get_or_insert_with(|| Err("请求未发送或插件进程已结束".into()));
+                .get_or_insert_with(|| Err(ApiError::local("请求未发送或插件进程已结束")));
         }
     }
 }
@@ -75,16 +76,13 @@ enum Output {
 }
 
 pub(crate) struct Instance {
-    pub(crate) commands_api: std::sync::atomic::AtomicBool,
-    pub(crate) settings_api: std::sync::atomic::AtomicBool,
-    pub(crate) ui_actions_api: std::sync::atomic::AtomicBool,
     view: Mutex<PluginView>,
     calls: SyncSender<Call>,
     stops: SyncSender<Sender<Result<(), String>>>,
 }
 
 impl Instance {
-    pub fn request(&self, method: &str, params: Value) -> Result<Value, String> {
+    pub fn request(&self, method: &str, params: Value) -> Result<Value, ApiError> {
         self.request_tracked(method, params, None)
     }
     pub(crate) fn request_tracked(
@@ -92,7 +90,7 @@ impl Instance {
         method: &str,
         params: Value,
         task: Option<crate::resource_tasks::Task>,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, ApiError> {
         self.request_observed(method, params, task, None, rpc::REQUEST_TIMEOUT)
     }
     pub(crate) fn request_observed(
@@ -102,18 +100,18 @@ impl Instance {
         task: Option<crate::resource_tasks::Task>,
         receipt: Option<Receipt>,
         timeout: Duration,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, ApiError> {
         let rx = self.enqueue_request(method, params, task, receipt, timeout, false)?;
         rx.recv_timeout(timeout + Duration::from_millis(100))
             .map_err(|error| match error {
-                mpsc::RecvTimeoutError::Timeout => "插件界面请求超过 5 秒",
-                mpsc::RecvTimeoutError::Disconnected => "插件通信已停止",
+                mpsc::RecvTimeoutError::Timeout => ApiError::timeout(),
+                mpsc::RecvTimeoutError::Disconnected => ApiError::local("插件通信已停止"),
             })?
     }
     pub(crate) fn enqueue_state(
         &self,
         params: Value,
-    ) -> Result<Receiver<Result<Value, String>>, String> {
+    ) -> Result<Receiver<Result<Value, ApiError>>, ApiError> {
         self.enqueue_request(
             "state.changed",
             params,
@@ -123,7 +121,7 @@ impl Instance {
             true,
         )
     }
-    pub(crate) fn enqueue_connection_change(&self, params: Value) -> Result<(), String> {
+    pub(crate) fn enqueue_connection_change(&self, params: Value) -> Result<(), ApiError> {
         self.enqueue_request(
             "connections.changed",
             params,
@@ -142,13 +140,13 @@ impl Instance {
         receipt: Option<Receipt>,
         timeout: Duration,
         expire_at_deadline: bool,
-    ) -> Result<Receiver<Result<Value, String>>, String> {
+    ) -> Result<Receiver<Result<Value, ApiError>>, ApiError> {
         self.enqueue_observation(
             method,
             params,
             task,
             Observation {
-                legacy: receipt,
+                completion: receipt,
                 command: None,
             },
             timeout,
@@ -161,13 +159,13 @@ impl Instance {
         params: Value,
         task: crate::resource_tasks::Task,
         delivery: crate::commands::Delivery,
-    ) -> Result<(), String> {
+    ) -> Result<(), ApiError> {
         self.enqueue_observation(
             method,
             params,
             Some(task),
             Observation {
-                legacy: None,
+                completion: None,
                 command: Some(delivery),
             },
             rpc::REQUEST_TIMEOUT,
@@ -183,13 +181,13 @@ impl Instance {
         observation: Observation,
         timeout: Duration,
         expire_at_deadline: bool,
-    ) -> Result<Receiver<Result<Value, String>>, String> {
+    ) -> Result<Receiver<Result<Value, ApiError>>, ApiError> {
         if self.view().status != PluginStatus::Running {
-            return Err("插件当前不可用".into());
+            return Err(ApiError::not_sent("插件当前不可用"));
         }
         rpc::encode(
             &json!({"jsonrpc":"2.0","id":"ui-18446744073709551615","method":method,"params":params}),
-        )?;
+        ).map_err(ApiError::not_sent)?;
         let (tx, rx) = mpsc::channel();
         self.calls
             .try_send(Call {
@@ -202,8 +200,8 @@ impl Instance {
                 expire_at_deadline,
             })
             .map_err(|error| match error {
-                mpsc::TrySendError::Full(_) => "插件请求队列已满，请稍后重试",
-                mpsc::TrySendError::Disconnected(_) => "插件通信已停止",
+                mpsc::TrySendError::Full(_) => ApiError::busy(),
+                mpsc::TrySendError::Disconnected(_) => ApiError::not_sent("插件通信已停止"),
             })?;
         Ok(rx)
     }
@@ -221,9 +219,6 @@ impl Instance {
         let (ready, ready_rx) = mpsc::channel();
         (
             Arc::new(Self {
-                commands_api: std::sync::atomic::AtomicBool::new(false),
-                settings_api: std::sync::atomic::AtomicBool::new(false),
-                ui_actions_api: std::sync::atomic::AtomicBool::new(false),
                 view: Mutex::new(PluginView {
                     directory: record.directory,
                     manifest: record.manifest,

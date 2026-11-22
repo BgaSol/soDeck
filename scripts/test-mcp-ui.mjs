@@ -5,14 +5,15 @@ import os from 'node:os';
 import {createServer} from 'node:http';
 import {chromium} from 'playwright';
 import {packageMenuAssets} from './plugin-menu-assets.mjs';
+import {packageSdkAssets} from './plugin-sdk-assets.mjs';
 import {packageStyles} from '../packages/ui/package.mjs';
 import {readTestThemeTokens} from './test-theme-tokens.mjs';
 const root=path.resolve('plugins/mcp'), assets=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-mcp-ui-'));
 await packageMenuAssets(assets);packageStyles(assets);
-fs.copyFileSync('plugins/shared/clipboard.js',path.join(assets,'ui/clipboard-bridge.js'));
+packageSdkAssets(assets);
 const server=createServer((req,res)=>{
   if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><meta charset="UTF-8"><style>body{margin:0;display:flex;height:100vh;font:13px system-ui;background:#f5f5f5}#workspace{flex:1;min-width:0;padding:20px;box-sizing:border-box}#terminal{display:block;width:100%;height:65vh;box-sizing:border-box;background:#202124;color:#eee;padding:16px;font:13px monospace}aside{width:320px;flex:none;display:flex;flex-direction:column;border-left:1px solid #ddd;box-sizing:border-box}#sidebar-title{padding:7px 12px;background:var(--panel,#fff);color:var(--text,#222);border-bottom:1px solid var(--border,#ddd);font-weight:600}iframe{border:0;width:100%;flex:1;min-height:0}</style><main id="workspace"><h2>prod-consul-01 · 终端</h2><p>主工作区保持原有页面和输入</p><textarea id="terminal" aria-label="终端输入"></textarea></main><aside><div id="sidebar-title">Agent MCP</div><iframe title="Agent MCP" src="/ui/index.html"></iframe></aside>');return;}
-  const url=req.url.split('?')[0],base=['/ui/text-menu.js','/ui/shared.css','/ui/clipboard-bridge.js'].includes(url)?assets:root,file=path.join(base,url);
+  const url=req.url.split('?')[0],base=(url.startsWith('/ui/sdk/')||['/ui/text-menu.js','/ui/shared.css'].includes(url))?assets:root,file=path.join(base,url);
   if(!file.startsWith(base+path.sep)||!fs.existsSync(file)){res.statusCode=404;res.end();return;}
   res.setHeader('Content-Type',{'.js':'text/javascript','.html':'text/html','.css':'text/css'}[path.extname(file)]||'application/octet-stream');res.end(fs.readFileSync(file));
 });
@@ -59,7 +60,7 @@ await page.addInitScript(()=>{
   if(window!==top)return;
   addEventListener('message',async e=>{const m=e.data;if(m?.channel!=='sodeck-ui-v2')return;
     if(m.type==='ready')e.source.postMessage({channel:m.channel,type:'mount',surfaceId:'test',viewType:'status',visible:true,capabilities:{clipboard:1,settings:1},tokens:{}},'*');
-    if(m.type==='request')try{const data=await window.mcpRequest(m.method,m.params);e.source.postMessage({channel:m.channel,type:'response',surfaceId:'test',id:m.id,data},'*');}catch(error){e.source.postMessage({channel:m.channel,type:'response',surfaceId:'test',id:m.id,error:error.message},'*');}
+    if(m.type==='request')try{const data=await window.mcpRequest(m.method,m.params);e.source.postMessage({channel:m.channel,type:'response',surfaceId:'test',id:m.id,data},'*');}catch(error){e.source.postMessage({channel:m.channel,type:'response',surfaceId:'test',id:m.id,error:{code:-32000,message:error.message,data:error.data}},'*');}
   });
 });
 const frame=page.frameLocator('iframe');

@@ -6,6 +6,7 @@ use crate::identity::{host, MatchMode, Needle};
 use crate::{task::Kind, tasks::failure};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sodeck_plugin_client::protocol::requests as api;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
@@ -323,10 +324,11 @@ impl App {
         if target.closed.load(Ordering::Acquire) {
             return Err(failure("staleContext", "目标已关闭"));
         }
-        let value = self.rpc(
-            "session.target.describe",
+        let value = serde_json::from_value::<api::ViewContext>(
             json!({"viewId":target.view,"expectedContext":target.context}),
-        )?;
+        )
+        .map_err(|_| failure("invalidParams", "核心请求参数无效"))
+        .and_then(|params| self.rpc(api::call::Target(params)))?;
         if target.closed.load(Ordering::Acquire) {
             return Err(failure("staleContext", "采集期间目标已关闭"));
         }

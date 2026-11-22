@@ -1,4 +1,5 @@
 use super::*;
+use sodeck_plugin_client::protocol::requests as api;
 impl Collector<'_> {
     pub(super) fn files(&mut self) -> Result<Outcome, Value> {
         let existing = self
@@ -12,10 +13,10 @@ impl Collector<'_> {
         let file = if let Some(file) = existing {
             file
         } else {
-            let opened = self.app.rpc(
-                "files.request",
-                json!({"action":"open","viewId":self.task.target.view}),
-            )?;
+            let opened =
+                serde_json::from_value::<api::FileOpen>(json!({"viewId":self.task.target.view}))
+                    .map_err(|_| failure("invalidParams", "核心请求参数无效"))
+                    .and_then(|params| self.app.rpc(api::call::FileOpen(params)))?;
             let file = text(&opened, "id", 256)?.to_owned();
             self.task
                 .target
@@ -26,7 +27,11 @@ impl Collector<'_> {
             file
         };
         self.batch_file = Some(file.clone());
-        self.app.rpc("files.request",json!({"id":file,"action":"batch.begin","protocolVersion":2,"batchId":self.task.id,"context":self.task.target.context}))?;
+        serde_json::from_value::<api::BatchBegin>(
+            json!({"id":file,"batchId":self.task.id,"context":self.task.target.context}),
+        )
+        .map_err(|_| failure("invalidParams", "核心请求参数无效"))
+        .and_then(|params| self.app.rpc(api::call::BatchBegin(params)))?;
         let operation = match &self.task.spec.operation {
             TaskOperation::File(FileSpec::Download { remote_path }) => {
                 json!({"kind":"copyFile","source":{"side":"remote","path":remote_path},"destination":{"side":"pluginData","relative":["evidence",self.task.run,self.task.id,"download.bin"]},"destinationGuard":{"kind":"absent"}})
@@ -40,13 +45,18 @@ impl Collector<'_> {
             }
             TaskOperation::Exec(_) => unreachable!(),
         };
-        let request = json!({"id":file,"action":"start","protocolVersion":2,"batchId":self.task.id,"requestId":self.task.id,"expectedContext":self.task.target.context,"sequence":self.task.admission_sequence.to_string(),"operation":operation});
-        let lookup = json!({"id":file,"action":"lookup","protocolVersion":2,"batchId":self.task.id,"requestId":self.task.id});
+        let request = json!({"id":file,"action":"start","batchId":self.task.id,"requestId":self.task.id,"expectedContext":self.task.target.context,"sequence":self.task.admission_sequence.to_string(),"operation":operation});
+        let lookup =
+            json!({"id":file,"action":"lookup","batchId":self.task.id,"requestId":self.task.id});
         let accepted = self.accept(
-            "files.operations",
-            request,
-            "files.operations",
-            lookup,
+            api::call::FileOperation(
+                serde_json::from_value(request)
+                    .map_err(|_| failure("invalidParams", "文件参数无效"))?,
+            ),
+            api::call::FileOperation(
+                serde_json::from_value(lookup)
+                    .map_err(|_| failure("invalidParams", "文件票据无效"))?,
+            ),
             "id",
         )?;
         let operation = text(&accepted, "id", 256)?.to_owned();
@@ -60,18 +70,19 @@ impl Collector<'_> {
                 return Err(error("通信结束，最终结果未知"));
             }
             if self.app.stopped(self.task) && !cancelled {
-                cancelled = self
-                    .app
-                    .rpc(
-                        "files.operations",
-                        json!({"id":file,"action":"cancel","operationId":operation}),
-                    )
-                    .is_ok();
+                cancelled = serde_json::from_value::<api::FileRequest>(
+                    json!({"id":file,"action":"cancel","operationId":operation}),
+                )
+                .map_err(|_| failure("invalidParams", "核心请求参数无效"))
+                .and_then(|params| self.app.rpc(api::call::FileOperation(params)))
+                .is_ok();
             }
-            let native = match self.app.rpc(
-                "files.operations",
+            let native = match serde_json::from_value::<api::FileRequest>(
                 json!({"id":file,"action":"poll","operationId":operation}),
-            ) {
+            )
+            .map_err(|_| failure("invalidParams", "核心请求参数无效"))
+            .and_then(|params| self.app.rpc(api::call::FileOperation(params)))
+            {
                 Ok(value) => value,
                 Err(e) => {
                     self.unavailable(e.clone());

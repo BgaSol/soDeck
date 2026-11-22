@@ -32,7 +32,7 @@ Monaco 提供行号、撤销、选区、当前正文搜索、词法颜色和右�
 
 ## 组件接入
 
-进程复用 [EditorHost](../../crates/plugin-client/src/file_editor.rs)。初始化检查 SDK 使用的能力；为自己的中央编辑视图调用 `handle`，其他视图继续自身处理。`contains` 识别已登记编辑页，`entries` 供本组件业务冲突检查，`projection/refresh` 读取提交事实。打开和保存前传入短业务检查，文件插件用它保留路径批次阻断；SDK 不在状态锁内执行核心 RPC。
+进程复用 [EditorHost](../../crates/plugin-client/src/file_editor.rs)。初始化由进程 SDK 检查 API 基线；为自己的中央编辑视图调用 `handle`，其他视图继续自身处理。`contains` 识别已登记编辑页，`entries` 供本组件业务冲突检查，`projection/refresh` 读取提交事实。打开和保存前传入短业务检查，文件插件用它保留路径批次阻断；SDK 不在状态锁内执行核心 RPC。
 
 来源页面的 `fileEditor.resource/open` 事件交给 `source_event`，响应包在自身 `{data:...}` 中。SDK 自建的来源资源在来源最终 dispose 时调用 `dispose_source`；来源已有资源时向 UI 入口传 fileId，并由原组件负责释放。业务任务、下载和相应 busy/取消继续由使用组件处理，不交给 SDK 编辑事件分派。
 
@@ -44,7 +44,7 @@ UI 通过 [openRemoteFile](../../packages/file-editor/src/open.js) 打开文件�
 
 UI SDK 在 [packages/file-editor](../../packages/file-editor/)，依赖和锁文件独立。构建 helper 将 JS、CSS、语言资源、Worker 和许可证复制进使用插件的 ui/file-editor，复用原有菜单、剪贴板及字体打包；核心安装包不携带业务插件，运行时不加载其他插件目录或 CDN。
 
-SDK 源码随使用插件编译和发行，更新 SDK 不会自动修改已发行插件。核心 API 主版本和 `files.editor.v1` 保持不变；文件插件原 editor 设置 ID、字段与默认值保持不变。当前范围是会话文件系统的远端普通文本，不提供本地、容器文件、任意内存对象或后台自动打开接口。
+SDK 源码随使用插件编译和发行，更新 SDK 不会自动修改已发行插件。核心和使用插件统一要求 API 2.0；文件插件原 editor 设置 ID、字段与默认值保持不变。当前范围是会话文件系统的远端普通文本，不提供本地、容器文件、任意内存对象或后台自动打开接口。
 
 主要回归为 [正文读取](../../scripts/file-document-read.test.mjs)、[草稿同步](../../scripts/file-draft-sync.test.mjs)、[打开与设置](../../scripts/file-editor-sdk.test.mjs)、[独立进程消费方](../../scripts/file-editor-process.test.mjs)、[编辑器 UI](../../scripts/test-file-editor-ui.mjs)和[完整文件 UI](../../scripts/test-files-ui.mjs)。独立消费方属于测试夹具，不发行，不等于第二个业务功能已经交付。
 

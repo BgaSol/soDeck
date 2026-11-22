@@ -8,13 +8,13 @@ test('open uses the source resource, canonical path and identical retry identity
  const context={workspaceId:'workspace',generation:1};
  const result=await openRemoteFile({path:'/alias',mount:{context},fileId:'source',request:async(method,p)=>{
   calls.push({method,p});if(method==='data'){assert.equal(p.id,'source');return {path:'/real',attrs:{kind:'file',size:10}};}
-  if(fail){fail=false;throw Error('lost open observation');}return {data:{viewId:'editor'}};
+  if(fail){fail=false;throw Error('lost open observation');}return {viewId:'editor'};
  }});
  assert.equal(result.viewId,'editor');assert.equal(calls.length,3);assert.deepEqual(calls[1],calls[2]);assert.equal(calls[1].p.path,'/real');assert.deepEqual(calls[1].p.expectedContext,context);
 });
 test('source without a file resource asks its own process; directory and oversized file never open',async()=>{
  for(const attrs of [{kind:'directory',size:0},{kind:'file',size:1048577}]){
-  const calls=[];await assert.rejects(openRemoteFile({path:'/x',mount:{context:{}},request:async(method,p)=>{calls.push(p);if(method==='event')return {data:{id:'own'}};assert.equal(p.id,'own');return {path:'/x',attrs};}}));
+  const calls=[];await assert.rejects(openRemoteFile({path:'/x',mount:{context:{}},request:async(method,p)=>{calls.push(p);if(method==='event')return {id:'own'};assert.equal(p.id,'own');return {path:'/x',attrs};}}));
   assert.equal(calls.length,2);assert.equal(calls[0].action,'fileEditor.resource');
  }
 });
