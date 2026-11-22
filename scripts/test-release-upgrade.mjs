@@ -11,6 +11,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { upgradeInputs } from "./upgrade-inputs.mjs";
 import { writeVerifiedDownload } from "./native-github.mjs";
+import { cleanupWindowsUninstaller } from "./core-artifacts.mjs";
 
 export async function download(asset, directory, request = fetch) {
   assert(asset && /^sha256:[0-9a-f]{64}$/.test(asset.digest), "Release asset must have a GitHub SHA-256 digest");
@@ -62,6 +63,12 @@ function smoke(executable, preserved = false, directory = data) {
   native(process.execPath, ["scripts/smoke.mjs", executable], { SODECK_TEST_DATA_DIR: directory, SODECK_EXPECT_CORE_VERSION: preserved ? version : current, SODECK_EXPECT_TARGET: target, SODECK_VERIFY_PERSISTED: preserved ? "1" : "0" });
 }
 const report = { target, component, current, version, from, to, completed: false, fixtureDriven: true, inputs: [] };
+let installedDirectory;
+function windowsRegistration() {
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "$key='HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SoDeck'; if(Test-Path -LiteralPath $key){Get-ItemProperty -LiteralPath $key | ConvertTo-Json -Compress}"], {encoding:'utf8',windowsHide:true});
+  assert.equal(result.status,0,result.stderr);
+  return result.stdout.trim()?JSON.parse(result.stdout):null;
+}
 try {
   const old = await release(`v${current}`);
   const next = await release(component === "core" ? `v${to}` : `plugin-${component}-v${to}`);
@@ -82,8 +89,14 @@ try {
   if (process.platform === "win32") {
     const filename = `SoDeck_${current}_${architecture === "aarch64" ? "arm64" : "x64"}-setup.exe`;
     const installer = await download(asset(old, filename), root);
-    const directory = path.join(root, "program");
-    run(installer, ["/S", `/D=${directory}`]);
+    const directory = path.join(process.env.LOCALAPPDATA, "Programs", "SoDeck");
+    assert.equal(windowsRegistration(),null,'Use a clean runner without an existing SoDeck installation');
+    assert(!fs.existsSync(directory),'Do not overwrite an existing installation');
+    run(installer, ["/S", "/CurrentUser"]);
+    const entry = windowsRegistration();
+    assert(entry&&entry.CurrentUser==='1','Missing current-user install registration');
+    assert.equal(path.resolve(entry.InstallLocation.replaceAll('"','')).toLowerCase(),path.resolve(directory).toLowerCase());
+    installedDirectory = directory;
     executable = path.join(directory, "sodeck.exe");
   } else if (process.platform === "linux") {
     executable = await download(asset(old, `SoDeck_${current}_${architecture}.AppImage`), root);
@@ -168,6 +181,13 @@ try {
       if (report.completed) assert(report[phase], `Missing ${phase} upgrade receipt`);
     }
     if (fs.existsSync(path.join(data, "logs"))) fs.cpSync(path.join(data, "logs"), path.join(output, "logs"), { recursive: true });
+    if(installedDirectory){
+      assert.equal(path.resolve(installedDirectory).toLowerCase(),path.resolve(process.env.LOCALAPPDATA,'Programs','SoDeck').toLowerCase());
+      run(path.join(installedDirectory,'uninstall.exe'),['/S','/CurrentUser',`_?=${installedDirectory}`]);
+      assert.equal(windowsRegistration(),null,'Uninstall left registration');
+      assert(!fs.existsSync(path.join(installedDirectory,'sodeck.exe')),'Uninstall left the application');
+      cleanupWindowsUninstaller(installedDirectory);
+    }
     assert.equal(path.dirname(root), fs.realpathSync(os.tmpdir()));
     // WebView2 and the native installer can release file handles after process exit.
     fs.rmSync(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
