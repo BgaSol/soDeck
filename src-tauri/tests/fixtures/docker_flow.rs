@@ -125,7 +125,7 @@ async fn openssh_docker_plugin() {
     };
     assert_eq!(receipt["status"],"completed","{receipt}");
     let terminal_view=receipt["viewId"].as_str().unwrap();let terminal=f.core.ui_attach("main",terminal_view).unwrap();
-    let terminal_token=terminal["surfaceId"].as_str().unwrap();let stream=terminal["data"]["processId"].as_str().unwrap();
+    let terminal_token=terminal["surfaceId"].as_str().unwrap();let stream=terminal["data"]["streamId"].as_str().unwrap();
     f.core.ui_surface_ready("main",terminal_token).unwrap();let mut output=subscribe(&f.core,"main",terminal_token,stream).await;
     td(&f.core,"main",terminal_token,json!({"op":"write","id":stream,"sequence":0,"data":b"printf 'sodeck-container-terminal:%s\\n' \"$SODECK_TOKEN\"\r".as_slice()})).await.unwrap();
     data_until(&f.core,"main",terminal_token,stream,&mut output,"sodeck-container-terminal:a=b").await;
