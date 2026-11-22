@@ -37,6 +37,7 @@ fn settings(core: &Arc<AppCore>, input: &Input) -> Result<Value, String> {
         ("sodeck.network-proxy", "defaults"),
         ("sodeck.system-status", "sampling"),
         ("sodeck.docker", "display"),
+        ("sodeck.mcp", "connection"),
     ] {
         if !input.plugins.iter().any(|p| p.id == id) {
             continue;
@@ -60,40 +61,84 @@ fn preserved_values(before: &Value, defaults: Map<String, Value>) -> Value {
     )
 }
 fn seed(input: &Input) -> Result<(), String> {
+    // Seed the installed on-disk records, including retired protocols. Never execute
+    // an old plugin through the current core just to prepare an upgrade test.
+    let mut records = Vec::new();
+    let mut pages = Map::new();
+    let mut baseline_settings = Map::new();
+    for plugin in &input.plugins {
+        let manifest: Value = serde_json::from_slice(
+            &fs::read(plugin.directory.join("plugin.json")).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+        if manifest["id"] != plugin.id
+            || manifest["version"] != plugin.current
+            || manifest["target"] != sodeck::TARGET
+        {
+            return Err("Unexpected old package identity".into());
+        }
+        records.push(json!({"directory":plugin.directory,"manifest":manifest,"enabled":true}));
+        for raw in manifest["settings"]["pages"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            let page: Page = serde_json::from_value(raw.clone()).map_err(|e| e.to_string())?;
+            page.validate()?;
+            let key = format!("{}/{}", plugin.id, page.id);
+            let mut values = page.defaults();
+            for (id, name, field, value) in [
+                ("sodeck.terminal", "appearance", "fontSize", json!(16)),
+                ("sodeck.files", "browser", "fontSize", json!(13)),
+                ("sodeck.files", "editor", "wordWrap", json!(true)),
+                ("sodeck.network-proxy", "defaults", "fixedPort", json!(2080)),
+                ("sodeck.docker", "display", "refreshSeconds", json!("30")),
+            ] {
+                if plugin.id == id && page.id == name {
+                    values.insert(field.into(), value);
+                }
+            }
+            page.validate_values(&values)?;
+            baseline_settings.insert(key.clone(), json!(values));
+            pages.insert(key, json!({"token":page.token(&plugin.id,&plugin.current,manifest["settings"]["schemaVersion"].as_u64().ok_or("Missing settings schema")?),"revision":1,"structure":page.structure(),"values":values,"history":[]}));
+        }
+        let data = input.root.join("plugin-data").join(&plugin.id);
+        fs::create_dir_all(&data).map_err(|e| e.to_string())?;
+        fs::write(data.join("upgrade-marker.txt"), b"keep plugin user data")
+            .map_err(|e| e.to_string())?;
+    }
+    write(&input.root, "plugins.json", &json!(records))?;
+    write(
+        &input.root,
+        "component-settings.json",
+        &json!({"pages":pages}),
+    )?;
     let core = AppCore::open(input.root.clone(), input.current.clone())?;
     core.set_automatic_updates(false)?;
-    for plugin in &input.plugins {
-        if core.add_plugin(&plugin.directory)? != plugin.id {
-            return Err("Unexpected old plugin ID".into());
-        }
-    }
-    for (id, page, key, value) in [
-        ("sodeck.terminal", "appearance", "fontSize", json!(16)),
-        ("sodeck.files", "browser", "fontSize", json!(13)),
-        ("sodeck.files", "editor", "wordWrap", json!(true)),
-        ("sodeck.network-proxy", "defaults", "fixedPort", json!(2080)),
-        ("sodeck.docker", "display", "refreshSeconds", json!("30")),
-    ] {
-        if !input.plugins.iter().any(|p| p.id == id) {
-            continue;
-        }
-        let previous = core.settings_page(id, page)?;
-        let mut values = previous["values"].clone();
-        values[key] = value;
-        core.save_settings(id, page, json!({"definitionToken":previous["definitionToken"],"baseRevision":previous["revision"],"requestId":format!("upgrade-{id}-{page}"),"values":values}))?;
-    }
     core.start_enabled();
     check_plugins(&core, input, false)?;
     write(
         &input.root,
         "upgrade-baseline.json",
-        &json!({"catalog":core.server_catalog(),"settings":settings(&core, input)?,"snapshot":core.snapshot()}),
+        &json!({"catalog":core.server_catalog(),"settings":baseline_settings,"snapshot":core.snapshot()}),
     )?;
     core.shutdown()
 }
 fn check_plugins(core: &Arc<AppCore>, input: &Input, updated: bool) -> Result<(), String> {
     let snapshot = core.snapshot();
     for expected in &input.plugins {
+        if fs::read(
+            input
+                .root
+                .join("plugin-data")
+                .join(&expected.id)
+                .join("upgrade-marker.txt"),
+        )
+        .map_err(|e| e.to_string())?
+            != b"keep plugin user data"
+        {
+            return Err("Plugin data changed during upgrade".into());
+        }
         let actual = snapshot
             .plugins
             .iter()
@@ -104,8 +149,15 @@ fn check_plugins(core: &Arc<AppCore>, input: &Input, updated: bool) -> Result<()
         } else {
             &expected.current
         };
+        let executable = updated || sodeck_plugin_protocol::supports(&actual.manifest.api_version);
+        let expected_status = if executable {
+            PluginStatus::Running
+        } else {
+            PluginStatus::Failed
+        };
         if actual.manifest.version != *version
-            || actual.status != PluginStatus::Running
+            || actual.status != expected_status
+            || (!executable && (actual.pid.is_some() || actual.error.is_none()))
             || !actual.enabled
         {
             return Err(format!(
@@ -154,6 +206,62 @@ fn activate(input: &Input) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn upgrade_seed_keeps_retired_installation_and_settings_without_starting_it() {
+        let root = std::env::temp_dir().join(format!(
+            "sodeck-upgrade-seed-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let package = root.join("old-package");
+        fs::create_dir_all(&package).unwrap();
+        write(&package, "plugin.json", &json!({
+            "id":"sodeck.terminal","name":"Old terminal","version":"0.10.2","apiVersion":"1.0","target":sodeck::TARGET,
+            "entry":"must-not-execute","ui":{"apiVersion":1,"obsolete":true},
+            "settings":{"schemaVersion":1,"apiVersion":1,"pages":[{
+                "id":"appearance","title":"Appearance","viewTypes":["terminal"],"groups":[{"id":"text","title":"Text","fields":[{
+                    "key":"fontSize","title":"Font size","type":"number","default":12,"min":8,"max":32,"step":1,"apply":"newInstance"
+                }]}]
+            }]}
+        })).unwrap();
+        let input = Input {
+            root: root.join("data"),
+            executable: root.join("unused"),
+            current: "2.0.0".into(),
+            version: "2.0.0".into(),
+            plugins: vec![Plugin {
+                directory: package,
+                id: "sodeck.terminal".into(),
+                current: "0.10.2".into(),
+                version: "0.11.0".into(),
+            }],
+            core_package: None,
+            manifests: vec![],
+        };
+        seed(&input).unwrap();
+        let baseline: Value =
+            serde_json::from_slice(&fs::read(input.root.join("upgrade-baseline.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            baseline["settings"]["sodeck.terminal/appearance"]["fontSize"],
+            16
+        );
+        assert_eq!(baseline["snapshot"]["plugins"][0]["status"], "failed");
+        assert_eq!(baseline["snapshot"]["plugins"][0]["enabled"], true);
+        assert!(baseline["snapshot"]["plugins"][0]["pid"].is_null());
+        let saved: Value =
+            serde_json::from_slice(&fs::read(input.root.join("component-settings.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            saved["pages"]["sodeck.terminal/appearance"]["values"]["fontSize"],
+            16
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn upgrade_preserves_existing_values_and_initializes_only_new_fields() {

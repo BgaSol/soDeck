@@ -10,7 +10,7 @@ on:
         options: [all, windows-x86_64, windows-aarch64, linux-x86_64, linux-aarch64, macos-aarch64]
       component:
         type: choice
-        options: [core, terminal, files, network-proxy, system-status, docker]
+        options: [core, terminal, files, network-proxy, system-status, docker, mcp]
         required: true
       from_version:
         type: string
