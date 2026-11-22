@@ -1,0 +1,630 @@
+{
+  "component": "docker",
+  "version": "0.9.0",
+  "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+  "packageRun": {
+    "id": 45009316241,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45009316241"
+  },
+  "checks": [
+    {
+      "run": 45010797487,
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "scope": "all excluding netem",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45010797487"
+    },
+    {
+      "run": 45010421783,
+      "source": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "scope": "all excluding netem",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45010421783"
+    }
+  ],
+  "nativePackageReports": [
+    {
+      "id": "sodeck.docker",
+      "version": "0.9.0",
+      "target": "aarch64-apple-darwin",
+      "commit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "sha256": "8ddaf0481fceb6f035c131e48f78be850a71335f7e90878fac77c2386b994c6b",
+      "runId": "45009316241",
+      "toolCommit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "passed": true,
+      "pluginIcons": [
+        "docker",
+        "log"
+      ],
+      "calls": [
+        "settings.get"
+      ]
+    },
+    {
+      "id": "sodeck.docker",
+      "version": "0.9.0",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "sha256": "0b4eb45c55ebce5a3fcdf599391fb9d343dd1468ab7c77c3b555a0a870114c28",
+      "runId": "45009316241",
+      "toolCommit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "passed": true,
+      "pluginIcons": [
+        "docker",
+        "log"
+      ],
+      "calls": [
+        "settings.get"
+      ]
+    },
+    {
+      "id": "sodeck.docker",
+      "version": "0.9.0",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "sha256": "7647b61e91240accced8b250f1beb0b0b783b66b7e588a666530a6622c5f54c8",
+      "runId": "45009316241",
+      "toolCommit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "passed": true,
+      "pluginIcons": [
+        "docker",
+        "log"
+      ],
+      "calls": [
+        "settings.get"
+      ]
+    },
+    {
+      "id": "sodeck.docker",
+      "version": "0.9.0",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "sha256": "40297d2ee043138afbe70725e1e70aa6f05ec6ad8506fb1f9edc6ecff8365ad8",
+      "runId": "45009316241",
+      "toolCommit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "passed": true,
+      "pluginIcons": [
+        "docker",
+        "log"
+      ],
+      "calls": [
+        "settings.get"
+      ]
+    },
+    {
+      "id": "sodeck.docker",
+      "version": "0.9.0",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "sha256": "95ca6731d064591cdcb0c4b95fbda5e83e93a98310917e75b4686e0a4688c52c",
+      "runId": "45009316241",
+      "toolCommit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "passed": true,
+      "pluginIcons": [
+        "docker",
+        "log"
+      ],
+      "calls": [
+        "settings.get"
+      ]
+    }
+  ],
+  "release": {
+    "id": 454355493,
+    "tag": "plugin-docker-v0.9.0",
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.9.0",
+    "latest": false
+  },
+  "anonymousAssets": [
+    {
+      "id": 778633595,
+      "name": "plugin-update.json",
+      "size": 39205,
+      "digest": "sha256:0d6714392a8bf90185493d7e845d88d91ac2f973fc0c4ff7492ec6ab15f57ae6",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.9.0/plugin-update.json",
+      "component": "docker",
+      "version": "0.9.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009316241,
+      "tag": "plugin-docker-v0.9.0",
+      "anonymousDownload": true,
+      "verifiedSize": 39205,
+      "verifiedDigest": "sha256:0d6714392a8bf90185493d7e845d88d91ac2f973fc0c4ff7492ec6ab15f57ae6"
+    },
+    {
+      "id": 778633423,
+      "name": "sodeck-docker_0.9.0_aarch64-pc-windows-msvc.zip",
+      "size": 1073554,
+      "digest": "sha256:95ca6731d064591cdcb0c4b95fbda5e83e93a98310917e75b4686e0a4688c52c",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.9.0/sodeck-docker_0.9.0_aarch64-pc-windows-msvc.zip",
+      "component": "docker",
+      "version": "0.9.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009316241,
+      "tag": "plugin-docker-v0.9.0",
+      "anonymousDownload": true,
+      "verifiedSize": 1073554,
+      "verifiedDigest": "sha256:95ca6731d064591cdcb0c4b95fbda5e83e93a98310917e75b4686e0a4688c52c"
+    },
+    {
+      "id": 778633516,
+      "name": "sodeck-docker_0.9.0_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 1044482,
+      "digest": "sha256:7647b61e91240accced8b250f1beb0b0b783b66b7e588a666530a6622c5f54c8",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.9.0/sodeck-docker_0.9.0_aarch64-unknown-linux-gnu.tar.gz",
+      "component": "docker",
+      "version": "0.9.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009316241,
+      "tag": "plugin-docker-v0.9.0",
+      "anonymousDownload": true,
+      "verifiedSize": 1044482,
+      "verifiedDigest": "sha256:7647b61e91240accced8b250f1beb0b0b783b66b7e588a666530a6622c5f54c8"
+    },
+    {
+      "id": 778633565,
+      "name": "sodeck-docker_0.9.0_aarch64-apple-darwin.tar.gz",
+      "size": 1032001,
+      "digest": "sha256:8ddaf0481fceb6f035c131e48f78be850a71335f7e90878fac77c2386b994c6b",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.9.0/sodeck-docker_0.9.0_aarch64-apple-darwin.tar.gz",
+      "component": "docker",
+      "version": "0.9.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009316241,
+      "tag": "plugin-docker-v0.9.0",
+      "anonymousDownload": true,
+      "verifiedSize": 1032001,
+      "verifiedDigest": "sha256:8ddaf0481fceb6f035c131e48f78be850a71335f7e90878fac77c2386b994c6b"
+    },
+    {
+      "id": 778633370,
+      "name": "sodeck-docker_0.9.0_x86_64-pc-windows-msvc.zip",
+      "size": 1157857,
+      "digest": "sha256:0b4eb45c55ebce5a3fcdf599391fb9d343dd1468ab7c77c3b555a0a870114c28",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.9.0/sodeck-docker_0.9.0_x86_64-pc-windows-msvc.zip",
+      "component": "docker",
+      "version": "0.9.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009316241,
+      "tag": "plugin-docker-v0.9.0",
+      "anonymousDownload": true,
+      "verifiedSize": 1157857,
+      "verifiedDigest": "sha256:0b4eb45c55ebce5a3fcdf599391fb9d343dd1468ab7c77c3b555a0a870114c28"
+    },
+    {
+      "id": 778633469,
+      "name": "sodeck-docker_0.9.0_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 1156982,
+      "digest": "sha256:40297d2ee043138afbe70725e1e70aa6f05ec6ad8506fb1f9edc6ecff8365ad8",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.9.0/sodeck-docker_0.9.0_x86_64-unknown-linux-gnu.tar.gz",
+      "component": "docker",
+      "version": "0.9.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009316241,
+      "tag": "plugin-docker-v0.9.0",
+      "anonymousDownload": true,
+      "verifiedSize": 1156982,
+      "verifiedDigest": "sha256:40297d2ee043138afbe70725e1e70aa6f05ec6ad8506fb1f9edc6ecff8365ad8"
+    }
+  ],
+  "publishedUpgrade": {
+    "component": "docker",
+    "initialRun": 45013665152,
+    "runs": [
+      {
+        "id": 45014582403,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45014582403",
+        "testSource": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+        "conclusion": "success"
+      },
+      {
+        "id": 45014588439,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45014588439",
+        "testSource": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+        "conclusion": "success"
+      },
+      {
+        "id": 45013665152,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45013665152",
+        "testSource": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+        "conclusion": "failure"
+      }
+    ],
+    "initialFailure": "Windows initial installation assumed /D selected the destination with a multi-user installer; the verifier was corrected to select CurrentUser and validate the actual registration, then only Windows platforms were replayed with identical public packages.",
+    "results": [
+      {
+        "component": "docker",
+        "target": "x86_64-pc-windows-msvc",
+        "verificationRun": 45014582403,
+        "testSource": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.8.0",
+        "to": "0.9.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "3fd6e672d6cc6305d1f170dc96fa608e5b7507e9b0722ecd8cc9d9d0d02a7441",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.docker",
+            "version": "0.8.0",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.docker",
+            "version": "0.9.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.docker/display": {
+            "refreshSeconds": "30",
+            "showLogMinimap": true
+          }
+        },
+        "settingsAfter": {
+          "sodeck.docker/display": {
+            "refreshSeconds": "30",
+            "showLogMinimap": true
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454355493,
+            "tag": "plugin-docker-v0.9.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778633595,
+              "size": 39205,
+              "digest": "sha256:0d6714392a8bf90185493d7e845d88d91ac2f973fc0c4ff7492ec6ab15f57ae6"
+            },
+            "package": {
+              "name": "sodeck-docker_0.9.0_x86_64-pc-windows-msvc.zip",
+              "id": 778633370,
+              "size": 1157857,
+              "digest": "sha256:0b4eb45c55ebce5a3fcdf599391fb9d343dd1468ab7c77c3b555a0a870114c28"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 453697735,
+            "tag": "plugin-docker-v0.8.0",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      },
+      {
+        "component": "docker",
+        "target": "aarch64-pc-windows-msvc",
+        "verificationRun": 45014588439,
+        "testSource": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.8.0",
+        "to": "0.9.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "64f1b9987d560bca406b5f662832e9a4cd2ddce9c3d9ea9403753027a6e30975",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.docker",
+            "version": "0.8.0",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.docker",
+            "version": "0.9.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.docker/display": {
+            "refreshSeconds": "30",
+            "showLogMinimap": true
+          }
+        },
+        "settingsAfter": {
+          "sodeck.docker/display": {
+            "refreshSeconds": "30",
+            "showLogMinimap": true
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454355493,
+            "tag": "plugin-docker-v0.9.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778633595,
+              "size": 39205,
+              "digest": "sha256:0d6714392a8bf90185493d7e845d88d91ac2f973fc0c4ff7492ec6ab15f57ae6"
+            },
+            "package": {
+              "name": "sodeck-docker_0.9.0_aarch64-pc-windows-msvc.zip",
+              "id": 778633423,
+              "size": 1073554,
+              "digest": "sha256:95ca6731d064591cdcb0c4b95fbda5e83e93a98310917e75b4686e0a4688c52c"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 453697735,
+            "tag": "plugin-docker-v0.8.0",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      },
+      {
+        "component": "docker",
+        "target": "x86_64-unknown-linux-gnu",
+        "verificationRun": 45013665152,
+        "testSource": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.8.0",
+        "to": "0.9.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "43d1f5da61c3c86e6dfd68153eea7fc663475cf09997a5daeb1a45447d5cd677",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.docker",
+            "version": "0.8.0",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.docker",
+            "version": "0.9.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.docker/display": {
+            "refreshSeconds": "30",
+            "showLogMinimap": true
+          }
+        },
+        "settingsAfter": {
+          "sodeck.docker/display": {
+            "refreshSeconds": "30",
+            "showLogMinimap": true
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454355493,
+            "tag": "plugin-docker-v0.9.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778633595,
+              "size": 39205,
+              "digest": "sha256:0d6714392a8bf90185493d7e845d88d91ac2f973fc0c4ff7492ec6ab15f57ae6"
+            },
+            "package": {
+              "name": "sodeck-docker_0.9.0_x86_64-unknown-linux-gnu.tar.gz",
+              "id": 778633469,
+              "size": 1156982,
+              "digest": "sha256:40297d2ee043138afbe70725e1e70aa6f05ec6ad8506fb1f9edc6ecff8365ad8"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 453697735,
+            "tag": "plugin-docker-v0.8.0",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      },
+      {
+        "component": "docker",
+        "target": "aarch64-unknown-linux-gnu",
+        "verificationRun": 45013665152,
+        "testSource": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.8.0",
+        "to": "0.9.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "3a3bdc274a4e72c14db12b7ad2758c20192785bd733c03ef06b4deb901344a1c",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.docker",
+            "version": "0.8.0",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.docker",
+            "version": "0.9.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.docker/display": {
+            "refreshSeconds": "30",
+            "showLogMinimap": true
+          }
+        },
+        "settingsAfter": {
+          "sodeck.docker/display": {
+            "refreshSeconds": "30",
+            "showLogMinimap": true
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454355493,
+            "tag": "plugin-docker-v0.9.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778633595,
+              "size": 39205,
+              "digest": "sha256:0d6714392a8bf90185493d7e845d88d91ac2f973fc0c4ff7492ec6ab15f57ae6"
+            },
+            "package": {
+              "name": "sodeck-docker_0.9.0_aarch64-unknown-linux-gnu.tar.gz",
+              "id": 778633516,
+              "size": 1044482,
+              "digest": "sha256:7647b61e91240accced8b250f1beb0b0b783b66b7e588a666530a6622c5f54c8"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 453697735,
+            "tag": "plugin-docker-v0.8.0",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      },
+      {
+        "component": "docker",
+        "target": "aarch64-apple-darwin",
+        "verificationRun": 45013665152,
+        "testSource": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.8.0",
+        "to": "0.9.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "726f3ac2eedb2a342282d6e3a2070e051f7f62efc04b504eb949fab202126c0d",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.docker",
+            "version": "0.8.0",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.docker",
+            "version": "0.9.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.docker/display": {
+            "refreshSeconds": "30",
+            "showLogMinimap": true
+          }
+        },
+        "settingsAfter": {
+          "sodeck.docker/display": {
+            "refreshSeconds": "30",
+            "showLogMinimap": true
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454355493,
+            "tag": "plugin-docker-v0.9.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778633595,
+              "size": 39205,
+              "digest": "sha256:0d6714392a8bf90185493d7e845d88d91ac2f973fc0c4ff7492ec6ab15f57ae6"
+            },
+            "package": {
+              "name": "sodeck-docker_0.9.0_aarch64-apple-darwin.tar.gz",
+              "id": 778633565,
+              "size": 1032001,
+              "digest": "sha256:8ddaf0481fceb6f035c131e48f78be850a71335f7e90878fac77c2386b994c6b"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 453697735,
+            "tag": "plugin-docker-v0.8.0",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      }
+    ]
+  },
+  "nativeRemote": "Not included in the terminal/files/network native remote combination. Package protocol/lifecycle checks and applicable source/Engine/SSH regressions are recorded separately.",
+  "notExecuted": [
+    "netem",
+    "physical IME/DPI/screen-reader devices",
+    "authenticated Codex CLI",
+    "all remote OS/Engine/rootless permutations"
+  ],
+  "upgradeVerifierCheck": {
+    "run": 45014434214,
+    "source": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+    "conclusion": "success",
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45014434214"
+  }
+}

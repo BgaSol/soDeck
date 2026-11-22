@@ -1,0 +1,635 @@
+{
+  "component": "mcp",
+  "version": "0.12.0",
+  "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+  "packageRun": {
+    "id": 45009320601,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45009320601"
+  },
+  "checks": [
+    {
+      "run": 45010797487,
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "scope": "all excluding netem",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45010797487"
+    },
+    {
+      "run": 45010421783,
+      "source": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "scope": "all excluding netem",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45010421783"
+    }
+  ],
+  "nativePackageReports": [
+    {
+      "id": "sodeck.mcp",
+      "version": "0.12.0",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "sha256": "364b3f2ec5799c4a1fcaf0fdff82a7c9175e80a46704438fad079cb05cba44d2",
+      "runId": "45009320601",
+      "toolCommit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "passed": true,
+      "pluginIcons": [
+        "bot"
+      ],
+      "mcpHttp": true,
+      "mcpQueries": true,
+      "mcpConnections": true,
+      "calls": [
+        "settings.get",
+        "session.target.describe"
+      ]
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.12.0",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "sha256": "5a15bbba54c7b231090f0e8e9aed94a6f5e9f4fc79578cb5b8d103c214105a8d",
+      "runId": "45009320601",
+      "toolCommit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "passed": true,
+      "pluginIcons": [
+        "bot"
+      ],
+      "mcpHttp": true,
+      "mcpQueries": true,
+      "mcpConnections": true,
+      "calls": [
+        "settings.get",
+        "session.target.describe"
+      ]
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.12.0",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "sha256": "6ed1896ebb241ad345165ffe297b9395aad0ed8f014320a6b5cf05532028a328",
+      "runId": "45009320601",
+      "toolCommit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "passed": true,
+      "pluginIcons": [
+        "bot"
+      ],
+      "mcpHttp": true,
+      "mcpQueries": true,
+      "mcpConnections": true,
+      "calls": [
+        "settings.get",
+        "session.target.describe"
+      ]
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.12.0",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "sha256": "fcb3e0a15e9dd776889326b99b22d48393f514507c580d44ec50075f44122a63",
+      "runId": "45009320601",
+      "toolCommit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "passed": true,
+      "pluginIcons": [
+        "bot"
+      ],
+      "mcpHttp": true,
+      "mcpQueries": true,
+      "mcpConnections": true,
+      "calls": [
+        "settings.get",
+        "session.target.describe"
+      ]
+    },
+    {
+      "id": "sodeck.mcp",
+      "version": "0.12.0",
+      "target": "aarch64-apple-darwin",
+      "commit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "sha256": "eb2bd0f968801321f80ef1fd8e687ae536e5d631e33e84ed044da127e93cde13",
+      "runId": "45009320601",
+      "toolCommit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "passed": true,
+      "pluginIcons": [
+        "bot"
+      ],
+      "mcpHttp": true,
+      "mcpQueries": true,
+      "mcpConnections": true,
+      "calls": [
+        "settings.get",
+        "session.target.describe"
+      ]
+    }
+  ],
+  "release": {
+    "id": 454356024,
+    "tag": "plugin-mcp-v0.12.0",
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.12.0",
+    "latest": false
+  },
+  "anonymousAssets": [
+    {
+      "id": 778635779,
+      "name": "plugin-update.json",
+      "size": 58709,
+      "digest": "sha256:77db3d1fbe9df4c461b2674811aaf880fd1e63e625b99568ed81112bb019b6bb",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.12.0/plugin-update.json",
+      "component": "mcp",
+      "version": "0.12.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009320601,
+      "tag": "plugin-mcp-v0.12.0",
+      "anonymousDownload": true,
+      "verifiedSize": 58709,
+      "verifiedDigest": "sha256:77db3d1fbe9df4c461b2674811aaf880fd1e63e625b99568ed81112bb019b6bb"
+    },
+    {
+      "id": 778635759,
+      "name": "sodeck-mcp_0.12.0_aarch64-apple-darwin.tar.gz",
+      "size": 2342619,
+      "digest": "sha256:eb2bd0f968801321f80ef1fd8e687ae536e5d631e33e84ed044da127e93cde13",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.12.0/sodeck-mcp_0.12.0_aarch64-apple-darwin.tar.gz",
+      "component": "mcp",
+      "version": "0.12.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009320601,
+      "tag": "plugin-mcp-v0.12.0",
+      "anonymousDownload": true,
+      "verifiedSize": 2342619,
+      "verifiedDigest": "sha256:eb2bd0f968801321f80ef1fd8e687ae536e5d631e33e84ed044da127e93cde13"
+    },
+    {
+      "id": 778635715,
+      "name": "sodeck-mcp_0.12.0_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 2356218,
+      "digest": "sha256:6ed1896ebb241ad345165ffe297b9395aad0ed8f014320a6b5cf05532028a328",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.12.0/sodeck-mcp_0.12.0_aarch64-unknown-linux-gnu.tar.gz",
+      "component": "mcp",
+      "version": "0.12.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009320601,
+      "tag": "plugin-mcp-v0.12.0",
+      "anonymousDownload": true,
+      "verifiedSize": 2356218,
+      "verifiedDigest": "sha256:6ed1896ebb241ad345165ffe297b9395aad0ed8f014320a6b5cf05532028a328"
+    },
+    {
+      "id": 778635627,
+      "name": "sodeck-mcp_0.12.0_x86_64-pc-windows-msvc.zip",
+      "size": 2603508,
+      "digest": "sha256:5a15bbba54c7b231090f0e8e9aed94a6f5e9f4fc79578cb5b8d103c214105a8d",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.12.0/sodeck-mcp_0.12.0_x86_64-pc-windows-msvc.zip",
+      "component": "mcp",
+      "version": "0.12.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009320601,
+      "tag": "plugin-mcp-v0.12.0",
+      "anonymousDownload": true,
+      "verifiedSize": 2603508,
+      "verifiedDigest": "sha256:5a15bbba54c7b231090f0e8e9aed94a6f5e9f4fc79578cb5b8d103c214105a8d"
+    },
+    {
+      "id": 778635680,
+      "name": "sodeck-mcp_0.12.0_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 2549752,
+      "digest": "sha256:364b3f2ec5799c4a1fcaf0fdff82a7c9175e80a46704438fad079cb05cba44d2",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.12.0/sodeck-mcp_0.12.0_x86_64-unknown-linux-gnu.tar.gz",
+      "component": "mcp",
+      "version": "0.12.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009320601,
+      "tag": "plugin-mcp-v0.12.0",
+      "anonymousDownload": true,
+      "verifiedSize": 2549752,
+      "verifiedDigest": "sha256:364b3f2ec5799c4a1fcaf0fdff82a7c9175e80a46704438fad079cb05cba44d2"
+    },
+    {
+      "id": 778635668,
+      "name": "sodeck-mcp_0.12.0_aarch64-pc-windows-msvc.zip",
+      "size": 2429931,
+      "digest": "sha256:fcb3e0a15e9dd776889326b99b22d48393f514507c580d44ec50075f44122a63",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.12.0/sodeck-mcp_0.12.0_aarch64-pc-windows-msvc.zip",
+      "component": "mcp",
+      "version": "0.12.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009320601,
+      "tag": "plugin-mcp-v0.12.0",
+      "anonymousDownload": true,
+      "verifiedSize": 2429931,
+      "verifiedDigest": "sha256:fcb3e0a15e9dd776889326b99b22d48393f514507c580d44ec50075f44122a63"
+    }
+  ],
+  "publishedUpgrade": {
+    "component": "mcp",
+    "initialRun": 45013667827,
+    "runs": [
+      {
+        "id": 45014591710,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45014591710",
+        "testSource": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+        "conclusion": "success"
+      },
+      {
+        "id": 45014594913,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45014594913",
+        "testSource": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+        "conclusion": "success"
+      },
+      {
+        "id": 45013667827,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45013667827",
+        "testSource": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+        "conclusion": "failure"
+      }
+    ],
+    "initialFailure": "Windows initial installation assumed /D selected the destination with a multi-user installer; the verifier was corrected to select CurrentUser and validate the actual registration, then only Windows platforms were replayed with identical public packages.",
+    "results": [
+      {
+        "component": "mcp",
+        "target": "x86_64-pc-windows-msvc",
+        "verificationRun": 45014591710,
+        "testSource": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.11.0",
+        "to": "0.12.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "3fd6e672d6cc6305d1f170dc96fa608e5b7507e9b0722ecd8cc9d9d0d02a7441",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.mcp",
+            "version": "0.11.0",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.mcp",
+            "version": "0.12.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.mcp/connection": {
+            "port": 19846
+          }
+        },
+        "settingsAfter": {
+          "sodeck.mcp/connection": {
+            "port": 19846
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454356024,
+            "tag": "plugin-mcp-v0.12.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778635779,
+              "size": 58709,
+              "digest": "sha256:77db3d1fbe9df4c461b2674811aaf880fd1e63e625b99568ed81112bb019b6bb"
+            },
+            "package": {
+              "name": "sodeck-mcp_0.12.0_x86_64-pc-windows-msvc.zip",
+              "id": 778635627,
+              "size": 2603508,
+              "digest": "sha256:5a15bbba54c7b231090f0e8e9aed94a6f5e9f4fc79578cb5b8d103c214105a8d"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 453845285,
+            "tag": "plugin-mcp-v0.11.0",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      },
+      {
+        "component": "mcp",
+        "target": "aarch64-pc-windows-msvc",
+        "verificationRun": 45014594913,
+        "testSource": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.11.0",
+        "to": "0.12.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "64f1b9987d560bca406b5f662832e9a4cd2ddce9c3d9ea9403753027a6e30975",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.mcp",
+            "version": "0.11.0",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.mcp",
+            "version": "0.12.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.mcp/connection": {
+            "port": 19846
+          }
+        },
+        "settingsAfter": {
+          "sodeck.mcp/connection": {
+            "port": 19846
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454356024,
+            "tag": "plugin-mcp-v0.12.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778635779,
+              "size": 58709,
+              "digest": "sha256:77db3d1fbe9df4c461b2674811aaf880fd1e63e625b99568ed81112bb019b6bb"
+            },
+            "package": {
+              "name": "sodeck-mcp_0.12.0_aarch64-pc-windows-msvc.zip",
+              "id": 778635668,
+              "size": 2429931,
+              "digest": "sha256:fcb3e0a15e9dd776889326b99b22d48393f514507c580d44ec50075f44122a63"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 453845285,
+            "tag": "plugin-mcp-v0.11.0",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      },
+      {
+        "component": "mcp",
+        "target": "x86_64-unknown-linux-gnu",
+        "verificationRun": 45013667827,
+        "testSource": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.11.0",
+        "to": "0.12.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "43d1f5da61c3c86e6dfd68153eea7fc663475cf09997a5daeb1a45447d5cd677",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.mcp",
+            "version": "0.11.0",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.mcp",
+            "version": "0.12.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.mcp/connection": {
+            "port": 19846
+          }
+        },
+        "settingsAfter": {
+          "sodeck.mcp/connection": {
+            "port": 19846
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454356024,
+            "tag": "plugin-mcp-v0.12.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778635779,
+              "size": 58709,
+              "digest": "sha256:77db3d1fbe9df4c461b2674811aaf880fd1e63e625b99568ed81112bb019b6bb"
+            },
+            "package": {
+              "name": "sodeck-mcp_0.12.0_x86_64-unknown-linux-gnu.tar.gz",
+              "id": 778635680,
+              "size": 2549752,
+              "digest": "sha256:364b3f2ec5799c4a1fcaf0fdff82a7c9175e80a46704438fad079cb05cba44d2"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 453845285,
+            "tag": "plugin-mcp-v0.11.0",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      },
+      {
+        "component": "mcp",
+        "target": "aarch64-unknown-linux-gnu",
+        "verificationRun": 45013667827,
+        "testSource": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.11.0",
+        "to": "0.12.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "3a3bdc274a4e72c14db12b7ad2758c20192785bd733c03ef06b4deb901344a1c",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.mcp",
+            "version": "0.11.0",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.mcp",
+            "version": "0.12.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.mcp/connection": {
+            "port": 19846
+          }
+        },
+        "settingsAfter": {
+          "sodeck.mcp/connection": {
+            "port": 19846
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454356024,
+            "tag": "plugin-mcp-v0.12.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778635779,
+              "size": 58709,
+              "digest": "sha256:77db3d1fbe9df4c461b2674811aaf880fd1e63e625b99568ed81112bb019b6bb"
+            },
+            "package": {
+              "name": "sodeck-mcp_0.12.0_aarch64-unknown-linux-gnu.tar.gz",
+              "id": 778635715,
+              "size": 2356218,
+              "digest": "sha256:6ed1896ebb241ad345165ffe297b9395aad0ed8f014320a6b5cf05532028a328"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 453845285,
+            "tag": "plugin-mcp-v0.11.0",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      },
+      {
+        "component": "mcp",
+        "target": "aarch64-apple-darwin",
+        "verificationRun": 45013667827,
+        "testSource": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.11.0",
+        "to": "0.12.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "726f3ac2eedb2a342282d6e3a2070e051f7f62efc04b504eb949fab202126c0d",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.mcp",
+            "version": "0.11.0",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.mcp",
+            "version": "0.12.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.mcp/connection": {
+            "port": 19846
+          }
+        },
+        "settingsAfter": {
+          "sodeck.mcp/connection": {
+            "port": 19846
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454356024,
+            "tag": "plugin-mcp-v0.12.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778635779,
+              "size": 58709,
+              "digest": "sha256:77db3d1fbe9df4c461b2674811aaf880fd1e63e625b99568ed81112bb019b6bb"
+            },
+            "package": {
+              "name": "sodeck-mcp_0.12.0_aarch64-apple-darwin.tar.gz",
+              "id": 778635759,
+              "size": 2342619,
+              "digest": "sha256:eb2bd0f968801321f80ef1fd8e687ae536e5d631e33e84ed044da127e93cde13"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 453845285,
+            "tag": "plugin-mcp-v0.11.0",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      }
+    ]
+  },
+  "nativeRemote": "Not included in the terminal/files/network native remote combination. Package protocol/lifecycle checks and applicable source/Engine/SSH regressions are recorded separately.",
+  "notExecuted": [
+    "netem",
+    "physical IME/DPI/screen-reader devices",
+    "authenticated Codex CLI",
+    "all remote OS/Engine/rootless permutations"
+  ],
+  "upgradeVerifierCheck": {
+    "run": 45014434214,
+    "source": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+    "conclusion": "success",
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45014434214"
+  }
+}

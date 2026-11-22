@@ -1,0 +1,615 @@
+{
+  "component": "system-status",
+  "version": "0.5.0",
+  "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+  "packageRun": {
+    "id": 45009311491,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45009311491"
+  },
+  "checks": [
+    {
+      "run": 45010797487,
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "scope": "all excluding netem",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45010797487"
+    },
+    {
+      "run": 45010421783,
+      "source": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "scope": "all excluding netem",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45010421783"
+    }
+  ],
+  "nativePackageReports": [
+    {
+      "id": "sodeck.system-status",
+      "version": "0.5.0",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "sha256": "5f56825db9fa222c4be6ff1d0584bda05f683c77e27b964bac884ff7c28d65db",
+      "runId": "45009311491",
+      "toolCommit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "passed": true,
+      "pluginIcons": [
+        "activity"
+      ],
+      "calls": [
+        "settings.get"
+      ]
+    },
+    {
+      "id": "sodeck.system-status",
+      "version": "0.5.0",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "sha256": "fe4cf04d797209efa4861d3948f760a0fab175a878b9a3a298804d0f8110d671",
+      "runId": "45009311491",
+      "toolCommit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "passed": true,
+      "pluginIcons": [
+        "activity"
+      ],
+      "calls": [
+        "settings.get"
+      ]
+    },
+    {
+      "id": "sodeck.system-status",
+      "version": "0.5.0",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "sha256": "fa24091b4115f3436e352bbdb55550d2cf6f429bee67fb5970a72808c8d63786",
+      "runId": "45009311491",
+      "toolCommit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "passed": true,
+      "pluginIcons": [
+        "activity"
+      ],
+      "calls": [
+        "settings.get"
+      ]
+    },
+    {
+      "id": "sodeck.system-status",
+      "version": "0.5.0",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "sha256": "0b5cd8a2a4c10d36eab195e56a9f105a49d21a2be6c8d976a08c04254dd6d819",
+      "runId": "45009311491",
+      "toolCommit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "passed": true,
+      "pluginIcons": [
+        "activity"
+      ],
+      "calls": [
+        "settings.get"
+      ]
+    },
+    {
+      "id": "sodeck.system-status",
+      "version": "0.5.0",
+      "target": "aarch64-apple-darwin",
+      "commit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "sha256": "0e50febe876591e55cfbaa3ad5900889f43079ad09d464c7f24a07dccdd72e96",
+      "runId": "45009311491",
+      "toolCommit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "passed": true,
+      "pluginIcons": [
+        "activity"
+      ],
+      "calls": [
+        "settings.get"
+      ]
+    }
+  ],
+  "release": {
+    "id": 454355874,
+    "tag": "plugin-system-status-v0.5.0",
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/plugin-system-status-v0.5.0",
+    "latest": false
+  },
+  "anonymousAssets": [
+    {
+      "id": 778635156,
+      "name": "plugin-update.json",
+      "size": 26474,
+      "digest": "sha256:c61a058c17c005489c90de3852dbbf59409afb40ceadfb934adabd183485c5ac",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.5.0/plugin-update.json",
+      "component": "system-status",
+      "version": "0.5.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009311491,
+      "tag": "plugin-system-status-v0.5.0",
+      "anonymousDownload": true,
+      "verifiedSize": 26474,
+      "verifiedDigest": "sha256:c61a058c17c005489c90de3852dbbf59409afb40ceadfb934adabd183485c5ac"
+    },
+    {
+      "id": 778635113,
+      "name": "sodeck-system-status_0.5.0_aarch64-apple-darwin.tar.gz",
+      "size": 709795,
+      "digest": "sha256:0e50febe876591e55cfbaa3ad5900889f43079ad09d464c7f24a07dccdd72e96",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.5.0/sodeck-system-status_0.5.0_aarch64-apple-darwin.tar.gz",
+      "component": "system-status",
+      "version": "0.5.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009311491,
+      "tag": "plugin-system-status-v0.5.0",
+      "anonymousDownload": true,
+      "verifiedSize": 709795,
+      "verifiedDigest": "sha256:0e50febe876591e55cfbaa3ad5900889f43079ad09d464c7f24a07dccdd72e96"
+    },
+    {
+      "id": 778635001,
+      "name": "sodeck-system-status_0.5.0_aarch64-pc-windows-msvc.zip",
+      "size": 708951,
+      "digest": "sha256:fe4cf04d797209efa4861d3948f760a0fab175a878b9a3a298804d0f8110d671",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.5.0/sodeck-system-status_0.5.0_aarch64-pc-windows-msvc.zip",
+      "component": "system-status",
+      "version": "0.5.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009311491,
+      "tag": "plugin-system-status-v0.5.0",
+      "anonymousDownload": true,
+      "verifiedSize": 708951,
+      "verifiedDigest": "sha256:fe4cf04d797209efa4861d3948f760a0fab175a878b9a3a298804d0f8110d671"
+    },
+    {
+      "id": 778635075,
+      "name": "sodeck-system-status_0.5.0_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 722222,
+      "digest": "sha256:0b5cd8a2a4c10d36eab195e56a9f105a49d21a2be6c8d976a08c04254dd6d819",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.5.0/sodeck-system-status_0.5.0_aarch64-unknown-linux-gnu.tar.gz",
+      "component": "system-status",
+      "version": "0.5.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009311491,
+      "tag": "plugin-system-status-v0.5.0",
+      "anonymousDownload": true,
+      "verifiedSize": 722222,
+      "verifiedDigest": "sha256:0b5cd8a2a4c10d36eab195e56a9f105a49d21a2be6c8d976a08c04254dd6d819"
+    },
+    {
+      "id": 778635039,
+      "name": "sodeck-system-status_0.5.0_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 798971,
+      "digest": "sha256:fa24091b4115f3436e352bbdb55550d2cf6f429bee67fb5970a72808c8d63786",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.5.0/sodeck-system-status_0.5.0_x86_64-unknown-linux-gnu.tar.gz",
+      "component": "system-status",
+      "version": "0.5.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009311491,
+      "tag": "plugin-system-status-v0.5.0",
+      "anonymousDownload": true,
+      "verifiedSize": 798971,
+      "verifiedDigest": "sha256:fa24091b4115f3436e352bbdb55550d2cf6f429bee67fb5970a72808c8d63786"
+    },
+    {
+      "id": 778634952,
+      "name": "sodeck-system-status_0.5.0_x86_64-pc-windows-msvc.zip",
+      "size": 765810,
+      "digest": "sha256:5f56825db9fa222c4be6ff1d0584bda05f683c77e27b964bac884ff7c28d65db",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.5.0/sodeck-system-status_0.5.0_x86_64-pc-windows-msvc.zip",
+      "component": "system-status",
+      "version": "0.5.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009311491,
+      "tag": "plugin-system-status-v0.5.0",
+      "anonymousDownload": true,
+      "verifiedSize": 765810,
+      "verifiedDigest": "sha256:5f56825db9fa222c4be6ff1d0584bda05f683c77e27b964bac884ff7c28d65db"
+    }
+  ],
+  "publishedUpgrade": {
+    "component": "system-status",
+    "initialRun": 45013661444,
+    "runs": [
+      {
+        "id": 45014572675,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45014572675",
+        "testSource": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+        "conclusion": "success"
+      },
+      {
+        "id": 45014577999,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45014577999",
+        "testSource": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+        "conclusion": "success"
+      },
+      {
+        "id": 45013661444,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45013661444",
+        "testSource": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+        "conclusion": "failure"
+      }
+    ],
+    "initialFailure": "Windows initial installation assumed /D selected the destination with a multi-user installer; the verifier was corrected to select CurrentUser and validate the actual registration, then only Windows platforms were replayed with identical public packages.",
+    "results": [
+      {
+        "component": "system-status",
+        "target": "x86_64-pc-windows-msvc",
+        "verificationRun": 45014572675,
+        "testSource": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.4.9",
+        "to": "0.5.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "3fd6e672d6cc6305d1f170dc96fa608e5b7507e9b0722ecd8cc9d9d0d02a7441",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.system-status",
+            "version": "0.4.9",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.system-status",
+            "version": "0.5.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.system-status/sampling": {
+            "dynamicIntervalSeconds": "5"
+          }
+        },
+        "settingsAfter": {
+          "sodeck.system-status/sampling": {
+            "dynamicIntervalSeconds": "5"
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454355874,
+            "tag": "plugin-system-status-v0.5.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778635156,
+              "size": 26474,
+              "digest": "sha256:c61a058c17c005489c90de3852dbbf59409afb40ceadfb934adabd183485c5ac"
+            },
+            "package": {
+              "name": "sodeck-system-status_0.5.0_x86_64-pc-windows-msvc.zip",
+              "id": 778634952,
+              "size": 765810,
+              "digest": "sha256:5f56825db9fa222c4be6ff1d0584bda05f683c77e27b964bac884ff7c28d65db"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 447385663,
+            "tag": "plugin-system-status-v0.4.9",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      },
+      {
+        "component": "system-status",
+        "target": "aarch64-pc-windows-msvc",
+        "verificationRun": 45014577999,
+        "testSource": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.4.9",
+        "to": "0.5.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "64f1b9987d560bca406b5f662832e9a4cd2ddce9c3d9ea9403753027a6e30975",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.system-status",
+            "version": "0.4.9",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.system-status",
+            "version": "0.5.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.system-status/sampling": {
+            "dynamicIntervalSeconds": "5"
+          }
+        },
+        "settingsAfter": {
+          "sodeck.system-status/sampling": {
+            "dynamicIntervalSeconds": "5"
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454355874,
+            "tag": "plugin-system-status-v0.5.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778635156,
+              "size": 26474,
+              "digest": "sha256:c61a058c17c005489c90de3852dbbf59409afb40ceadfb934adabd183485c5ac"
+            },
+            "package": {
+              "name": "sodeck-system-status_0.5.0_aarch64-pc-windows-msvc.zip",
+              "id": 778635001,
+              "size": 708951,
+              "digest": "sha256:fe4cf04d797209efa4861d3948f760a0fab175a878b9a3a298804d0f8110d671"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 447385663,
+            "tag": "plugin-system-status-v0.4.9",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      },
+      {
+        "component": "system-status",
+        "target": "x86_64-unknown-linux-gnu",
+        "verificationRun": 45013661444,
+        "testSource": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.4.9",
+        "to": "0.5.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "43d1f5da61c3c86e6dfd68153eea7fc663475cf09997a5daeb1a45447d5cd677",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.system-status",
+            "version": "0.4.9",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.system-status",
+            "version": "0.5.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.system-status/sampling": {
+            "dynamicIntervalSeconds": "5"
+          }
+        },
+        "settingsAfter": {
+          "sodeck.system-status/sampling": {
+            "dynamicIntervalSeconds": "5"
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454355874,
+            "tag": "plugin-system-status-v0.5.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778635156,
+              "size": 26474,
+              "digest": "sha256:c61a058c17c005489c90de3852dbbf59409afb40ceadfb934adabd183485c5ac"
+            },
+            "package": {
+              "name": "sodeck-system-status_0.5.0_x86_64-unknown-linux-gnu.tar.gz",
+              "id": 778635039,
+              "size": 798971,
+              "digest": "sha256:fa24091b4115f3436e352bbdb55550d2cf6f429bee67fb5970a72808c8d63786"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 447385663,
+            "tag": "plugin-system-status-v0.4.9",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      },
+      {
+        "component": "system-status",
+        "target": "aarch64-unknown-linux-gnu",
+        "verificationRun": 45013661444,
+        "testSource": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.4.9",
+        "to": "0.5.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "3a3bdc274a4e72c14db12b7ad2758c20192785bd733c03ef06b4deb901344a1c",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.system-status",
+            "version": "0.4.9",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.system-status",
+            "version": "0.5.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.system-status/sampling": {
+            "dynamicIntervalSeconds": "5"
+          }
+        },
+        "settingsAfter": {
+          "sodeck.system-status/sampling": {
+            "dynamicIntervalSeconds": "5"
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454355874,
+            "tag": "plugin-system-status-v0.5.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778635156,
+              "size": 26474,
+              "digest": "sha256:c61a058c17c005489c90de3852dbbf59409afb40ceadfb934adabd183485c5ac"
+            },
+            "package": {
+              "name": "sodeck-system-status_0.5.0_aarch64-unknown-linux-gnu.tar.gz",
+              "id": 778635075,
+              "size": 722222,
+              "digest": "sha256:0b5cd8a2a4c10d36eab195e56a9f105a49d21a2be6c8d976a08c04254dd6d819"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 447385663,
+            "tag": "plugin-system-status-v0.4.9",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      },
+      {
+        "component": "system-status",
+        "target": "aarch64-apple-darwin",
+        "verificationRun": 45013661444,
+        "testSource": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.4.9",
+        "to": "0.5.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "726f3ac2eedb2a342282d6e3a2070e051f7f62efc04b504eb949fab202126c0d",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.system-status",
+            "version": "0.4.9",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.system-status",
+            "version": "0.5.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.system-status/sampling": {
+            "dynamicIntervalSeconds": "5"
+          }
+        },
+        "settingsAfter": {
+          "sodeck.system-status/sampling": {
+            "dynamicIntervalSeconds": "5"
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454355874,
+            "tag": "plugin-system-status-v0.5.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778635156,
+              "size": 26474,
+              "digest": "sha256:c61a058c17c005489c90de3852dbbf59409afb40ceadfb934adabd183485c5ac"
+            },
+            "package": {
+              "name": "sodeck-system-status_0.5.0_aarch64-apple-darwin.tar.gz",
+              "id": 778635113,
+              "size": 709795,
+              "digest": "sha256:0e50febe876591e55cfbaa3ad5900889f43079ad09d464c7f24a07dccdd72e96"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 447385663,
+            "tag": "plugin-system-status-v0.4.9",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      }
+    ]
+  },
+  "nativeRemote": "Not included in the terminal/files/network native remote combination. Package protocol/lifecycle checks and applicable source/Engine/SSH regressions are recorded separately.",
+  "notExecuted": [
+    "netem",
+    "physical IME/DPI/screen-reader devices",
+    "authenticated Codex CLI",
+    "all remote OS/Engine/rootless permutations"
+  ],
+  "upgradeVerifierCheck": {
+    "run": 45014434214,
+    "source": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+    "conclusion": "success",
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45014434214"
+  }
+}

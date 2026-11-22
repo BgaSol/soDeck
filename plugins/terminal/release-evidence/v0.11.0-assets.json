@@ -1,0 +1,768 @@
+{
+  "component": "terminal",
+  "version": "0.11.0",
+  "source": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+  "packageRun": {
+    "id": 45010430915,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45010430915"
+  },
+  "checks": [
+    {
+      "run": 45010797487,
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "scope": "all excluding netem",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45010797487"
+    },
+    {
+      "run": 45010421783,
+      "source": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "scope": "all excluding netem",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45010421783"
+    }
+  ],
+  "nativePackageReports": [
+    {
+      "id": "sodeck.terminal",
+      "version": "0.11.0",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "sha256": "7b9e64ec535f8538f723032da983510fb7b0dde5dfbc837aa8bfacd3dbedf91d",
+      "runId": "45010430915",
+      "toolCommit": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "passed": true,
+      "pluginIcons": [
+        "terminal"
+      ],
+      "calls": [
+        "settings.get",
+        "settings.get",
+        "terminal.open",
+        "terminal.close"
+      ]
+    },
+    {
+      "id": "sodeck.terminal",
+      "version": "0.11.0",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "sha256": "9fb922a5bc57e613d0a8fb17d85ed4ee56bde7104aa759d78c4d15b569a2741a",
+      "runId": "45010430915",
+      "toolCommit": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "passed": true,
+      "pluginIcons": [
+        "terminal"
+      ],
+      "calls": [
+        "settings.get",
+        "settings.get",
+        "terminal.open",
+        "terminal.close"
+      ]
+    },
+    {
+      "id": "sodeck.terminal",
+      "version": "0.11.0",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "sha256": "c1dc740aef0bb7c165c4e6c8bb9209a9782d5c9294f9700ef9bcde1299bc0f88",
+      "runId": "45010430915",
+      "toolCommit": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "passed": true,
+      "pluginIcons": [
+        "terminal"
+      ],
+      "calls": [
+        "settings.get",
+        "settings.get",
+        "terminal.open",
+        "terminal.close"
+      ]
+    },
+    {
+      "id": "sodeck.terminal",
+      "version": "0.11.0",
+      "target": "aarch64-apple-darwin",
+      "commit": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "sha256": "81c45d6726644589bf273d2895fd426df0f73d8fbb868160ac23b136f322c31d",
+      "runId": "45010430915",
+      "toolCommit": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "passed": true,
+      "pluginIcons": [
+        "terminal"
+      ],
+      "calls": [
+        "settings.get",
+        "settings.get",
+        "terminal.open",
+        "terminal.close"
+      ]
+    },
+    {
+      "id": "sodeck.terminal",
+      "version": "0.11.0",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "sha256": "103427e80fe3aa9640d0d14fb4834505f044e5cbb6cc915b94d2e9f95af16ecf",
+      "runId": "45010430915",
+      "toolCommit": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "passed": true,
+      "pluginIcons": [
+        "terminal"
+      ],
+      "calls": [
+        "settings.get",
+        "settings.get",
+        "terminal.open",
+        "terminal.close"
+      ]
+    }
+  ],
+  "release": {
+    "id": 454358503,
+    "tag": "plugin-terminal-v0.11.0",
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.11.0",
+    "latest": false
+  },
+  "anonymousAssets": [
+    {
+      "id": 778647987,
+      "name": "plugin-update.json",
+      "size": 47743,
+      "digest": "sha256:4f775a1d56f3c7a110a25b4fd3cfa596a32aab638dfcecb2891eb8eaea5793f3",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.0/plugin-update.json",
+      "component": "terminal",
+      "version": "0.11.0",
+      "source": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "run": 45010430915,
+      "tag": "plugin-terminal-v0.11.0",
+      "anonymousDownload": true,
+      "verifiedSize": 47743,
+      "verifiedDigest": "sha256:4f775a1d56f3c7a110a25b4fd3cfa596a32aab638dfcecb2891eb8eaea5793f3"
+    },
+    {
+      "id": 778647901,
+      "name": "sodeck-terminal_0.11.0_aarch64-pc-windows-msvc.zip",
+      "size": 1116908,
+      "digest": "sha256:7b9e64ec535f8538f723032da983510fb7b0dde5dfbc837aa8bfacd3dbedf91d",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.0/sodeck-terminal_0.11.0_aarch64-pc-windows-msvc.zip",
+      "component": "terminal",
+      "version": "0.11.0",
+      "source": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "run": 45010430915,
+      "tag": "plugin-terminal-v0.11.0",
+      "anonymousDownload": true,
+      "verifiedSize": 1116908,
+      "verifiedDigest": "sha256:7b9e64ec535f8538f723032da983510fb7b0dde5dfbc837aa8bfacd3dbedf91d"
+    },
+    {
+      "id": 778647939,
+      "name": "sodeck-terminal_0.11.0_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 1125161,
+      "digest": "sha256:9fb922a5bc57e613d0a8fb17d85ed4ee56bde7104aa759d78c4d15b569a2741a",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.0/sodeck-terminal_0.11.0_aarch64-unknown-linux-gnu.tar.gz",
+      "component": "terminal",
+      "version": "0.11.0",
+      "source": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "run": 45010430915,
+      "tag": "plugin-terminal-v0.11.0",
+      "anonymousDownload": true,
+      "verifiedSize": 1125161,
+      "verifiedDigest": "sha256:9fb922a5bc57e613d0a8fb17d85ed4ee56bde7104aa759d78c4d15b569a2741a"
+    },
+    {
+      "id": 778647969,
+      "name": "sodeck-terminal_0.11.0_aarch64-apple-darwin.tar.gz",
+      "size": 1121956,
+      "digest": "sha256:81c45d6726644589bf273d2895fd426df0f73d8fbb868160ac23b136f322c31d",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.0/sodeck-terminal_0.11.0_aarch64-apple-darwin.tar.gz",
+      "component": "terminal",
+      "version": "0.11.0",
+      "source": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "run": 45010430915,
+      "tag": "plugin-terminal-v0.11.0",
+      "anonymousDownload": true,
+      "verifiedSize": 1121956,
+      "verifiedDigest": "sha256:81c45d6726644589bf273d2895fd426df0f73d8fbb868160ac23b136f322c31d"
+    },
+    {
+      "id": 778647925,
+      "name": "sodeck-terminal_0.11.0_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 1188589,
+      "digest": "sha256:103427e80fe3aa9640d0d14fb4834505f044e5cbb6cc915b94d2e9f95af16ecf",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.0/sodeck-terminal_0.11.0_x86_64-unknown-linux-gnu.tar.gz",
+      "component": "terminal",
+      "version": "0.11.0",
+      "source": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "run": 45010430915,
+      "tag": "plugin-terminal-v0.11.0",
+      "anonymousDownload": true,
+      "verifiedSize": 1188589,
+      "verifiedDigest": "sha256:103427e80fe3aa9640d0d14fb4834505f044e5cbb6cc915b94d2e9f95af16ecf"
+    },
+    {
+      "id": 778647885,
+      "name": "sodeck-terminal_0.11.0_x86_64-pc-windows-msvc.zip",
+      "size": 1152214,
+      "digest": "sha256:c1dc740aef0bb7c165c4e6c8bb9209a9782d5c9294f9700ef9bcde1299bc0f88",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.0/sodeck-terminal_0.11.0_x86_64-pc-windows-msvc.zip",
+      "component": "terminal",
+      "version": "0.11.0",
+      "source": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "run": 45010430915,
+      "tag": "plugin-terminal-v0.11.0",
+      "anonymousDownload": true,
+      "verifiedSize": 1152214,
+      "verifiedDigest": "sha256:c1dc740aef0bb7c165c4e6c8bb9209a9782d5c9294f9700ef9bcde1299bc0f88"
+    }
+  ],
+  "publishedUpgrade": {
+    "component": "terminal",
+    "initialRun": 45013651004,
+    "runs": [
+      {
+        "id": 45014551567,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45014551567",
+        "testSource": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+        "conclusion": "success"
+      },
+      {
+        "id": 45014555077,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45014555077",
+        "testSource": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+        "conclusion": "success"
+      },
+      {
+        "id": 45013651004,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45013651004",
+        "testSource": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+        "conclusion": "failure"
+      }
+    ],
+    "initialFailure": "Windows initial installation assumed /D selected the destination with a multi-user installer; the verifier was corrected to select CurrentUser and validate the actual registration, then only Windows platforms were replayed with identical public packages.",
+    "results": [
+      {
+        "component": "terminal",
+        "target": "x86_64-pc-windows-msvc",
+        "verificationRun": 45014551567,
+        "testSource": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.10.2",
+        "to": "0.11.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "3fd6e672d6cc6305d1f170dc96fa608e5b7507e9b0722ecd8cc9d9d0d02a7441",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.terminal",
+            "version": "0.10.2",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.terminal",
+            "version": "0.11.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.terminal/appearance": {
+            "commandFill": false,
+            "commandSticky": true,
+            "cursorBlink": true,
+            "cursorStyle": "block",
+            "directoryMode": "auto",
+            "directoryReportHost": "",
+            "font": {
+              "id": "jetbrains-mono",
+              "source": "preset"
+            },
+            "fontSize": 16,
+            "lineHeight": 1.2,
+            "paddingBottom": 24,
+            "readingMode": "auto"
+          }
+        },
+        "settingsAfter": {
+          "sodeck.terminal/appearance": {
+            "commandFill": false,
+            "commandSticky": true,
+            "cursorBlink": true,
+            "cursorStyle": "block",
+            "directoryMode": "auto",
+            "directoryReportHost": "",
+            "font": {
+              "id": "jetbrains-mono",
+              "source": "preset"
+            },
+            "fontSize": 16,
+            "lineHeight": 1.2,
+            "paddingBottom": 24,
+            "readingMode": "auto"
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454358503,
+            "tag": "plugin-terminal-v0.11.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778647987,
+              "size": 47743,
+              "digest": "sha256:4f775a1d56f3c7a110a25b4fd3cfa596a32aab638dfcecb2891eb8eaea5793f3"
+            },
+            "package": {
+              "name": "sodeck-terminal_0.11.0_x86_64-pc-windows-msvc.zip",
+              "id": 778647885,
+              "size": 1152214,
+              "digest": "sha256:c1dc740aef0bb7c165c4e6c8bb9209a9782d5c9294f9700ef9bcde1299bc0f88"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 453144792,
+            "tag": "plugin-terminal-v0.10.2",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      },
+      {
+        "component": "terminal",
+        "target": "aarch64-pc-windows-msvc",
+        "verificationRun": 45014555077,
+        "testSource": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.10.2",
+        "to": "0.11.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "64f1b9987d560bca406b5f662832e9a4cd2ddce9c3d9ea9403753027a6e30975",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.terminal",
+            "version": "0.10.2",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.terminal",
+            "version": "0.11.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.terminal/appearance": {
+            "commandFill": false,
+            "commandSticky": true,
+            "cursorBlink": true,
+            "cursorStyle": "block",
+            "directoryMode": "auto",
+            "directoryReportHost": "",
+            "font": {
+              "id": "jetbrains-mono",
+              "source": "preset"
+            },
+            "fontSize": 16,
+            "lineHeight": 1.2,
+            "paddingBottom": 24,
+            "readingMode": "auto"
+          }
+        },
+        "settingsAfter": {
+          "sodeck.terminal/appearance": {
+            "commandFill": false,
+            "commandSticky": true,
+            "cursorBlink": true,
+            "cursorStyle": "block",
+            "directoryMode": "auto",
+            "directoryReportHost": "",
+            "font": {
+              "id": "jetbrains-mono",
+              "source": "preset"
+            },
+            "fontSize": 16,
+            "lineHeight": 1.2,
+            "paddingBottom": 24,
+            "readingMode": "auto"
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454358503,
+            "tag": "plugin-terminal-v0.11.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778647987,
+              "size": 47743,
+              "digest": "sha256:4f775a1d56f3c7a110a25b4fd3cfa596a32aab638dfcecb2891eb8eaea5793f3"
+            },
+            "package": {
+              "name": "sodeck-terminal_0.11.0_aarch64-pc-windows-msvc.zip",
+              "id": 778647901,
+              "size": 1116908,
+              "digest": "sha256:7b9e64ec535f8538f723032da983510fb7b0dde5dfbc837aa8bfacd3dbedf91d"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 453144792,
+            "tag": "plugin-terminal-v0.10.2",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      },
+      {
+        "component": "terminal",
+        "target": "x86_64-unknown-linux-gnu",
+        "verificationRun": 45013651004,
+        "testSource": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.10.2",
+        "to": "0.11.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "43d1f5da61c3c86e6dfd68153eea7fc663475cf09997a5daeb1a45447d5cd677",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.terminal",
+            "version": "0.10.2",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.terminal",
+            "version": "0.11.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.terminal/appearance": {
+            "commandFill": false,
+            "commandSticky": true,
+            "cursorBlink": true,
+            "cursorStyle": "block",
+            "directoryMode": "auto",
+            "directoryReportHost": "",
+            "font": {
+              "id": "jetbrains-mono",
+              "source": "preset"
+            },
+            "fontSize": 16,
+            "lineHeight": 1.2,
+            "paddingBottom": 24,
+            "readingMode": "auto"
+          }
+        },
+        "settingsAfter": {
+          "sodeck.terminal/appearance": {
+            "commandFill": false,
+            "commandSticky": true,
+            "cursorBlink": true,
+            "cursorStyle": "block",
+            "directoryMode": "auto",
+            "directoryReportHost": "",
+            "font": {
+              "id": "jetbrains-mono",
+              "source": "preset"
+            },
+            "fontSize": 16,
+            "lineHeight": 1.2,
+            "paddingBottom": 24,
+            "readingMode": "auto"
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454358503,
+            "tag": "plugin-terminal-v0.11.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778647987,
+              "size": 47743,
+              "digest": "sha256:4f775a1d56f3c7a110a25b4fd3cfa596a32aab638dfcecb2891eb8eaea5793f3"
+            },
+            "package": {
+              "name": "sodeck-terminal_0.11.0_x86_64-unknown-linux-gnu.tar.gz",
+              "id": 778647925,
+              "size": 1188589,
+              "digest": "sha256:103427e80fe3aa9640d0d14fb4834505f044e5cbb6cc915b94d2e9f95af16ecf"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 453144792,
+            "tag": "plugin-terminal-v0.10.2",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      },
+      {
+        "component": "terminal",
+        "target": "aarch64-unknown-linux-gnu",
+        "verificationRun": 45013651004,
+        "testSource": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.10.2",
+        "to": "0.11.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "3a3bdc274a4e72c14db12b7ad2758c20192785bd733c03ef06b4deb901344a1c",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.terminal",
+            "version": "0.10.2",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.terminal",
+            "version": "0.11.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.terminal/appearance": {
+            "commandFill": false,
+            "commandSticky": true,
+            "cursorBlink": true,
+            "cursorStyle": "block",
+            "directoryMode": "auto",
+            "directoryReportHost": "",
+            "font": {
+              "id": "jetbrains-mono",
+              "source": "preset"
+            },
+            "fontSize": 16,
+            "lineHeight": 1.2,
+            "paddingBottom": 24,
+            "readingMode": "auto"
+          }
+        },
+        "settingsAfter": {
+          "sodeck.terminal/appearance": {
+            "commandFill": false,
+            "commandSticky": true,
+            "cursorBlink": true,
+            "cursorStyle": "block",
+            "directoryMode": "auto",
+            "directoryReportHost": "",
+            "font": {
+              "id": "jetbrains-mono",
+              "source": "preset"
+            },
+            "fontSize": 16,
+            "lineHeight": 1.2,
+            "paddingBottom": 24,
+            "readingMode": "auto"
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454358503,
+            "tag": "plugin-terminal-v0.11.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778647987,
+              "size": 47743,
+              "digest": "sha256:4f775a1d56f3c7a110a25b4fd3cfa596a32aab638dfcecb2891eb8eaea5793f3"
+            },
+            "package": {
+              "name": "sodeck-terminal_0.11.0_aarch64-unknown-linux-gnu.tar.gz",
+              "id": 778647939,
+              "size": 1125161,
+              "digest": "sha256:9fb922a5bc57e613d0a8fb17d85ed4ee56bde7104aa759d78c4d15b569a2741a"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 453144792,
+            "tag": "plugin-terminal-v0.10.2",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      },
+      {
+        "component": "terminal",
+        "target": "aarch64-apple-darwin",
+        "verificationRun": 45013651004,
+        "testSource": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.10.2",
+        "to": "0.11.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "726f3ac2eedb2a342282d6e3a2070e051f7f62efc04b504eb949fab202126c0d",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.terminal",
+            "version": "0.10.2",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.terminal",
+            "version": "0.11.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.terminal/appearance": {
+            "commandFill": false,
+            "commandSticky": true,
+            "cursorBlink": true,
+            "cursorStyle": "block",
+            "directoryMode": "auto",
+            "directoryReportHost": "",
+            "font": {
+              "id": "jetbrains-mono",
+              "source": "preset"
+            },
+            "fontSize": 16,
+            "lineHeight": 1.2,
+            "paddingBottom": 24,
+            "readingMode": "auto"
+          }
+        },
+        "settingsAfter": {
+          "sodeck.terminal/appearance": {
+            "commandFill": false,
+            "commandSticky": true,
+            "cursorBlink": true,
+            "cursorStyle": "block",
+            "directoryMode": "auto",
+            "directoryReportHost": "",
+            "font": {
+              "id": "jetbrains-mono",
+              "source": "preset"
+            },
+            "fontSize": 16,
+            "lineHeight": 1.2,
+            "paddingBottom": 24,
+            "readingMode": "auto"
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454358503,
+            "tag": "plugin-terminal-v0.11.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778647987,
+              "size": 47743,
+              "digest": "sha256:4f775a1d56f3c7a110a25b4fd3cfa596a32aab638dfcecb2891eb8eaea5793f3"
+            },
+            "package": {
+              "name": "sodeck-terminal_0.11.0_aarch64-apple-darwin.tar.gz",
+              "id": 778647969,
+              "size": 1121956,
+              "digest": "sha256:81c45d6726644589bf273d2895fd426df0f73d8fbb868160ac23b136f322c31d"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 453144792,
+            "tag": "plugin-terminal-v0.10.2",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      }
+    ]
+  },
+  "nativeRemote": {
+    "evidence": "../../../docs/releases/v2.0.0-assets.json",
+    "runs": {
+      "remote": 45011598768,
+      "windowsBaseline": 45012622005,
+      "armBaseline": 45012625735
+    },
+    "scope": "Same pinned core/terminal/files/network combination; five base remote and clipboard flows passed, Windows editor automation remains unavailable."
+  },
+  "notExecuted": [
+    "netem",
+    "physical IME/DPI/screen-reader devices",
+    "authenticated Codex CLI",
+    "all remote OS/Engine/rootless permutations"
+  ],
+  "upgradeVerifierCheck": {
+    "run": 45014434214,
+    "source": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+    "conclusion": "success",
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45014434214"
+  }
+}

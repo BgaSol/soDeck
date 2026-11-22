@@ -1,0 +1,773 @@
+{
+  "component": "files",
+  "version": "0.12.0",
+  "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+  "packageRun": {
+    "id": 45009304230,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45009304230"
+  },
+  "checks": [
+    {
+      "run": 45010797487,
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "scope": "all excluding netem",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45010797487"
+    },
+    {
+      "run": 45010421783,
+      "source": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+      "scope": "all excluding netem",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45010421783"
+    }
+  ],
+  "nativePackageReports": [
+    {
+      "id": "sodeck.files",
+      "version": "0.12.0",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "sha256": "127669458566cc7f165316431e9dbf74e7d806853f76ebc1207b1f5212b83678",
+      "runId": "45009304230",
+      "toolCommit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "passed": true,
+      "pluginIcons": [
+        "folder",
+        "log"
+      ],
+      "calls": [
+        "files.open",
+        "files.close"
+      ]
+    },
+    {
+      "id": "sodeck.files",
+      "version": "0.12.0",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "sha256": "79722b6ad68b14efcf62e7da3981960d7a489a841a7b9e50757b6ae0b09c41fe",
+      "runId": "45009304230",
+      "toolCommit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "passed": true,
+      "pluginIcons": [
+        "folder",
+        "log"
+      ],
+      "calls": [
+        "files.open",
+        "files.close"
+      ]
+    },
+    {
+      "id": "sodeck.files",
+      "version": "0.12.0",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "sha256": "9da6c16e153e16c5b14eb225a97646f4c8f66956f2f3eb7eb04e8271ffa2b6f3",
+      "runId": "45009304230",
+      "toolCommit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "passed": true,
+      "pluginIcons": [
+        "folder",
+        "log"
+      ],
+      "calls": [
+        "files.open",
+        "files.close"
+      ]
+    },
+    {
+      "id": "sodeck.files",
+      "version": "0.12.0",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "sha256": "0d463560fb3e8b43a43340914feb4ec5edc449bd285dfc3cfa28d796d65c3117",
+      "runId": "45009304230",
+      "toolCommit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "passed": true,
+      "pluginIcons": [
+        "folder",
+        "log"
+      ],
+      "calls": [
+        "files.open",
+        "files.close"
+      ]
+    },
+    {
+      "id": "sodeck.files",
+      "version": "0.12.0",
+      "target": "aarch64-apple-darwin",
+      "commit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "sha256": "d3c67d1e683e2bbef65f42fc75eaaed8243f99f8c2b185f2c5e9f392f761a629",
+      "runId": "45009304230",
+      "toolCommit": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "passed": true,
+      "pluginIcons": [
+        "folder",
+        "log"
+      ],
+      "calls": [
+        "files.open",
+        "files.close"
+      ]
+    }
+  ],
+  "release": {
+    "id": 454354421,
+    "tag": "plugin-files-v0.12.0",
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.12.0",
+    "latest": false
+  },
+  "anonymousAssets": [
+    {
+      "id": 778628859,
+      "name": "plugin-update.json",
+      "size": 34816,
+      "digest": "sha256:ac8d290412c6c96fa786ec69a10daebed7eaac34b6f84313bc050d1cacdde674",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-files-v0.12.0/plugin-update.json",
+      "component": "files",
+      "version": "0.12.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009304230,
+      "tag": "plugin-files-v0.12.0",
+      "anonymousDownload": true,
+      "verifiedSize": 34816,
+      "verifiedDigest": "sha256:ac8d290412c6c96fa786ec69a10daebed7eaac34b6f84313bc050d1cacdde674"
+    },
+    {
+      "id": 778628722,
+      "name": "sodeck-files_0.12.0_aarch64-pc-windows-msvc.zip",
+      "size": 2157821,
+      "digest": "sha256:9da6c16e153e16c5b14eb225a97646f4c8f66956f2f3eb7eb04e8271ffa2b6f3",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-files-v0.12.0/sodeck-files_0.12.0_aarch64-pc-windows-msvc.zip",
+      "component": "files",
+      "version": "0.12.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009304230,
+      "tag": "plugin-files-v0.12.0",
+      "anonymousDownload": true,
+      "verifiedSize": 2157821,
+      "verifiedDigest": "sha256:9da6c16e153e16c5b14eb225a97646f4c8f66956f2f3eb7eb04e8271ffa2b6f3"
+    },
+    {
+      "id": 778628690,
+      "name": "sodeck-files_0.12.0_x86_64-pc-windows-msvc.zip",
+      "size": 2220174,
+      "digest": "sha256:79722b6ad68b14efcf62e7da3981960d7a489a841a7b9e50757b6ae0b09c41fe",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-files-v0.12.0/sodeck-files_0.12.0_x86_64-pc-windows-msvc.zip",
+      "component": "files",
+      "version": "0.12.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009304230,
+      "tag": "plugin-files-v0.12.0",
+      "anonymousDownload": true,
+      "verifiedSize": 2220174,
+      "verifiedDigest": "sha256:79722b6ad68b14efcf62e7da3981960d7a489a841a7b9e50757b6ae0b09c41fe"
+    },
+    {
+      "id": 778628787,
+      "name": "sodeck-files_0.12.0_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 2136157,
+      "digest": "sha256:0d463560fb3e8b43a43340914feb4ec5edc449bd285dfc3cfa28d796d65c3117",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-files-v0.12.0/sodeck-files_0.12.0_aarch64-unknown-linux-gnu.tar.gz",
+      "component": "files",
+      "version": "0.12.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009304230,
+      "tag": "plugin-files-v0.12.0",
+      "anonymousDownload": true,
+      "verifiedSize": 2136157,
+      "verifiedDigest": "sha256:0d463560fb3e8b43a43340914feb4ec5edc449bd285dfc3cfa28d796d65c3117"
+    },
+    {
+      "id": 778628826,
+      "name": "sodeck-files_0.12.0_aarch64-apple-darwin.tar.gz",
+      "size": 2127910,
+      "digest": "sha256:d3c67d1e683e2bbef65f42fc75eaaed8243f99f8c2b185f2c5e9f392f761a629",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-files-v0.12.0/sodeck-files_0.12.0_aarch64-apple-darwin.tar.gz",
+      "component": "files",
+      "version": "0.12.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009304230,
+      "tag": "plugin-files-v0.12.0",
+      "anonymousDownload": true,
+      "verifiedSize": 2127910,
+      "verifiedDigest": "sha256:d3c67d1e683e2bbef65f42fc75eaaed8243f99f8c2b185f2c5e9f392f761a629"
+    },
+    {
+      "id": 778628745,
+      "name": "sodeck-files_0.12.0_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 2218804,
+      "digest": "sha256:127669458566cc7f165316431e9dbf74e7d806853f76ebc1207b1f5212b83678",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-files-v0.12.0/sodeck-files_0.12.0_x86_64-unknown-linux-gnu.tar.gz",
+      "component": "files",
+      "version": "0.12.0",
+      "source": "e973109dcfc21d1f55a4ab1ba62245cf7406b0f4",
+      "run": 45009304230,
+      "tag": "plugin-files-v0.12.0",
+      "anonymousDownload": true,
+      "verifiedSize": 2218804,
+      "verifiedDigest": "sha256:127669458566cc7f165316431e9dbf74e7d806853f76ebc1207b1f5212b83678"
+    }
+  ],
+  "publishedUpgrade": {
+    "component": "files",
+    "initialRun": 45013654388,
+    "runs": [
+      {
+        "id": 45014558053,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45014558053",
+        "testSource": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+        "conclusion": "success"
+      },
+      {
+        "id": 45014561267,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45014561267",
+        "testSource": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+        "conclusion": "success"
+      },
+      {
+        "id": 45013654388,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45013654388",
+        "testSource": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+        "conclusion": "failure"
+      }
+    ],
+    "initialFailure": "Windows initial installation assumed /D selected the destination with a multi-user installer; the verifier was corrected to select CurrentUser and validate the actual registration, then only Windows platforms were replayed with identical public packages.",
+    "results": [
+      {
+        "component": "files",
+        "target": "x86_64-pc-windows-msvc",
+        "verificationRun": 45014558053,
+        "testSource": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.11.5",
+        "to": "0.12.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "3fd6e672d6cc6305d1f170dc96fa608e5b7507e9b0722ecd8cc9d9d0d02a7441",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.files",
+            "version": "0.11.5",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.files",
+            "version": "0.12.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.files/browser": {
+            "density": "compact",
+            "followTerminal": true,
+            "fontSize": 13,
+            "showHidden": true
+          },
+          "sodeck.files/editor": {
+            "font": {
+              "id": "jetbrains-mono",
+              "source": "preset"
+            },
+            "fontSize": 14,
+            "lineHeight": 1.5,
+            "minimap": true,
+            "tabSize": 4,
+            "wordWrap": true
+          }
+        },
+        "settingsAfter": {
+          "sodeck.files/browser": {
+            "density": "compact",
+            "followTerminal": true,
+            "fontSize": 13,
+            "showHidden": true
+          },
+          "sodeck.files/editor": {
+            "font": {
+              "id": "jetbrains-mono",
+              "source": "preset"
+            },
+            "fontSize": 14,
+            "lineHeight": 1.5,
+            "minimap": true,
+            "tabSize": 4,
+            "wordWrap": true
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454354421,
+            "tag": "plugin-files-v0.12.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778628859,
+              "size": 34816,
+              "digest": "sha256:ac8d290412c6c96fa786ec69a10daebed7eaac34b6f84313bc050d1cacdde674"
+            },
+            "package": {
+              "name": "sodeck-files_0.12.0_x86_64-pc-windows-msvc.zip",
+              "id": 778628690,
+              "size": 2220174,
+              "digest": "sha256:79722b6ad68b14efcf62e7da3981960d7a489a841a7b9e50757b6ae0b09c41fe"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 453144856,
+            "tag": "plugin-files-v0.11.5",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      },
+      {
+        "component": "files",
+        "target": "aarch64-pc-windows-msvc",
+        "verificationRun": 45014561267,
+        "testSource": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.11.5",
+        "to": "0.12.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "64f1b9987d560bca406b5f662832e9a4cd2ddce9c3d9ea9403753027a6e30975",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.files",
+            "version": "0.11.5",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.files",
+            "version": "0.12.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.files/browser": {
+            "density": "compact",
+            "followTerminal": true,
+            "fontSize": 13,
+            "showHidden": true
+          },
+          "sodeck.files/editor": {
+            "font": {
+              "id": "jetbrains-mono",
+              "source": "preset"
+            },
+            "fontSize": 14,
+            "lineHeight": 1.5,
+            "minimap": true,
+            "tabSize": 4,
+            "wordWrap": true
+          }
+        },
+        "settingsAfter": {
+          "sodeck.files/browser": {
+            "density": "compact",
+            "followTerminal": true,
+            "fontSize": 13,
+            "showHidden": true
+          },
+          "sodeck.files/editor": {
+            "font": {
+              "id": "jetbrains-mono",
+              "source": "preset"
+            },
+            "fontSize": 14,
+            "lineHeight": 1.5,
+            "minimap": true,
+            "tabSize": 4,
+            "wordWrap": true
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454354421,
+            "tag": "plugin-files-v0.12.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778628859,
+              "size": 34816,
+              "digest": "sha256:ac8d290412c6c96fa786ec69a10daebed7eaac34b6f84313bc050d1cacdde674"
+            },
+            "package": {
+              "name": "sodeck-files_0.12.0_aarch64-pc-windows-msvc.zip",
+              "id": 778628722,
+              "size": 2157821,
+              "digest": "sha256:9da6c16e153e16c5b14eb225a97646f4c8f66956f2f3eb7eb04e8271ffa2b6f3"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 453144856,
+            "tag": "plugin-files-v0.11.5",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      },
+      {
+        "component": "files",
+        "target": "x86_64-unknown-linux-gnu",
+        "verificationRun": 45013654388,
+        "testSource": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.11.5",
+        "to": "0.12.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "43d1f5da61c3c86e6dfd68153eea7fc663475cf09997a5daeb1a45447d5cd677",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.files",
+            "version": "0.11.5",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.files",
+            "version": "0.12.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.files/browser": {
+            "density": "compact",
+            "followTerminal": true,
+            "fontSize": 13,
+            "showHidden": true
+          },
+          "sodeck.files/editor": {
+            "font": {
+              "id": "jetbrains-mono",
+              "source": "preset"
+            },
+            "fontSize": 14,
+            "lineHeight": 1.5,
+            "minimap": true,
+            "tabSize": 4,
+            "wordWrap": true
+          }
+        },
+        "settingsAfter": {
+          "sodeck.files/browser": {
+            "density": "compact",
+            "followTerminal": true,
+            "fontSize": 13,
+            "showHidden": true
+          },
+          "sodeck.files/editor": {
+            "font": {
+              "id": "jetbrains-mono",
+              "source": "preset"
+            },
+            "fontSize": 14,
+            "lineHeight": 1.5,
+            "minimap": true,
+            "tabSize": 4,
+            "wordWrap": true
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454354421,
+            "tag": "plugin-files-v0.12.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778628859,
+              "size": 34816,
+              "digest": "sha256:ac8d290412c6c96fa786ec69a10daebed7eaac34b6f84313bc050d1cacdde674"
+            },
+            "package": {
+              "name": "sodeck-files_0.12.0_x86_64-unknown-linux-gnu.tar.gz",
+              "id": 778628745,
+              "size": 2218804,
+              "digest": "sha256:127669458566cc7f165316431e9dbf74e7d806853f76ebc1207b1f5212b83678"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 453144856,
+            "tag": "plugin-files-v0.11.5",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      },
+      {
+        "component": "files",
+        "target": "aarch64-unknown-linux-gnu",
+        "verificationRun": 45013654388,
+        "testSource": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.11.5",
+        "to": "0.12.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "3a3bdc274a4e72c14db12b7ad2758c20192785bd733c03ef06b4deb901344a1c",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.files",
+            "version": "0.11.5",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.files",
+            "version": "0.12.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.files/browser": {
+            "density": "compact",
+            "followTerminal": true,
+            "fontSize": 13,
+            "showHidden": true
+          },
+          "sodeck.files/editor": {
+            "font": {
+              "id": "jetbrains-mono",
+              "source": "preset"
+            },
+            "fontSize": 14,
+            "lineHeight": 1.5,
+            "minimap": true,
+            "tabSize": 4,
+            "wordWrap": true
+          }
+        },
+        "settingsAfter": {
+          "sodeck.files/browser": {
+            "density": "compact",
+            "followTerminal": true,
+            "fontSize": 13,
+            "showHidden": true
+          },
+          "sodeck.files/editor": {
+            "font": {
+              "id": "jetbrains-mono",
+              "source": "preset"
+            },
+            "fontSize": 14,
+            "lineHeight": 1.5,
+            "minimap": true,
+            "tabSize": 4,
+            "wordWrap": true
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454354421,
+            "tag": "plugin-files-v0.12.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778628859,
+              "size": 34816,
+              "digest": "sha256:ac8d290412c6c96fa786ec69a10daebed7eaac34b6f84313bc050d1cacdde674"
+            },
+            "package": {
+              "name": "sodeck-files_0.12.0_aarch64-unknown-linux-gnu.tar.gz",
+              "id": 778628787,
+              "size": 2136157,
+              "digest": "sha256:0d463560fb3e8b43a43340914feb4ec5edc449bd285dfc3cfa28d796d65c3117"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 453144856,
+            "tag": "plugin-files-v0.11.5",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      },
+      {
+        "component": "files",
+        "target": "aarch64-apple-darwin",
+        "verificationRun": 45013654388,
+        "testSource": "a36024f240da7ff8fd2eb6412f38b154c4c05963",
+        "current": "2.0.0",
+        "version": "2.0.0",
+        "from": "0.11.5",
+        "to": "0.12.0",
+        "completed": true,
+        "fixtureDriven": true,
+        "cleanedUp": true,
+        "debSystemUpgrade": false,
+        "coreDigest": "726f3ac2eedb2a342282d6e3a2070e051f7f62efc04b504eb949fab202126c0d",
+        "discoveryConfirmed": true,
+        "baselinePlugins": [
+          {
+            "id": "sodeck.files",
+            "version": "0.11.5",
+            "apiVersion": "1",
+            "status": "failed",
+            "enabled": true
+          }
+        ],
+        "activatedPlugins": [
+          {
+            "id": "sodeck.files",
+            "version": "0.12.0",
+            "apiVersion": "2.0",
+            "status": "running",
+            "enabled": true
+          }
+        ],
+        "settingsBefore": {
+          "sodeck.files/browser": {
+            "density": "compact",
+            "followTerminal": true,
+            "fontSize": 13,
+            "showHidden": true
+          },
+          "sodeck.files/editor": {
+            "font": {
+              "id": "jetbrains-mono",
+              "source": "preset"
+            },
+            "fontSize": 14,
+            "lineHeight": 1.5,
+            "minimap": true,
+            "tabSize": 4,
+            "wordWrap": true
+          }
+        },
+        "settingsAfter": {
+          "sodeck.files/browser": {
+            "density": "compact",
+            "followTerminal": true,
+            "fontSize": 13,
+            "showHidden": true
+          },
+          "sodeck.files/editor": {
+            "font": {
+              "id": "jetbrains-mono",
+              "source": "preset"
+            },
+            "fontSize": 14,
+            "lineHeight": 1.5,
+            "minimap": true,
+            "tabSize": 4,
+            "wordWrap": true
+          }
+        },
+        "selectedReleaseInputs": [
+          {
+            "releaseId": 454354421,
+            "tag": "plugin-files-v0.12.0",
+            "manifest": {
+              "name": "plugin-update.json",
+              "id": 778628859,
+              "size": 34816,
+              "digest": "sha256:ac8d290412c6c96fa786ec69a10daebed7eaac34b6f84313bc050d1cacdde674"
+            },
+            "package": {
+              "name": "sodeck-files_0.12.0_aarch64-apple-darwin.tar.gz",
+              "id": 778628826,
+              "size": 2127910,
+              "digest": "sha256:d3c67d1e683e2bbef65f42fc75eaaed8243f99f8c2b185f2c5e9f392f761a629"
+            }
+          },
+          {
+            "releaseId": 454353702,
+            "tag": "v2.0.0",
+            "manifest": null,
+            "package": null
+          },
+          {
+            "releaseId": 453144856,
+            "tag": "plugin-files-v0.11.5",
+            "manifest": null,
+            "package": null
+          }
+        ]
+      }
+    ]
+  },
+  "nativeRemote": {
+    "evidence": "../../../docs/releases/v2.0.0-assets.json",
+    "runs": {
+      "remote": 45011598768,
+      "windowsBaseline": 45012622005,
+      "armBaseline": 45012625735
+    },
+    "scope": "Same pinned core/terminal/files/network combination; five base remote and clipboard flows passed, Windows editor automation remains unavailable."
+  },
+  "notExecuted": [
+    "netem",
+    "physical IME/DPI/screen-reader devices",
+    "authenticated Codex CLI",
+    "all remote OS/Engine/rootless permutations"
+  ],
+  "upgradeVerifierCheck": {
+    "run": 45014434214,
+    "source": "67848651c3bb148a4be2f1e0a71b79c85f9a8cf5",
+    "conclusion": "success",
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45014434214"
+  }
+}

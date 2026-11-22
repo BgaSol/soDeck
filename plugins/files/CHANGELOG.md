@@ -4,6 +4,14 @@
 - 保留目录浏览、任务冲突处理、上传下载和跨窗草稿；结果未知时查询原票据，保存不会清除较新编辑。
 - 插件包携带自身 SVG 图标和 SDK 资源，独立分发；需要核心 API 2.0，API 1 核心无法加载。
 
+发行：[files 0.12.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.12.0)，保持非 Latest；核心 2.0.0 为仓库默认入口。包来源 [e973109dcfc21d1f55a4ab1ba62245cf7406b0f4](https://github.com/BgaSol/soDeck/commit/e973109dcfc21d1f55a4ab1ba62245cf7406b0f4)；[原始独立打包](https://github.com/BgaSol/soDeck/actions/runs/45009304230)的 Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 原生构建、架构/资源、包内挂载/释放与退出均通过。直接发布同一草稿，六个公开附件匿名下载大小和 SHA-256 全部核对。
+
+[源码及业务检查](https://github.com/BgaSol/soDeck/actions/runs/45010797487)通过；类型/格式、211 项脚本、核心 UI 和六插件回归、本地终端输入/十万行历史、文件编辑、状态图表、三插件协作、真实 SSH/Docker Engine/MCP pipe/PTY 与 1 GiB 上传覆盖受影响链路。核心 2.0.0、终端 0.11.0、文件 0.12.0、网络 0.6.0 的固定原包五平台基础远程/原生剪贴板通过。Windows 深度编辑器自动化在调试端口连接前失败，限制和重放来源见[核心记录](../../docs/releases/v2.0.0.md#发布与验证)。
+
+旧版 0.11.5 → 0.12.0 的[原始五平台升级](https://github.com/BgaSol/soDeck/actions/runs/45013654388)中 Linux 两架构与 macOS 通过；Windows 安装夹具假定临时目录导致安装后找不到程序，修正为明确当前用户安装并核对登记后，[x64](https://github.com/BgaSol/soDeck/actions/runs/45014558053)与[ARM64](https://github.com/BgaSol/soDeck/actions/runs/45014561267)补测通过。五平台确认旧 API 程序不执行、登记/启用意图/设置和数据标记保留，下载后切换到新版本并运行。先升级核心并重启，再更新插件并按提示重启。
+
+[永久证据](release-evidence/v0.12.0-assets.json)保留包来源、五份原包报告、公开附件摘要及逐平台升级来源。netem、物理 IME/DPI/读屏、已认证 Codex CLI、全部远端系统/Engine 组合未执行；深度编辑器等既有专项继续单独维护。
+
 # 0.11.5
 
 - 文本预览／编辑的右侧缩略图承担垂直定位与拖动，隐藏正文旁重复的垂直滚动条，保留横向滚动及原轨道尺寸。

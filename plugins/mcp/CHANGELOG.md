@@ -4,6 +4,14 @@
 - 保留 15 个工具、调查与输入、上传下载、原票据恢复及本地证据；传输错误继续保留结构化详情。
 - 插件包携带自身 SVG 图标和 SDK 资源，独立分发；需要核心 API 2.0，API 1 核心无法加载。
 
+发行：[mcp 0.12.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.12.0)，保持非 Latest；核心 2.0.0 为仓库默认入口。包来源 [e973109dcfc21d1f55a4ab1ba62245cf7406b0f4](https://github.com/BgaSol/soDeck/commit/e973109dcfc21d1f55a4ab1ba62245cf7406b0f4)；[原始独立打包](https://github.com/BgaSol/soDeck/actions/runs/45009320601)的 Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 原生构建、架构/资源、包内挂载/释放与退出均通过。本次原包另验 15 工具、任务查询与连接。直接发布同一草稿，六个公开附件匿名下载大小和 SHA-256 全部核对。
+
+[源码及业务检查](https://github.com/BgaSol/soDeck/actions/runs/45010797487)通过；类型/格式、211 项脚本、核心 UI 和六插件回归、本地终端输入/十万行历史、文件编辑、状态图表、三插件协作、真实 SSH/Docker Engine/MCP pipe/PTY 与 1 GiB 上传覆盖受影响链路。本组件未参与终端/文件/网络的五平台原生远程组合，包内进程验收与真实远端/Engine 业务分别记录。
+
+旧版 0.11.0 → 0.12.0 的[原始五平台升级](https://github.com/BgaSol/soDeck/actions/runs/45013667827)中 Linux 两架构与 macOS 通过；Windows 安装夹具假定临时目录导致安装后找不到程序，修正为明确当前用户安装并核对登记后，[x64](https://github.com/BgaSol/soDeck/actions/runs/45014591710)与[ARM64](https://github.com/BgaSol/soDeck/actions/runs/45014594913)补测通过。五平台确认旧 API 程序不执行、登记/启用意图/设置和数据标记保留，下载后切换到新版本并运行。先升级核心并重启，再更新插件并按提示重启。
+
+[永久证据](release-evidence/v0.12.0-assets.json)保留包来源、五份原包报告、公开附件摘要及逐平台升级来源。netem、物理 IME/DPI/读屏、已认证 Codex CLI、全部远端系统/Engine 组合未执行；深度编辑器等既有专项继续单独维护。
+
 # 0.11.0（2026-11-22）
 
 - 新增 sodeck_server_create/update/delete；沿用 servers_list 的目录修订和唯一 ID，管理 SoDeck 保存的 SSH 节点。
