@@ -102,7 +102,7 @@ async fn content_export_picker_and_commit_failures_preserve_existing_files() {
 async fn process_pipe_preserves_raw_input_deduplicates_and_closes_only_stdin(){
     use base64::{engine::general_purpose::STANDARD,Engine};
     let f=Fixture::new();let ssh=SshServer::new().await;let server=f.server("127.0.0.1",ssh.addr.port(),json!([]));let context=connected(&f,&server).await.context.unwrap();let (_,token,terminal)=terminal_fixture(&f);
-    let invoke=|name:&str,p:Value|f.core.ui_event("main",&token,json!({"rpc":name,"params":p})).unwrap();
+    let invoke=|name:&str,p:Value|{let result=f.core.ui_event("main",&token,json!({"rpc":name,"params":p})).unwrap();if name=="session.process.input"&&result.get("rpcError").is_none(){sodeck_plugin_protocol::replies::decode::<sodeck_plugin_protocol::replies::ProcessStatus>(result.clone()).unwrap_or_else(|e|panic!("input receipt violated SDK contract: {:?}",e.data));}result};
     let request=json!({"expectedContext":context,"operationId":"interactive-pipe","sequence":"1","command":"status-test:interactive","maxOutputBytes":100000,"retention":"fixed","io":{"kind":"pipe","stdin":"open"}});
     let started=invoke("session.process.start",request.clone());let id=started["processId"].as_str().unwrap();assert_eq!(invoke("session.process.start",request)["processId"],id);
     let deadline=std::time::Instant::now()+Duration::from_secs(5);
@@ -126,7 +126,7 @@ async fn process_pipe_preserves_raw_input_deduplicates_and_closes_only_stdin(){
 async fn process_pty_keeps_terminal_bytes_and_resize_and_rejects_pipe_eof(){
     use base64::{engine::general_purpose::STANDARD,Engine};
     let f=Fixture::new();let ssh=SshServer::new().await;let server=f.server("127.0.0.1",ssh.addr.port(),json!([]));let context=connected(&f,&server).await.context.unwrap();let (_,token,_)=terminal_fixture(&f);
-    let invoke=|name:&str,p:Value|f.core.ui_event("main",&token,json!({"rpc":name,"params":p})).unwrap();
+    let invoke=|name:&str,p:Value|{let result=f.core.ui_event("main",&token,json!({"rpc":name,"params":p})).unwrap();if name=="session.process.input"&&result.get("rpcError").is_none(){sodeck_plugin_protocol::replies::decode::<sodeck_plugin_protocol::replies::ProcessStatus>(result.clone()).unwrap_or_else(|e|panic!("input receipt violated SDK contract: {:?}",e.data));}result};
     let started=invoke("session.process.start",json!({"expectedContext":context,"operationId":"interactive-pty","sequence":"1","command":"status-test:interactive","maxOutputBytes":100000,"retention":"fixed","io":{"kind":"pty","cols":120,"rows":30}}));let id=started["processId"].as_str().unwrap();
     let deadline=std::time::Instant::now()+Duration::from_secs(5);loop{if invoke("session.process.status",json!({"processId":id}))["input"]["available"]==true{break;}assert!(std::time::Instant::now()<deadline);tokio::time::sleep(Duration::from_millis(10)).await;}
     assert!(invoke("session.process.input",json!({"processId":id,"inputSequence":"1","action":"eof"}))["rpcError"].is_object());

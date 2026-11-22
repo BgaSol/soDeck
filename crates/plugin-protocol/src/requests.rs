@@ -410,6 +410,9 @@ macro_rules! requests {
                 serde_json::from_value(serde_json::json!({"method":method,"params":params}))
                     .map_err(|_|super::ApiError::invalid("核心请求参数无效"))
             }
+            pub fn validate_reply(&self, value: &Value) -> Result<(), super::ApiError> {
+                match self { $(Self::$variant(_) => crate::replies::decode::<$reply>(value.clone()).map(|_| ())),* }
+            }
         }
         pub mod call {
             use super::*;

@@ -165,6 +165,20 @@ mod tests {
     }
 
     #[test]
+    fn incomplete_factual_replies_never_become_success() {
+        let request = requests::Request::decode(
+            "session.process.input",
+            json!({"processId":"p","inputSequence":"1","action":"eof"}),
+        )
+        .unwrap();
+        let error = request
+            .validate_reply(&json!({"accepted":true}))
+            .unwrap_err();
+        assert_eq!(error.data["dispatch"], "unknown");
+        assert!(error.data["protocolError"].is_string());
+    }
+
+    #[test]
     fn retired_methods_and_old_parameters_are_rejected_before_dispatch() {
         use requests::Request;
         for method in [

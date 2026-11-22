@@ -181,8 +181,10 @@ pub(super) fn plugin_request(
         frame["params"].clone(),
     )?;
     let normalized =
-        serde_json::to_value(request).map_err(|_| RpcError::invalid("核心请求编码失败"))?;
-    plugin_request_validated(core, id, instance, &normalized)
+        serde_json::to_value(&request).map_err(|_| RpcError::invalid("核心请求编码失败"))?;
+    let result = plugin_request_validated(core, id, instance, &normalized)?;
+    request.validate_reply(&result)?;
+    Ok(result)
 }
 
 const WORKERS: usize = 4;

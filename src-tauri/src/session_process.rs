@@ -166,10 +166,13 @@ fn native(resource: &ProcessResource, input: &mut InputControl) -> Value {
     value
 }
 pub(crate) fn status(resource: &ProcessResource) -> Value {
-    let mut value = {
+    let value = {
         let mut input = resource.input.lock().unwrap();
         native(resource, &mut input)
     };
+    output_status(resource, value)
+}
+fn output_status(resource: &ProcessResource, mut value: Value) -> Value {
     let capture = resource.output.capture.lock().unwrap();
     value["producedBytes"] = json!(capture.produced.to_string());
     value["earliestAvailableOffset"] = json!(capture.earliest.to_string());
@@ -568,7 +571,9 @@ impl AppCore {
         {
             let mut input = resource.input.lock().unwrap();
             if input.repeat(sequence, &operation)? {
-                return Ok(native(resource, &mut input));
+                let value = native(resource, &mut input);
+                drop(input);
+                return Ok(output_status(resource, value));
             }
         }
         let session = self
@@ -582,7 +587,9 @@ impl AppCore {
             .map_err(|e| format!("inputClosed:{e}"))?;
         let mut input = resource.input.lock().unwrap();
         if input.repeat(sequence, &operation)? {
-            return Ok(native(resource, &mut input));
+            let value = native(resource, &mut input);
+            drop(input);
+            return Ok(output_status(resource, value));
         }
         if input
             .last
@@ -619,7 +626,9 @@ impl AppCore {
             outcome: None,
             completion: Some(completion),
         });
-        Ok(native(resource, &mut input))
+        let value = native(resource, &mut input);
+        drop(input);
+        Ok(output_status(resource, value))
     }
 }
 
