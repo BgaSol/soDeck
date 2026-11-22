@@ -69,7 +69,7 @@ try {
   const unexpected = [], calls = [], resources = new Set(), context = { workspaceId: "package", serverId: "server", connectionId: "connection", generation: 1 };
   peer = pluginPeer(path.join(checked.root, manifest.entry), async (method, params) => {
     calls.push(method);
-    if (method === "settings.get") return { values: { dynamicIntervalSeconds: "5", refreshSeconds: "30", logTail: "200", directoryMode: "off",port:String(mcpPort) } };
+    if (method === "settings.get") return { values: { dynamicIntervalSeconds: "5", refreshSeconds: "30", logTail: "200", directoryMode: "off", readingMode: "off", port:String(mcpPort) } };
     if (method === "session.target.describe") { assert.deepEqual(params.expectedContext,context);return {context,state:"disconnected",closing:false,capabilities:[],target:null,targetSource:"unknown"}; }
     if (["logging.write", "messages.publish", "ui.updateView"].includes(method)) return {};
     if (method === "terminal.open" || method === "files.open") { resources.add("fixture"); return { id: "fixture" }; }
