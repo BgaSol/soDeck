@@ -4,7 +4,8 @@ export function cancelMotion(element: Element): void;
 export function observeMotion(document: Document): void;
 export function revealMotion(element: Element): Animation | undefined;
 export function enterMotion(element: Element, direction?: 'x' | 'y' | 'back'): Animation | undefined;
-export function exitMotion(element: Element): void;
+export interface MotionExit {cancel():void;finished:Promise<void>}
+export function exitMotion(element: Element, target?: Keyframe): MotionExit | undefined;
 export function setMotionText(element: Element, value: unknown): void;
 export function captureMotion(root: Element, selector?: string): Map<Element, DOMRect>;
 export function settleMotion(root: Element, before: Map<Element, DOMRect>, selector?: string, enter?: boolean): void;

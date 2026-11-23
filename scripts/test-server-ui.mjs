@@ -441,7 +441,9 @@ try {
   assert.equal(await page.evaluate(()=>manager.menu.source),undefined);
   await sourceRow.click({button:'right'});await menu.locator('.catalog-menu-title').click();await page.keyboard.press('Escape');await menu.waitFor({state:'detached'});
   assert(await sourceRow.evaluate(node=>node===document.activeElement));
-  await sourceRow.click({button:'right'});await menu.locator('[data-menu-action="edit"]').click();await expectDialogs(1);await page.keyboard.press('Escape');await expectDialogs(0);
+  await sourceRow.click({button:'right'});await menu.locator('[data-menu-action="edit"]').click();await expectDialogs(1);
+  assert.equal(await page.locator('body > [inert][aria-hidden="true"]').filter({hasText:'经此节点新增服务器'}).count(),0,'The actual editor handoff clears the menu closing picture');
+  await page.keyboard.press('Escape');await expectDialogs(0);
   assert(await sourceRow.evaluate(node=>node===document.activeElement));
   await sourceRow.click({button:'right'});await menu.locator('[data-menu-action="copy"]').click();await expectDialogs(1);await page.keyboard.press('Escape');await expectDialogs(0);
   assert(await sourceRow.evaluate(node=>node===document.activeElement));

@@ -1,8 +1,8 @@
 import { autoUpdate, computePosition, flip, hide, offset, shift, size } from '@floating-ui/dom';
 import { enterMotion, exitMotion } from './motion.js';
 
-/** Positioning only: callers keep menu actions, targets and focus policy. */
-export function attachMenuPosition(menu, reference, { kind = 'menu', isValid = () => true, onInvalid = () => {} } = {}) {
+/** Geometry only: callers own presentation, actions and focus. */
+export function positionMenu(menu, reference, { kind = 'menu', isValid = () => true, onInvalid = () => {}, onPosition = () => {} } = {}) {
   const point = !(reference instanceof Element);
   const context = point ? reference.contextElement : reference;
   const anchor = point ? {
@@ -10,14 +10,13 @@ export function attachMenuPosition(menu, reference, { kind = 'menu', isValid = (
     getBoundingClientRect: () => ({ x: reference.x, y: reference.y, left: reference.x, right: reference.x, top: reference.y, bottom: reference.y, width: 0, height: 0 }),
   } : reference;
   const cleanups = [];
-  let disposed = false, sequence = 0, queued = false, settle, presented = false;
+  let disposed = false, sequence = 0, queued = false, settle;
   const ready = new Promise(resolve => { settle = resolve; });
   const alive = () => !disposed && menu.isConnected && !menu.hidden && context?.isConnected &&
     !context.closest('[hidden],[inert]') && context.getClientRects().length > 0 &&
     getComputedStyle(context).visibility === 'visible' && isValid();
   const dispose = () => {
     if (disposed) return;
-    if (presented) exitMotion(menu);
     disposed = true; sequence++;
     for (const cleanup of cleanups.splice(0)) cleanup();
     settle(false);
@@ -49,12 +48,7 @@ export function attachMenuPosition(menu, reference, { kind = 'menu', isValid = (
       if (!alive() || result.middlewareData.hide?.referenceHidden) { invalidate(); return; }
       Object.assign(menu.style, { left: `${result.x}px`, top: `${result.y}px`, visibility: 'visible' });
       menu.dataset.placement = result.placement;
-      menu.style.transformOrigin = result.placement.startsWith('top') ? 'bottom left' : result.placement.startsWith('left') ? 'top right' : 'top left';
-      const view=menu.ownerDocument.defaultView,side=result.placement.split('-')[0];
-      const dx=side==='left'?Math.min(4,Math.max(0,view.innerWidth-8-result.x-menu.offsetWidth)):side==='right'?-Math.min(4,Math.max(0,result.x-8)):0;
-      const dy=side==='top'?Math.min(4,Math.max(0,view.innerHeight-8-result.y-menu.offsetHeight)):side==='bottom'?-Math.min(4,Math.max(0,result.y-8)):0;
-      menu.style.setProperty('--sd-motion-from',`translate(${dx}px,${dy}px)`);
-      if (!presented) { presented = true; enterMotion(menu); }
+      onPosition({x:result.x,y:result.y,width:menu.offsetWidth,height:menu.offsetHeight,placement:result.placement,reference:anchor.getBoundingClientRect()});
       settle(true);
     } catch (error) {
       if (!disposed && sequence === current) { console.error('Menu positioning failed', error); invalidate(); }
@@ -93,6 +87,21 @@ export function attachMenuPosition(menu, reference, { kind = 'menu', isValid = (
   window.addEventListener('blur', invalidate);
   addCleanup(() => { menu.ownerDocument.removeEventListener('scroll', scroll, true); window.removeEventListener('blur', invalidate); });
   return { ready, update, dispose };
+}
+
+/** Keep existing core and independently bundled plugin consumers unchanged. */
+export function attachMenuPosition(menu, reference, options = {}) {
+  let presented=false,disposed=false;
+  const exit=()=>{if(disposed)return;disposed=true;if(presented)exitMotion(menu);};
+  const position=positionMenu(menu,reference,{...options,onInvalid:()=>{exit();options.onInvalid?.();},onPosition:layout=>{
+    const {x,y,width,height,placement}=layout,view=menu.ownerDocument.defaultView,side=placement.split('-')[0];
+    menu.style.transformOrigin=side==='top'?'bottom left':side==='left'?'top right':'top left';
+    const dx=side==='left'?Math.min(4,Math.max(0,view.innerWidth-8-x-width)):side==='right'?-Math.min(4,Math.max(0,x-8)):0;
+    const dy=side==='top'?Math.min(4,Math.max(0,view.innerHeight-8-y-height)):side==='bottom'?-Math.min(4,Math.max(0,y-8)):0;
+    menu.style.setProperty('--sd-motion-from',`translate(${dx}px,${dy}px)`);
+    if(!presented){presented=true;enterMotion(menu);}
+  }});
+  return {...position,dispose(){exit();position.dispose();}};
 }
 
 // Ordinary plugin scripts receive this same implementation in their bundle.

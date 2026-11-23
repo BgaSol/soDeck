@@ -13,8 +13,7 @@ export function observeMotion(document) {
   const state = document[stateKey] = {visible:true, exits:new WeakMap(), projections:new Set()};
   const stop = () => {
     for (const animation of document.getAnimations()) if(animation.id.startsWith('sd-motion:'))animation.cancel();
-    for (const ghost of state.projections) ghost.remove();
-    state.projections.clear();
+    for (const exit of [...state.projections]) exit.cancel();
   };
   document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); });
   document.defaultView.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', event => { if (event.matches) stop(); });
@@ -42,7 +41,7 @@ export function cancelMotion(element) {
 }
 export function enterMotion(element, direction = 'y') {
   observeMotion(element.ownerDocument);
-  element.ownerDocument[stateKey]?.exits.get(element)?.remove();
+  element.ownerDocument[stateKey]?.exits.get(element)?.cancel();
   const current = element.ownerDocument.defaultView.getComputedStyle(element);
   const interrupted = (element.getAnimations?.() ?? []).some(a => a.id.startsWith('sd-motion:'));
   return animateMotion(element, [interrupted ? {opacity:current.opacity, transform:current.transform} : {opacity:0, transform:current.getPropertyValue('--sd-motion-from').trim() || (direction === 'x' ? 'translateX(-8px)' : direction === 'back' ? 'translateX(8px)' : 'translateY(-4px)')}, {opacity:1, transform:'none'}]);
@@ -79,14 +78,25 @@ export function settleMotion(root, before, selector = '[data-motion="item"]', en
     if (Math.abs(x) > 1 || Math.abs(y) > 1) animateMotion(node, [{transform:`translate(${x}px, ${y}px)`}, {transform:'none'}], 'layout');
   }
 }
-export function exitMotion(element) {
+export function exitMotion(element, target) {
   if (!motionDuration(element, 'exit') || !element.isConnected || !onScreen(element) || element.querySelector('iframe,canvas,video')) return;
   const nodes = [element, ...element.querySelectorAll('*')];
   // Bound snapshots to small chrome; large views retain their live Surface.
   if (nodes.length > 80) return;
   const document = element.ownerDocument, view = document.defaultView, rect = element.getBoundingClientRect(), state=document[stateKey];
-  state.exits.get(element)?.remove();
-  const opacity=view.getComputedStyle(element).opacity;
+  state.exits.get(element)?.cancel();
+  const style=view.getComputedStyle(element),opacity=style.opacity;
+  // Snapshots support the translation and axis scaling used by our chrome.
+  for(let parent=element;parent;parent=parent.parentElement){
+    const matrix=new view.DOMMatrixReadOnly(view.getComputedStyle(parent).transform);
+    if(!matrix.is2D||matrix.b||matrix.c||matrix.a<=0||matrix.d<=0)return;
+  }
+  const borderSize=(axis)=>parseFloat(style[axis])+(style.boxSizing==='border-box'?0:axis==='width'?parseFloat(style.paddingLeft)+parseFloat(style.paddingRight)+parseFloat(style.borderLeftWidth)+parseFloat(style.borderRightWidth):parseFloat(style.paddingTop)+parseFloat(style.paddingBottom)+parseFloat(style.borderTopWidth)+parseFloat(style.borderBottomWidth));
+  const width=borderSize('width'),height=borderSize('height');
+  if(!width||!height)return;
+  const matrix=new view.DOMMatrixReadOnly(style.transform),sx=rect.width/width,sy=rect.height/height;
+  const [ox,oy]=style.transformOrigin.split(' ').map(parseFloat),tx=matrix.e*sx/matrix.a,ty=matrix.f*sy/matrix.d;
+  const transform=`matrix(${sx},0,0,${sy},${tx},${ty})`;
   const ghost = document.createElement('div');
   ghost.innerHTML = element.innerHTML;
   const copies = [ghost, ...ghost.querySelectorAll('*')];
@@ -97,11 +107,16 @@ export function exitMotion(element) {
     if ('value' in original && 'value' in copy) {copy.value = original.type === 'password' ? '' : original.value;if(original.type==='password')copy.removeAttribute('value');}
   }
   ghost.inert = true; ghost.setAttribute('aria-hidden','true');
-  Object.assign(ghost.style, {position:'fixed', left:`${rect.left}px`, top:`${rect.top}px`, width:`${rect.width}px`, height:`${rect.height}px`, margin:'0', transform:'none', animation:'none', transition:'none', pointerEvents:'none', zIndex:'10000'});
+  Object.assign(ghost.style, {position:'fixed', left:`${rect.left-ox*(1-sx)-tx}px`, top:`${rect.top-oy*(1-sy)-ty}px`, width:`${width}px`, height:`${height}px`, boxSizing:'border-box', margin:'0', transform, animation:'none', transition:'none', pointerEvents:'none', zIndex:'10000'});
   (element.parentElement?.closest('dialog[open]') ?? document.body).append(ghost);
-  state.exits.set(element,ghost);state.projections.add(ghost);
-  const animation = animateMotion(ghost, [{opacity, transform:'none'}, {opacity:0, transform:view.getComputedStyle(element).getPropertyValue('--sd-motion-from').trim()||'translateY(-4px)'}], 'exit');
-  const remove=()=>{ghost.remove();state.projections.delete(ghost);if(state.exits.get(element)===ghost)state.exits.delete(element);};
-  if (animation) animation.finished.catch(() => {}).finally(remove); else remove();
+  for(let i=0;i<nodes.length;i++){copies[i].scrollTop=nodes[i].scrollTop;copies[i].scrollLeft=nodes[i].scrollLeft;}
+  cancelMotion(element);
+  let settle,animation,removed=false;
+  const finished=new Promise(resolve=>{settle=resolve;});
+  const exit={finished,cancel(){if(removed)return;removed=true;animation?.cancel();ghost.remove();state.projections.delete(exit);if(state.exits.get(element)===exit)state.exits.delete(element);settle();}};
+  state.exits.set(element,exit);state.projections.add(exit);
+  animation = animateMotion(ghost, [{opacity, transform}, {opacity:0, transform:style.getPropertyValue('--sd-motion-from').trim()||'translateY(-4px)',...target}], 'exit');
+  if (animation) {animation.finished.then(exit.cancel,exit.cancel);return exit;}
+  exit.cancel();
 }
 if (typeof window !== 'undefined') {if(typeof document!=='undefined')observeMotion(document);window.SoDeckMotion = {animateMotion, cancelMotion, enterMotion, exitMotion, setMotionText, revealMotion, captureMotion, settleMotion, observeMotion};}

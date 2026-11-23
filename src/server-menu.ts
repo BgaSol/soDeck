@@ -1,10 +1,11 @@
-import {attachMenuPosition,type MenuPosition,type MenuReference} from './menu-position.js';
+import {positionMenu,type MenuPosition,type MenuReference} from './menu-position.js';
+import {ServerMenuMotion} from './server-menu-motion';
 import {updateDOM} from './dom-update';
 import {escape as e} from './ui';
 import {actionKey,type ServerAction,type ServerCommand} from './server-actions';
 
 export type MenuSource=Readonly<{kind:'node';path:string;role:boolean;stamp:string}|{kind:'root'}|{kind:'toolbar'}>;
-type CloseReason='dismiss'|'cancel'|'execute'|'replace'|'dispose';
+type CloseReason='dismiss'|'cancel'|'tab'|'execute'|'replace'|'immediate';
 interface MenuOptions {
   source:MenuSource;title:string;actions:ServerAction[];anchor:HTMLElement;reference:MenuReference;
   restore:()=>void;valid:()=>boolean;scrollElement?:HTMLElement;
@@ -15,6 +16,7 @@ interface MenuSession extends MenuOptions {node:HTMLElement;events:AbortControll
 export class ServerMenu {
   private current?:MenuSession;
   private disposed=false;
+  private motion=new ServerMenuMotion();
   constructor(private execute:(command:ServerCommand,source:MenuSource)=>void){}
   get source(){return this.current?.source;}
   show(options:MenuOptions){
@@ -34,7 +36,7 @@ export class ServerMenu {
       const button=(event.target as Element).closest<HTMLButtonElement>('[data-menu-action]');
       const item=session.actions.find(a=>actionKey(a.command)===button?.dataset.menuAction);
       if(!item||item.disabled){node.focus({preventScroll:true});return;}
-      if(!valid()){this.close();return;}
+      if(!valid()){this.close('immediate');return;}
       const {command}=item,origin=session.source;
       this.close('execute');this.execute(command,origin);
     },{signal});
@@ -48,26 +50,26 @@ export class ServerMenu {
     document.addEventListener('keydown',event=>{
       if(!active()||event.isComposing)return;
       if(event.key==='Escape'){event.preventDefault();event.stopPropagation();this.close('cancel');}
-      else if(event.key==='Tab')this.close('cancel');
+      else if(event.key==='Tab')this.close('tab');
     },{capture:true,signal});
     const outside=(event:Event)=>{
       if(!active()||node.contains(event.target as Node))return;
       if(source.kind==='toolbar'&&anchor.contains(event.target as Node))return;
-      this.close();
+      this.close(event.target instanceof Element&&event.target.closest('dialog[open]')?'immediate':'dismiss');
     };
     document.addEventListener('pointerdown',outside,{capture:true,signal});
     document.addEventListener('focusin',outside,{capture:true,signal});
     // Point references already invalidate on source scrolling in the positioner.
     if(source.kind!=='toolbar'&&reference instanceof HTMLElement&&session.scrollElement){
       const scroller=session.scrollElement,left=scroller.scrollLeft,top=scroller.scrollTop;
-      scroller.addEventListener('scroll',()=>{if(active()&&(scroller.scrollLeft!==left||scroller.scrollTop!==top))this.close();},{signal});
+      scroller.addEventListener('scroll',()=>{if(active()&&(scroller.scrollLeft!==left||scroller.scrollTop!==top))this.close('immediate');},{signal});
     }
-    session.position=attachMenuPosition(node,reference,{isValid:valid,onInvalid:()=>{if(active())this.close();}});
+    session.position=positionMenu(node,reference,{isValid:valid,onPosition:layout=>{if(valid())this.motion.present(node,layout);},onInvalid:()=>{if(active())this.close('immediate');}});
     void session.position.ready.then(ready=>{if(ready&&valid())(node.querySelector<HTMLElement>('button:not(:disabled)')??node).focus({preventScroll:true});});
   }
   update(actions:ServerAction[],title?:string){
     const session=this.current;if(!session)return;
-    if(!session.valid()){this.close();return;}
+    if(!session.valid()){this.close('immediate');return;}
     const {node}=session,hadFocus=node.contains(document.activeElement),focused=(document.activeElement as HTMLElement)?.dataset.menuAction;
     const oldIndex=session.actions.findIndex(a=>actionKey(a.command)===focused);
     session.actions=actions;if(title)session.title=title;
@@ -83,10 +85,13 @@ export class ServerMenu {
     void session.position?.update();
   }
   close(reason:CloseReason='dismiss'){
+    if(reason==='replace'||reason==='immediate')this.motion.clear();
     const session=this.current;if(!session)return;
-    this.current=undefined;session.events.abort();session.position?.dispose();session.node.remove();
+    this.current=undefined;session.events.abort();session.position?.dispose();
+    if(reason!=='replace'&&reason!=='immediate')this.motion.retire(session.node,session.anchor,reason==='tab'||reason==='execute'?'fade':'retract');
+    session.node.remove();
     if(session.source.kind==='toolbar')session.anchor.setAttribute('aria-expanded','false');
-    if(reason==='cancel')session.restore();
+    if(reason==='cancel'||reason==='tab')session.restore();
   }
-  dispose(){this.disposed=true;this.close('dispose');}
+  dispose(){this.disposed=true;this.close('immediate');}
 }

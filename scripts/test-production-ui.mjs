@@ -345,6 +345,7 @@ try {
       await contextRow.click({button:'right'});await menu.locator('.catalog-menu-title').click();await page.keyboard.press('Escape');await menu.waitFor({state:'detached'});
       assert(await contextRow.evaluate(node=>node===document.activeElement),'Bundled menu title cancellation returns to its source');
       await contextRow.click({button:'right'});await page.locator('[data-console-page="status"]').click();await menu.waitFor({state:'detached'});
+      assert.equal(await page.locator('body > [inert][aria-hidden="true"]').filter({hasText:'经此节点新增服务器'}).count(),0,'Page navigation clears the directory closing picture as well as its session');
       await page.locator('[data-console-page="connections"]').click();
       if(await page.locator('[data-server-action="back"]').isVisible())await page.locator('[data-server-action="back"]').click();
       assert.equal(await newMenu.getAttribute('aria-expanded'),'false');

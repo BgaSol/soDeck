@@ -150,7 +150,7 @@ export class ServerManager {
   dispose() { this.menu.dispose();this.linesObserver.disconnect();this.routeObserver.disconnect();this.routeEvents.abort();this.host.classList.add('route-motion-paused');if(this.linesFrame!==undefined)cancelAnimationFrame(this.linesFrame);this.disposed = true; this.generation++; clearTimeout(this.selectionTimer); while(this.frames.length)this.dismiss(this.frames[this.frames.length-1]); }
   private top() { return this.frames.at(-1); }
   private frame(kind: Frame["kind"]): Frame {
-    this.menu.close();
+    this.menu.close('immediate');
     const dialog = document.createElement("dialog");
     dialog.id = `catalog-dialog-${crypto.randomUUID()}`;
     dialog.className = `catalog-dialog ${kind === "editor" ? "endpoint-dialog" : "small-dialog"}`;
@@ -192,7 +192,7 @@ export class ServerManager {
     if(proxy&&!record){draft.port='1080';draft.authType='none';}
     if(!proxy&&!record)draft.tagIds=[...this.state.tags];
     const returnFocus=copy&&!returnPath?this.host.querySelector<HTMLElement>('.catalog-detail [data-server-action="copy"]')??undefined:document.activeElement instanceof HTMLElement?document.activeElement:undefined;
-    this.menu.close();this.onSelection?.();const f=this.frame('editor');
+    this.menu.close('immediate');this.onSelection?.();const f=this.frame('editor');
     f.proxy=proxy;f.draft=draft;f.returnPath=returnPath;f.returnFocus=returnFocus;
     if(intent.kind==='new-proxy'&&intent.parent){f.parent=intent.parent;f.revision=intent.parent.revision;}
     if(intent.kind==='new-server'&&intent.path)f.notice=`已带入经「${this.tree!.index.get(intent.path)!.record!.name}」的访问路径，可调整。`;
@@ -242,7 +242,7 @@ export class ServerManager {
     if (f.busy || f.kind === "confirm") return;
     if (!this.dirty(f) || await this.confirm("放弃未保存的修改？", "当前表单的修改尚未保存。已经单独保存的代理会保留；未保存的标签会随表单丢弃。", "放弃修改")) this.dismiss(f);
   }
-  setCloseBlocked(blocked:boolean) {if(blocked)this.menu.close();for(const frame of this.frames)frame.dialog.inert=blocked;}
+  setCloseBlocked(blocked:boolean) {if(blocked)this.menu.close('immediate');for(const frame of this.frames)frame.dialog.inert=blocked;}
   async closeInputs(decision:"collect"|"save"|"discard") {
     if(decision!=="collect"&&(this.busy||this.frames.some(f=>f.busy)))throw new Error("服务器资料正在保存，请等待原操作结束");
     const drafts=this.frames.filter(f=>this.dirty(f)||f.busy).map((f,index)=>({id:`server:${index}`,title:"服务器资料表单",dirty:this.dirty(f),busy:f.busy}));
@@ -326,7 +326,7 @@ export class ServerManager {
   }
   private updateMenu(){
     const source=this.menu.source;if(!source)return;
-    if(!this.menuSourceValid(source)){this.menu.close();if(source.kind==='node')this.notify('节点位置已变化，请重新打开菜单');return;}
+    if(!this.menuSourceValid(source)){this.menu.close('immediate');if(source.kind==='node')this.notify('节点位置已变化，请重新打开菜单');return;}
     this.menu.update(this.actions(source.kind==='node'?source.path:undefined).filter(a=>source.kind!=='toolbar'||a.group==='create'),this.menuTitle(source));
   }
   private async handleButton(button:HTMLElement){

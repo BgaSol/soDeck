@@ -105,6 +105,30 @@ test('motion measurement is bounded and reduced motion performs no geometry read
   } finally {await page.close();}
 });
 
+test('exit snapshots preserve scaled geometry and scrolled content and can be cancelled synchronously',async()=>{
+  const page=await fixture();
+  try{
+    const result=await page.evaluate(async()=>{
+      const motion=await import('/motion.js'),node=document.createElement('div');
+      node.className='sd-menu';node.style.cssText='position:fixed;left:70px;top:80px;width:220px;height:140px;transform-origin:180px 0';
+      node.innerHTML='<div class="sd-menu-list">'+Array.from({length:15},(_,i)=>`<button data-action="row" id="row-${i}">操作 ${i}</button>`).join('')+'</div>';document.body.append(node);
+      node.firstChild.scrollTop=160;
+      const animation=motion.animateMotion(node,[{opacity:.7,transform:'translateY(-3px) scale(.985)'},{opacity:1,transform:'none'}]);animation.pause();animation.currentTime=0;
+      const measure=el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
+      const before={root:measure(node),row:measure(node.firstChild.firstChild),scroll:node.firstChild.scrollTop};
+      const exit=motion.exitMotion(node);node.remove();
+      const ghost=document.querySelector('[inert][aria-hidden="true"]');
+      const after={root:measure(ghost),row:measure(ghost.firstChild.firstChild),scroll:ghost.firstChild.scrollTop};
+      const safe=!ghost.querySelector('[data-action],[id],[role],[tabindex]');
+      exit?.cancel();exit?.cancel();
+      return {before,after,safe,remaining:document.querySelectorAll('[inert][aria-hidden="true"]').length};
+    });
+    assert.equal(result.after.scroll,result.before.scroll,'The closing menu must show the same scrolled rows');
+    for(const part of ['root','row'])for(const key of ['x','y','width','height'])assert(Math.abs(result.before[part][key]-result.after[part][key])<.1,`${part}.${key} must not jump at exit`);
+    assert(result.safe);assert.equal(result.remaining,0,'Cancellation removes the visual projection synchronously');
+  }finally{await page.close();}
+});
+
 test('reversing layout motion starts at the displayed row position',async()=>{
   const page=await fixture();
   try{
@@ -716,5 +740,105 @@ test('directory menu command handoff cannot let old callbacks close a replacemen
     await page.evaluate(()=>new Promise(requestAnimationFrame));assert.equal(await page.evaluate(()=>sessionMenu.source.kind),'root');
     await page.keyboard.press('Escape');await menu.waitFor({state:'detached'});await page.evaluate(()=>sessionMenu.update([]));assert.equal(await page.evaluate(()=>sessionMenu.source),undefined);
     await page.evaluate(()=>{openSession({kind:'toolbar'});sessionMenu.dispose();openSession({kind:'root'});});await page.evaluate(()=>new Promise(requestAnimationFrame));assert.equal(await menu.count(),0);
+  }finally{await page.close();}
+});
+
+test('directory motion replacement and disposal never accumulate closing projections',async()=>{
+  const page=await directoryMenuFixture();
+  try{
+    const result=await page.evaluate(async()=>{
+      const row=document.querySelector('.connection-node[data-id="P"]');
+      for(let i=0;i<10;i++){
+        row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:250+i,clientY:210}));
+        await directoryManager.menu.current.position.ready;
+      }
+      const replaced={live:document.querySelectorAll('.catalog-action-menu').length,ghosts:document.querySelectorAll('[inert][aria-hidden="true"]').length};
+      directoryManager.dispose();
+      return {replaced,disposed:document.querySelectorAll('.catalog-action-menu,[inert][aria-hidden="true"]').length};
+    });
+    assert.deepEqual(result,{replaced:{live:1,ghosts:0},disposed:0});
+  }finally{await page.close();}
+});
+
+test('directory closing tails yield to hidden sources, modal handoff, theme and reduced motion',async()=>{
+  const page=await directoryMenuFixture();
+  try{
+    for(const cause of ['hidden','modal','theme','dispose']){
+      await openDirectoryMenu(page);
+      const result=await page.evaluate(async cause=>{
+        const menu=directoryManager.menu,node=menu.current.node;
+        for(const a of node.getAnimations())a.finish();
+        menu.close('cancel');
+        const ghost=document.querySelector('[inert][aria-hidden="true"]');
+        ghost?.getAnimations().forEach(a=>a.pause());
+        const hadTail=!!ghost,source=menu.source;
+        if(cause==='hidden')document.querySelector('#directory').hidden=true;
+        if(cause==='modal'){const d=document.createElement('dialog');d.id='tail-modal';d.innerHTML='<button>确认</button>';document.body.append(d);d.showModal();}
+        if(cause==='theme')document.documentElement.dataset.theme='dark';
+        if(cause==='dispose')menu.close('immediate');
+        await new Promise(requestAnimationFrame);
+        return {hadTail,noSource:source===undefined,remaining:document.querySelectorAll('[inert][aria-hidden="true"]').length};
+      },cause);
+      assert.deepEqual(result,{hadTail:true,noSource:true,remaining:0},cause);
+      await page.evaluate(()=>{document.querySelector('#directory').hidden=false;document.querySelector('#tail-modal')?.remove();delete document.documentElement.dataset.theme;});
+    }
+    await openDirectoryMenu(page);await page.keyboard.press('Escape');await page.emulateMedia({reducedMotion:'reduce'});
+    await page.waitForFunction(()=>!document.querySelector('[inert][aria-hidden="true"]'));
+    await openDirectoryMenu(page);assert.equal(await directoryMenu(page).evaluate(n=>n.getAnimations().length),0);await page.keyboard.press('Escape');
+    assert.equal(await page.locator('[inert][aria-hidden="true"]').count(),0);
+  }finally{await page.close();}
+});
+
+test('directory entrance uses the real shifted origin and interruption preserves its current picture',async()=>{
+  const page=await directoryMenuFixture();
+  try{
+    const result=await page.evaluate(async()=>{
+      const row=document.querySelector('.connection-node[data-id="P"]');
+      row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:1090,clientY:710}));
+      const session=directoryManager.menu.current;await session.position.ready;
+      const node=session.node,a=node.getAnimations().find(a=>a.id==='sd-motion:enter');a.pause();a.currentTime=25;
+      const before=node.getBoundingClientRect(),opacity=Number(getComputedStyle(node).opacity),origin=getComputedStyle(node).transformOrigin.split(' ').map(Number.parseFloat);
+      directoryManager.menu.close('cancel');const ghost=document.querySelector('[inert][aria-hidden="true"]');const after=ghost.getBoundingClientRect();
+      return {origin,width:node.offsetWidth||parseFloat(ghost.style.width),before:{x:before.x,y:before.y,width:before.width,height:before.height},after:{x:after.x,y:after.y,width:after.width,height:after.height},opacity,afterOpacity:Number(getComputedStyle(ghost).opacity)};
+    });
+    assert(result.origin[0]>result.width/2,'Right-edge shift must retain a right-side visual origin');
+    for(const key of ['x','y','width','height'])assert(Math.abs(result.before[key]-result.after[key])<.1,`Interrupted ${key} jumps`);
+    assert(Math.abs(result.opacity-result.afterOpacity)<.03);
+  }finally{await page.close();}
+});
+
+test('pure menu geometry is motion-free while the existing positioning entry keeps its standard animation',async()=>{
+  const page=await fixture();
+  try{
+    const result=await page.evaluate(async()=>{
+      const {positionMenu,attachMenuPosition}=await import('/menu-position.js');
+      const anchor=document.createElement('button');anchor.textContent='来源';document.body.append(anchor);
+      const create=()=>{const node=document.createElement('div');node.className='sd-menu';node.innerHTML='<button>操作</button>';document.body.append(node);return node;};
+      const pure=create(),positions=[],handle=positionMenu(pure,anchor,{onPosition:p=>positions.push(p)});await handle.ready;
+      const geometry={measured:positions.length>0,animations:pure.getAnimations().length};handle.dispose();pure.remove();
+      const noProjection=!document.querySelector('[inert][aria-hidden="true"]');
+      const standard=create(),legacy=attachMenuPosition(standard,anchor);await legacy.ready;
+      const standardEnter=standard.getAnimations().some(a=>a.id==='sd-motion:enter');legacy.dispose();standard.remove();
+      return {geometry,noProjection,standardEnter,standardExit:!!document.querySelector('[inert][aria-hidden="true"]')};
+    });
+    assert.deepEqual(result,{geometry:{measured:true,animations:0},noProjection:true,standardEnter:true,standardExit:true});
+  }finally{await page.close();}
+});
+
+test('tall directory menus omit scaling and background refreshes do not restart their entrance',async()=>{
+  const page=await directoryMenuFixture();
+  try{
+    await page.evaluate(()=>{directoryCatalog.error='目录读取失败，请检查存储后刷新目录再试。'.repeat(4);});await page.evaluate(()=>directoryManager.start());
+    await openDirectoryMenu(page);
+    const result=await page.evaluate(async()=>{
+      const session=directoryManager.menu.current,node=session.node;
+      const a=node.getAnimations().find(a=>a.id==='sd-motion:enter');a.pause();a.currentTime=30;
+      const frames=a.effect.getKeyframes(),height=node.offsetHeight;
+      directoryManager.setConnections([]);await session.position.update();
+      const same=node.getAnimations().includes(a);
+      directoryManager.menu.close('tab');const ghost=document.querySelector('[inert][aria-hidden="true"]');
+      return {height,firstScale:new DOMMatrixReadOnly(frames[0].transform).a,same,tabTarget:ghost.getAnimations()[0].effect.getKeyframes().at(-1).transform};
+    });
+    assert(result.height>320,'Disabled reasons exercise the tall-menu path');assert.equal(result.firstScale,1);assert(result.same);assert.equal(result.tabTarget,'none');
   }finally{await page.close();}
 });
