@@ -28,6 +28,35 @@ const stripFixture=async()=>{
   return page;
 };
 
+test('motion times accept seconds and milliseconds with the same limits and reduced-motion policy',async()=>{
+  const page=await fixture();
+  try{
+    const values=await page.evaluate(async()=>{
+      const {motionDuration}=await import('/motion.js'),node=document.querySelector('#chrome');
+      const cases=['160ms','.16s','1.6e-1s','160','0ms','0s','-0.1s','1s','bad'];
+      return cases.map(value=>{node.style.setProperty('--sd-motion-enter',value);return motionDuration(node);});
+    });
+    assert.deepEqual(values,[160,160,160,160,0,0,0,300,160]);
+    await page.emulateMedia({reducedMotion:'reduce'});
+    assert.equal(await page.evaluate(async()=>{const {motionDuration}=await import('/motion.js');document.querySelector('#chrome').style.setProperty('--sd-motion-enter','.16s');return motionDuration(document.querySelector('#chrome'));}),0);
+  }finally{await page.close();}
+});
+
+test('independently bundled plugin motion keeps second-based CSS times in milliseconds',async()=>{
+  const page=await fixture();
+  try{
+    await page.addScriptTag({content:menuAsset});
+    const timings=await page.evaluate(()=>{
+      const node=document.querySelector('#chrome');node.innerHTML='<button>操作</button>';
+      return ['enter','exit','feedback','layout'].map((kind,i)=>{
+        node.style.setProperty('--sd-motion-'+kind,['.16s','.1s','.1s','.2s'][i]);
+        return SoDeckMotion.animateMotion(node,[{opacity:0},{opacity:1}],kind).effect.getTiming().duration;
+      });
+    });
+    assert.deepEqual(timings,[160,100,100,200]);
+  }finally{await page.close();}
+});
+
 test('motion preserves entity and input identity, exits without live controls and stops on reduced motion',async()=>{
   const page=await fixture();
   try {

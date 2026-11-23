@@ -131,6 +131,23 @@ await page.route('**/__plugin__/**',route=>{
   return route.fulfill({contentType:types[path.extname(file)]||'application/octet-stream',body:fs.readFileSync(file)});
 });
 const errors = [], checks = [];
+const observeMenuMotion=async mode=>page.evaluate(mode=>{
+  window.bundledMenuMotion=new Promise(resolve=>{
+    const original=Element.prototype.animate;let done=false;
+    const finish=result=>{if(done)return;done=true;clearTimeout(timeout);Element.prototype.animate=original;resolve(result);};
+    const timeout=setTimeout(()=>finish({error:'Menu animation did not finish'}),5000);
+    Element.prototype.animate=function(frames,options){
+      const animation=original.call(this,frames,options);
+      if(!this.matches(mode==='enter'?'.catalog-action-menu':'[inert][aria-hidden="true"]'))return animation;
+      Element.prototype.animate=original;
+      const started=performance.now(),samples=[],duration=animation.effect.getTiming().duration;
+      const sample=()=>{if(done)return;samples.push({ms:performance.now()-started,opacity:Number(getComputedStyle(this).opacity)});requestAnimationFrame(sample);};
+      requestAnimationFrame(sample);
+      animation.finished.then(()=>finish({duration,elapsed:performance.now()-started,samples}),()=>finish({error:'Menu animation was cancelled'}));
+      return animation;
+    };
+  });
+},mode);
 const logFilters = [];
 let failReadCommand = "";
 let persistReadFailure = false;
@@ -334,11 +351,26 @@ try {
       assert(await page.locator('[data-server-action="reload"]').isVisible());
       assert(await page.locator('[data-filter-tag]').count()>=4);
       assert.equal(await page.locator('.catalog-page').evaluate(el=>el.scrollWidth<=el.clientWidth+1),true,`${theme}/${width} directory has no horizontal overflow`);
-      const newMenu=page.locator('[data-server-action="new-menu"]');await newMenu.click();
+      const newMenu=page.locator('[data-server-action="new-menu"]'),measureMotion=theme==='light'&&width===1100;
+      if(measureMotion)await observeMenuMotion('enter');
+      await newMenu.click();
       const menu=page.locator('.catalog-action-menu');await menu.waitFor({state:'visible'});
+      let enterTiming;
+      if(measureMotion){
+        enterTiming=await page.evaluate(()=>bundledMenuMotion);
+        assert.equal(enterTiming.duration,160,'Minified production CSS must retain a 160ms Web Animation');
+        assert(enterTiming.elapsed>=100&&enterTiming.samples.some(s=>s.opacity>0&&s.opacity<1),'The unpaused menu must visibly progress over multiple frames');
+      }
       assert(await menu.evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;}));
       await page.keyboard.press('End');assert.equal(await page.locator('.catalog-action-menu [data-menu-action="new-proxy"]').evaluate(el=>el===document.activeElement),true);
+      if(measureMotion)await observeMenuMotion('exit');
       await page.keyboard.press('Escape');assert.equal(await newMenu.evaluate(el=>el===document.activeElement),true);
+      if(measureMotion){
+        const exitTiming=await page.evaluate(()=>bundledMenuMotion);
+        assert.equal(exitTiming.duration,100);assert(exitTiming.elapsed>=60&&exitTiming.samples.some(s=>s.opacity>0&&s.opacity<1),'The unpaused exit must fade over time');
+        fs.writeFileSync('artifacts/production-ui/menu-motion-timing.json',JSON.stringify({enter:enterTiming,exit:exitTiming},null,2)+'\n');
+        checks.push('Minified production CSS: actual menu entry/exit duration, wall time and unpaused intermediate frames');
+      }
       await newMenu.click();await menu.waitFor({state:'visible'});await newMenu.click();await menu.waitFor({state:'detached'});
       const contextRow=page.locator('.connection-node').first();await contextRow.click({button:'right'});await menu.waitFor({state:'visible'});
       await contextRow.locator('strong').click();await menu.waitFor({state:'detached'});

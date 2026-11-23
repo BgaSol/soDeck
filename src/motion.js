@@ -5,7 +5,9 @@ export function motionDuration(element, kind = 'enter') {
   const document = element.ownerDocument, view = document.defaultView;
   observeMotion(document);
   if (!view || document.hidden || !document[stateKey].visible || view.matchMedia('(prefers-reduced-motion: reduce)').matches) return 0;
-  const value = parseFloat(view.getComputedStyle(element).getPropertyValue(`--sd-motion-${kind}`));
+  // CSS minification can turn 160ms into .16s; Web Animations always takes ms.
+  const time = view.getComputedStyle(element).getPropertyValue(`--sd-motion-${kind}`).trim().toLowerCase();
+  const value = parseFloat(time) * (time.endsWith('s') && !time.endsWith('ms') ? 1000 : 1);
   return Number.isFinite(value) ? Math.max(0, Math.min(300, value)) : kind === 'layout' ? 200 : kind === 'feedback' || kind === 'exit' ? 100 : 160;
 }
 export function observeMotion(document) {
