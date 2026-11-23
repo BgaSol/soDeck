@@ -38,9 +38,26 @@ try{
   await page.goto(url);await page.waitForFunction(()=>window.ready);await child().waitForFunction(()=>window.testTerminal.options.fontFamily.includes('SoDeckFont') && window.testTerminal.rows > 24);
   await emit('\x1b]633;SODECK;reading-test;ready;'+Buffer.from('/var/log/edge-api').toString('hex')+';'+Buffer.from('/tmp/identity').toString('hex')+'\x07');
   assert.equal(await frame.locator('.reading-directory').textContent(),'/var/log/edge-api','Local directory context does not require shared-state RPC');
+  await emit(osc('prompt',0)+'$ '+osc('input',0));
+  await frame.locator('.reading-integration').filter({hasText:'Bash'}).waitFor();
+  assert.equal(await frame.locator('.reading-navigation').isVisible(),false,'Empty terminals keep only the useful add action');
+  assert.equal(await frame.locator('.reading-context').isVisible(),false);
+  assert.equal(await frame.locator('.terminal-reading-toolbar').evaluate(n=>n.textContent.includes('暂无标记')||n.textContent.includes('终端历史')),false);
+  assert.equal(await frame.locator('.terminal-minimap').evaluate(n=>n.getBoundingClientRect().width),64);
+  await frame.locator('.terminal-minimap.is-idle').waitFor();
+  const information=frame.locator('.reading-integration');await information.focus();await page.keyboard.press('Enter');
+  await frame.locator('.reading-information[open]').waitFor();assert((await frame.locator('.reading-information-text').textContent()).includes('编码：UTF-8'));
+  await page.keyboard.press('Escape');assert.equal(await frame.locator('.reading-information').getAttribute('open'),null);assert(await information.evaluate(n=>n===document.activeElement));
+  await emit('\x1b]633;SODECK;reading-test;ready;'+Buffer.from('/var/log/'+('long-directory-'.repeat(12))).toString('hex')+';'+Buffer.from('/tmp/identity').toString('hex')+'\x07');
+  await information.click();assert((await frame.locator('.reading-information-text').textContent()).includes('long-directory-'.repeat(12)),'Full directory remains available without widening the toolbar');await page.keyboard.press('Escape');
+  await emit('\x1b]633;SODECK;reading-test;ready;'+Buffer.from('/var/log/edge-api').toString('hex')+';'+Buffer.from('/tmp/identity').toString('hex')+'\x07');
+  fs.mkdirSync('artifacts/terminal-reading',{recursive:true});
+  for(const theme of ['light','dark','dopamine']){await page.evaluate(theme=>window.theme(theme),theme);await page.screenshot({path:`artifacts/terminal-reading/${theme}-empty.png`});}
+  await page.evaluate(()=>window.theme('light'));
   await emit(osc('prompt',1)+'ops@edge:~$ '+osc('input',1)+'cat app.log\r\n'+osc('start',1)+Array.from({length:160},(_,i)=>`10:12:${String(i%60).padStart(2,'0')}.241  \x1b[${i%7?'32':'33'}m${i%7?'INFO':'WARN'}\x1b[0m  http  GET /api/${i%2?'health':'servers'}  200  ${i+2}ms\r\n`).join('')+osc('end',1,'0')+osc('prompt',2)+'$ '+osc('input',2));
   await child().evaluate(()=>window.testTerminal.scrollToLine(20));
   await frame.locator('.terminal-command-sticky:not([hidden])').waitFor();assert.equal(await frame.locator('.reading-command-title').textContent(),'cat app.log');
+  assert.equal(await frame.locator('.reading-context').isVisible(),false,'Only the sticky header displays the current command');
   await frame.getByRole('button',{name:'回到起点',exact:true}).click();assert.equal(await child().evaluate(()=>window.testTerminal.buffer.active.viewportY),0);
   const railMode=mode=>child().waitForFunction(mode=>document.querySelector('#terminal').dataset.scrollRail===mode,mode);
   const nativeRail=frame.locator('.xterm-scrollable-element>.scrollbar.vertical');
@@ -56,15 +73,15 @@ try{
   await frame.locator('.reading-marker').first().waitFor();
   const markerStyle=await frame.locator('.reading-marker').first().evaluate(element=>{const style=getComputedStyle(element),svg=getComputedStyle(element.querySelector('svg'));return {border:style.borderTopWidth,background:style.backgroundColor,fill:svg.fill};});
   assert.equal(markerStyle.border,'0px','Reading markers must not inherit native button chrome');assert.equal(markerStyle.background,'rgba(0, 0, 0, 0)');assert.equal(markerStyle.fill,'none');
-  const geometry=await child().evaluate(()=>{const marker=document.querySelector('.reading-marker').getBoundingClientRect(),screen=document.querySelector('.xterm-screen').getBoundingClientRect(),host=document.querySelector('#terminal').getBoundingClientRect();return {gutter:screen.left-host.left,gap:screen.left-marker.right};});assert(geometry.gutter>=42&&geometry.gap>=8,'Markers have their own gutter, clear of selectable text');
+  const geometry=await child().evaluate(()=>{const marker=document.querySelector('.reading-marker').getBoundingClientRect(),screen=document.querySelector('.xterm-screen').getBoundingClientRect(),host=document.querySelector('#terminal').getBoundingClientRect();return {gutter:screen.left-host.left,gap:screen.left-marker.right};});assert(geometry.gutter>=34&&geometry.gutter<36&&geometry.gap>=8,'Compact markers retain an independent gutter clear of selectable text');
   assert.equal(await frame.getByRole('button',{name:'阅读选项',exact:true}).count(),0);assert.equal(await frame.locator('.terminal-reading-options').count(),0,'Reading options must never cover terminal content');
   await frame.locator('.reading-result').filter({hasText:'已完成'}).waitFor();
   assert.equal(await frame.locator('.terminal-reading-footer').count(),0,'Reading status is part of the single toolbar');
   const toolbarHeight=await frame.locator('.terminal-reading-toolbar').evaluate(element=>element.getBoundingClientRect().height);
   assert(toolbarHeight<=34,`Reading toolbar is compact: ${toolbarHeight}px`);
-  assert.equal(await frame.locator('.reading-integration').textContent(),'bash · UTF-8');
+  assert.equal(await frame.locator('.reading-integration').textContent(),'Bash');
   fs.mkdirSync('artifacts/terminal-reading',{recursive:true});
-  for(const theme of ['light','dark','dopamine']){await page.evaluate(theme=>window.theme(theme),theme);await frame.locator('.reading-marker').first().hover();await page.screenshot({path:`artifacts/terminal-reading/${theme}-start.png`});await child().evaluate(()=>window.testTerminal.scrollToLine(20));await frame.locator('.terminal-command-sticky:not([hidden])').waitFor();await page.screenshot({path:`artifacts/terminal-reading/${theme}-sticky.png`});await child().evaluate(()=>window.testTerminal.scrollToLine(0));await frame.locator('.reading-marker').first().waitFor();}
+  for(const theme of ['light','dark','dopamine']){await page.evaluate(theme=>window.theme(theme),theme);await frame.locator('.reading-marker').first().hover();await page.screenshot({path:`artifacts/terminal-reading/${theme}-start.png`});await child().evaluate(()=>window.testTerminal.scrollToLine(20));await frame.locator('.terminal-command-sticky:not([hidden])').waitFor();assert.equal(await frame.locator('.reading-context').isVisible(),false,'Sticky command is not repeated in the toolbar');await page.screenshot({path:`artifacts/terminal-reading/${theme}-sticky.png`});await child().evaluate(()=>window.testTerminal.scrollToLine(0));await frame.locator('.reading-marker').first().waitFor();}
   await page.evaluate(()=>window.theme('light'));
   await frame.getByRole('button',{name:'添加标记',exact:true}).click();
   await child().evaluate(()=>window.testTerminal.scrollToLine(20));await frame.getByRole('button',{name:'上一处',exact:true}).click();assert.equal(await child().evaluate(()=>window.testTerminal.buffer.active.viewportY),0);
@@ -74,6 +91,9 @@ try{
   await emit(osc('start',2)+'\r\n'+osc('end',2,'?')+osc('prompt',3)+'$ '+osc('input',3));
   await emit('\x1b]633;SODECK;reading-test;unavailable;fixture\x07');
   assert.equal(await child().evaluate(()=>window.testReading.state().available),false,'Directory and reading observers both receive integration failure');
+  await frame.locator('.reading-integration').filter({hasText:'手动标记可用'}).waitFor();await frame.locator('.reading-integration').click();
+  assert((await frame.locator('.reading-information-text').textContent()).includes('命令识别暂不可用'));
+  await frame.locator('.xterm-helper-textarea').focus();assert.equal(await frame.locator('.reading-information').getAttribute('open'),null,'External focus dismisses terminal details');
   // Live output must never load the plugin-only checkpoint channel.
   await emit('\x1b]633;SODECK-READING;1;begin\x07\x1b]633;SODECK-READING;1;part;7b7d\x07\x1b]633;SODECK-READING;1;end\x07');
   await child().evaluate(()=>window.testTerminal.scrollToLine(20));await frame.locator('.terminal-command-sticky:not([hidden])').waitFor();
@@ -86,7 +106,7 @@ try{
   const inputCount=await child().evaluate(()=>window.testReading.state().entries.filter(e=>e.kind==='input').length);
   await page.evaluate(()=>window.failWrite=true);await page.keyboard.press('Enter');await frame.locator('#status').filter({hasText:'fixture input rejected'}).waitFor();assert.equal(await child().evaluate(()=>window.testReading.state().entries.filter(e=>e.kind==='input').length),inputCount);
   await contextMenu();assert.equal(await frame.getByRole('menuitemcheckbox',{name:/回车辅助标记/}).getAttribute('aria-checked'),'true');await frame.getByRole('menuitem',{name:'清除输入标记',exact:true}).click();assert.equal(await child().evaluate(()=>window.testReading.state().entries.filter(e=>e.kind==='input').length),0);await frame.locator('#status').evaluate(element=>element.hidden=true);
-  for(const theme of ['light','dark','dopamine']){await page.evaluate(theme=>window.theme(theme),theme);for(const width of [1000,320]){await page.setViewportSize({width,height:650});await child().evaluate(()=>window.testTerminal.scrollToLine(20));await page.waitForTimeout(80);assert(await child().evaluate(()=>document.documentElement.scrollWidth<=innerWidth));fs.mkdirSync('artifacts/terminal-reading',{recursive:true});await page.screenshot({path:`artifacts/terminal-reading/${theme}-${width}.png`});}}
+  for(const theme of ['light','dark','dopamine']){await page.evaluate(theme=>window.theme(theme),theme);for(const width of [1100,720,540,360,320]){await page.setViewportSize({width,height:650});await child().evaluate(()=>window.testTerminal.scrollToLine(20));await page.waitForTimeout(80);assert(await child().evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert(await frame.locator('.terminal-reading-toolbar').evaluate(n=>n.scrollWidth<=n.clientWidth&&n.getBoundingClientRect().height<=34),'Toolbar remains one contained row');fs.mkdirSync('artifacts/terminal-reading',{recursive:true});await page.screenshot({path:`artifacts/terminal-reading/${theme}-${width}.png`});}}
   await railMode('minimap');assert.equal(await nativeRail.evaluate(el=>getComputedStyle(el).visibility),'hidden','Compact 40px minimap remains the narrow terminal scroll control');
   await page.setViewportSize({width:1000,height:650});await page.evaluate(()=>window.theme('light'));await emit('\x1b[3J\x1b[2J\x1b[H');
   await emit(osc('prompt',4)+'$ '+osc('input',4)+'pwd\r\n'+osc('start',4)+'/var/log/edge-api\r\n'+osc('end',4,'0')+osc('prompt',5)+'$ '+osc('input',5)+'cat missing.log\r\n'+osc('start',5)+'cat: missing.log: No such file or directory\r\n'+osc('end',5,'1')+osc('prompt',6)+'$ '+osc('input',6));

@@ -12,11 +12,21 @@ export function createReading(terminal,host,buffers,allowed){
   const directory=document.createElement('div');directory.className='reading-directory';directory.innerHTML=icon('folder');
   const directoryText=document.createElement('span');directoryText.textContent='当前终端';directory.append(directoryText);
   const readingContext=document.createElement('span');readingContext.className='reading-context';
-  const integrationState=document.createElement('span');integrationState.className='reading-integration';
+  const locationGroup=document.createElement('div');locationGroup.className='reading-location';locationGroup.append(directory,readingContext);
+  const information=document.createElement('details');information.className='reading-information';
+  const integrationState=document.createElement('summary');integrationState.className='reading-integration';
+  const informationText=document.createElement('p');informationText.className='reading-information-text';information.append(integrationState,informationText);
   const count=document.createElement('span');count.className='reading-position';
   const previous=button('上一处','up',()=>navigate(-1)),next=button('下一处','down',()=>navigate(1));
+  previous.querySelector('span').remove();next.querySelector('span').remove();
+  const navigation=document.createElement('div');navigation.className='reading-navigation';navigation.setAttribute('role','group');navigation.setAttribute('aria-label','阅读位置');navigation.append(previous,count,next);
   const add=button('添加标记','bookmark',()=>toggleManual(terminal.buffer.active.viewportY));
-  add.classList.add('reading-add');toolbar.append(directory,readingContext,integrationState,count,previous,next,add);layout.before(toolbar);
+  add.classList.add('reading-add');
+  const actions=document.createElement('div');actions.className='reading-actions';actions.append(information,navigation,add);toolbar.append(locationGroup,actions);layout.before(toolbar);
+  const events=new AbortController(),{signal}=events;
+  const closeInformation=event=>{if(!information.contains(event.target))information.open=false;};
+  document.addEventListener('pointerdown',closeInformation,{capture:true,signal});document.addEventListener('focusin',closeInformation,{signal});
+  information.addEventListener('keydown',event=>{if(event.key==='Escape'&&information.open){event.preventDefault();event.stopPropagation();information.open=false;integrationState.focus({preventScroll:true});}},{signal});
   const overlay=document.createElement('div');overlay.className='terminal-reading-overlay';host.append(overlay);
   const sticky=document.createElement('div');sticky.className='terminal-command-sticky';sticky.hidden=true;
   const title=document.createElement('span');title.className='reading-command-title';
@@ -35,13 +45,19 @@ export function createReading(terminal,host,buffers,allowed){
   function geometry(){const screen=host.querySelector('.xterm-screen');if(!screen)return;const rect=screen.getBoundingClientRect(),outer=host.getBoundingClientRect();return {x:rect.left-outer.left,y:rect.top-outer.top,height:rect.height,width:rect.width,ch:rect.height/terminal.rows};}
   function paint(){
     frame=undefined;if(disposed)return;
-    toolbar.hidden=mode==='off';overlay.replaceChildren();sticky.hidden=true;
+    toolbar.hidden=mode==='off';overlay.replaceChildren();sticky.hidden=true;readingContext.hidden=true;readingContext.textContent='';locationGroup.classList.remove('has-context');
+    if(toolbar.hidden)information.open=false;
     const enabled=active(),g=geometry(),b=terminal.buffer.active,positions=model.positions();
     previous.disabled=!enabled||!positions.some(p=>p.row<b.viewportY);next.disabled=!enabled||!positions.some(p=>p.row>b.viewportY);add.disabled=!enabled;
     const index=positions.filter(p=>p.row<=b.viewportY).length;
-    count.textContent=positions.length?`${index} / ${positions.length} 处`:'暂无标记';
+    navigation.hidden=!positions.length;count.textContent=positions.length?`${index}/${positions.length}`:'';
+    count.setAttribute('aria-label',`当前位置 ${index}，共 ${positions.length} 处`);
+    if(navigation.hidden&&navigation.contains(document.activeElement))add.focus({preventScroll:true});
     const explanation=notice||(!normal()?'应用接管中，返回普通终端后可继续标记':mode==='manual'?'仅手动标记':model.state().reason||(model.state().available?'命令识别已连接':'未识别命令，可手动标记'));
-    integrationState.textContent=notice?'标记保存暂不可用':!normal()?'应用接管中':mode==='manual'?'仅手动标记':model.state().available?[shell,'UTF-8'].filter(Boolean).join(' · '):inputEnabled?'回车辅助已开启':'手动标记可用';integrationState.title=explanation;readingContext.textContent='终端历史';
+    const executable=shell.split(/[\\/]/).at(-1)?.toLowerCase(),shellName=({bash:'Bash',zsh:'Zsh',pwsh:'PowerShell','powershell.exe':'PowerShell',powershell:'PowerShell'})[executable]||executable||'命令识别已连接';
+    integrationState.textContent=notice?'标记保存暂不可用':!normal()?'应用接管中':mode==='manual'?'仅手动标记':model.state().available?shellName:inputEnabled?'回车辅助已开启':'手动标记可用';
+    integrationState.setAttribute('aria-label','终端信息：'+integrationState.textContent);integrationState.title='查看终端信息';information.classList.toggle('has-notice',!!notice);
+    informationText.textContent=[directory.title||'当前目录未确认',shell&&`Shell：${shell}`, '编码：UTF-8',explanation].filter(Boolean).join('\n');
     if(!enabled||!g)return;
     const fragment=document.createDocumentFragment();
     for(const position of positions){
@@ -63,11 +79,13 @@ export function createReading(terminal,host,buffers,allowed){
     const range=model.state().entries.find(e=>e.kind==='command'&&e.range&&e.output&&!e.output.isDisposed&&e.output.line<=b.viewportY&&((e.end&&!e.end.isDisposed&&e.end.line>b.viewportY)||e.status==='running'));
     selectedId=range?.id;
     const context=range||model.state().entries.find(e=>e.kind==='command'&&e.start&&!e.start.isDisposed&&e.start.line===b.viewportY);
-    if(context?.title){readingContext.textContent='正在阅读  '+context.title.replace(/\s+/g,' ');readingContext.title=context.title;}else readingContext.removeAttribute('title');
+    if(context?.title){readingContext.textContent='正在阅读 '+context.title.replace(/\s+/g,' ');readingContext.title=context.title;readingContext.hidden=false;}else readingContext.removeAttribute('title');
     if(stickyEnabled&&range?.title&&(!range.start||range.start.isDisposed||range.start.line<b.viewportY)&&!host.querySelector('.terminal-search:not([hidden])')){
       sticky.hidden=false;title.textContent=range.title.replace(/\s+/g,' ');title.title=range.title;
       jump.disabled=!range.start||range.start.isDisposed;jump.title=jump.disabled?'起点已不在历史中':'回到起点';
+      readingContext.hidden=true;
     }
+    locationGroup.classList.toggle('has-context',!readingContext.hidden);
     const focusRow=hoverRow??b.viewportY;
     const guide=model.state().entries.find(e=>e.kind==='command'&&e.range&&e.output&&!e.output.isDisposed&&(e.start&&!e.start.isDisposed?e.start.line:e.output.line)<=focusRow&&((e.end&&!e.end.isDisposed&&e.end.line>focusRow)||e.status==='running'));
     if(guide&&hoverRow!==undefined){const start=Math.max(b.viewportY,guide.output.line),end=Math.min(b.viewportY+terminal.rows,guide.end&&!guide.end.isDisposed?guide.end.line:b.length),line=document.createElement('div');line.className='reading-range';line.style.cssText=`left:${Math.max(0,g.x-19)}px;top:${g.y+(start-b.viewportY)*g.ch}px;height:${Math.max(0,end-start)*g.ch}px`;fragment.append(line);}
@@ -88,14 +106,14 @@ export function createReading(terminal,host,buffers,allowed){
     model,
     mount(mount){token=mount.data.integration?.token||'';shell=mount.data.integration?.shell||'';this.settings(mount.settings);},
     settings(value){const v=value?.values||{},before=mode;mode=['manual','off'].includes(v.readingMode)?v.readingMode:'auto';host.classList.toggle('has-reading-gutter',mode!=='off');stickyEnabled=v.commandSticky!==false;fill=v.commandFill===true;if(mode!==before)model.suspend(mode!=='auto');schedule();},
-    location(value){if(value.state==='known'){directoryText.textContent=value.path;directory.title=value.path;}else if(value.activity==='busy'&&directoryText.textContent!=='当前终端'){directory.title='最近确认目录：'+directoryText.textContent;}else{directoryText.textContent='当前终端';directory.title='当前目录未确认';}},
+    location(value){if(value.state==='known'){directoryText.textContent=value.path;directory.title=value.path;}else if(value.activity==='busy'&&directoryText.textContent!=='当前终端'){directory.title='最近确认目录：'+directoryText.textContent;}else{directoryText.textContent='当前终端';directory.title='当前目录未确认';}schedule();},
     frame(type){kind=type;if(type==='reset'){model.reset();notice='';}},
     checkpoint(){return checkpointFrames({version:1,inputEnabled,model:model.snapshot()});},
     revision(){return model.revision()+':'+inputEnabled;},
     submit(){if(!active()||mode!=='auto'||!inputEnabled||model.state().available)return;return buffers.marker(terminal.buffer.active.baseY+terminal.buffer.active.cursorY);},
     submitted(marker,success){if(!marker)return;if(success&&!marker.isDisposed&&normal())model.add('input',marker.line);marker.dispose();},
     contextActions(row){if(!active())return [];const target=Number.isInteger(row)?row:terminal.getSelectionPosition()?.start.y??terminal.buffer.active.viewportY;const input=model.state().entries.find(e=>e.kind==='input'&&!e.start.isDisposed&&e.start.line===target);return [{label:'在此处添加／移除阅读标记',action:()=>toggleManual(target)},...(input?[{label:'移除此处输入标记',action:()=>model.remove(input.id)}]:[]),...(mode==='auto'?[{label:'回车辅助标记',checked:inputEnabled,title:'仅当前终端。记录回车位置，不代表执行命令；多行、交互或密码提示也可能产生标记。',action:()=>{inputEnabled=!inputEnabled;schedule();}}]:[]),...(model.state().entries.some(e=>e.kind==='input')?[{label:'清除输入标记',action:()=>model.clearInputs()}]:[])];},
-    pause(){paused=true;cancelAnimationFrame(frame);frame=undefined;sticky.hidden=true;overlay.replaceChildren();},
+    pause(){paused=true;cancelAnimationFrame(frame);frame=undefined;sticky.hidden=true;information.open=false;overlay.replaceChildren();},
     resume(){paused=false;schedule();},
     update:schedule,
     storageError(message=''){notice=message?'阅读标记保存暂不可用：'+message:'';schedule();},
@@ -103,6 +121,6 @@ export function createReading(terminal,host,buffers,allowed){
     positions:()=>mode==='off'?[]:model.positions(),
     onChanged(listener){listeners.add(listener);return {dispose(){listeners.delete(listener);}};},
     navigateRow:go,
-    dispose(){disposed=true;cancelAnimationFrame(frame);listeners.clear();observe.disconnect();osc.dispose();scroll.dispose();render.dispose();resize.dispose();buffer.dispose();model.dispose();toolbar.remove();overlay.remove();sticky.remove();host.classList.remove('has-reading-gutter');host.removeEventListener('pointermove',move);host.removeEventListener('pointerleave',leave);}
+    dispose(){disposed=true;events.abort();cancelAnimationFrame(frame);listeners.clear();observe.disconnect();osc.dispose();scroll.dispose();render.dispose();resize.dispose();buffer.dispose();model.dispose();toolbar.remove();overlay.remove();sticky.remove();host.classList.remove('has-reading-gutter');host.removeEventListener('pointermove',move);host.removeEventListener('pointerleave',leave);}
   };
 }

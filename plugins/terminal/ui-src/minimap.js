@@ -17,6 +17,7 @@ export function createMinimap(terminal,host,find,visible=()=>true,resized=()=>{}
   function layout(){
     syncRail();if(!active())return;const height=rail.clientHeight,buffer=terminal.buffer.active,length=Math.max(1,buffer.length);
     const size=Math.min(height,Math.max(16,height*terminal.rows/length)),top=length>terminal.rows?buffer.viewportY/(length-terminal.rows)*(height-size):0;
+    rail.classList.toggle('is-idle',buffer.baseY===0);
     thumb.style.height=size+'px';thumb.style.top=top+'px';thumb.setAttribute('aria-valuemax',String(Math.max(1,buffer.baseY+1)));thumb.setAttribute('aria-valuenow',String(buffer.viewportY+1));thumb.setAttribute('aria-valuetext',`第 ${buffer.viewportY+1} 行，共 ${buffer.length} 行`);
   }
   function paint(){

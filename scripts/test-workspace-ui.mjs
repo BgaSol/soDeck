@@ -434,9 +434,9 @@ try {
     await main.setViewportSize({width,height:480}); await main.emulateMedia({reducedMotion:"reduce"});
     await main.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
     await main.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-    const chrome=await main.locator('.server-workbench:visible').evaluate(node=>({divider:getComputedStyle(node.querySelector('.left-rail'),'::after').width,tools:getComputedStyle(node.querySelector('.component-tabs')).backgroundColor}));
+    const chrome=await main.locator('.server-workbench:visible').evaluate(node=>{const probe=document.createElement('div');probe.style.background='var(--panel)';node.append(probe);const panel=getComputedStyle(probe).backgroundColor;probe.remove();return {divider:getComputedStyle(node.querySelector('.left-rail'),'::after').width,tools:getComputedStyle(node.querySelector('.component-tabs')).backgroundColor,panel};});
     assert.equal(chrome.divider,theme==='dopamine'?'2px':'1px');
-    if(theme==='dopamine')assert.equal(chrome.tools,'rgb(66, 198, 155)');
+    assert.equal(chrome.tools,chrome.panel,'Central work tabs use the neutral panel in every theme');
     assert.equal(await main.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     assert.equal(await main.locator('.workspace-status').count(),0,'Core status is owned by Shell');
     if(width===1100){fs.mkdirSync('artifacts/workbench-design',{recursive:true});await main.screenshot({path:`artifacts/workbench-design/workbench-${theme}.png`});}

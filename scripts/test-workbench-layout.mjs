@@ -76,6 +76,11 @@ try {
     const loading=await main.locator('.component-surface').evaluateAll(nodes=>{const probe=document.createElement('div');probe.style.background='var(--canvas)';document.body.append(probe);const canvas=getComputedStyle(probe).backgroundColor;probe.remove();return nodes.map(node=>({frame:getComputedStyle(node.querySelector('iframe')).visibility,background:getComputedStyle(node).backgroundColor,canvas,width:node.querySelector('iframe').clientWidth,height:node.querySelector('iframe').clientHeight}));});
     assert(loading.every(surface=>surface.frame==='hidden'), 'Plugin documents stay concealed until the themed mount is ready: '+theme);
     assert(loading.every(surface=>surface.background===surface.canvas&&surface.width>0&&surface.height>0), 'Loading surfaces retain real dimensions and the current theme background: '+theme);
+    const chrome=await main.locator('.component-tabs').first().evaluate(node=>{
+      const css=getComputedStyle(document.documentElement),probe=document.createElement('div');probe.style.background='var(--panel)';document.body.append(probe);const panel=getComputedStyle(probe).backgroundColor;probe.remove();
+      return {background:getComputedStyle(node).backgroundColor,panel,shadow:getComputedStyle(node).boxShadow,line:getComputedStyle(node,'::after').height,focus:getComputedStyle(node,'::after').backgroundColor,accent:css.getPropertyValue('--accent').trim()};
+    });
+    assert.equal(chrome.background,chrome.panel,'Shared component tabs use the neutral panel in '+theme);assert.equal(chrome.shadow,'none','Focus uses the existing divider instead of a second line');assert.equal(chrome.line,theme==='dopamine'?'2px':'1px');
   }
   holdMount=false;
   await main.evaluate(()=>document.querySelectorAll('.component-surface iframe').forEach(f=>f.contentWindow.finishMount()));
