@@ -67,7 +67,7 @@
   .endpoint-fields dt { color: var(--muted); }
   .endpoint-fields dd { margin: 0; overflow-wrap: anywhere; }
   .catalog-detail-actions { display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 16px;align-items:center; }
-  .catalog-detail-actions>.quiet {margin-left:auto;}
+  .catalog-detail-actions>.danger {margin-left:auto;}
   .catalog-object-actions>p {color:var(--muted);font-size:12px;}
   .endpoint-fields {margin-top:22px;}
   .detail-route, .endpoint-dependencies { border-top: var(--sd-stroke-structure) solid var(--border); padding-top: 20px; margin-top: 20px; }

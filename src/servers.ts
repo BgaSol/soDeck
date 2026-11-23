@@ -25,7 +25,7 @@ export class ServerManager {
   private generation = 0;
   private disposed = false;
   private readError = "";
-  private actionMenu?: { node:HTMLElement; anchor:HTMLButtonElement; events:AbortController; position?:MenuPosition; id:string };
+  private actionMenu?: { node:HTMLElement; anchor:HTMLButtonElement; events:AbortController; position?:MenuPosition };
   private linesFrame?:number;
   private linesTree?:HTMLElement;
   private linesObserver = new ResizeObserver(()=>this.scheduleLines());
@@ -157,13 +157,13 @@ export class ServerManager {
     exitMotion(f.dialog);f.dialog.close(); f.dialog.remove(); this.frames.pop();
     if (f.draft) f.draft.password = "";
     if (f.returnFocus?.isConnected) f.returnFocus.focus({preventScroll:true});
-    else if (f.draft?.copySource) this.host.querySelector<HTMLElement>('.catalog-detail [data-server-action="record-menu"]')?.focus();
+    else if (f.draft?.copySource) this.host.querySelector<HTMLElement>('.catalog-detail [data-server-action="copy"]')?.focus();
   }
   private renderEditor(f: Frame) {
     updateDOM(f.dialog, editor(this.catalog!, f.draft!, !!f.proxy, f.error, f.busy, f.dialog.id, f.notice));
   }
   private openEditor(proxy: boolean, id?: string, inline = false, copy = false) {
-    const returnFocus = copy ? this.host.querySelector<HTMLElement>('.catalog-detail [data-server-action="record-menu"]') ?? undefined : undefined;
+    const returnFocus = copy ? this.host.querySelector<HTMLElement>('.catalog-detail [data-server-action="copy"]') ?? undefined : undefined;
     this.closeMenu();this.onSelection?.();
     const record = id ? (proxy ? this.catalog!.proxies : this.catalog!.servers).find(r => r.id === id) : undefined;
     if (id && !record) throw new Error("资料已不存在，请刷新目录");
@@ -258,17 +258,17 @@ export class ServerManager {
   private closeMenu(focus=false) {
     const menu=this.actionMenu;if(!menu)return;this.actionMenu=undefined;menu.position?.dispose();menu.events.abort();menu.node.remove();menu.anchor.setAttribute('aria-expanded','false');if(focus&&menu.anchor.isConnected)menu.anchor.focus({preventScroll:true});
   }
-  private openMenu(anchor:HTMLButtonElement,id='') {
+  private openMenu(anchor:HTMLButtonElement) {
     if(this.actionMenu?.anchor===anchor){this.closeMenu(true);return;}this.closeMenu();
-    const node=document.createElement('div'),events=new AbortController(),menu={node,anchor,events,id,position:undefined as MenuPosition|undefined};
-    node.className='catalog-action-menu sd-menu';node.setAttribute('role','menu');node.setAttribute('aria-label',id?'资料更多操作':'新增资料');
-    node.innerHTML=id?action('copy',icon('copy')+(this.catalog!.servers.some(s=>s.id===id)?'复制服务器…':'复制代理资料'),`data-id="${e(id)}" role="menuitem" tabindex="-1"`)+action('delete','删除资料',`data-id="${e(id)}" role="menuitem" tabindex="-1"`,'danger'):action('new-server',icon('server')+'新增 SSH 服务器','role="menuitem" tabindex="-1"')+action('new-proxy',icon('network')+'新增 SOCKS5 代理','role="menuitem" tabindex="-1"');
+    const node=document.createElement('div'),events=new AbortController(),menu={node,anchor,events,position:undefined as MenuPosition|undefined};
+    node.className='catalog-action-menu sd-menu';node.setAttribute('role','menu');node.setAttribute('aria-label','新增资料');
+    node.innerHTML=action('new-server',icon('server')+'新增 SSH 服务器','role="menuitem" tabindex="-1"')+action('new-proxy',icon('network')+'新增 SOCKS5 代理','role="menuitem" tabindex="-1"');
     document.body.append(node);this.actionMenu=menu;anchor.setAttribute('aria-expanded','true');
     const signal=events.signal;
     node.addEventListener('click',event=>{const button=(event.target as Element).closest<HTMLButtonElement>('[data-server-action]');if(button){this.closeMenu();void this.perform(button).catch(error=>this.notify(String(error)));}},{signal});
     node.addEventListener('keydown',event=>{if(event.isComposing)return;if(event.key==='Escape'){event.preventDefault();event.stopPropagation();this.closeMenu(true);return;}const buttons=[...node.querySelectorAll<HTMLButtonElement>('button')],index=buttons.indexOf(document.activeElement as HTMLButtonElement);if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();buttons[event.key==='Home'?0:event.key==='End'?buttons.length-1:(index+(event.key==='ArrowUp'?-1:1)+buttons.length)%buttons.length]?.focus();}},{signal});
     for(const name of ['pointerdown','focusin'] as const)document.addEventListener(name,event=>{if(!node.contains(event.target as Node)&&!anchor.contains(event.target as Node))this.closeMenu();},{signal});
-    menu.position=attachMenuPosition(node,anchor,{isValid:()=>this.actionMenu===menu&&!this.readError&&!this.catalog?.error&&(!id||anchor.dataset.id===id&&!![...this.catalog!.servers,...this.catalog!.proxies].find(record=>record.id===id)),onInvalid:()=>this.closeMenu()});
+    menu.position=attachMenuPosition(node,anchor,{isValid:()=>this.actionMenu===menu&&!this.readError&&!this.catalog?.error,onInvalid:()=>this.closeMenu()});
     void menu.position.ready.then(ready=>{if(ready&&this.actionMenu===menu)node.querySelector<HTMLButtonElement>('button')?.focus();});
   }
   private async perform(button: HTMLButtonElement) {
@@ -277,7 +277,7 @@ export class ServerManager {
     if (this.busy || f?.busy) return;
     if (name === "confirm-no" || name === "confirm-yes") return;
     const record=[...(this.catalog?.servers??[]),...(this.catalog?.proxies??[])].find(record=>record.id===id);
-    if(["new-server","new-proxy","new-menu","record-menu","edit","copy","delete"].includes(name)&&(this.readError||this.catalog?.error))throw new Error(this.readError||this.catalog!.error!);
+    if(["new-server","new-proxy","new-menu","edit","copy","delete"].includes(name)&&(this.readError||this.catalog?.error))throw new Error(this.readError||this.catalog!.error!);
     switch (name) {
       case "select":
         this.onSelection?.();
@@ -295,7 +295,6 @@ export class ServerManager {
       case "new-server": this.openEditor(false); break;
       case "new-proxy": this.openEditor(true); break;
       case "new-menu": this.openMenu(button); break;
-      case "record-menu": if(record)this.openMenu(button,id); break;
       case "edit": if(!record)throw new Error("资料已不存在，请刷新目录");this.openEditor(record.protocol==="socks5",id);break;
       case "toggle-tag": this.state.tags=this.state.tags.includes(id)?this.state.tags.filter(tag=>tag!==id):[...this.state.tags,id];this.render();break;
       case "clear-tags":this.state.tags=[];this.render();break;

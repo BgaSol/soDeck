@@ -54,10 +54,9 @@ await page.route(url, route => route.fulfill({ contentType: "text/html", body: `
 const dialogs = () => page.locator("dialog[open]").last();
 const action = (name, scope = dialogs()) => scope.locator(`[data-server-action="${name}"]`).first();
 const work = () => page.locator("#test-workspace");
-async function menuAction(name) { await action("record-menu",work()).click(); await page.locator(".catalog-action-menu:visible").waitFor(); await page.locator(`.catalog-action-menu [data-server-action="${name}"]`).click(); }
 async function deleteSelected() {
-  const id = await action('record-menu', work()).getAttribute('data-id');
-  await menuAction('delete'); await action('confirm-yes').click(); await expectDialogs(0);
+  const id = await action('delete', work()).getAttribute('data-id');
+  await action('delete', work()).click(); await action('confirm-yes').click(); await expectDialogs(0);
   await work().locator(`[data-server-action="select"][data-id="${id}"]`).waitFor({ state: 'detached' });
   await work().locator('.catalog-detail [data-server-action="edit"]').waitFor({ state: 'detached' });
 }
@@ -101,21 +100,27 @@ try {
   checks.push("创建、编辑、秘密不回填和留空保持");
 
   const beforeCopy = await read();
-  await menuAction('copy'); await expectDialogs(1);
+  assert.equal(await action('record-menu',work()).count(),0);
+  for(const name of ['edit','copy','delete'])assert.equal(await action(name,work()).isVisible(),true);
+  await action('delete',work()).click();await expectDialogs(1);
+  await action('confirm-no').click();await expectDialogs(0);assert.deepEqual(await read(),beforeCopy);
+  await action('copy',work()).focus();await page.keyboard.press('Enter');await expectDialogs(1);
+  assert.equal(await page.locator('.catalog-action-menu').count(),0);
   assert.equal(await dialogs().locator('h2').innerText(),'复制服务器');
   assert.equal(await field('password').inputValue(),'');
   assert.match(await dialogs().locator('[id$="-secret-status"]').innerText(),/沿用.*已保存密码/);
   assert.deepEqual(await field('host').evaluate(el=>({focused:el===document.activeElement,start:el.selectionStart,end:el.selectionEnd})),{focused:true,start:0,end:'gateway.invalid'.length});
   assert.deepEqual(await read(),beforeCopy);
   await page.keyboard.press('Escape');await expectDialogs(0);assert.deepEqual(await read(),beforeCopy);
-  assert.equal(await action('record-menu',work()).evaluate(el=>el===document.activeElement),true);
-  await menuAction('copy'); await field('host').fill('copy.invalid'); await save(); await expectDialogs(0);
+  assert.equal(await action('copy',work()).evaluate(el=>el===document.activeElement),true);
+  checks.push('详情直接操作、键盘复制与取消焦点恢复、删除取消不修改资料');
+  await action('copy',work()).click(); await field('host').fill('copy.invalid'); await save(); await expectDialogs(0);
   let copied=(await read()).servers.find(s=>s.host==='copy.invalid');
   assert(copied.authentication.hasSavedSecret);
   assert.equal(JSON.parse(fs.readFileSync(path.join(directory,'servers.json'),'utf8')).servers.find(s=>s.id===copied.id).authentication.savedPassword,'ui-saved-secret');
   await deleteSelected();
   await work().locator(`[data-server-action="select"][data-id="${gateway}"]`).click();
-  await menuAction('copy');await field('host').fill('retry-copy.invalid');await field('tagInput').fill('复制标签');
+  await action('copy',work()).click();await field('host').fill('retry-copy.invalid');await field('tagInput').fill('复制标签');
   await bridge.call('change_catalog',{revision:(await read()).revision,change:{op:'saveTag',id:null,name:'并发标签'}});
   await save();await dialogs().locator('.error-box:not([hidden])').waitFor();
   await action('reload-editor').click();assert.equal(await field('host').inputValue(),'retry-copy.invalid');
@@ -127,7 +132,7 @@ try {
   await deleteSelected();
   for(const tag of (await read()).tags)await bridge.call('change_catalog',{revision:(await read()).revision,change:{op:'deleteTag',id:tag.id}});
   await action('reload',work()).click();await work().locator(`[data-server-action="select"][data-id="${gateway}"]`).click();
-  await menuAction('copy');await field('password').fill('replacement');assert.match(await dialogs().locator('[id$="-secret-status"]').innerText(),/新输入/);
+  await action('copy',work()).click();await field('password').fill('replacement');assert.match(await dialogs().locator('[id$="-secret-status"]').innerText(),/新输入/);
   await field('password').fill('');await action('clear-secret').click();assert.match(await dialogs().locator('[id$="-secret-status"]').innerText(),/不沿用/);
   await field('password').fill('replacement-after-opt-out');await field('password').fill('');
   assert.match(await dialogs().locator('[id$="-secret-status"]').innerText(),/不沿用/);
@@ -146,7 +151,8 @@ try {
   await field("username").fill("proxy-ops"); await field("password").fill("ui-proxy-secret"); await field("remember").check();
   await field("name").fill("回环代理"); await save(); await expectDialogs(0);
   catalog = await read(); const proxy = catalog.proxies[0].id;
-  await menuAction("copy"); await page.waitForFunction(() => document.querySelector(".catalog-detail h2")?.textContent?.includes("副本"));
+  for(const name of ['edit','copy','delete'])assert.equal(await action(name,work()).isVisible(),true);
+  await action('copy',work()).click(); await page.waitForFunction(() => document.querySelector(".catalog-detail h2")?.textContent?.includes("副本"));
   catalog = await read(); assert.equal(catalog.proxies[1].authentication.hasSavedSecret, false);
   await deleteSelected();
   assert.equal((await read()).proxies.length, 1); checks.push("代理增删改查和复制不带秘密");
@@ -169,7 +175,7 @@ try {
   catalog = await read(); const target = catalog.servers.find(s => s.name === "生产数据库").id;
   assert.deepEqual(catalog.servers.find(s => s.id === target).route.map(r => r.kind), ["ssh", "socks5", "socks5"]);
   const targetBeforeCopy=catalog.servers.find(s=>s.id===target);
-  await menuAction('copy');assert.equal(await field('remember').isChecked(),false);
+  await action('copy',work()).click();assert.equal(await field('remember').isChecked(),false);
   const copySteps=await dialogs().locator('.route-editor-step').evaluateAll(nodes=>nodes.map(n=>n.dataset.domKey));
   assert.equal(new Set(copySteps).size,3);
   await field('host').fill('session-copy.internal');await save();await expectDialogs(0);
@@ -281,6 +287,7 @@ try {
   assert.equal(await work().locator('.connection-node.selected').getAttribute('data-path'),selectedPath);
   assert.equal(await work().locator('[data-connect-server]').count(),0);
   assert.equal(await action('new-server',work()).isDisabled(),true);
+  for(const name of ['edit','copy','delete'])assert.equal(await action(name,work()).isDisabled(),true);
   failCatalogRead=false;await action('reload',work()).click();
   assert.equal(await work().locator('.error-box').count(),0);assert.equal(await search.inputValue(),'公网');
   await search.fill('没有匹配的资料');
@@ -322,7 +329,7 @@ try {
   checks.push('多标签 AND、完整混合祖先路径、上下文节点无连接入口及三主题节点展示');
 
   await work().locator(`[data-server-action="select"][data-id="${gateway}"]`).first().click();
-  await menuAction("delete"); assert((await dialogs().innerText()).includes("生产数据库")); await action("confirm-yes").click();
+  await action('delete',work()).click(); assert((await dialogs().innerText()).includes("生产数据库")); await action("confirm-yes").click();
   await expectDialogs(0); assert.equal((await read()).servers.length, 2);
   await work().locator("#catalog-query").fill("deploy"); assert.equal(await work().locator(".connection-node:not(.path-node)").count(), 1);
   await work().locator("#catalog-query").fill(""); await work().locator(`[data-filter-tag="${catalog.tags[0].id}"]`).click();
@@ -371,14 +378,21 @@ try {
   checks.push('已移除管理标签和密度入口，旧标签数据变更仍正确刷新');
   for (const theme of ["system", "light", "dark", "dopamine"]) {
     await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
-    for (const [width, height] of [[1100, 720], [720, 480]]) {
+    for (const [width, height] of [[1100, 720], [900, 720], [720, 480]]) {
       await page.setViewportSize({ width, height });
       if(width===720&&await action('back',work()).isVisible())await action('back',work()).click();
       const row=work().locator(`[data-server-action="select"][data-id="${target}"]`);
       await row.focus();await page.keyboard.press('Enter');
       assert.equal(await page.evaluate(()=>document.activeElement===document.body),false,`${theme}/${width} selecting a server keeps contextual focus`);
       if(width===1100){await row.evaluate(async node=>{await Promise.allSettled(node.getAnimations({subtree:true}).map(animation=>animation.finished));});const ratios=await row.evaluate(row=>{const l=color=>{const c=color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};const b=l(getComputedStyle(row.querySelector('.node-card')).backgroundColor);return [...row.querySelectorAll('.node-endpoint,.node-tags,.node-state')].map(node=>{const a=l(getComputedStyle(node).color);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);});});assert(ratios.length&&ratios.every(r=>r>=4.5),`${theme} selected server contrast: ${ratios}`);}
-      await menuAction('copy');
+      for(const name of ['edit','copy','delete'])assert.equal(await action(name,work()).isVisible(),true);
+      assert(await work().locator('.catalog-detail-actions').evaluate(row=>{
+        const bounds=row.getBoundingClientRect(),buttons=[...row.querySelectorAll('button')].map(button=>button.getBoundingClientRect());
+        return row.scrollWidth<=row.clientWidth+1&&buttons.every((box,i)=>box.left>=bounds.left&&box.right<=bounds.right+1&&buttons.slice(i+1).every(other=>box.right<=other.left||other.right<=box.left||box.bottom<=other.top||other.bottom<=box.top));
+      }),`${theme}/${width} detail actions stay in bounds without overlap`);
+      fs.mkdirSync('artifacts/server-actions',{recursive:true});
+      await work().locator('.catalog-detail').screenshot({path:`artifacts/server-actions/${theme}-${width}.png`});
+      await action('copy',work()).click();
       await dialogs().evaluate(async d=>{await Promise.allSettled(d.getAnimations({subtree:true}).map(a=>a.finished));});
       assert(await dialogs().evaluate(d=>d.scrollWidth<=d.clientWidth+1));
       assert.equal(await field('host').evaluate(el=>el===document.activeElement&&el.selectionStart===0&&el.selectionEnd===el.value.length),true);
@@ -391,7 +405,7 @@ try {
         const original=(await read()).servers.find(s=>s.id===target);
         const longDraft={...original,name:'W'.repeat(200),authentication:{...original.authentication,secret:{action:'keep',remember:original.authentication.hasSavedSecret}}};
         await bridge.call('change_catalog',{revision:(await read()).revision,change:{op:'saveServer',draft:longDraft}});
-        await action('back',work()).click();await action('reload',work()).click();await row.click();await menuAction('copy');
+        await action('back',work()).click();await action('reload',work()).click();await row.click();await action('copy',work()).click();
         await dialogs().evaluate(async d=>{await Promise.allSettled(d.getAnimations({subtree:true}).map(a=>a.finished));});
         assert(await dialogs().evaluate(d=>d.scrollWidth<=d.clientWidth+1));
         assert(await dialogs().locator('.catalog-dialog-heading').evaluate(h=>{const close=h.querySelector('button').getBoundingClientRect(),bounds=h.getBoundingClientRect();return close.right<=bounds.right&&close.left>=bounds.left;}));
@@ -400,7 +414,7 @@ try {
         if(process.env.SODECK_COPY_REVIEW_DIR)await page.screenshot({path:path.join(process.env.SODECK_COPY_REVIEW_DIR,'light-720-long-credential.png')});
         await page.keyboard.press('Escape');await expectDialogs(0);
         longDraft.name=original.name;await bridge.call('change_catalog',{revision:(await read()).revision,change:{op:'saveServer',draft:longDraft}});
-        await action('back',work()).click();await action('reload',work()).click();await row.click();await action('record-menu',work()).waitFor({state:'visible'});
+        await action('back',work()).click();await action('reload',work()).click();await row.click();await action('copy',work()).waitFor({state:'visible'});
       }
       if(width===720){await action('back',work()).focus();await page.keyboard.press('Enter');assert.equal(await row.evaluate(el=>el===document.activeElement),true,'Returning to the list focuses the original server');}
       await action("new-server", work()).click();
@@ -414,7 +428,7 @@ try {
   }
   await page.setViewportSize({ width: 1100, height: 720 });
   if (process.env.SODECK_UI_SCREENSHOT) await page.screenshot({ path: process.env.SODECK_UI_SCREENSHOT });
-  checks.push("系统、浅色、深色、多巴胺主题与 720×480 表单、焦点和固定页脚");
+  checks.push("系统、浅色、深色、多巴胺主题与 1100/900/720px 操作换行、表单、焦点和固定页脚");
 
   await bridge.stop(); bridge = startBridge(); await load(); catalog = await read();
   assert.equal(catalog.servers.find(s => s.id === gateway).authentication.hasSavedSecret, true);

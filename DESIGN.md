@@ -357,7 +357,7 @@ good、warning、error 分别辅助成功、需关注和错误文字。success-b
 
 展开箭头放在卡片内部、类型图标之前，默认透明底，悬停使用 accent 与 panel 的轻混合底，收起向右、展开向下；卡片承载选中、悬停与键盘焦点。连线从本机图标下沿或父卡片底部引出，沿卡片外的层级留白，以（4px）圆滑转角接入子卡片边缘，不穿过箭头。普通线使用 muted 与 canvas 混合的（1px）描边。当前路线以（1.5px）accent 叠在普通连线之上，后续兄弟分支不覆盖高亮；连线按实际布局计算，折叠、筛选、主题和窗口大小变化后重绘。
 
-搜索匹配目标及显式中转，标签用树上方可换行的按钮直接切换，aria-pressed 表达选中状态；多标签 AND 只约束服务器目标。保留完整祖先路线，SSH 上下文用“路径节点”说明用途，代理说明引用数或未使用状态。详情先展示身份、状态与主动作，再展示访问路线和资料；标签编辑归入服务器表单。目录语义与连接动作见 [连接功能](docs/features/connections.md)，模板和模型来源为 [server-views.ts](src/server-views.ts) 与 [connection-tree.ts](src/connection-tree.ts)。
+搜索匹配目标及显式中转，标签用树上方可换行的按钮直接切换，aria-pressed 表达选中状态；多标签 AND 只约束服务器目标。保留完整祖先路线，SSH 上下文用“路径节点”说明用途，代理说明引用数或未使用状态。详情先展示身份、状态与主动作，再展示访问路线和资料；连接为主按钮，编辑、复制为次级按钮，删除以靠右的低强调危险按钮直接显示，操作行按可用宽度换行。标签编辑归入服务器表单。目录语义与连接动作见 [连接功能](docs/features/connections.md)，模板和模型来源为 [server-views.ts](src/server-views.ts) 与 [connection-tree.ts](src/connection-tree.ts)。
 
 ### Dialogs
 
