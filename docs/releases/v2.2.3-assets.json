@@ -1,0 +1,2394 @@
+{
+  "component": "sodeck.core",
+  "version": "2.2.3",
+  "source": "43f554044721f3e1860407334833b45853325115",
+  "checkedAt": "2026-11-23T17:37:45.315Z",
+  "packageRun": "https://github.com/BgaSol/soDeck/actions/runs/45226783451",
+  "sourceCheck": "https://github.com/BgaSol/soDeck/actions/runs/45226734053",
+  "packageRunAttempt": 1,
+  "checkRunAttempt": 1,
+  "release": {
+    "id": 455763298,
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/v2.2.3",
+    "draft": false,
+    "publishedAt": "2026-11-23T17:37:41Z",
+    "latest": true
+  },
+  "packageJobs": [
+    {
+      "name": "preflight",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226783451/job/137875307353",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run node scripts/core-release.mjs preflight",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "linux-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226783451/job/137875498331",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install Linux build dependencies",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build installer",
+          "conclusion": "success"
+        },
+        {
+          "name": "Collect built packages",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "windows-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226783451/job/137875498394",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install Linux build dependencies",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build installer",
+          "conclusion": "success"
+        },
+        {
+          "name": "Collect built packages",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "linux-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226783451/job/137875498437",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install Linux build dependencies",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build installer",
+          "conclusion": "success"
+        },
+        {
+          "name": "Collect built packages",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "windows-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226783451/job/137875498485",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install Linux build dependencies",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build installer",
+          "conclusion": "success"
+        },
+        {
+          "name": "Collect built packages",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "macos-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226783451/job/137875498758",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install Linux build dependencies",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build installer",
+          "conclusion": "success"
+        },
+        {
+          "name": "Collect built packages",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "verify-macos-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226783451/job/137879052962",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install Linux runtime verification dependencies",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run actions/download-artifact@v5",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify actual native packages",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "verify-windows-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226783451/job/137879053055",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install Linux runtime verification dependencies",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run actions/download-artifact@v5",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify actual native packages",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "verify-windows-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226783451/job/137879053100",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install Linux runtime verification dependencies",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run actions/download-artifact@v5",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify actual native packages",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "verify-linux-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226783451/job/137879053138",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install Linux runtime verification dependencies",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/download-artifact@v5",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify actual native packages",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "verify-linux-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226783451/job/137879053182",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install Linux runtime verification dependencies",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/download-artifact@v5",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify actual native packages",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "metadata",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226783451/job/137879902928",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/download-artifact@v5",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/download-artifact@v5",
+          "conclusion": "success"
+        },
+        {
+          "name": "Bind results to the original package bytes",
+          "conclusion": "success"
+        },
+        {
+          "name": "Prepare verified manifest and optional draft",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "checkJobs": [
+    {
+      "name": "select",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226734053/job/137875118215",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run node scripts/select-checks.mjs",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked documentation dependencies",
+          "conclusion": "success"
+        },
+        {
+          "name": "Check documentation structure and local file links",
+          "conclusion": "success"
+        },
+        {
+          "name": "Lint GitHub Actions workflows",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "checks",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226734053/job/137875292641",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Core frontend source types",
+          "conclusion": "success"
+        },
+        {
+          "name": "Format affected Rust components",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm run scripts:test",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "browser",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226734053/job/137875292698",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install core-backed browser fixture dependencies",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Prepare browser test dependencies once",
+          "conclusion": "success"
+        },
+        {
+          "name": "Configure Ubuntu browser dependency mirror",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npx playwright install --with-deps chromium",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm run ci:test -- ui:test",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm run ci:test -- terminal:input:test",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm run ci:test -- terminal:history:test",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "integration-network-linux-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226734053/job/137875292712",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install native fixture and OpenSSH dependencies",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npx playwright install --with-deps chromium",
+          "conclusion": "success"
+        },
+        {
+          "name": "Prepare selected source plugin fixtures once",
+          "conclusion": "success"
+        },
+        {
+          "name": "Real network plugin, independent SOCKS server and curl",
+          "conclusion": "success"
+        },
+        {
+          "name": "File editor source types",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Real files plugin and SFTP",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "File editor syntax, minimap, search and byte limits",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Real terminal plugin and PTY",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Automatic Bash and Zsh startup in real PTYs",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Real system status plugin and background sampling",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Actual Docker plugin with isolated Engine and OpenSSH",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Docker UI and source process regression",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "MCP remote investigation and process regression",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Three real plugins and shared state communication",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "integration-network-linux-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226734053/job/137875292714",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install native fixture and OpenSSH dependencies",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npx playwright install --with-deps chromium",
+          "conclusion": "success"
+        },
+        {
+          "name": "Prepare selected source plugin fixtures once",
+          "conclusion": "success"
+        },
+        {
+          "name": "Real network plugin, independent SOCKS server and curl",
+          "conclusion": "success"
+        },
+        {
+          "name": "File editor source types",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Real files plugin and SFTP",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "File editor syntax, minimap, search and byte limits",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Real terminal plugin and PTY",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Automatic Bash and Zsh startup in real PTYs",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Real system status plugin and background sampling",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Actual Docker plugin with isolated Engine and OpenSSH",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Docker UI and source process regression",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "MCP remote investigation and process regression",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Three real plugins and shared state communication",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "native-windows-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226734053/job/137875292905",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native Rust host",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install core fixture build dependencies",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify macOS default-handler fixture",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Shared plugin client source tests",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Native core source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Scripts on native host",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Native network plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native files plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native terminal plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native system status plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native Docker plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native MCP plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "integration-business-linux-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226734053/job/137875292932",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install native fixture and OpenSSH dependencies",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npx playwright install --with-deps chromium",
+          "conclusion": "success"
+        },
+        {
+          "name": "Prepare selected source plugin fixtures once",
+          "conclusion": "success"
+        },
+        {
+          "name": "Real network plugin, independent SOCKS server and curl",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "File editor source types",
+          "conclusion": "success"
+        },
+        {
+          "name": "Real files plugin and SFTP",
+          "conclusion": "success"
+        },
+        {
+          "name": "File editor syntax, minimap, search and byte limits",
+          "conclusion": "success"
+        },
+        {
+          "name": "Real terminal plugin and PTY",
+          "conclusion": "success"
+        },
+        {
+          "name": "Automatic Bash and Zsh startup in real PTYs",
+          "conclusion": "success"
+        },
+        {
+          "name": "Real system status plugin and background sampling",
+          "conclusion": "success"
+        },
+        {
+          "name": "Actual Docker plugin with isolated Engine and OpenSSH",
+          "conclusion": "success"
+        },
+        {
+          "name": "Docker UI and source process regression",
+          "conclusion": "success"
+        },
+        {
+          "name": "MCP remote investigation and process regression",
+          "conclusion": "success"
+        },
+        {
+          "name": "Three real plugins and shared state communication",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "native-macos-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226734053/job/137875292948",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native Rust host",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install core fixture build dependencies",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify macOS default-handler fixture",
+          "conclusion": "success"
+        },
+        {
+          "name": "Shared plugin client source tests",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Native core source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Scripts on native host",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Native network plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native files plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native terminal plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native system status plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native Docker plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native MCP plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "native-linux-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226734053/job/137875293010",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native Rust host",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install core fixture build dependencies",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify macOS default-handler fixture",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Shared plugin client source tests",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Native core source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Scripts on native host",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Native network plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native files plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native terminal plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native system status plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native Docker plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native MCP plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "native-windows-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226734053/job/137875293049",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native Rust host",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install core fixture build dependencies",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify macOS default-handler fixture",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Shared plugin client source tests",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Native core source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Scripts on native host",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Native network plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native files plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native terminal plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native system status plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native Docker plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native MCP plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "native-linux-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226734053/job/137875293133",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native Rust host",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install core fixture build dependencies",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify macOS default-handler fixture",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Shared plugin client source tests",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Native core source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Scripts on native host",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Native network plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native files plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native terminal plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native system status plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native Docker plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native MCP plugin source tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "netem",
+      "conclusion": "skipped",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226734053/job/137875296552",
+      "steps": []
+    },
+    {
+      "name": "desktop",
+      "conclusion": "skipped",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226734053/job/137875296858",
+      "steps": []
+    },
+    {
+      "name": "format",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45226734053/job/137883802863",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Report executed and skipped checks; reject failed or missing selected jobs",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "reports": [
+    {
+      "id": "sodeck.core",
+      "version": "2.2.3",
+      "target": "aarch64-apple-darwin",
+      "commit": "43f554044721f3e1860407334833b45853325115",
+      "files": [
+        {
+          "name": "SoDeck_2.2.3_aarch64.dmg",
+          "size": 10155603,
+          "sha256": "3f0884f509a0b7453bb708d5c9e70089dad1f85a37c175ab4955df21c03f9170"
+        },
+        {
+          "name": "SoDeck_2.2.3_aarch64.app.tar.gz",
+          "size": 10415521,
+          "sha256": "9a721b0a930ab4b14de82d84cc82db86897a29be3152fac67ee0edc85905f35b"
+        },
+        {
+          "name": "SoDeck_2.2.3_aarch64.app.tar.gz.sig",
+          "size": 424,
+          "sha256": "e440d1e32fbd7916fe8399c6fab47f79d43a3188f03ae9c79d37ecda34addb2e"
+        }
+      ],
+      "toolCommit": "43f554044721f3e1860407334833b45853325115",
+      "passed": true,
+      "pluginIconsNative": true
+    },
+    {
+      "id": "sodeck.core",
+      "version": "2.2.3",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "43f554044721f3e1860407334833b45853325115",
+      "files": [
+        {
+          "name": "SoDeck_2.2.3_arm64-setup.exe",
+          "size": 6746857,
+          "sha256": "fec6987eb5ffa02d972d6f78c0cb9e48e44b9694c404abaf75acba0fa953228a"
+        },
+        {
+          "name": "SoDeck_2.2.3_arm64-setup.exe.sig",
+          "size": 436,
+          "sha256": "4ea56f13f6bdfd7a20144051c8f1ba1a59e8074e60d5d003f5cbf8523b6055a2"
+        }
+      ],
+      "toolCommit": "43f554044721f3e1860407334833b45853325115",
+      "passed": true,
+      "windowsInstallModes": [
+        {
+          "mode": "CurrentUser",
+          "hive": "HKCU",
+          "install": "C:\\Users\\runneradmin\\AppData\\Local\\Programs\\SoDeck",
+          "passed": true
+        },
+        {
+          "mode": "AllUsers",
+          "hive": "HKLM",
+          "install": "C:\\Program Files\\SoDeck",
+          "passed": true
+        }
+      ],
+      "pluginIconsNative": true
+    },
+    {
+      "id": "sodeck.core",
+      "version": "2.2.3",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "43f554044721f3e1860407334833b45853325115",
+      "files": [
+        {
+          "name": "SoDeck_2.2.3_arm64.deb",
+          "size": 10642082,
+          "sha256": "1096f703bbddb8ac97770a7b39babe3743882cd3455fd475498abcb614596890"
+        },
+        {
+          "name": "SoDeck_2.2.3_arm64.deb.sig",
+          "size": 428,
+          "sha256": "18935924e404c74985d03c365f9ddbe519892adb6c71d1e587592d668c22d5f1"
+        },
+        {
+          "name": "SoDeck_2.2.3_aarch64.AppImage",
+          "size": 86153736,
+          "sha256": "211c2437d2a7aead5605ae19b855a38d8fe42f0c77c5a3dd68cb3ec1ab47f781"
+        },
+        {
+          "name": "SoDeck_2.2.3_aarch64.AppImage.sig",
+          "size": 440,
+          "sha256": "06393f0ab1b04e7a22c7e197a6245b5ce99f02d8bbed6e9ec7ffdd8e3561c71e"
+        }
+      ],
+      "toolCommit": "43f554044721f3e1860407334833b45853325115",
+      "passed": true,
+      "pluginIconsNative": true
+    },
+    {
+      "id": "sodeck.core",
+      "version": "2.2.3",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "43f554044721f3e1860407334833b45853325115",
+      "files": [
+        {
+          "name": "SoDeck_2.2.3_x64-setup.exe",
+          "size": 7823930,
+          "sha256": "5d64670387fc6b46abc8f8cc719458996de250ce5a4f8dd7363d01d4c2af49a8"
+        },
+        {
+          "name": "SoDeck_2.2.3_x64-setup.exe.sig",
+          "size": 436,
+          "sha256": "f88cebaebd318b3b82b432a56b062e5f49f8a9564c41b7c6e2c85acada79c8dd"
+        }
+      ],
+      "toolCommit": "43f554044721f3e1860407334833b45853325115",
+      "passed": true,
+      "windowsInstallModes": [
+        {
+          "mode": "CurrentUser",
+          "hive": "HKCU",
+          "install": "C:\\Users\\runneradmin\\AppData\\Local\\Programs\\SoDeck",
+          "passed": true
+        },
+        {
+          "mode": "AllUsers",
+          "hive": "HKLM",
+          "install": "C:\\Program Files\\SoDeck",
+          "passed": true
+        }
+      ],
+      "pluginIconsNative": true
+    },
+    {
+      "id": "sodeck.core",
+      "version": "2.2.3",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "43f554044721f3e1860407334833b45853325115",
+      "files": [
+        {
+          "name": "SoDeck_2.2.3_amd64.deb",
+          "size": 11454478,
+          "sha256": "a02de6344444cb8139fea7461e727c22d7b08b196cf8bbcbe2f95477421fd010"
+        },
+        {
+          "name": "SoDeck_2.2.3_amd64.deb.sig",
+          "size": 428,
+          "sha256": "33b6b98ab4ab263bd503e2d4d091df03adb154de3c6d11c0a7e03c4dd1934640"
+        },
+        {
+          "name": "SoDeck_2.2.3_amd64.AppImage",
+          "size": 88865272,
+          "sha256": "9bc8a5129aaff38c7443ef5d6d8a71bc01aa43a8663d185345836366db221ecd"
+        },
+        {
+          "name": "SoDeck_2.2.3_amd64.AppImage.sig",
+          "size": 436,
+          "sha256": "43d83804a87d8dea5d1ed55431a0f34de075628b87b66f7c64506fa6474169b1"
+        }
+      ],
+      "toolCommit": "43f554044721f3e1860407334833b45853325115",
+      "passed": true,
+      "pluginIconsNative": true
+    }
+  ],
+  "reportArtifacts": [
+    {
+      "id": 14846475298,
+      "name": "Core-verification-windows-x86_64",
+      "url": "https://api.github.com/repos/BgaSol/soDeck/actions/artifacts/14846475298"
+    },
+    {
+      "id": 14846450339,
+      "name": "Core-verification-windows-aarch64",
+      "url": "https://api.github.com/repos/BgaSol/soDeck/actions/artifacts/14846450339"
+    },
+    {
+      "id": 14846075503,
+      "name": "Core-verification-macos-aarch64",
+      "url": "https://api.github.com/repos/BgaSol/soDeck/actions/artifacts/14846075503"
+    },
+    {
+      "id": 14845097365,
+      "name": "Core-verification-linux-x86_64",
+      "url": "https://api.github.com/repos/BgaSol/soDeck/actions/artifacts/14845097365"
+    },
+    {
+      "id": 14844747788,
+      "name": "Core-verification-linux-aarch64",
+      "url": "https://api.github.com/repos/BgaSol/soDeck/actions/artifacts/14844747788"
+    }
+  ],
+  "assets": [
+    {
+      "id": 783911002,
+      "name": "core-update.json",
+      "size": 6718,
+      "digest": "sha256:009d5aafc6aa7405cadc18f807fc68b51386984a01663b129c213b042bd3da59",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/core-update.json"
+    },
+    {
+      "id": 783890504,
+      "name": "SoDeck_2.2.3_aarch64.app.tar.gz",
+      "size": 10415521,
+      "digest": "sha256:9a721b0a930ab4b14de82d84cc82db86897a29be3152fac67ee0edc85905f35b",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/SoDeck_2.2.3_aarch64.app.tar.gz"
+    },
+    {
+      "id": 783890593,
+      "name": "SoDeck_2.2.3_aarch64.app.tar.gz.sig",
+      "size": 424,
+      "digest": "sha256:e440d1e32fbd7916fe8399c6fab47f79d43a3188f03ae9c79d37ecda34addb2e",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/SoDeck_2.2.3_aarch64.app.tar.gz.sig"
+    },
+    {
+      "id": 783891046,
+      "name": "SoDeck_2.2.3_aarch64.AppImage",
+      "size": 86153736,
+      "digest": "sha256:211c2437d2a7aead5605ae19b855a38d8fe42f0c77c5a3dd68cb3ec1ab47f781",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/SoDeck_2.2.3_aarch64.AppImage"
+    },
+    {
+      "id": 783891303,
+      "name": "SoDeck_2.2.3_aarch64.AppImage.sig",
+      "size": 440,
+      "digest": "sha256:06393f0ab1b04e7a22c7e197a6245b5ce99f02d8bbed6e9ec7ffdd8e3561c71e",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/SoDeck_2.2.3_aarch64.AppImage.sig"
+    },
+    {
+      "id": 783890405,
+      "name": "SoDeck_2.2.3_aarch64.dmg",
+      "size": 10155603,
+      "digest": "sha256:3f0884f509a0b7453bb708d5c9e70089dad1f85a37c175ab4955df21c03f9170",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/SoDeck_2.2.3_aarch64.dmg"
+    },
+    {
+      "id": 783891658,
+      "name": "SoDeck_2.2.3_amd64.AppImage",
+      "size": 88865272,
+      "digest": "sha256:9bc8a5129aaff38c7443ef5d6d8a71bc01aa43a8663d185345836366db221ecd",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/SoDeck_2.2.3_amd64.AppImage"
+    },
+    {
+      "id": 783891957,
+      "name": "SoDeck_2.2.3_amd64.AppImage.sig",
+      "size": 436,
+      "digest": "sha256:43d83804a87d8dea5d1ed55431a0f34de075628b87b66f7c64506fa6474169b1",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/SoDeck_2.2.3_amd64.AppImage.sig"
+    },
+    {
+      "id": 783891529,
+      "name": "SoDeck_2.2.3_amd64.deb",
+      "size": 11454478,
+      "digest": "sha256:a02de6344444cb8139fea7461e727c22d7b08b196cf8bbcbe2f95477421fd010",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/SoDeck_2.2.3_amd64.deb"
+    },
+    {
+      "id": 783891595,
+      "name": "SoDeck_2.2.3_amd64.deb.sig",
+      "size": 428,
+      "digest": "sha256:33b6b98ab4ab263bd503e2d4d091df03adb154de3c6d11c0a7e03c4dd1934640",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/SoDeck_2.2.3_amd64.deb.sig"
+    },
+    {
+      "id": 783890650,
+      "name": "SoDeck_2.2.3_arm64-setup.exe",
+      "size": 6746857,
+      "digest": "sha256:fec6987eb5ffa02d972d6f78c0cb9e48e44b9694c404abaf75acba0fa953228a",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/SoDeck_2.2.3_arm64-setup.exe"
+    },
+    {
+      "id": 783890722,
+      "name": "SoDeck_2.2.3_arm64-setup.exe.sig",
+      "size": 436,
+      "digest": "sha256:4ea56f13f6bdfd7a20144051c8f1ba1a59e8074e60d5d003f5cbf8523b6055a2",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/SoDeck_2.2.3_arm64-setup.exe.sig"
+    },
+    {
+      "id": 783890856,
+      "name": "SoDeck_2.2.3_arm64.deb",
+      "size": 10642082,
+      "digest": "sha256:1096f703bbddb8ac97770a7b39babe3743882cd3455fd475498abcb614596890",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/SoDeck_2.2.3_arm64.deb"
+    },
+    {
+      "id": 783890932,
+      "name": "SoDeck_2.2.3_arm64.deb.sig",
+      "size": 428,
+      "digest": "sha256:18935924e404c74985d03c365f9ddbe519892adb6c71d1e587592d668c22d5f1",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/SoDeck_2.2.3_arm64.deb.sig"
+    },
+    {
+      "id": 783891352,
+      "name": "SoDeck_2.2.3_x64-setup.exe",
+      "size": 7823930,
+      "digest": "sha256:5d64670387fc6b46abc8f8cc719458996de250ce5a4f8dd7363d01d4c2af49a8",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/SoDeck_2.2.3_x64-setup.exe"
+    },
+    {
+      "id": 783891457,
+      "name": "SoDeck_2.2.3_x64-setup.exe.sig",
+      "size": 436,
+      "digest": "sha256:f88cebaebd318b3b82b432a56b062e5f49f8a9564c41b7c6e2c85acada79c8dd",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/SoDeck_2.2.3_x64-setup.exe.sig"
+    }
+  ],
+  "local": {
+    "typeAndFormat": true,
+    "scriptTests": 215,
+    "interactionTests": 38,
+    "catalogUiGroups": 21,
+    "fullUi": true,
+    "windowsNsisBuild": true,
+    "isolatedNativeStartupReopenExit": true,
+    "nativeWebView": {
+      "version": "2.2.3",
+      "target": "x86_64-pc-windows-msvc",
+      "runtime": "actual release-build WebView2 through CDP input, unpaused wall-time/frame sampling and paused geometry inspection",
+      "isolatedData": true,
+      "timings": [
+        {
+          "theme": "light",
+          "enter": {
+            "duration": 160,
+            "elapsed": 171.19999992847443,
+            "samples": [
+              {
+                "ms": 1.7999999523162842,
+                "opacity": 0
+              },
+              {
+                "ms": 18.399999976158142,
+                "opacity": 0.520384
+              },
+              {
+                "ms": 35.199999928474426,
+                "opacity": 0.772873
+              },
+              {
+                "ms": 52.299999952316284,
+                "opacity": 0.892732
+              },
+              {
+                "ms": 69.39999997615814,
+                "opacity": 0.950286
+              },
+              {
+                "ms": 86.19999992847443,
+                "opacity": 0.977963
+              },
+              {
+                "ms": 103.09999990463257,
+                "opacity": 0.991525
+              },
+              {
+                "ms": 120.19999992847443,
+                "opacity": 0.997472
+              },
+              {
+                "ms": 136.89999997615814,
+                "opacity": 0.99955
+              },
+              {
+                "ms": 154.29999995231628,
+                "opacity": 0.99999
+              }
+            ]
+          },
+          "exit": {
+            "duration": 100,
+            "elapsed": 107.5,
+            "samples": [
+              {
+                "ms": 6.299999952316284,
+                "opacity": 1
+              },
+              {
+                "ms": 22.899999976158142,
+                "opacity": 0.312161
+              },
+              {
+                "ms": 39.5,
+                "opacity": 0.097029
+              },
+              {
+                "ms": 56.700000047683716,
+                "opacity": 0.027013
+              },
+              {
+                "ms": 73.60000002384186,
+                "opacity": 0.00574291
+              },
+              {
+                "ms": 90.60000002384186,
+                "opacity": 0.000491204
+              }
+            ]
+          }
+        },
+        {
+          "theme": "dark",
+          "enter": {
+            "duration": 160,
+            "elapsed": 181.30000007152557,
+            "samples": [
+              {
+                "ms": 12.400000095367432,
+                "opacity": 0
+              },
+              {
+                "ms": 28.5,
+                "opacity": 0.515149
+              },
+              {
+                "ms": 45.60000002384186,
+                "opacity": 0.773442
+              },
+              {
+                "ms": 62.60000002384186,
+                "opacity": 0.892528
+              },
+              {
+                "ms": 79.30000007152557,
+                "opacity": 0.949723
+              },
+              {
+                "ms": 96.40000009536743,
+                "opacity": 0.978028
+              },
+              {
+                "ms": 113.10000002384186,
+                "opacity": 0.991397
+              },
+              {
+                "ms": 130.30000007152557,
+                "opacity": 0.9974
+              },
+              {
+                "ms": 147.20000004768372,
+                "opacity": 0.999541
+              },
+              {
+                "ms": 164.20000004768372,
+                "opacity": 0.999989
+              }
+            ]
+          },
+          "exit": {
+            "duration": 100,
+            "elapsed": 110,
+            "samples": [
+              {
+                "ms": 9.399999976158142,
+                "opacity": 1
+              },
+              {
+                "ms": 25.799999952316284,
+                "opacity": 0.315332
+              },
+              {
+                "ms": 42.5,
+                "opacity": 0.0966319
+              },
+              {
+                "ms": 59.60000002384186,
+                "opacity": 0.0275408
+              },
+              {
+                "ms": 76.39999997615814,
+                "opacity": 0.00595766
+              },
+              {
+                "ms": 93.20000004768372,
+                "opacity": 0.00054826
+              }
+            ]
+          }
+        },
+        {
+          "theme": "dopamine",
+          "enter": {
+            "duration": 160,
+            "elapsed": 179.70000004768372,
+            "samples": [
+              {
+                "ms": 11.200000047683716,
+                "opacity": 0
+              },
+              {
+                "ms": 27.200000047683716,
+                "opacity": 0.511584
+              },
+              {
+                "ms": 44.200000047683716,
+                "opacity": 0.772803
+              },
+              {
+                "ms": 61.40000009536743,
+                "opacity": 0.892225
+              },
+              {
+                "ms": 78.10000002384186,
+                "opacity": 0.949807
+              },
+              {
+                "ms": 94.90000009536743,
+                "opacity": 0.977611
+              },
+              {
+                "ms": 112,
+                "opacity": 0.991468
+              },
+              {
+                "ms": 128.90000009536743,
+                "opacity": 0.997408
+              },
+              {
+                "ms": 145.90000009536743,
+                "opacity": 0.999543
+              },
+              {
+                "ms": 162.70000004768372,
+                "opacity": 0.999989
+              }
+            ]
+          },
+          "exit": {
+            "duration": 100,
+            "elapsed": 109.10000002384186,
+            "samples": [
+              {
+                "ms": 6.5,
+                "opacity": 1
+              },
+              {
+                "ms": 23.600000023841858,
+                "opacity": 0.303641
+              },
+              {
+                "ms": 40.299999952316284,
+                "opacity": 0.0924111
+              },
+              {
+                "ms": 57.89999997615814,
+                "opacity": 0.025557
+              },
+              {
+                "ms": 75.10000002384186,
+                "opacity": 0.00498658
+              },
+              {
+                "ms": 92.19999992847443,
+                "opacity": 0.00036435
+              }
+            ]
+          }
+        }
+      ],
+      "checks": [
+        "light: interrupted scaled frame continuity, safe/cancellable exit, source/title/Escape, keyboard menu, editor handoff and focus",
+        "dark: interrupted scaled frame continuity, safe/cancellable exit, source/title/Escape, keyboard menu, editor handoff and focus",
+        "dopamine: interrupted scaled frame continuity, safe/cancellable exit, source/title/Escape, keyboard menu, editor handoff and focus",
+        "Toolbar toggle, page navigation removes closing picture, reduced motion has no animation or tail"
+      ],
+      "pageErrors": [],
+      "exited": true,
+      "passed": true,
+      "source": "43f554044721f3e1860407334833b45853325115",
+      "executableSha256": "f65136e2be89f869fa7f0565890f4175a3d8993ac7e7eec7737af07ab36ed8be",
+      "frontendAssets": [
+        {
+          "name": "index-C3YgPXj5.css",
+          "sha256": "cf974ebf07f7f3219e4e99294ad9435ebfa0c3ec39b5fef9ee0fb06b40260669"
+        },
+        {
+          "name": "index-CVsJyqAF.js",
+          "sha256": "53bf3be2eda20fb6400c2b1622f2e836ec46b6914dee44973e0fedf67d41e387"
+        }
+      ]
+    },
+    "productionTiming": {
+      "enter": {
+        "duration": 160,
+        "elapsed": 175.80000007152557,
+        "samples": [
+          {
+            "ms": 8.700000047683716,
+            "opacity": 0
+          },
+          {
+            "ms": 25.800000071525574,
+            "opacity": 0.509945
+          },
+          {
+            "ms": 42.90000009536743,
+            "opacity": 0.765943
+          },
+          {
+            "ms": 59.10000002384186,
+            "opacity": 0.887502
+          },
+          {
+            "ms": 76.10000002384186,
+            "opacity": 0.946762
+          },
+          {
+            "ms": 92.70000004768372,
+            "opacity": 0.976099
+          },
+          {
+            "ms": 109.60000002384186,
+            "opacity": 0.990492
+          },
+          {
+            "ms": 125.80000007152557,
+            "opacity": 0.99694
+          },
+          {
+            "ms": 142.80000007152557,
+            "opacity": 0.999391
+          },
+          {
+            "ms": 158.90000009536743,
+            "opacity": 0.999972
+          }
+        ]
+      },
+      "exit": {
+        "duration": 100,
+        "elapsed": 121.10000002384186,
+        "samples": [
+          {
+            "ms": 4.199999928474426,
+            "opacity": 1
+          },
+          {
+            "ms": 20.299999952316284,
+            "opacity": 0.313809
+          },
+          {
+            "ms": 38.10000002384186,
+            "opacity": 0.0975379
+          },
+          {
+            "ms": 53.699999928474426,
+            "opacity": 0.0280551
+          },
+          {
+            "ms": 70.79999995231628,
+            "opacity": 0.00623775
+          },
+          {
+            "ms": 87.10000002384186,
+            "opacity": 0.000608706
+          },
+          {
+            "ms": 105.5,
+            "opacity": 1.89848e-12
+          }
+        ]
+      }
+    },
+    "verificationRetries": []
+  },
+  "publicDownloads": [
+    {
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/core-update.json",
+      "checkedAt": "2026-11-23T17:37:45.312Z",
+      "size": 6718,
+      "sha256": "009d5aafc6aa7405cadc18f807fc68b51386984a01663b129c213b042bd3da59",
+      "authentication": "anonymous",
+      "passed": true
+    }
+  ],
+  "publication": {
+    "manifestNotesUpdatedBeforePublication": true,
+    "programAndSignatureAssetsUnchanged": 15,
+    "platformUrlsAndSignaturesUnchanged": true
+  },
+  "limits": "Only the core is released. Shared source/UI/business checks do not imply independently packaged plugin releases or a native remote release-package combination. Local WebView2 used isolated data, CDP input, unpaused real-time/frame sampling and paused geometry inspection. Physical pointer/IME/DPI/multi-display/screen-reader, Linux/macOS native menu gesture, historical upgrade and netem special verification were not performed.",
+  "tag": {
+    "ref": "refs/tags/v2.2.3",
+    "node_id": "REF_kwDOVi2qnbByZWZzL3RhZ3MvdjIuMi4z",
+    "url": "https://api.github.com/repos/BgaSol/soDeck/git/refs/tags/v2.2.3",
+    "object": {
+      "sha": "43f554044721f3e1860407334833b45853325115",
+      "type": "commit",
+      "url": "https://api.github.com/repos/BgaSol/soDeck/git/commits/43f554044721f3e1860407334833b45853325115"
+    }
+  },
+  "publicPlatformReachability": [
+    {
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/SoDeck_2.2.3_x64-setup.exe",
+      "status": 200,
+      "size": 7823930,
+      "authentication": "anonymous"
+    },
+    {
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/SoDeck_2.2.3_arm64-setup.exe",
+      "status": 200,
+      "size": 6746857,
+      "authentication": "anonymous"
+    },
+    {
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/SoDeck_2.2.3_amd64.AppImage",
+      "status": 200,
+      "size": 88865272,
+      "authentication": "anonymous"
+    },
+    {
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/SoDeck_2.2.3_aarch64.AppImage",
+      "status": 200,
+      "size": 86153736,
+      "authentication": "anonymous"
+    },
+    {
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.2.3/SoDeck_2.2.3_aarch64.app.tar.gz",
+      "status": 200,
+      "size": 10415521,
+      "authentication": "anonymous"
+    }
+  ]
+}
