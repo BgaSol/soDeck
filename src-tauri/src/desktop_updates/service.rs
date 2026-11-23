@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 /// Application-owned orchestration; update state and operation reservations stay in AppCore.
 pub struct UpdateService {
-    core: Arc<AppCore>,
+    pub(super) core: Arc<AppCore>,
     pub updater: Arc<CoreUpdater>,
     initialized: OnceCell<()>,
     started: AtomicBool,
@@ -41,7 +41,7 @@ impl UpdateService {
         service
     }
 
-    fn client(&self) -> Result<Arc<ReleaseClient>, String> {
+    pub(super) fn client(&self) -> Result<Arc<ReleaseClient>, String> {
         #[cfg(feature = "test-fixtures")]
         if let Some(client) = &self.test_client {
             return Ok(client.clone());

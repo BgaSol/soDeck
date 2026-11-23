@@ -12,15 +12,28 @@ function pluginState(p: Plugin) {
   return !p.enabled && p.status === "unloaded" ? "已关闭" : statusText[p.status];
 }
 function toggle(p: Plugin, v: ViewState) {
-  const busy=v.busy.has(p.manifest.id) || ["starting","stopping"].includes(p.status);
+  const busy=v.updateOverview.busy || v.busy.has(p.manifest.id) || ["starting","stopping"].includes(p.status);
   return b("toggle-plugin", p.enabled ? "已启用" : "已关闭", undefined, `plugin-switch ${p.enabled ? "on" : ""}`, `${attrs(p.manifest.id)} id="plugin-toggle-${e(p.manifest.id)}" role="switch" aria-checked="${p.enabled}" aria-label="启用 ${e(p.manifest.name)}" ${busy ? "disabled" : ""}`);
 }
 function official(s: Snapshot, v: ViewState) {
-  const status = v.officialLoading ? "正在从官方仓库获取插件…" : "自动下载适合本机的版本，安装后重启启用。";
-  return `<p class="plugin-list-intro official-catalog-status" role="status">${status}</p>${v.officialError ? `<p class="error-box official-catalog-error" role="alert">${e(v.officialError)}</p>` : ""}${!v.officialPlugins.length && !v.officialLoading && !v.officialError ? '<p class="plugin-list-intro">官方仓库暂未提供插件，可从本地添加。</p>' : ""}<div class="official-plugin-list">${v.officialPlugins.map(p=>{
+  const preparation=v.officialPreparation, preparing=!!preparation&&preparation.phase!=="finished";
+  const plugins=preparing ? preparation.catalog?.plugins??[] : v.officialPlugins;
+  const targets=preparation?.catalog?.plugins??[];
+  const installedCount=targets.filter(p=>s.plugins.some(x=>x.manifest.id===p.id)).length;
+  const failedCount=targets.filter(p=>!s.plugins.some(x=>x.manifest.id===p.id)&&v.updates[p.id]?.phase==="error").length;
+  let status=v.officialLoading ? "正在从官方仓库获取插件…" : "自动下载适合本机的版本，安装后重启启用。";
+  if (preparation) {
+    if (preparing && preparation.phase !== "installing") status="正在获取官方插件，随后自动安装…";
+    else if (preparing) status=`正在安装官方插件 · 已安装 ${installedCount}/${targets.length}${failedCount ? ` · ${failedCount} 项失败` : ""}，完成后重启即可使用。`;
+    else if (preparation.error) status="官方插件安装未完成，请重试或从本地添加。";
+    else if (!targets.length) status="暂无可安装的官方插件，可重新获取或从本地添加。";
+    else status=`已安装 ${installedCount}/${targets.length} 个官方插件${failedCount ? ` · ${failedCount} 项未完成，请逐项重试` : ""}${installedCount ? "，重启后启用。" : "。"}`;
+  }
+  return `<p class="plugin-list-intro official-catalog-status" role="status">${status}</p>${preparation?.error ? `<p class="error-box" role="alert">${e(preparation.error)}</p>` : ""}${preparation?.phase==="finished"&&!targets.length ? b("retry-official-preparation","重新获取并安装","restart","quiet",v.updateOverview.busy ? "disabled" : "") : ""}${v.officialError ? `<p class="error-box official-catalog-error" role="alert">${e(v.officialError)}</p>` : ""}${!plugins.length && !preparing && !v.officialLoading && !v.officialError ? '<p class="plugin-list-intro">官方仓库暂未提供插件，可从本地添加。</p>' : ""}<div class="official-plugin-list">${plugins.map(p=>{
     const installed=s.plugins.find(x=>x.manifest.id===p.id),u=v.updates[p.id],busy=v.busy.has(`install:${p.id}`)||updateWorking(u);
+    const blocked=v.updateOverview.busy||v.updateOverview.checking;
     const actionAttrs = `${attrs(p.id)} id="official-action-${e(p.id)}"`;
-    return `<article class="official-plugin" data-motion="item" data-dom-key="official:${e(p.id)}" data-official-plugin="${e(p.id)}"><div class="maintenance-symbol">${icon(catalogIcon(p))}</div><div class="update-content"><h3>${e(p.name)}</h3><p>${e(p.description)}</p>${installed ? `<p class="plugin-install-state" role="status">${icon("check")}已安装 · ${pluginState(installed)}</p>` : busy ? `<p role="status">${updateWorking(u) ? updateStatus(u) : "正在准备安装"}</p>` : ""}</div>${installed ? b("select-plugin","管理",undefined,"quiet",actionAttrs) : b("install-official-plugin",busy ? "安装中…" : u?.phase==="error" ? "重试安装" : "安装","download","quiet",`${actionAttrs} ${busy ? "disabled" : ""}`)}${u?.phase==="downloading"&&!installed ? `<progress aria-label="${e(p.name)}下载进度" ${u.totalBytes ? `value="${u.downloadedBytes}" max="${u.totalBytes}"` : ""}></progress>` : ""}${u?.error&&!installed ? `<p class="error-box" role="alert">${e(u.error)}</p>` : ""}</article>`;
+    return `<article class="official-plugin" data-motion="item" data-dom-key="official:${e(p.id)}" data-official-plugin="${e(p.id)}"><div class="maintenance-symbol">${icon(catalogIcon(p))}</div><div class="update-content"><h3>${e(p.name)}</h3><p>${e(p.description)}</p>${installed ? `<p class="plugin-install-state" role="status">${icon("check")}已安装 · ${pluginState(installed)}</p>` : preparing&&!busy&&!u?.error ? `<p role="status">等待安装</p>` : busy ? `<p role="status">${updateWorking(u) ? updateStatus(u) : "正在准备安装"}</p>` : ""}</div>${installed ? b("select-plugin","管理",undefined,"quiet",actionAttrs) : b("install-official-plugin",busy ? "安装中…" : u?.phase==="error" ? "重试安装" : "安装","download","quiet",`${actionAttrs} ${busy||blocked ? "disabled" : ""}`)}${u?.phase==="downloading"&&!installed ? `<progress aria-label="${e(p.name)}下载进度" ${u.totalBytes ? `value="${u.downloadedBytes}" max="${u.totalBytes}"` : ""}></progress>` : ""}${u?.error&&!installed ? `<p class="error-box" role="alert">${e(u.error)}</p>` : ""}</article>`;
   }).join("")}</div>${v.officialFetchedAt ? `<p class="official-catalog-time hint">列表更新于 ${e(date(v.officialFetchedAt))}</p>` : ""}`;
 }
 function detail(p: Plugin, v: ViewState) {
@@ -39,5 +52,5 @@ export function pluginsPage(s:Snapshot,v:ViewState) {
   const error=v.error ? `<div role="alert" class="error-box">${e(v.error)}</div>` : "";
   if(p) return error+detail(p,v);
   const tab=v.pluginTab ?? (s.plugins.length ? "installed" : "official");
-  return `<div class="section-heading maintenance-heading"><div><h2>插件管理</h2><p>添加工作台功能，管理已安装的插件。</p></div>${b("choose-plugin","从本地添加","folder","quiet",`id="choose-plugin" ${v.busy.has("choose") ? "disabled" : ""}`)}</div><div class="plugin-tabs" role="group" aria-label="插件列表">${b("plugin-tab",`已安装 <span>${s.plugins.length}</span>`,undefined,"",`id="plugins-installed" data-id="installed" aria-pressed="${tab === "installed"}"`)}${b("plugin-tab","官方插件",undefined,"",`id="plugins-official" data-id="official" aria-pressed="${tab === "official"}"`)}${tab === "official" ? b("refresh-official-plugins",v.officialLoading ? "正在刷新…" : v.officialError ? "重试获取" : "刷新列表","restart","refresh-official",`id="refresh-official-plugins" ${v.officialLoading ? "disabled" : ""}`) : ""}</div>${error}${tab === "official" ? official(s,v) : installed(s,v)}`;
+  return `<div class="section-heading maintenance-heading"><div><h2>插件管理</h2><p>添加工作台功能，管理已安装的插件。</p></div>${b("choose-plugin","从本地添加","folder","quiet",`id="choose-plugin" ${v.updateOverview.busy||v.busy.has("choose") ? "disabled" : ""}`)}</div><div class="plugin-tabs" role="group" aria-label="插件列表">${b("plugin-tab",`已安装 <span>${s.plugins.length}</span>`,undefined,"",`id="plugins-installed" data-id="installed" aria-pressed="${tab === "installed"}"`)}${b("plugin-tab","官方插件",undefined,"",`id="plugins-official" data-id="official" aria-pressed="${tab === "official"}"`)}${tab === "official" ? b("refresh-official-plugins",v.officialLoading ? "正在刷新…" : v.officialError ? "重试获取" : "刷新列表","restart","refresh-official",`id="refresh-official-plugins" ${v.officialLoading||v.updateOverview.busy ? "disabled" : ""}`) : ""}</div>${error}${tab === "official" ? official(s,v) : installed(s,v)}`;
 }

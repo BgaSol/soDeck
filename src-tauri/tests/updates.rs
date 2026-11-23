@@ -20,6 +20,15 @@ use std::{
     time::Duration,
 };
 static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
+fn install_official(
+    core: &Arc<AppCore>,
+    id: &str,
+    client: &ReleaseClient,
+) -> Result<String, String> {
+    let service =
+        sodeck::desktop_updates::UpdateService::with_test_client(core.clone(), client.clone());
+    tauri::async_runtime::block_on(service.install_official(id.into()))
+}
 
 #[test]
 fn latest_discovery_does_not_read_oversized_historical_releases() {
@@ -554,8 +563,7 @@ fn official_install_uses_fallback_for_tree_blob_release_manifest_and_package() {
     let catalog = core.official_plugins(&client, true).unwrap();
     assert!(catalog.error.is_none());
     assert_eq!(catalog.plugins[0].id, "sodeck.terminal");
-    core.install_official_plugin("sodeck.terminal", &client)
-        .unwrap();
+    install_official(&core, "sodeck.terminal", &client).unwrap();
     assert_eq!(core.snapshot().plugins[0].manifest.version, "0.1.1");
     let requests = good.requests.lock().unwrap();
     for part in [
@@ -611,8 +619,7 @@ fn official_install_live_mirror() {
         "Core {} manifest discovered with original URLs",
         candidate.version
     );
-    core.install_official_plugin("sodeck.terminal", &client)
-        .unwrap();
+    install_official(&core, "sodeck.terminal", &client).unwrap();
     let snapshot = core.snapshot();
     assert_eq!(snapshot.plugins[0].manifest.id, "sodeck.terminal");
     println!("Official terminal {} package downloaded, hashed, unpacked and registered for restart on {}",snapshot.plugins[0].manifest.version,TARGET);
@@ -894,10 +901,7 @@ fn a_new_repository_plugin_can_be_installed_without_a_compiled_in_id() {
     let server = Server::new();
     let id = "example.future-plugin";
     server.official_release_for(id, "future-release-v", f.package_for(id, ""), "2.0", TARGET);
-    assert_eq!(
-        core.install_official_plugin(id, &server.client()).unwrap(),
-        id
-    );
+    assert_eq!(install_official(&core, id, &server.client()).unwrap(), id);
     let plugin = &core.snapshot().plugins[0];
     assert_eq!(
         plugin.manifest.update_source.as_ref().unwrap().tag_prefix,
@@ -975,12 +979,9 @@ fn official_first_install_downloads_registers_and_waits_for_restart() {
     let core = f.open();
     let server = Server::new();
     server.official_release(f.package_for("sodeck.terminal", ""), "2.0", TARGET);
-    assert!(core
-        .install_official_plugin("unknown.plugin", &server.client())
-        .is_err());
+    assert!(install_official(&core, "unknown.plugin", &server.client()).is_err());
     assert_eq!(
-        core.install_official_plugin("sodeck.terminal", &server.client())
-            .unwrap(),
+        install_official(&core, "sodeck.terminal", &server.client()).unwrap(),
         "sodeck.terminal"
     );
     let snapshot = core.snapshot();
@@ -999,9 +1000,7 @@ fn official_first_install_downloads_registers_and_waits_for_restart() {
         "plugin-terminal-v"
     );
     let installed = plugin.directory.clone();
-    assert!(core
-        .install_official_plugin("sodeck.terminal", &server.client())
-        .is_err());
+    assert!(install_official(&core, "sodeck.terminal", &server.client()).is_err());
     assert_eq!(core.snapshot().plugins.len(), 1);
     assert_eq!(core.snapshot().plugins[0].directory, installed);
     drop(core);
@@ -1013,33 +1012,191 @@ fn official_first_install_downloads_registers_and_waits_for_restart() {
 }
 
 #[test]
+fn default_official_installation_holds_the_whole_batch_and_survives_partial_failure() {
+    let f = Fixture::new();
+    let core = f.open();
+    assert!(core.snapshot().started_without_plugins);
+    core.set_automatic_updates(false).unwrap();
+    core.start_enabled();
+    let server = Server::new();
+    server.official_release(f.package_for("sodeck.terminal", ""), "2.0", TARGET);
+    server.catalog(vec![
+        json!({"id":"sodeck.terminal","name":"Terminal","tagPrefix":"plugin-terminal-v","order":1}),
+        json!({"id":"test.unpublished","name":"Unpublished","tagPrefix":"unpublished-v","order":0}),
+    ]);
+    let service =
+        sodeck::desktop_updates::UpdateService::with_test_client(core.clone(), server.client());
+    let reservation = service.reserve_default_installation().unwrap();
+    assert!(service.reserve_default_installation().is_none());
+    assert!(core.update_snapshot().overview.busy);
+    assert!(core.begin_update_check(false).is_none());
+    assert!(core.add_plugin(&f.external).is_err());
+    assert!(core
+        .close_prepare(
+            "main",
+            "install-busy",
+            sodeck::lifecycle::Target::Application {
+                action: sodeck::lifecycle::Action::Restart
+            }
+        )
+        .is_err());
+    tauri::async_runtime::block_on(service.prepare_official(reservation)).unwrap();
+    let state = core.update_snapshot();
+    assert_eq!(
+        state.official_preparation.as_ref().unwrap().phase,
+        "finished"
+    );
+    assert_eq!(
+        state
+            .official_preparation
+            .as_ref()
+            .unwrap()
+            .catalog
+            .as_ref()
+            .unwrap()
+            .plugins
+            .len(),
+        2
+    );
+    assert!(!state.overview.busy);
+    assert_eq!(state.items["sodeck.terminal"].phase, "ready");
+    assert_eq!(state.items["test.unpublished"].phase, "error");
+    let snapshot = core.snapshot();
+    assert!(snapshot.started_without_plugins && snapshot.restart_required);
+    assert_eq!(snapshot.plugins.len(), 1);
+    assert!(snapshot.plugins[0].enabled && snapshot.plugins[0].pid.is_none());
+    assert!(service.reserve_default_installation().is_none());
+    let requests = server.requests.lock().unwrap().len();
+    assert!(
+        tauri::async_runtime::block_on(service.install_official("sodeck.terminal".into())).is_err()
+    );
+    assert_eq!(server.requests.lock().unwrap().len(), requests);
+    drop(service);
+    drop(core);
+    let reopened = f.open();
+    assert!(!reopened.snapshot().started_without_plugins);
+    reopened.start_enabled();
+    assert_eq!(reopened.snapshot().plugins[0].status, PluginStatus::Running);
+    reopened.shutdown().unwrap();
+}
+
+#[test]
+fn default_install_eligibility_uses_readable_registration_and_not_running_plugin_count() {
+    let f = Fixture::new();
+    f.add();
+    let core = f.open();
+    core.set_enabled("test.fixture", false).unwrap();
+    drop(core);
+    for broken_directory in [false, true] {
+        if broken_directory {
+            fs::rename(&f.external, f.root.join("missing")).unwrap();
+        }
+        let core = f.open();
+        assert!(!core.snapshot().started_without_plugins);
+        assert!(sodeck::desktop_updates::UpdateService::new(core.clone())
+            .reserve_default_installation()
+            .is_none());
+    }
+    fs::write(f.root.join("data/plugins.json"), b"broken configuration").unwrap();
+    let core = f.open();
+    assert!(core.snapshot().plugins.is_empty());
+    assert!(!core.snapshot().started_without_plugins && !core.snapshot().storage_errors.is_empty());
+    assert!(sodeck::desktop_updates::UpdateService::new(core.clone())
+        .reserve_default_installation()
+        .is_none());
+    assert_eq!(
+        fs::read(f.root.join("data/plugins.json")).unwrap(),
+        b"broken configuration"
+    );
+}
+
+#[test]
+fn preparation_catalog_failure_can_retry_and_interruption_releases_its_reservation() {
+    let f = Fixture::new();
+    let core = f.open();
+    let server = Server::new();
+    let service =
+        sodeck::desktop_updates::UpdateService::with_test_client(core.clone(), server.client());
+    let reservation = service.reserve_default_installation().unwrap();
+    assert!(tauri::async_runtime::block_on(service.prepare_official(reservation)).is_err());
+    let p = core.update_snapshot().official_preparation.unwrap();
+    assert_eq!(p.phase, "finished");
+    assert!(p.error.is_some());
+    assert!(!core.updates_busy());
+    server.official_release(f.package_for("sodeck.terminal", ""), "2.0", TARGET);
+    tauri::async_runtime::block_on(service.retry_official_preparation()).unwrap();
+    assert_eq!(core.snapshot().plugins.len(), 1);
+    drop(service);
+    drop(core);
+    let other = Fixture::new();
+    let core = other.open();
+    let service = sodeck::desktop_updates::UpdateService::new(core.clone());
+    drop(service.reserve_default_installation().unwrap());
+    assert!(!core.updates_busy());
+    assert!(core
+        .update_snapshot()
+        .official_preparation
+        .unwrap()
+        .error
+        .is_some());
+}
+
+#[test]
+fn empty_catalog_retry_refreshes_the_directory_and_removing_last_record_waits_for_next_start() {
+    let f = Fixture::new();
+    let core = f.open();
+    let server = Server::new();
+    server.catalog(vec![]);
+    let service =
+        sodeck::desktop_updates::UpdateService::with_test_client(core.clone(), server.client());
+    let reservation = service.reserve_default_installation().unwrap();
+    tauri::async_runtime::block_on(service.prepare_official(reservation)).unwrap();
+    assert!(core.snapshot().plugins.is_empty());
+    assert_eq!(
+        core.update_snapshot()
+            .official_preparation
+            .unwrap()
+            .catalog
+            .unwrap()
+            .plugins
+            .len(),
+        0
+    );
+    server.official_release(f.package_for("sodeck.terminal", ""), "2.0", TARGET);
+    tauri::async_runtime::block_on(service.retry_official_preparation()).unwrap();
+    assert_eq!(core.snapshot().plugins.len(), 1);
+    core.set_enabled("sodeck.terminal", false).unwrap();
+    core.forget("sodeck.terminal").unwrap();
+    assert!(service.reserve_default_installation().is_none());
+    drop(service);
+    drop(core);
+    assert!(sodeck::desktop_updates::UpdateService::new(f.open())
+        .reserve_default_installation()
+        .is_some());
+}
+
+#[test]
 fn official_install_failures_leave_no_record_and_can_retry() {
     let f = Fixture::new();
     let core = f.open();
     let server = Server::new();
     for (api, target) in [("2", TARGET), ("2.0", "unsupported-target")] {
         server.official_release(f.package_for("sodeck.terminal", ""), api, target);
-        assert!(core
-            .install_official_plugin("sodeck.terminal", &server.client())
-            .is_err());
+        assert!(install_official(&core, "sodeck.terminal", &server.client()).is_err());
         assert!(core.snapshot().plugins.is_empty());
     }
     server.official_release(f.package_for("sodeck.terminal", ""), "2.0", TARGET);
     server.put("/plugin.zip", b"broken".to_vec());
-    assert!(core
-        .install_official_plugin("sodeck.terminal", &server.client())
+    assert!(install_official(&core, "sodeck.terminal", &server.client())
         .unwrap_err()
         .contains("SHA-256"));
     server.official_release(f.package(""), "2.0", TARGET);
-    assert!(core
-        .install_official_plugin("sodeck.terminal", &server.client())
+    assert!(install_official(&core, "sodeck.terminal", &server.client())
         .unwrap_err()
         .contains("ID"));
     server.official_release(f.package_for("sodeck.terminal", ""), "2.0", TARGET);
     fs::create_dir_all(f.root.join("data/plugins.json.tmp")).unwrap();
-    assert!(core
-        .install_official_plugin("sodeck.terminal", &server.client())
-        .is_err());
+    assert!(install_official(&core, "sodeck.terminal", &server.client()).is_err());
     assert!(core.snapshot().plugins.is_empty());
     assert_eq!(
         fs::read_dir(f.root.join("data/plugins/sodeck.terminal"))
@@ -1053,8 +1210,7 @@ fn official_install_failures_leave_no_record_and_can_retry() {
         .extension()
         .is_some_and(|e| e == "part")));
     fs::remove_dir(f.root.join("data/plugins.json.tmp")).unwrap();
-    core.install_official_plugin("sodeck.terminal", &server.client())
-        .unwrap();
+    install_official(&core, "sodeck.terminal", &server.client()).unwrap();
     assert_eq!(core.update_views()["sodeck.terminal"].phase, "ready");
 }
 

@@ -173,8 +173,20 @@ async function refresh() {
     const {updates} = result;
     snapshot = result.snapshot;
     if (!statusView.paused) { statusView.updatedAt = Date.now(); statusView.networkStale = shell.networkStale; }
-    if (updates.status === "fulfilled") { state.updates = updates.value.items; state.updateOverview = updates.value.overview; }
+    if (updates.status === "fulfilled") {
+      state.updates = updates.value.items; state.updateOverview = updates.value.overview;
+      state.officialPreparation = updates.value.officialPreparation;
+      const catalog = state.officialPreparation?.catalog;
+      if (catalog && !state.officialFetchedAt) {
+        state.officialPlugins = catalog.plugins; state.officialFetchedAt = catalog.fetchedAt;
+        state.officialError = catalog.error ?? "";
+      }
+    }
     lastError = shell.error;
+    if (snapshot) {
+      const initial = shell.takeStartupPage(snapshot);
+      if (initial) { state.pluginTab = "official"; shell.navigate(initial); }
+    }
     if (networkRevision !== undefined && networkRevision !== snapshot?.preferences.updateNetwork?.revision) {
       state.networkGeneration = (state.networkGeneration ?? 0) + 1;
       state.networkResults = undefined;
@@ -244,6 +256,7 @@ async function pluginAction(key: string, run: () => Promise<unknown>) {
   }
 }
 async function loadOfficialPlugins(force = false) {
+  if (!force && state.officialPreparation) return;
   if (state.officialLoading || (!force && state.officialFetchedAt && Date.now() - state.officialFetchedAt < 60 * 60 * 1000)) return;
   state.officialLoading = true;
   state.officialError = "";
@@ -394,6 +407,9 @@ root.addEventListener("click", (event) => {
         await pluginAction(`install:${id}`, () => core.installOfficial(id));
         if (currentPage === "plugins" && !state.plugin && state.pluginTab === "official" && document.activeElement === document.body)
           document.getElementById(`official-action-${id}`)?.focus({preventScroll: true});
+        break;
+      case "retry-official-preparation":
+        await pluginAction("official-preparation", () => core.retryOfficialPreparation());
         break;
       case "check-update":
         await pluginAction(`update:${id}`, () => core.checkUpdate(id));

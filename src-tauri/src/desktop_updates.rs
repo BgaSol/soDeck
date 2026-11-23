@@ -9,7 +9,9 @@ use std::{
 use tauri::Manager;
 use tauri_plugin_updater::{Update, UpdaterExt};
 
+mod official_install;
 mod service;
+pub use official_install::{OfficialInstall, OfficialPreparation};
 pub use service::UpdateService;
 
 #[derive(Default)]

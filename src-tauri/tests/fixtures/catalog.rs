@@ -31,6 +31,16 @@ fn main() {
                 .unwrap_or_else(|_| "http://127.0.0.1:1".into()),
         ),
     ));
+    if std::env::var_os("SODECK_TEST_PREPARE_OFFICIAL").is_some() {
+        let reservation = updates.reserve_default_installation();
+        core.start_enabled();
+        if let Some(reservation) = reservation {
+            let service = updates.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = service.prepare_official(reservation).await;
+            });
+        }
+    }
     if std::env::var_os("SODECK_TEST_SHARED_EVENTS").is_some() {
         core.set_listener(std::sync::Arc::new(|name, payload| {
             if name == "component-state-changed" {
@@ -103,14 +113,13 @@ fn main() {
                 )
                 .map(|catalog| json!(catalog))
             }
-            "install_official_plugin" => {
-                let base = std::env::var("SODECK_TEST_PLUGIN_API")
-                    .expect("installer fixture requires a loopback test API");
-                core.install_official_plugin(
-                    args["id"].as_str().unwrap(),
-                    &sodeck::updates::ReleaseClient::test_server(&base),
-                )
-                .map(|id| json!(id))
+            "install_official_plugin" => tauri::async_runtime::block_on(
+                updates.install_official(args["id"].as_str().unwrap().into()),
+            )
+            .map(|id| json!(id)),
+            "retry_official_preparation" => {
+                tauri::async_runtime::block_on(updates.retry_official_preparation())
+                    .map(|_| Value::Null)
             }
             "snapshot" => Ok(json!(core.snapshot())),
             "read_logs" => Ok(json!(

@@ -49,6 +49,7 @@ export interface Snapshot {
   unreadCount: number;
   storageErrors: string[];
   restartRequired: boolean;
+  startedWithoutPlugins: boolean;
 }
 export interface NetworkTotal { serverId: string; name?: string; pluginId?: string; sent: string; received: string; sentPerSecond: number; receivedPerSecond: number; quality: string }
 export interface NetworkSnapshot { servers: NetworkTotal[]; plugins: NetworkTotal[]; note: string; connections?: import("./connections").ConnectionView[] }
@@ -65,7 +66,8 @@ export interface Update {
   network?: { endpoint: string; attempt: number; error: string | null } | null;
 }
 export interface UpdateOverview { checking: boolean; busy: boolean; lastCheckedAt: number; nextCheckAt: number; error?: string | null }
-export interface UpdateSnapshot { items: Record<string, Update>; overview: UpdateOverview }
+export interface OfficialPreparation { phase: string; catalog: OfficialCatalog | null; error: string | null }
+export interface UpdateSnapshot { items: Record<string, Update>; overview: UpdateOverview; officialPreparation: OfficialPreparation | null }
 export interface Log {
   id: string;
   receivedAt: number;
@@ -102,6 +104,7 @@ export const core = {
   add: (directory: string) => invoke<string>("add_plugin", { directory }),
   officialPlugins: (refresh = false) => invoke<OfficialCatalog>("official_plugins", { refresh }),
   installOfficial: (id: string) => invoke<string>("install_official_plugin", { id }),
+  retryOfficialPreparation: () => invoke<void>("retry_official_preparation"),
   enabled: (id: string, enabled: boolean) => invoke<void>("set_plugin_enabled", { id, enabled }),
   updateSource: (id: string, source: Manifest["updateSource"] | null, expected?: { source: Manifest["updateSource"] | null }) => invoke<void>("set_plugin_update_source", { id, source, expected }),
   updates: () => invoke<UpdateSnapshot>("update_snapshot"),

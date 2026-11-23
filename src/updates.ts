@@ -45,6 +45,6 @@ export function pendingUpdates(s: Snapshot, v: ViewState) {
   if (!pending.length && !core && !s.restartRequired) return "";
   const count = pending.length + (core ? 1 : 0);
   const blocked = v.updateOverview.checking || v.updateOverview.busy || v.busy.has("restart");
-  const restartLabel = v.updates[CORE_ID]?.errorStage === "install" ? "重试安装并重启" : "重启并应用";
+  const restartLabel = v.updates[CORE_ID]?.errorStage === "install" ? "重试安装并重启" : v.officialPreparation?.phase === "finished" && s.startedWithoutPlugins ? "重启并开始使用" : "重启并应用";
   return `<div class="maintenance-pending" data-motion="item" data-dom-key="restart-required" role="status"><div><b>${count ? `${count} 项变更等待重启` : "有变更等待重启"}</b><p>完成手头工作后，再统一重启应用。当前连接和任务会结束。</p><details data-motion-details data-persist="pending-updates"><summary>待应用清单</summary><ul>${core ? `<li>SoDeck → ${e(v.updates[CORE_ID]?.version)}</li>` : ""}${pending.map(p=>`<li>${e(p.manifest.name)}${p.pendingVersion ? ` → ${e(p.pendingVersion)}` : ""} · 重启后${p.enabled ? "启用" : "关闭"}</li>`).join("")}</ul></details></div>${b("restart-app", blocked ? "等待处理完成" : restartLabel, "restart", "primary", blocked ? "disabled" : "")}</div>`;
 }

@@ -201,9 +201,17 @@ pub struct UpdateState {
     candidates: HashMap<String, UpdateManifest>,
     pub(crate) busy: HashSet<String>,
     pub(crate) checking_all: bool,
+    pub(crate) official_installing: bool,
+    pub(crate) official_preparation: Option<crate::desktop_updates::OfficialPreparation>,
     last_checked_at: u64,
     next_check_at: u64,
     error: Option<String>,
+}
+
+impl UpdateState {
+    pub(crate) fn is_busy(&self) -> bool {
+        self.checking_all || self.official_installing || !self.busy.is_empty()
+    }
 }
 
 #[derive(Default, Deserialize, Serialize)]
@@ -230,6 +238,8 @@ pub struct UpdateOverview {
 pub struct UpdateSnapshot {
     pub items: HashMap<String, UpdateView>,
     pub overview: UpdateOverview,
+    #[serde(rename = "officialPreparation")]
+    pub official_preparation: Option<crate::desktop_updates::OfficialPreparation>,
 }
 
 pub struct CheckBatch {
@@ -357,6 +367,7 @@ fn stable_version(value: &str) -> Result<Version, String> {
     Ok(version)
 }
 
+#[derive(Clone)]
 pub struct ReleaseClient {
     pub(crate) network: crate::update_network::Transport,
     api_base: String,
@@ -993,7 +1004,7 @@ impl AppCore {
     }
     pub fn updates_busy(&self) -> bool {
         let state = self.updates.lock().unwrap();
-        state.checking_all || !state.busy.is_empty()
+        state.is_busy()
     }
     pub fn update_views(&self) -> HashMap<String, UpdateView> {
         self.update_snapshot().items
@@ -1005,11 +1016,12 @@ impl AppCore {
         let mut items = state.items.clone();
         let overview = UpdateOverview {
             checking: state.checking_all,
-            busy: !state.busy.is_empty(),
+            busy: state.official_installing || !state.busy.is_empty(),
             last_checked_at: state.last_checked_at,
             next_check_at: state.next_check_at,
             error: state.error.clone(),
         };
+        let official_preparation = state.official_preparation.clone();
         drop(state);
         for p in snapshot.plugins {
             if let Some(version) = p.pending_version {
@@ -1038,14 +1050,18 @@ impl AppCore {
                     });
             }
         }
-        UpdateSnapshot { items, overview }
+        UpdateSnapshot {
+            items,
+            overview,
+            official_preparation,
+        }
     }
 
     pub fn update_overview(&self) -> UpdateOverview {
         let state = self.updates.lock().unwrap();
         UpdateOverview {
             checking: state.checking_all,
-            busy: !state.busy.is_empty(),
+            busy: state.official_installing || !state.busy.is_empty(),
             last_checked_at: state.last_checked_at,
             next_check_at: state.next_check_at,
             error: state.error.clone(),
@@ -1064,8 +1080,7 @@ impl AppCore {
         let enabled = self.store.lock().unwrap().preferences.automatic_updates;
         let mut state = self.updates.lock().unwrap();
         if self.is_closing()
-            || state.checking_all
-            || !state.busy.is_empty()
+            || state.is_busy()
             || (automatic && (!enabled || state.next_check_at > crate::core::now()))
         {
             return None;
@@ -1104,7 +1119,7 @@ impl AppCore {
         }
         let snapshot = self.snapshot();
         let mut state = self.updates.lock().unwrap();
-        if state.checking_all || !state.busy.is_empty() {
+        if state.is_busy() {
             return Err("已有更新任务在处理中，请完成后继续".into());
         }
         let mut unique = HashSet::new();
@@ -1529,19 +1544,15 @@ impl AppCore {
         result
     }
 
-    pub fn install_official_plugin(
+    pub(crate) fn install_official_reserved(
         self: &Arc<Self>,
-        id: &str,
+        plugin: &crate::official_plugins::OfficialPlugin,
         client: &ReleaseClient,
+        _operation: Operation,
     ) -> Result<String, String> {
-        let catalog = self.official_plugins(client, false)?;
-        let source = catalog
-            .plugins
-            .iter()
-            .find(|p| p.id == id)
-            .ok_or("该插件不在官方列表中，请刷新列表后重试")?
-            .source();
-        let _operation = self.update_operation(id)?;
+        let id = plugin.id.as_str();
+        let source = plugin.source();
+        let client = client.for_component(self, id);
         self.update_phase(id, "checking", None);
         let result: Result<String, String> = (|| {
             if self
@@ -1568,7 +1579,7 @@ impl AppCore {
                 },
             );
             self.changed();
-            self.prepare_plugin(id, &candidate, client, true)?;
+            self.prepare_plugin(id, &candidate, &client, true)?;
             Ok(id.to_string())
         })();
         match &result {

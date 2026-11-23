@@ -21,6 +21,15 @@ window.ready=true;
 </script></body></html>`}));
 try {
  await page.goto(url);await page.waitForFunction(()=>window.ready);
+ const startup=await page.evaluate(async()=>{
+  const {Shell}=await import('/shell.ts');
+  const empty=new Shell(document.createElement('div'),true);
+  const installed=new Shell(document.createElement('div'),true);
+  const navigated=new Shell(document.createElement('div'),true);navigated.navigate('settings');
+  const secondary=new Shell(document.createElement('div'),false);
+  return [empty.takeStartupPage({startedWithoutPlugins:true}),empty.takeStartupPage({startedWithoutPlugins:true}),installed.takeStartupPage({startedWithoutPlugins:false}),navigated.takeStartupPage({startedWithoutPlugins:true}),secondary.takeStartupPage({startedWithoutPlugins:true})];
+ });
+ assert.deepEqual(startup,['plugins',null,null,null,null],'Startup routing is once per host and never replaces an explicit user choice or a secondary workspace');
  assert.equal(await page.locator('#management-console').isVisible(),true);
  assert.equal(await page.locator('#return-workbench').isVisible(),false,'No return action without an active workspace');
  assert.deepEqual(await page.locator('[data-console-page]').evaluateAll(nodes=>nodes.map(node=>node.dataset.consolePage)),['connections','plugins','messages','logs','status','settings','updates'],'Visual and keyboard order follow the navigation groups');

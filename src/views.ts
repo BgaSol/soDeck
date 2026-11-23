@@ -1,5 +1,5 @@
 import { themes } from './theme';
-import type { Snapshot, Log, Message, Filter, Update, UpdateOverview, Manifest, OfficialPlugin, UpdateNetwork, MirrorDiagnostic } from "./core";
+import type { Snapshot, Log, Message, Filter, Update, UpdateOverview, Manifest, OfficialPlugin, OfficialPreparation, UpdateNetwork, MirrorDiagnostic } from "./core";
 import { updatesPage, pendingUpdates } from "./updates";
 import { pluginsPage } from "./plugin-settings";
 import { button as b, empty, escape as e, icon, statusText } from "./ui";
@@ -11,6 +11,7 @@ export interface ViewState {
   officialFetchedAt: number;
   officialLoading: boolean;
   officialError: string;
+  officialPreparation?: OfficialPreparation | null;
   plugin: string;
   messages: Message[];
   unread: boolean;

@@ -59,10 +59,12 @@ const filesBytes = fs.readFileSync(filesArchive);
 const catalogFiles = new Map(fs.readdirSync('plugins').filter(name=>fs.existsSync(`plugins/${name}/release.json`)).map(name=>[name, JSON.parse(fs.readFileSync(`plugins/${name}/release.json`,'utf8'))]));
 const catalogIds = [...catalogFiles.values()].map(config=>config.id).sort();
 let catalogUnavailable = true, holdCatalog = false, releaseCatalog;
+let holdFiles = false, releaseFiles;
 let holdDiagnostic = false, releaseDiagnostic, diagnosticReached;
 const markdownNotes = '# 更新测试\n\n## 改进\n\n- **保留工作**并支持*重试*\n  - 使用 `npm run check` 验证\n- 下载后继续使用\n\n> 完成工作后再重启。\n\n[发行说明](https://github.com/BgaSol/soDeck/releases)\n\n```sh\nnpm run check\n' + 'a'.repeat(180) + '\n```\n\n| 项目 | 结果 |\n| --- | --- |\n| 核心 | 可更新 |\n| 插件 | 独立下载 |';
 const downloads = http.createServer(async (request, response) => {
   requests.push(request.url);
+  if (request.url === '/files.tar.gz' && holdFiles) await new Promise(resolve=>releaseFiles=resolve);
   if (request.url.startsWith('/diagnostic/') && holdDiagnostic) { diagnosticReached(); await new Promise(resolve=>releaseDiagnostic=resolve); }
   if (request.url.startsWith('/diagnostic-failed/')) { response.writeHead(503).end(); return; }
   if (request.url.startsWith('/diagnostic/')) { const original=new URL(request.url.slice('/diagnostic/'.length)); request.url=original.pathname+original.search; }
@@ -105,13 +107,17 @@ const downloads = http.createServer(async (request, response) => {
   response.writeHead(200, { "Content-Length": Buffer.byteLength(data) }); response.end(data);
 });
 await new Promise(resolve => downloads.listen(0, "127.0.0.1", resolve));
-const child = spawn(fixtureBinary('catalog-fixture'), [directory], { windowsHide: true, stdio: ["pipe", "pipe", "inherit"], env: { ...process.env, SODECK_TEST_PLUGIN_API: `http://127.0.0.1:${downloads.address().port}` } });
 const pending = [];
+function launchCore(dataDirectory, automatic = false) {
+const child = spawn(fixtureBinary('catalog-fixture'), [dataDirectory], { windowsHide: true, stdio: ["pipe", "pipe", "inherit"], env: { ...process.env, SODECK_TEST_PLUGIN_API: `http://127.0.0.1:${downloads.address().port}`, ...(automatic ? {SODECK_TEST_PREPARE_OFFICIAL:'1'} : {}) } });
 readline.createInterface({ input: child.stdout }).on("line", line => {
   const item = JSON.parse(line), request = pending.shift();
   if (item.error) request.reject(new Error(item.error)); else request.resolve(item.value);
 });
 child.on("exit", () => { for (const request of pending.splice(0)) request.reject(new Error("Test core exited")); });
+return child;
+}
+let child = launchCore(directory);
 const call = (command, args = {}) => new Promise((resolve, reject) => {
   pending.push({ resolve, reject }); child.stdin.write(JSON.stringify({ command, args }) + "\n");
 });
@@ -158,8 +164,10 @@ await page.addInitScript(() => {
   window.nativeWindowCalls = [];
   window.nativeMaximized = false;
   window.emitTestEvent = (event, payload = null) => { for (const [eventId, item] of listeners) if (item.event === event) callbacks.get(item.handler)?.({event, id:eventId, payload}); };
+  let testLabel = "main";
+  try { testLabel = sessionStorage.getItem("test-window") || "main"; } catch {}
   window.__TAURI_INTERNALS__ = {
-    metadata: { currentWindow: { label: sessionStorage.getItem("test-window") || "main" } },
+    metadata: { currentWindow: { label: testLabel } },
     convertFileSrc: path => new URL('/__plugin__/'+path,location.href).href,
     transformCallback: callback => { const token = ++id; callbacks.set(token, callback); return token; },
     invoke: (command, args) => {
@@ -260,7 +268,9 @@ try {
   await call("set_theme", { theme: "dopamine" });
   await page.goto(server.resolvedUrls.local[0]);
   await page.waitForFunction(() => document.documentElement.dataset.theme === "dopamine");
-  assert.deepEqual(requests, [], 'Starting the application does not depend on the official plugin network catalog');
+  await page.getByRole('heading',{name:'插件管理',exact:true}).waitFor();
+  assert.equal(await page.locator('#plugins-official').getAttribute('aria-pressed'),'true','An empty startup defaults to official plugins');
+  await page.locator('[data-console-page="connections"]').click();
   await checkTitlebarPosition('empty');
   await checkTitlebar();
   assert.equal(await page.locator('.catalog-empty').count(),1,'First use has one empty state');
@@ -298,6 +308,7 @@ try {
   for (const [theme, canvas] of Object.entries(palettes)) {
     await call("set_theme", { theme }); await page.reload();
     await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
+    await page.locator('[data-console-page="connections"]').click();
     assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor), canvas);
     for (const [width, height] of [[1100, 720], [880, 720], [720, 480]]) {
       await page.setViewportSize({ width, height });
@@ -510,6 +521,7 @@ try {
   await page.setViewportSize({width:1100,height:720});
   await page.reload(); await page.locator("#settings-button").click();
   await page.locator('[data-console-page="plugins"]').click();
+  await page.locator('#plugins-installed').click();
   await page.locator('[data-plugin-id="sodeck.terminal"]').waitFor();
   assert.equal(await page.locator('[data-plugin-id="sodeck.terminal"]').count(),1);
   assert.equal((await call("snapshot")).plugins.length, 2);
@@ -549,9 +561,10 @@ try {
   }
   failCatalog = true; failReadCommand = 'snapshot';
   await page.reload();
+  await page.locator('[data-console-page="connections"]').click();
   await call('start_automatic_updates');
   await page.locator('#updates-button').filter({hasText:'更新 2'}).waitFor({timeout:20000});
-  assert.equal(await page.locator('#layer-content').getAttribute('data-page'),null,'Background discovery does not need an update or plugin page');
+  assert.equal(await page.locator('.console-nav [aria-current="page"]').getAttribute('data-console-page'),'connections','Background discovery continues while the user stays on connections');
   assert.equal((await call('update_snapshot')).items['test.update-one'].phase,'available');
   const autoRequests = requests.length;
   await page.locator('#updates-button').focus(); await page.keyboard.press('Enter');
@@ -1032,6 +1045,50 @@ try {
   checks.push("Pop-out hides global tools and tool-rail columns; server tabs, picker, status and maximize/restore keep their existing behavior");
   }
   assert.deepEqual(errors, []);
+  await page.evaluate(()=>sessionStorage.clear());
+  await page.goto('about:blank');
+  await new Promise(resolve=>{child.once('exit',resolve);child.stdin.end();});
+  const automaticDirectory=path.join(directory,'automatic-data');
+  catalogUnavailable=false; published=true; corrupt=false; holdCatalog=true; releaseCatalog=undefined; holdFiles=true;
+  testWindow='main'; statusSnapshot=undefined; statusNetwork=undefined; failCatalog=false; failReadCommand='';
+  const automaticStart=requests.length;
+  child=launchCore(automaticDirectory,true);
+  await page.goto(server.resolvedUrls.local[0]);
+  await page.getByRole('heading',{name:'插件管理',exact:true}).waitFor();
+  await page.getByRole('status').filter({hasText:'正在获取官方插件，随后自动安装'}).waitFor();
+  assert(await page.locator('#choose-plugin').isDisabled());
+  await page.locator('[data-console-page="connections"]').click();
+  for(let i=0;!releaseCatalog&&i<200;i++)await page.waitForTimeout(10);
+  assert(releaseCatalog); holdCatalog=false; releaseCatalog();
+  for(let i=0;!releaseFiles&&i<300;i++)await page.waitForTimeout(10);
+  assert(releaseFiles,'Second plugin reaches download after the first was registered');
+  assert.equal((await call('snapshot')).plugins.length,1);
+  await page.reload();
+  await page.getByRole('heading',{name:'插件管理',exact:true}).waitFor();
+  await page.getByRole('button',{name:'等待处理完成',exact:true}).waitFor();
+  assert(await page.getByRole('button',{name:'等待处理完成',exact:true}).isDisabled());
+  assert.equal(await page.locator('[data-official-plugin="sodeck.terminal"] .plugin-install-state').count(),1,'Reload retains successful first item and still opens official plugins');
+  holdFiles=false; releaseFiles();
+  await page.getByRole('button',{name:'重启并开始使用',exact:true}).waitFor();
+  assert.match(await page.locator('.official-catalog-status').textContent(),new RegExp('已安装 2/'+catalogIds.length));
+  const prepared=await call('snapshot');assert.equal(prepared.plugins.length,2);assert(prepared.plugins.every(p=>p.enabled&&!p.pid&&p.pendingRestart));
+  const installRequests=requests.slice(automaticStart).filter(url=>url==='/fixture.tar.gz'||url==='/files.tar.gz');
+  assert.deepEqual(installRequests.sort(),['/files.tar.gz','/fixture.tar.gz']);
+  for(const theme of ['light','dark','dopamine'])for(const width of [1100,720]){
+    await call('set_theme',{theme});await page.setViewportSize({width,height:720});
+    await page.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);
+    assert(await page.locator('#layer-content').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
+    await page.screenshot({path:`artifacts/production-ui/automatic-plugins-${theme}-${width}.png`});
+  }
+  await page.goto('about:blank');
+  await new Promise(resolve=>{child.once('exit',resolve);child.stdin.end();});
+  child=launchCore(automaticDirectory,true);
+  await page.goto(server.resolvedUrls.local[0]);
+  await page.locator('.catalog-empty').waitFor();
+  const reopened=await call('snapshot');assert(!reopened.startedWithoutPlugins);assert(reopened.plugins.every(p=>p.status==='running'));
+  assert.equal((await call('update_snapshot')).officialPreparation,null,'A partial successful batch is not automatically resumed after restart');
+  checks.push('Empty startup: automatic fixed catalog, sequential two-package install with independent failures, navigation/reload retention, no premature restart, three themes/two widths, and actual plugin startup after reopening without auto-refill');
+  assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: checks.length, checks, pageErrors: errors }, null, 2));
 } catch (error) {
   await finishTrace(true);
@@ -1042,6 +1099,7 @@ try {
   await finishTrace(false);
   releaseLocalNetwork?.();
   holdCatalog = false; releaseCatalog?.();
+  holdFiles = false; releaseFiles?.();
   await browser.close(); await new Promise(resolve => server.httpServer.close(resolve));
   if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.stdin.end(); await exited; }
   await new Promise(resolve => downloads.close(resolve));

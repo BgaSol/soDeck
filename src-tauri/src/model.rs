@@ -252,4 +252,5 @@ pub struct Snapshot {
     pub unread_count: usize,
     pub storage_errors: Vec<String>,
     pub restart_required: bool,
+    pub started_without_plugins: bool,
 }

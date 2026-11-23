@@ -464,12 +464,12 @@ async fn install_official_plugin(
     app: State<'_, Application>,
     id: String,
 ) -> Result<String, String> {
-    let core = app.core.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        core.install_official_plugin(&id, &core.release_client()?)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    app.updates.install_official(id).await
+}
+
+#[tauri::command]
+async fn retry_official_preparation(app: State<'_, Application>) -> Result<(), String> {
+    app.updates.retry_official_preparation().await
 }
 
 #[tauri::command]
@@ -942,12 +942,18 @@ fn main() {
             });
             app.manage(DesktopWindows::new(core.clone()));
             attach_native_finalizer(app.handle(), &core);
+            let preparation = if !smoke && !interactive_test { updates.reserve_default_installation() } else { None };
             if !interactive_test {
                 if smoke { core.set_automatic_updates(false)?; }
                 updates.start(app.handle().clone());
             }
             if !smoke {
-                std::thread::spawn(move || core.start_enabled());
+                std::thread::spawn(move || {
+                    core.start_enabled();
+                    if let Some(preparation) = preparation {
+                        let _ = tauri::async_runtime::block_on(updates.prepare_official(preparation));
+                    }
+                });
             }
             Ok(())
         })
@@ -1008,6 +1014,7 @@ fn main() {
             add_plugin,
             official_plugins,
             install_official_plugin,
+            retry_official_preparation,
             set_plugin_enabled,
             set_plugin_update_source,
             update_snapshot,

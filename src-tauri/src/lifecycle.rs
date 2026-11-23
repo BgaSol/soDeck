@@ -336,10 +336,7 @@ impl AppCore {
             return Err("应用操作须由主窗口发起".into());
         }
         let updates = self.updates.lock().unwrap();
-        if matches!(target, Target::Application { .. })
-            && !interrupted
-            && (!updates.busy.is_empty() || updates.checking_all)
-        {
+        if matches!(target, Target::Application { .. }) && !interrupted && updates.is_busy() {
             return Err("请等待更新任务完成后关闭或重启".into());
         }
         let mut _workbench = self.workbench_state();

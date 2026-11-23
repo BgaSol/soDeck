@@ -23,6 +23,7 @@ export class Shell {
   networkStale = true;
   private projection?: Projection;
   private revision = 0;
+  private startupApplied = false;
   private disposed = false;
   private workspaces?: Workspaces;
   private connections?: ConnectionsUi;
@@ -71,6 +72,11 @@ export class Shell {
     if(changed)enterMotion(page==='connections'?this.catalog:this.page,'x');
   }
   selectionChanged(){this.revision++;}
+  takeStartupPage(snapshot: Snapshot): ConsolePage | null {
+    if (this.startupApplied) return null;
+    this.startupApplied = true;
+    return this.main && this.revision === 0 && snapshot.startedWithoutPlugins ? 'plugins' : null;
+  }
   updateSettingsNavigation(html:string) { updateDOM(this.settingsNavigation,html); }
   showWorkbench() {
     if(this.main&&!this.projection?.window.activeWorkspace)return;

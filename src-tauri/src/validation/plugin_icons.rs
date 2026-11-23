@@ -22,6 +22,8 @@ pub fn verify(handle: &tauri::AppHandle, core: &Arc<AppCore>) -> Result<(), Stri
       const delay=()=>new Promise(r=>setTimeout(r,40)),deadline=Date.now()+10000;
       const wait=async read=>{while(Date.now()<deadline){const value=read();if(value)return value;await delay();}throw Error('native icon UI timeout');};
       try {
+        await wait(()=>document.querySelector('__STARTUP_PAGE__[aria-current="page"]'));
+        if(__STARTUP_EMPTY__) await wait(()=>document.querySelector('#plugins-official[aria-pressed="true"]'));
         (await wait(()=>document.querySelector('[data-console-page="plugins"]'))).click();
         (await wait(()=>document.querySelector('#plugins-installed'))).click();
         const good=await wait(()=>document.querySelector('[data-plugin-id="fixture.icon.good"] .plugin-icon[data-ready="true"]'));
@@ -35,10 +37,27 @@ pub fn verify(handle: &tauri::AppHandle, core: &Arc<AppCore>) -> Result<(), Stri
         await window.__TAURI_INTERNALS__.invoke('plugin:event|emit',{event:'plugin-icons-native-result',payload:{ok:true,colors}});
       }catch(error){await window.__TAURI_INTERNALS__.invoke('plugin:event|emit',{event:'plugin-icons-native-result',payload:{ok:false,error:String(error)}});}
     })()"#;
+    let script = script
+        .replace(
+            "__STARTUP_PAGE__",
+            if core.snapshot().started_without_plugins {
+                "[data-console-page=plugins]"
+            } else {
+                "[data-console-page=connections]"
+            },
+        )
+        .replace(
+            "__STARTUP_EMPTY__",
+            if core.snapshot().started_without_plugins {
+                "true"
+            } else {
+                "false"
+            },
+        );
     let evaluated = handle
         .get_webview_window("main")
         .ok_or("原生图标验收主窗口不存在")?
-        .eval(script)
+        .eval(&script)
         .map_err(|e| e.to_string());
     let result = evaluated.and_then(|_| {
         rx.recv_timeout(Duration::from_secs(12))

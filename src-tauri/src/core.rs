@@ -42,6 +42,7 @@ pub struct AppCore {
     pub(crate) update_cache_io: Mutex<()>,
     pub(crate) mutations: Mutex<()>,
     startup_enabled: HashSet<String>,
+    pub(crate) started_without_plugins: bool,
     pub(crate) instances: Mutex<HashMap<String, Arc<Instance>>>,
     listener: Mutex<Option<Listener>>,
     version: String,
@@ -70,6 +71,7 @@ impl AppCore {
         let recovery = directory.join("command-output");
         std::thread::spawn(move || crate::streams::cleanup(&recovery));
         let store = Store::open(directory.clone())?;
+        let started_without_plugins = store.errors[0].is_none() && store.plugins.is_empty();
         let servers = crate::servers::ServerStore::open(directory.clone());
         let startup_enabled = store
             .plugins
@@ -102,6 +104,7 @@ impl AppCore {
             update_cache_io: Mutex::new(()),
             mutations: Mutex::new(()),
             startup_enabled,
+            started_without_plugins,
             instances: Mutex::new(HashMap::new()),
             listener: Mutex::new(None),
             version,
@@ -182,6 +185,7 @@ impl AppCore {
             unread_count: store.messages.iter().filter(|m| !m.read).count(),
             storage_errors: store.errors.iter().flatten().cloned().collect(),
             restart_required: false,
+            started_without_plugins: self.started_without_plugins,
         };
         drop(store);
         if let Some(error) = &self.settings.lock().unwrap().error {
@@ -324,6 +328,7 @@ impl AppCore {
 
     pub fn forget(&self, id: &str) -> Result<(), String> {
         let _operation = self.mutations.lock().unwrap();
+        self.require_official_install_idle()?;
         if self
             .store
             .lock()
@@ -454,6 +459,7 @@ impl AppCore {
 
     pub fn add_plugin(&self, directory: &Path) -> Result<String, String> {
         let _operation = self.mutations.lock().unwrap();
+        self.require_official_install_idle()?;
         let mut record = plugins::read_manifest(directory)?;
         let id = record.manifest.id.clone();
         let mut store = self.store.lock().unwrap();
@@ -469,6 +475,7 @@ impl AppCore {
 
     pub fn set_enabled(&self, id: &str, enabled: bool) -> Result<(), String> {
         let _operation = self.mutations.lock().unwrap();
+        self.require_official_install_idle()?;
         let mut store = self.store.lock().unwrap();
         let mut record = store
             .plugins
@@ -500,6 +507,7 @@ impl AppCore {
             crate::updates::validate_source(source)?;
         }
         let _operation = self.mutations.lock().unwrap();
+        self.require_official_install_idle()?;
         let mut store = self.store.lock().unwrap();
         let mut record = store
             .plugins
