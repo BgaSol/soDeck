@@ -303,13 +303,15 @@ mod tests {
             assert_eq!(core.update_views()["test.auto"].phase, "idle");
             core.set_closing(false);
             tokio::time::timeout(Duration::from_secs(3), async {
-                while core.update_views()["test.auto"].phase != "available" {
+                while {
+                    let state = core.update_snapshot();
+                    state.items["test.auto"].phase != "available" || state.overview.checking
+                } {
                     tokio::time::sleep(Duration::from_millis(10)).await;
                 }
             })
             .await
             .unwrap();
-            tokio::time::sleep(Duration::from_millis(40)).await;
             assert!(!core.update_overview().checking);
         });
         assert_eq!(core.messages().len(), 1);
