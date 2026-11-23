@@ -250,7 +250,7 @@ frontmatter 只收录核心中复用的实际颜色；同一主题中的同值�
 
 ### Secondary
 
-多巴胺粉色 navigation 保留在既有目录弹窗页头，绿色 tools 用于工具区和中央标签条创建操作的交互反馈，中央工作标签条使用中性 panel；暖色 rail 承载插件窄侧栏。设置子项与管理台导航共用中性 panel，粉色集中用于多巴胺当前项；晨曦当前项使用 sd-server-selected，星夜当前项使用 accent-bg。顶栏实际使用 panel，不采用原型的浅色深顶栏值。
+多巴胺粉色 navigation 保留在既有目录弹窗页头，绿色 tools 承载工具和工作标签区域，暖色 rail 承载插件窄侧栏。设置子项与管理台导航共用中性 panel，粉色集中用于多巴胺当前项；晨曦当前项使用 sd-server-selected，星夜当前项使用 accent-bg。顶栏实际使用 panel，不采用原型的浅色深顶栏值。
 
 ### Tertiary
 
@@ -349,7 +349,7 @@ good、warning、error 分别辅助成功、需关注和错误文字。success-b
 
 ### Workspace Tabs
 
-工作标签条读取核心高度（38px），标签本体高（30px），上圆角与透明描边预算沿用公共 tab。中央标签条使用 panel 底，当前页面底为 sd-tab-selected，多巴胺创建按钮悬停保留绿色 tools。标题和关闭分别是按钮；标题单行省略，未保存页以已有脏标记呈现，关闭的 sidebar 页面显示隐藏语义。分屏聚焦复用底部分隔线的 accent，不另叠阴影线，与当前页选中分别表达。模板见 [components.ts](src/components.ts)，样式见 [shared.css](packages/ui/shared.css) 与 [components.css](src/components.css)。
+工作标签条读取核心高度（38px），标签本体高（30px），上圆角与透明描边预算沿用公共 tab。当前页面底为 sd-tab-selected，标题和关闭分别是按钮；标题单行省略，未保存页以已有脏标记呈现，关闭的 sidebar 页面显示隐藏语义。分屏聚焦与页面选中分别表达。模板见 [components.ts](src/components.ts)，样式见 [shared.css](packages/ui/shared.css) 与 [components.css](src/components.css)。
 
 终端阅读工具带保持约 32px 单行，左侧目录、按需命令上下文和右侧状态/动作按内容分组。无导航位置时仅保留添加入口；状态通过原生 details 支持键盘展开完整说明，错误和接管状态不隐藏。路径为 12px、辅助状态及计数为 11px，窄页收起动作文字和重复命令。正文标记通道为 34px，预览默认 64px、窄页 40px，无历史时弱化视口轮廓，悬停/焦点仍可辨识；不按输出量改变几何。具体状态与限制见[终端](docs/features/terminal.md)。
 
