@@ -1,0 +1,447 @@
+{
+  "component": "sodeck.core",
+  "version": "2.1.0",
+  "source": "82c0b580b70c202ba0585db53a8a1e181c6499a9",
+  "packageRun": "https://github.com/BgaSol/soDeck/actions/runs/45131571815",
+  "sourceCheck": "https://github.com/BgaSol/soDeck/actions/runs/45131505674",
+  "release": {
+    "id": 455111881,
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/v2.1.0",
+    "draft": false,
+    "publishedAt": "2026-11-23T07:48:30Z"
+  },
+  "checkedAt": "2026-11-23T07:48:52.394Z",
+  "packageJobs": [
+    {
+      "name": "preflight",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131571815/job/137548045803"
+    },
+    {
+      "name": "macos-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131571815/job/137548130575"
+    },
+    {
+      "name": "windows-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131571815/job/137548130648"
+    },
+    {
+      "name": "linux-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131571815/job/137548130655"
+    },
+    {
+      "name": "windows-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131571815/job/137548130731"
+    },
+    {
+      "name": "linux-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131571815/job/137548130790"
+    },
+    {
+      "name": "verify-windows-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131571815/job/137550302273"
+    },
+    {
+      "name": "verify-linux-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131571815/job/137550302292"
+    },
+    {
+      "name": "verify-windows-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131571815/job/137550302297"
+    },
+    {
+      "name": "verify-linux-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131571815/job/137550302301"
+    },
+    {
+      "name": "verify-macos-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131571815/job/137550302362"
+    },
+    {
+      "name": "metadata",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131571815/job/137550798980"
+    }
+  ],
+  "checkJobs": [
+    {
+      "name": "select",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131505674/job/137547841392"
+    },
+    {
+      "name": "browser",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131505674/job/137547935182"
+    },
+    {
+      "name": "integration-network-linux-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131505674/job/137547935258"
+    },
+    {
+      "name": "integration-business-linux-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131505674/job/137547935290"
+    },
+    {
+      "name": "desktop",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131505674/job/137547935295"
+    },
+    {
+      "name": "native-windows-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131505674/job/137547935325"
+    },
+    {
+      "name": "checks",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131505674/job/137547935340"
+    },
+    {
+      "name": "native-linux-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131505674/job/137547935343"
+    },
+    {
+      "name": "native-linux-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131505674/job/137547935405"
+    },
+    {
+      "name": "native-windows-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131505674/job/137547935417"
+    },
+    {
+      "name": "integration-network-linux-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131505674/job/137547935646"
+    },
+    {
+      "name": "native-macos-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131505674/job/137547935732"
+    },
+    {
+      "name": "netem",
+      "conclusion": "skipped",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131505674/job/137547937187"
+    },
+    {
+      "name": "format",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45131505674/job/137553205416"
+    }
+  ],
+  "reports": [
+    {
+      "id": "sodeck.core",
+      "version": "2.1.0",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "82c0b580b70c202ba0585db53a8a1e181c6499a9",
+      "files": [
+        {
+          "name": "SoDeck_2.1.0_arm64.deb",
+          "size": 10632850,
+          "sha256": "4209e1ecd51c536c6652252a37dd5e6b1dd17ad3df7ad145d2a1d1f4360b9816"
+        },
+        {
+          "name": "SoDeck_2.1.0_arm64.deb.sig",
+          "size": 428,
+          "sha256": "025d53223f62c5d1e5e010789ec3aab74ec21580f24ece298d38bb28dadf8d61"
+        },
+        {
+          "name": "SoDeck_2.1.0_aarch64.AppImage",
+          "size": 86153736,
+          "sha256": "b81bac9766fdb0b94855aa7cb3810bce152e6667acbee0d0bf66d6f9adfc1954"
+        },
+        {
+          "name": "SoDeck_2.1.0_aarch64.AppImage.sig",
+          "size": 440,
+          "sha256": "9a5e240e753c56b5d9c0458e180d462bd36938fe897eacb59931389973886762"
+        }
+      ],
+      "toolCommit": "82c0b580b70c202ba0585db53a8a1e181c6499a9",
+      "passed": true,
+      "pluginIconsNative": true
+    },
+    {
+      "id": "sodeck.core",
+      "version": "2.1.0",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "82c0b580b70c202ba0585db53a8a1e181c6499a9",
+      "files": [
+        {
+          "name": "SoDeck_2.1.0_amd64.deb",
+          "size": 11447548,
+          "sha256": "fc19b6f7938aa58e493dd0bbf298eb071338eff1b22f816d81c92ce7a314060f"
+        },
+        {
+          "name": "SoDeck_2.1.0_amd64.deb.sig",
+          "size": 428,
+          "sha256": "53d259e46527b66b63dd309393aeea7c9a5d4b0658898461ebd68616db7205eb"
+        },
+        {
+          "name": "SoDeck_2.1.0_amd64.AppImage",
+          "size": 88873464,
+          "sha256": "f651d7974cffee092f3df58c04e12d8ce0aa9aa3f299ab93ea1b7b19d228864c"
+        },
+        {
+          "name": "SoDeck_2.1.0_amd64.AppImage.sig",
+          "size": 436,
+          "sha256": "d0f42ac6b4d048294c6d1096cba561a9546c6ef4e8507619fe62dcd30772d605"
+        }
+      ],
+      "toolCommit": "82c0b580b70c202ba0585db53a8a1e181c6499a9",
+      "passed": true,
+      "pluginIconsNative": true
+    },
+    {
+      "id": "sodeck.core",
+      "version": "2.1.0",
+      "target": "aarch64-apple-darwin",
+      "commit": "82c0b580b70c202ba0585db53a8a1e181c6499a9",
+      "files": [
+        {
+          "name": "SoDeck_2.1.0_aarch64.dmg",
+          "size": 10152981,
+          "sha256": "aef873d5b7c3ef9614b8e55217c266ead35bcecf1b41f8f70c445020a0e66217"
+        },
+        {
+          "name": "SoDeck_2.1.0_aarch64.app.tar.gz",
+          "size": 10416815,
+          "sha256": "ddb1c79e3777e83dae3298806655f1eae180e326677e41ced6c3d0ba0dd10fc7"
+        },
+        {
+          "name": "SoDeck_2.1.0_aarch64.app.tar.gz.sig",
+          "size": 424,
+          "sha256": "917e0ca3fcf9885b5db9bff0d5a15a28ec3c3d7c684313c38facf43af256a353"
+        }
+      ],
+      "toolCommit": "82c0b580b70c202ba0585db53a8a1e181c6499a9",
+      "passed": true,
+      "pluginIconsNative": true
+    },
+    {
+      "id": "sodeck.core",
+      "version": "2.1.0",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "82c0b580b70c202ba0585db53a8a1e181c6499a9",
+      "files": [
+        {
+          "name": "SoDeck_2.1.0_arm64-setup.exe",
+          "size": 6758111,
+          "sha256": "45c361bd3d3168fe14bdce99e0079c2ebd47fabcdf97aa96b9290dda88d31eda"
+        },
+        {
+          "name": "SoDeck_2.1.0_arm64-setup.exe.sig",
+          "size": 436,
+          "sha256": "1305a94d9a86af34aec2329f069eb4982641e43cc729840b1341ec88aecaa751"
+        }
+      ],
+      "toolCommit": "82c0b580b70c202ba0585db53a8a1e181c6499a9",
+      "passed": true,
+      "windowsInstallModes": [
+        {
+          "mode": "CurrentUser",
+          "hive": "HKCU",
+          "install": "C:\\Users\\runneradmin\\AppData\\Local\\Programs\\SoDeck",
+          "passed": true
+        },
+        {
+          "mode": "AllUsers",
+          "hive": "HKLM",
+          "install": "C:\\Program Files\\SoDeck",
+          "passed": true
+        }
+      ],
+      "pluginIconsNative": true
+    },
+    {
+      "id": "sodeck.core",
+      "version": "2.1.0",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "82c0b580b70c202ba0585db53a8a1e181c6499a9",
+      "files": [
+        {
+          "name": "SoDeck_2.1.0_x64-setup.exe",
+          "size": 7823646,
+          "sha256": "58446413b0f27aaf6eb79709901167cdb132fffeaa7a614649aa8d90db0a52e2"
+        },
+        {
+          "name": "SoDeck_2.1.0_x64-setup.exe.sig",
+          "size": 436,
+          "sha256": "97338636815e3f4c00d6e88b26c62b9457d5f31ce20cb1c3e67d5a3cdc05806a"
+        }
+      ],
+      "toolCommit": "82c0b580b70c202ba0585db53a8a1e181c6499a9",
+      "passed": true,
+      "windowsInstallModes": [
+        {
+          "mode": "CurrentUser",
+          "hive": "HKCU",
+          "install": "C:\\Users\\runneradmin\\AppData\\Local\\Programs\\SoDeck",
+          "passed": true
+        },
+        {
+          "mode": "AllUsers",
+          "hive": "HKLM",
+          "install": "C:\\Program Files\\SoDeck",
+          "passed": true
+        }
+      ],
+      "pluginIconsNative": true
+    }
+  ],
+  "assets": [
+    {
+      "id": 782033612,
+      "name": "core-update.json",
+      "size": 6555,
+      "digest": "sha256:fa88ebae49222fbea9fc7037b3476ce5dac33d2a35d736e8cf6bcc38f8da5ded",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.1.0/core-update.json"
+    },
+    {
+      "id": 782005202,
+      "name": "SoDeck_2.1.0_aarch64.app.tar.gz",
+      "size": 10416815,
+      "digest": "sha256:ddb1c79e3777e83dae3298806655f1eae180e326677e41ced6c3d0ba0dd10fc7",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.1.0/SoDeck_2.1.0_aarch64.app.tar.gz"
+    },
+    {
+      "id": 782005258,
+      "name": "SoDeck_2.1.0_aarch64.app.tar.gz.sig",
+      "size": 424,
+      "digest": "sha256:917e0ca3fcf9885b5db9bff0d5a15a28ec3c3d7c684313c38facf43af256a353",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.1.0/SoDeck_2.1.0_aarch64.app.tar.gz.sig"
+    },
+    {
+      "id": 782005460,
+      "name": "SoDeck_2.1.0_aarch64.AppImage",
+      "size": 86153736,
+      "digest": "sha256:b81bac9766fdb0b94855aa7cb3810bce152e6667acbee0d0bf66d6f9adfc1954",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.1.0/SoDeck_2.1.0_aarch64.AppImage"
+    },
+    {
+      "id": 782005639,
+      "name": "SoDeck_2.1.0_aarch64.AppImage.sig",
+      "size": 440,
+      "digest": "sha256:9a5e240e753c56b5d9c0458e180d462bd36938fe897eacb59931389973886762",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.1.0/SoDeck_2.1.0_aarch64.AppImage.sig"
+    },
+    {
+      "id": 782005091,
+      "name": "SoDeck_2.1.0_aarch64.dmg",
+      "size": 10152981,
+      "digest": "sha256:aef873d5b7c3ef9614b8e55217c266ead35bcecf1b41f8f70c445020a0e66217",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.1.0/SoDeck_2.1.0_aarch64.dmg"
+    },
+    {
+      "id": 782005879,
+      "name": "SoDeck_2.1.0_amd64.AppImage",
+      "size": 88873464,
+      "digest": "sha256:f651d7974cffee092f3df58c04e12d8ce0aa9aa3f299ab93ea1b7b19d228864c",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.1.0/SoDeck_2.1.0_amd64.AppImage"
+    },
+    {
+      "id": 782006118,
+      "name": "SoDeck_2.1.0_amd64.AppImage.sig",
+      "size": 436,
+      "digest": "sha256:d0f42ac6b4d048294c6d1096cba561a9546c6ef4e8507619fe62dcd30772d605",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.1.0/SoDeck_2.1.0_amd64.AppImage.sig"
+    },
+    {
+      "id": 782005759,
+      "name": "SoDeck_2.1.0_amd64.deb",
+      "size": 11447548,
+      "digest": "sha256:fc19b6f7938aa58e493dd0bbf298eb071338eff1b22f816d81c92ce7a314060f",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.1.0/SoDeck_2.1.0_amd64.deb"
+    },
+    {
+      "id": 782005836,
+      "name": "SoDeck_2.1.0_amd64.deb.sig",
+      "size": 428,
+      "digest": "sha256:53d259e46527b66b63dd309393aeea7c9a5d4b0658898461ebd68616db7205eb",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.1.0/SoDeck_2.1.0_amd64.deb.sig"
+    },
+    {
+      "id": 782005281,
+      "name": "SoDeck_2.1.0_arm64-setup.exe",
+      "size": 6758111,
+      "digest": "sha256:45c361bd3d3168fe14bdce99e0079c2ebd47fabcdf97aa96b9290dda88d31eda",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.1.0/SoDeck_2.1.0_arm64-setup.exe"
+    },
+    {
+      "id": 782005338,
+      "name": "SoDeck_2.1.0_arm64-setup.exe.sig",
+      "size": 436,
+      "digest": "sha256:1305a94d9a86af34aec2329f069eb4982641e43cc729840b1341ec88aecaa751",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.1.0/SoDeck_2.1.0_arm64-setup.exe.sig"
+    },
+    {
+      "id": 782005375,
+      "name": "SoDeck_2.1.0_arm64.deb",
+      "size": 10632850,
+      "digest": "sha256:4209e1ecd51c536c6652252a37dd5e6b1dd17ad3df7ad145d2a1d1f4360b9816",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.1.0/SoDeck_2.1.0_arm64.deb"
+    },
+    {
+      "id": 782005422,
+      "name": "SoDeck_2.1.0_arm64.deb.sig",
+      "size": 428,
+      "digest": "sha256:025d53223f62c5d1e5e010789ec3aab74ec21580f24ece298d38bb28dadf8d61",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.1.0/SoDeck_2.1.0_arm64.deb.sig"
+    },
+    {
+      "id": 782005677,
+      "name": "SoDeck_2.1.0_x64-setup.exe",
+      "size": 7823646,
+      "digest": "sha256:58446413b0f27aaf6eb79709901167cdb132fffeaa7a614649aa8d90db0a52e2",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.1.0/SoDeck_2.1.0_x64-setup.exe"
+    },
+    {
+      "id": 782005735,
+      "name": "SoDeck_2.1.0_x64-setup.exe.sig",
+      "size": 436,
+      "digest": "sha256:97338636815e3f4c00d6e88b26c62b9457d5f31ce20cb1c3e67d5a3cdc05806a",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.1.0/SoDeck_2.1.0_x64-setup.exe.sig"
+    }
+  ],
+  "local": {
+    "checks": "Locked type/format checks; 211 script tests; full core tests and 39 update integration tests (37 passed, 2 explicit public-network cases ignored); shell startup routing; full production UI 19 groups plus final updates-only 11 groups; Windows release build and isolated native startup/reopen/exit passed.",
+    "automaticInstall": "Real AppCore and native test plugin process packages against an isolated loopback catalog: full admission including catalog and gaps, first success continues, independent failure, no duplicate after WebView reload, no premature restart, original startup facts, corrupt registration rejection, catalog retry, and actual loading after core reopen. Browser verification preserves the existing app interface in three themes at 1100/720px.",
+    "limits": "Native package smoke has public auto-install disabled and verifies empty-start official-page/default routing plus installed-reopen connection-page routing, official updater signatures and package lifecycle. This does not prove five-platform public-internet full plugin bootstrap. Historical-version install upgrade, physical IME/DPI/multiple displays, published remote package combinations and netem were not rerun for this version."
+  },
+  "publicDownloads": [
+    {
+      "name": "core-update.json",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.1.0/core-update.json",
+      "checkedAt": "2026-11-23T07:49:18.712Z",
+      "size": 6555,
+      "sha256": "fa88ebae49222fbea9fc7037b3476ce5dac33d2a35d736e8cf6bcc38f8da5ded",
+      "authentication": "anonymous",
+      "passed": true
+    },
+    {
+      "name": "SoDeck_2.1.0_x64-setup.exe",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.1.0/SoDeck_2.1.0_x64-setup.exe",
+      "checkedAt": "2026-11-23T07:49:22.314Z",
+      "size": 7823646,
+      "sha256": "58446413b0f27aaf6eb79709901167cdb132fffeaa7a614649aa8d90db0a52e2",
+      "authentication": "anonymous",
+      "passed": true
+    }
+  ]
+}
