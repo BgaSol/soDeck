@@ -1,0 +1,1800 @@
+{
+  "component": "sodeck.terminal",
+  "version": "0.11.1",
+  "source": "0ef743c7961803275becfcaf88dac191bb5e4937",
+  "packageRun": "https://github.com/BgaSol/soDeck/actions/runs/45247261450",
+  "sourceCheck": "https://github.com/BgaSol/soDeck/actions/runs/45247153484",
+  "runAttempt": 2,
+  "release": {
+    "id": 455907236,
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.11.1",
+    "draft": false,
+    "publishedAt": "2026-11-23T19:44:32Z",
+    "latest": false
+  },
+  "jobs": [
+    {
+      "name": "select",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137959278133",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run node scripts/plugin-release.mjs preflight \"$PLUGIN\"",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "verify-macos-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137959278810",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/download-artifact@v5",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify actual native plugin archive",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "windows-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137959279003",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Windows terminal shell hooks",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run node scripts/package-plugin.mjs --plugin \"$PLUGIN\" --target 'x86_64-pc-windows-msvc'",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "macos-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137959279626",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Windows terminal shell hooks",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run node scripts/package-plugin.mjs --plugin \"$PLUGIN\" --target 'aarch64-apple-darwin'",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "linux-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137959279820",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Windows terminal shell hooks",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run node scripts/package-plugin.mjs --plugin \"$PLUGIN\" --target 'aarch64-unknown-linux-gnu'",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "linux-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137959280512",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Windows terminal shell hooks",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run node scripts/package-plugin.mjs --plugin \"$PLUGIN\" --target 'x86_64-unknown-linux-gnu'",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "verify-windows-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137959281154",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/download-artifact@v5",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify actual native plugin archive",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "verify-linux-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137959281556",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/download-artifact@v5",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify actual native plugin archive",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "verify-windows-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137959281571",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/download-artifact@v5",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify actual native plugin archive",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "verify-linux-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137959281585",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/download-artifact@v5",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify actual native plugin archive",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "windows-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137959371064",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Windows terminal shell hooks",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run node scripts/package-plugin.mjs --plugin \"$PLUGIN\" --target 'aarch64-pc-windows-msvc'",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "release",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137962518302",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run dtolnay/rust-toolchain@master",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/download-artifact@v5",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/download-artifact@v5",
+          "conclusion": "success"
+        },
+        {
+          "name": "Bind results to the package bytes",
+          "conclusion": "success"
+        },
+        {
+          "name": "Prepare optional plugin draft",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "reports": [
+    {
+      "id": "sodeck.terminal",
+      "version": "0.11.1",
+      "target": "aarch64-apple-darwin",
+      "commit": "0ef743c7961803275becfcaf88dac191bb5e4937",
+      "sha256": "ab3e2125b0cf204ff7baaa84688a36ac2f8e0ec21d2167bb0df2a5a92eea14e9",
+      "runId": "45247261450",
+      "toolCommit": "0ef743c7961803275becfcaf88dac191bb5e4937",
+      "passed": true,
+      "pluginIcons": [
+        "terminal"
+      ],
+      "calls": [
+        "settings.get",
+        "settings.get",
+        "terminal.open",
+        "terminal.close"
+      ]
+    },
+    {
+      "id": "sodeck.terminal",
+      "version": "0.11.1",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "0ef743c7961803275becfcaf88dac191bb5e4937",
+      "sha256": "846bfa9ccd8f22ddeaff1c8363067e050f4948474cfff3573b0c9e006cc493cf",
+      "runId": "45247261450",
+      "toolCommit": "0ef743c7961803275becfcaf88dac191bb5e4937",
+      "passed": true,
+      "pluginIcons": [
+        "terminal"
+      ],
+      "calls": [
+        "settings.get",
+        "settings.get",
+        "terminal.open",
+        "terminal.close"
+      ]
+    },
+    {
+      "id": "sodeck.terminal",
+      "version": "0.11.1",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "0ef743c7961803275becfcaf88dac191bb5e4937",
+      "sha256": "bcef8cd07ae8d376619e6adb884d8df33e20a43b61052798a6164e3164dd0375",
+      "runId": "45247261450",
+      "toolCommit": "0ef743c7961803275becfcaf88dac191bb5e4937",
+      "passed": true,
+      "pluginIcons": [
+        "terminal"
+      ],
+      "calls": [
+        "settings.get",
+        "settings.get",
+        "terminal.open",
+        "terminal.close"
+      ]
+    },
+    {
+      "id": "sodeck.terminal",
+      "version": "0.11.1",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "0ef743c7961803275becfcaf88dac191bb5e4937",
+      "sha256": "eb42e4e338d5e7889632a22d434be6912453c1b8aefeda56b4883235b3fa412e",
+      "runId": "45247261450",
+      "toolCommit": "0ef743c7961803275becfcaf88dac191bb5e4937",
+      "passed": true,
+      "pluginIcons": [
+        "terminal"
+      ],
+      "calls": [
+        "settings.get",
+        "settings.get",
+        "terminal.open",
+        "terminal.close"
+      ]
+    },
+    {
+      "id": "sodeck.terminal",
+      "version": "0.11.1",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "0ef743c7961803275becfcaf88dac191bb5e4937",
+      "sha256": "5c3af45c15b4ec72b0f77d434a41bcba98f0dd56ab82b5d5b4e47edbce3f0774",
+      "runId": "45247261450",
+      "toolCommit": "0ef743c7961803275becfcaf88dac191bb5e4937",
+      "passed": true,
+      "pluginIcons": [
+        "terminal"
+      ],
+      "calls": [
+        "settings.get",
+        "settings.get",
+        "terminal.open",
+        "terminal.close"
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "id": 784301604,
+      "name": "plugin-update.json",
+      "size": 53462,
+      "digest": "sha256:0770aeeded2940008712e0b4f2bac35dc22e7448800b313b5a31d420c6770194",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.1/plugin-update.json"
+    },
+    {
+      "id": 784295967,
+      "name": "sodeck-terminal_0.11.1_aarch64-apple-darwin.tar.gz",
+      "size": 1123485,
+      "digest": "sha256:ab3e2125b0cf204ff7baaa84688a36ac2f8e0ec21d2167bb0df2a5a92eea14e9",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.1/sodeck-terminal_0.11.1_aarch64-apple-darwin.tar.gz"
+    },
+    {
+      "id": 784295738,
+      "name": "sodeck-terminal_0.11.1_aarch64-pc-windows-msvc.zip",
+      "size": 1118379,
+      "digest": "sha256:846bfa9ccd8f22ddeaff1c8363067e050f4948474cfff3573b0c9e006cc493cf",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.1/sodeck-terminal_0.11.1_aarch64-pc-windows-msvc.zip"
+    },
+    {
+      "id": 784295891,
+      "name": "sodeck-terminal_0.11.1_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 1126376,
+      "digest": "sha256:bcef8cd07ae8d376619e6adb884d8df33e20a43b61052798a6164e3164dd0375",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.1/sodeck-terminal_0.11.1_aarch64-unknown-linux-gnu.tar.gz"
+    },
+    {
+      "id": 784295672,
+      "name": "sodeck-terminal_0.11.1_x86_64-pc-windows-msvc.zip",
+      "size": 1153697,
+      "digest": "sha256:eb42e4e338d5e7889632a22d434be6912453c1b8aefeda56b4883235b3fa412e",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.1/sodeck-terminal_0.11.1_x86_64-pc-windows-msvc.zip"
+    },
+    {
+      "id": 784295814,
+      "name": "sodeck-terminal_0.11.1_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 1189783,
+      "digest": "sha256:5c3af45c15b4ec72b0f77d434a41bcba98f0dd56ab82b5d5b4e47edbce3f0774",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.1/sodeck-terminal_0.11.1_x86_64-unknown-linux-gnu.tar.gz"
+    }
+  ],
+  "publicDownloads": [
+    {
+      "name": "plugin-update.json",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.1/plugin-update.json",
+      "size": 53462,
+      "sha256": "0770aeeded2940008712e0b4f2bac35dc22e7448800b313b5a31d420c6770194",
+      "authentication": "anonymous",
+      "passed": true
+    },
+    {
+      "name": "sodeck-terminal_0.11.1_aarch64-apple-darwin.tar.gz",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.1/sodeck-terminal_0.11.1_aarch64-apple-darwin.tar.gz",
+      "size": 1123485,
+      "sha256": "ab3e2125b0cf204ff7baaa84688a36ac2f8e0ec21d2167bb0df2a5a92eea14e9",
+      "authentication": "anonymous",
+      "passed": true
+    },
+    {
+      "name": "sodeck-terminal_0.11.1_aarch64-pc-windows-msvc.zip",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.1/sodeck-terminal_0.11.1_aarch64-pc-windows-msvc.zip",
+      "size": 1118379,
+      "sha256": "846bfa9ccd8f22ddeaff1c8363067e050f4948474cfff3573b0c9e006cc493cf",
+      "authentication": "anonymous",
+      "passed": true
+    },
+    {
+      "name": "sodeck-terminal_0.11.1_aarch64-unknown-linux-gnu.tar.gz",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.1/sodeck-terminal_0.11.1_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 1126376,
+      "sha256": "bcef8cd07ae8d376619e6adb884d8df33e20a43b61052798a6164e3164dd0375",
+      "authentication": "anonymous",
+      "passed": true
+    },
+    {
+      "name": "sodeck-terminal_0.11.1_x86_64-pc-windows-msvc.zip",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.1/sodeck-terminal_0.11.1_x86_64-pc-windows-msvc.zip",
+      "size": 1153697,
+      "sha256": "eb42e4e338d5e7889632a22d434be6912453c1b8aefeda56b4883235b3fa412e",
+      "authentication": "anonymous",
+      "passed": true
+    },
+    {
+      "name": "sodeck-terminal_0.11.1_x86_64-unknown-linux-gnu.tar.gz",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.1/sodeck-terminal_0.11.1_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 1189783,
+      "sha256": "5c3af45c15b4ec72b0f77d434a41bcba98f0dd56ab82b5d5b4e47edbce3f0774",
+      "authentication": "anonymous",
+      "passed": true
+    }
+  ],
+  "local": {
+    "readingUi": true,
+    "searchUi": true,
+    "history100k": true,
+    "package": {
+      "id": "sodeck.terminal",
+      "version": "0.11.1",
+      "apiVersion": "2.0",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "0ef743c7961803275becfcaf88dac191bb5e4937",
+      "runId": null,
+      "file": "sodeck-terminal_0.11.1_x86_64-pc-windows-msvc.zip",
+      "size": 1158847,
+      "sha256": "0467cd911d47fd3556457b841cad5c40922a05f45eb56338a4e5d432b629dd7e"
+    },
+    "benchmark": {
+      "platform": "win32",
+      "arch": "x64",
+      "node": "v24.22.0",
+      "cpu": "Intel(R) Core(TM) Ultra 5 250K Plus",
+      "rows": 100000,
+      "columns": 120,
+      "textBytes": 11360000,
+      "indexMs": 46.11499999999998,
+      "queries": 100,
+      "groups": {
+        "rare": {
+          "p50": 92.84929999999997,
+          "p95": 111.2320000000002,
+          "max": 150.86
+        },
+        "missing": {
+          "p50": 79.49499999999989,
+          "p95": 107.93070000000034,
+          "max": 109.59329999999954
+        },
+        "dense": {
+          "p50": 108.89430000000084,
+          "p95": 139.01980000000003,
+          "max": 141.5068000000001
+        },
+        "short": {
+          "p50": 93.97789999999986,
+          "p95": 124.25370000000112,
+          "max": 188.2497999999996
+        }
+      },
+      "heapDelta": 62374448,
+      "arrayBufferDelta": 200064,
+      "retainedHeap": 67169200,
+      "samples": [
+        {
+          "kind": "rare",
+          "query": "worker-0 ",
+          "ms": 150.86,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-1 ",
+          "ms": 107.00510000000003,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-2 ",
+          "ms": 83.79870000000005,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-3 ",
+          "ms": 72.96439999999996,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-4 ",
+          "ms": 92.77539999999999,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-5 ",
+          "ms": 92.84929999999997,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-6 ",
+          "ms": 106.68000000000006,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-7 ",
+          "ms": 111.2320000000002,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-8 ",
+          "ms": 107.37439999999992,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-9 ",
+          "ms": 90.78890000000001,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-10 ",
+          "ms": 83.54019999999991,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-11 ",
+          "ms": 89.50929999999994,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-12 ",
+          "ms": 92.25850000000014,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-13 ",
+          "ms": 108.47590000000014,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-14 ",
+          "ms": 94.04399999999987,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-15 ",
+          "ms": 93.93069999999989,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-16 ",
+          "ms": 80.58989999999994,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-17 ",
+          "ms": 71.64149999999995,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-18 ",
+          "ms": 77.58470000000034,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-19 ",
+          "ms": 93.02179999999998,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-20 ",
+          "ms": 93.08320000000003,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-21 ",
+          "ms": 92.58030000000008,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-22 ",
+          "ms": 95.45929999999998,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-23 ",
+          "ms": 63.04170000000022,
+          "total": 4000
+        },
+        {
+          "kind": "rare",
+          "query": "worker-24 ",
+          "ms": 105.76639999999998,
+          "total": 4000
+        },
+        {
+          "kind": "missing",
+          "query": "missing-0",
+          "ms": 77.76769999999988,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-1",
+          "ms": 77.60740000000033,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-2",
+          "ms": 77.60669999999982,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-3",
+          "ms": 79.49499999999989,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-4",
+          "ms": 60.55650000000014,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-5",
+          "ms": 62.97449999999981,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-6",
+          "ms": 78.20649999999978,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-7",
+          "ms": 91.99360000000024,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-8",
+          "ms": 107.93070000000034,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-9",
+          "ms": 95.33060000000023,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-10",
+          "ms": 81.30029999999988,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-11",
+          "ms": 59.41809999999987,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-12",
+          "ms": 75.3089,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-13",
+          "ms": 82.79219999999987,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-14",
+          "ms": 72.57809999999972,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-15",
+          "ms": 78.77170000000024,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-16",
+          "ms": 90.49170000000004,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-17",
+          "ms": 97.26909999999953,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-18",
+          "ms": 75.44369999999981,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-19",
+          "ms": 90.39139999999952,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-20",
+          "ms": 79.21489999999994,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-21",
+          "ms": 109.59329999999954,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-22",
+          "ms": 89.99269999999979,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-23",
+          "ms": 92.87019999999939,
+          "total": 0
+        },
+        {
+          "kind": "missing",
+          "query": "missing-24",
+          "ms": 92.58449999999993,
+          "total": 0
+        },
+        {
+          "kind": "dense",
+          "query": "aaa",
+          "ms": 99.76050000000032,
+          "total": 1000000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaa",
+          "ms": 106.45930000000044,
+          "total": 700000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaa",
+          "ms": 122.44689999999991,
+          "total": 600000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaa",
+          "ms": 84.90229999999974,
+          "total": 500000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaa",
+          "ms": 102.86949999999979,
+          "total": 400000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaaa",
+          "ms": 93.32400000000052,
+          "total": 300000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaaaa",
+          "ms": 124.82710000000043,
+          "total": 300000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaaaaa",
+          "ms": 141.5068000000001,
+          "total": 300000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaaaaaa",
+          "ms": 127.6322999999993,
+          "total": 200000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaaaaaaa",
+          "ms": 123.1871000000001,
+          "total": 200000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaaaaaaaa",
+          "ms": 122.02379999999994,
+          "total": 200000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaaaaaaaaa",
+          "ms": 112.32760000000053,
+          "total": 200000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaaaaaaaaaa",
+          "ms": 93.95749999999953,
+          "total": 200000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaaaaaaaaaaa",
+          "ms": 77.1293999999998,
+          "total": 100000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaaaaaaaaaaaa",
+          "ms": 103.78450000000066,
+          "total": 100000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaaaaaaaaaaaaa",
+          "ms": 108.89430000000084,
+          "total": 100000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaaaaaaaaaaaaaa",
+          "ms": 80.19190000000071,
+          "total": 100000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaaaaaaaaaaaaaaa",
+          "ms": 90.61390000000029,
+          "total": 100000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaaaaaaaaaaaaaaaa",
+          "ms": 124.02909999999974,
+          "total": 100000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaaaaaaaaaaaaaaaaa",
+          "ms": 96.07259999999951,
+          "total": 100000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaaaaaaaaaaaaaaaaaa",
+          "ms": 123.1857,
+          "total": 100000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaaaaaaaaaaaaaaaaaaa",
+          "ms": 127.3171999999995,
+          "total": 100000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaaaaaaaaaaaaaaaaaaaa",
+          "ms": 91.11400000000049,
+          "total": 100000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "ms": 110.89519999999993,
+          "total": 100000
+        },
+        {
+          "kind": "dense",
+          "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "ms": 139.01980000000003,
+          "total": 100000
+        },
+        {
+          "kind": "short",
+          "query": "a",
+          "ms": 188.2497999999996,
+          "total": 3200000
+        },
+        {
+          "kind": "short",
+          "query": "b",
+          "ms": 89.4991,
+          "total": 100000
+        },
+        {
+          "kind": "short",
+          "query": "c",
+          "ms": 75.61609999999928,
+          "total": 100000
+        },
+        {
+          "kind": "short",
+          "query": "d",
+          "ms": 76.40650000000005,
+          "total": 100000
+        },
+        {
+          "kind": "short",
+          "query": "e",
+          "ms": 97.79169999999976,
+          "total": 300000
+        },
+        {
+          "kind": "short",
+          "query": "f",
+          "ms": 107.0684999999994,
+          "total": 200000
+        },
+        {
+          "kind": "short",
+          "query": "g",
+          "ms": 93.7540999999992,
+          "total": 100000
+        },
+        {
+          "kind": "short",
+          "query": "h",
+          "ms": 108.70930000000044,
+          "total": 100000
+        },
+        {
+          "kind": "short",
+          "query": "i",
+          "ms": 124.25370000000112,
+          "total": 400000
+        },
+        {
+          "kind": "short",
+          "query": "j",
+          "ms": 107.90669999999955,
+          "total": 100000
+        },
+        {
+          "kind": "short",
+          "query": "k",
+          "ms": 78.16579999999885,
+          "total": 200000
+        },
+        {
+          "kind": "short",
+          "query": "l",
+          "ms": 94.42950000000019,
+          "total": 100000
+        },
+        {
+          "kind": "short",
+          "query": "m",
+          "ms": 91.01549999999952,
+          "total": 200000
+        },
+        {
+          "kind": "short",
+          "query": "n",
+          "ms": 77.66900000000169,
+          "total": 200000
+        },
+        {
+          "kind": "short",
+          "query": "o",
+          "ms": 78.70589999999902,
+          "total": 400000
+        },
+        {
+          "kind": "short",
+          "query": "p",
+          "ms": 90.90620000000126,
+          "total": 200000
+        },
+        {
+          "kind": "short",
+          "query": "q",
+          "ms": 94.16029999999955,
+          "total": 100000
+        },
+        {
+          "kind": "short",
+          "query": "r",
+          "ms": 95.22429999999986,
+          "total": 300000
+        },
+        {
+          "kind": "short",
+          "query": "s",
+          "ms": 93.97789999999986,
+          "total": 100000
+        },
+        {
+          "kind": "short",
+          "query": "t",
+          "ms": 93.22650000000067,
+          "total": 300000
+        },
+        {
+          "kind": "short",
+          "query": "u",
+          "ms": 63.919199999998455,
+          "total": 200000
+        },
+        {
+          "kind": "short",
+          "query": "v",
+          "ms": 87.95039999999972,
+          "total": 100000
+        },
+        {
+          "kind": "short",
+          "query": "w",
+          "ms": 98.00330000000031,
+          "total": 200000
+        },
+        {
+          "kind": "short",
+          "query": "x",
+          "ms": 94.99309999999969,
+          "total": 100000
+        },
+        {
+          "kind": "short",
+          "query": "y",
+          "ms": 94.36959999999999,
+          "total": 100000
+        }
+      ]
+    },
+    "native": {
+      "coreVersion": "2.2.4",
+      "terminalVersion": "0.11.1",
+      "target": "x86_64-pc-windows-msvc",
+      "runtime": "actual local release-build WebView2 with independently packaged terminal, isolated SSH and CDP input",
+      "checks": [
+        "light: neutral core tabs, one-row terminal chrome, 34px gutter, 64px preview and keyboard details",
+        "dark: neutral core tabs, one-row terminal chrome, 34px gutter, 64px preview and keyboard details",
+        "dopamine: neutral core tabs, one-row terminal chrome, 34px gutter, 64px preview and keyboard details",
+        "Actual isolated SSH terminal input, manual mark/navigation, search, compact viewport and emulated 1.5 device scale"
+      ],
+      "pageErrors": [],
+      "exited": true,
+      "passed": true,
+      "executableSha256": "c38c96a9d8a18f4453897f29381dbcaec7e8d0baee26e417419cf649b10a5134"
+    },
+    "screenshots": [
+      {
+        "path": "v0.11.1/light.png",
+        "sha256": "3998b3a909ed094e87e0d8b6afbe718a69716918aafb77be8432319e01586e76"
+      },
+      {
+        "path": "v0.11.1/dark.png",
+        "sha256": "55eb56b73c9e9979219ea63cf4bbfc951da8f95eafe28b6440d84fbbd354740d"
+      },
+      {
+        "path": "v0.11.1/dopamine.png",
+        "sha256": "df6431c7624a36de644aad1a426f7d78c2b2874c981e6f706963015d63fd064b"
+      },
+      {
+        "path": "v0.11.1/narrow-dpi.png",
+        "sha256": "e4b3e5ff4ac7cfd5038449c064c7e22696269a89c004a83f7e1aa1bbeb4319d0"
+      }
+    ]
+  },
+  "verificationRetries": {
+    "initialJobs": [
+      {
+        "id": 137947203143,
+        "name": "select",
+        "conclusion": "success",
+        "runAttempt": 1,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137947203143"
+      },
+      {
+        "id": 137947456292,
+        "name": "windows-aarch64",
+        "conclusion": "success",
+        "runAttempt": 1,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137947456292"
+      },
+      {
+        "id": 137947456368,
+        "name": "linux-x86_64",
+        "conclusion": "success",
+        "runAttempt": 1,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137947456368"
+      },
+      {
+        "id": 137947456379,
+        "name": "windows-x86_64",
+        "conclusion": "success",
+        "runAttempt": 1,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137947456379"
+      },
+      {
+        "id": 137947456466,
+        "name": "linux-aarch64",
+        "conclusion": "success",
+        "runAttempt": 1,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137947456466"
+      },
+      {
+        "id": 137947456503,
+        "name": "macos-aarch64",
+        "conclusion": "success",
+        "runAttempt": 1,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137947456503"
+      },
+      {
+        "id": 137948976656,
+        "name": "verify-linux-x86_64",
+        "conclusion": "success",
+        "runAttempt": 1,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137948976656"
+      },
+      {
+        "id": 137948976690,
+        "name": "verify-linux-aarch64",
+        "conclusion": "success",
+        "runAttempt": 1,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137948976690"
+      },
+      {
+        "id": 137948976701,
+        "name": "verify-macos-aarch64",
+        "conclusion": "cancelled",
+        "runAttempt": 1,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137948976701"
+      },
+      {
+        "id": 137948976715,
+        "name": "verify-windows-x86_64",
+        "conclusion": "success",
+        "runAttempt": 1,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137948976715"
+      },
+      {
+        "id": 137948976793,
+        "name": "verify-windows-aarch64",
+        "conclusion": "success",
+        "runAttempt": 1,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137948976793"
+      },
+      {
+        "id": 137958149034,
+        "name": "release",
+        "conclusion": "skipped",
+        "runAttempt": 1,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137958149034"
+      }
+    ],
+    "macosQueueFailure": {
+      "check": {
+        "id": 137948976701,
+        "name": "verify-macos-aarch64",
+        "node_id": "CR_kwDOVi2qnc8AAAAgHmZWPQ",
+        "head_sha": "0ef743c7961803275becfcaf88dac191bb5e4937",
+        "external_id": "1c551af9-e451-5c44-9ab3-ec721cf716ec",
+        "url": "https://api.github.com/repos/BgaSol/soDeck/check-runs/137948976701",
+        "html_url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137948976701",
+        "details_url": "https://github.com/BgaSol/soDeck/actions/runs/45247261450/job/137948976701",
+        "status": "completed",
+        "conclusion": "cancelled",
+        "started_at": "2026-11-23T19:19:43Z",
+        "completed_at": "2026-11-23T19:34:44Z",
+        "output": {
+          "title": null,
+          "summary": null,
+          "text": null,
+          "annotations_count": 4,
+          "annotations_url": "https://api.github.com/repos/BgaSol/soDeck/check-runs/137948976701/annotations"
+        },
+        "check_suite": {
+          "id": 122441505071
+        },
+        "app": {
+          "id": 15368,
+          "client_id": "Iv1.05c79e9ad1f6bdfa",
+          "slug": "github-actions",
+          "node_id": "MDM6QXBwMTUzNjg=",
+          "owner": {
+            "login": "github",
+            "id": 9919,
+            "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+            "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/github",
+            "html_url": "https://github.com/github",
+            "followers_url": "https://api.github.com/users/github/followers",
+            "following_url": "https://api.github.com/users/github/following{/other_user}",
+            "gists_url": "https://api.github.com/users/github/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/github/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/github/subscriptions",
+            "organizations_url": "https://api.github.com/users/github/orgs",
+            "repos_url": "https://api.github.com/users/github/repos",
+            "events_url": "https://api.github.com/users/github/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/github/received_events",
+            "type": "Organization",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "name": "GitHub Actions",
+          "description": "Automate your workflow from idea to production",
+          "external_url": "https://help.github.com/en/actions",
+          "html_url": "https://github.com/apps/github-actions",
+          "created_at": "2018-07-30T09:30:17Z",
+          "updated_at": "2026-06-18T16:17:48Z",
+          "permissions": {
+            "actions": "write",
+            "administration": "read",
+            "artifact_metadata": "write",
+            "attestations": "write",
+            "checks": "write",
+            "code_quality": "write",
+            "contents": "write",
+            "copilot_requests": "write",
+            "deployments": "write",
+            "discussions": "write",
+            "drives": "write",
+            "issues": "write",
+            "merge_queues": "write",
+            "metadata": "read",
+            "models": "read",
+            "packages": "write",
+            "pages": "write",
+            "pull_requests": "write",
+            "repository_hooks": "write",
+            "repository_projects": "write",
+            "security_events": "write",
+            "statuses": "write",
+            "vulnerability_alerts": "read"
+          },
+          "events": [
+            "branch_protection_rule",
+            "check_run",
+            "check_suite",
+            "create",
+            "delete",
+            "deployment",
+            "deployment_status",
+            "discussion",
+            "discussion_comment",
+            "fork",
+            "gollum",
+            "issues",
+            "issue_comment",
+            "label",
+            "merge_group",
+            "milestone",
+            "page_build",
+            "public",
+            "pull_request",
+            "pull_request_review",
+            "pull_request_review_comment",
+            "push",
+            "registry_package",
+            "release",
+            "repository",
+            "repository_dispatch",
+            "status",
+            "watch",
+            "workflow_dispatch",
+            "workflow_run"
+          ]
+        },
+        "pull_requests": []
+      },
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/BgaSol/soDeck/blob/0ef743c7961803275becfcaf88dac191bb5e4937/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not acquired by Runner of type hosted even after multiple attempts",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/BgaSol/soDeck/blob/0ef743c7961803275becfcaf88dac191bb5e4937/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/BgaSol/soDeck/blob/0ef743c7961803275becfcaf88dac191bb5e4937/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/BgaSol/soDeck/blob/0ef743c7961803275becfcaf88dac191bb5e4937/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        }
+      ]
+    },
+    "request": {
+      "route": "https://api.github.com/repos/BgaSol/soDeck/actions/runs/45247261450/rerun-failed-jobs",
+      "requestedAt": "2026-11-23T19:36:31.931Z",
+      "status": 201,
+      "scope": "Only cancelled macOS native verify and downstream release; all successful package jobs preserved"
+    }
+  },
+  "publication": {
+    "originalArchivesUnchanged": 5,
+    "manifestOnlyNotesChanged": true
+  },
+  "limits": "Independent plugin package lifecycle verification is not a five-platform terminal GUI or live SSH matrix. Local Windows WebView2 checks used isolated SSH and CDP input, with emulated device scale; physical IME, DPI, pointer, trackpad, screen-reader and other-platform interactive GUI checks were not performed.",
+  "tag": {
+    "name": "plugin-terminal-v0.11.1",
+    "commit": "0ef743c7961803275becfcaf88dac191bb5e4937",
+    "verifiedAt": "2026-11-23T19:45:16.485Z"
+  },
+  "repositoryLatest": {
+    "id": 455891003,
+    "tag": "v2.2.4",
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/v2.2.4"
+  },
+  "sourceReachableFromMain": {
+    "status": "ahead",
+    "mainCommit": "5068a863ec20da55876943f365ecbf598ac27484"
+  }
+}

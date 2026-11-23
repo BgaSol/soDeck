@@ -5,7 +5,13 @@
 - 阅读命令和吸顶标题不重复；34px 固定标记留白与 64px 预览减少正文占用，窄页保留 40px 预览，无历史时弱化轮廓，保留滚动/键盘与强制颜色回退。
 - 保持 PTY、识别模型、目录可信边界、搜索、十万行历史、检查点和移窗语义；不新增依赖或 API。正式行为见[终端功能](../../docs/features/terminal.md)。
 
-当前尚未发行。已完成三主题 320–1100px 阅读与工具带回归，以及本地格式/类型和 215 项脚本检查；独立五平台原生归档、包内程序验收与实际验证边界在发行时回写。
+包来源为 [`0ef743c7961803275becfcaf88dac191bb5e4937`](https://github.com/BgaSol/soDeck/commit/0ef743c7961803275becfcaf88dac191bb5e4937)；[同源 Check](https://github.com/BgaSol/soDeck/actions/runs/45247153484)、[原始独立打包与包内验收](https://github.com/BgaSol/soDeck/actions/runs/45247261450)均通过。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 原生构建、架构/资源和包内程序挂载/释放与退出全部通过。macOS 首次因 GitHub ARM64 hosted runner 容量不足，始终未获得执行机器而取消；仅重跑该验包任务与下游汇总后通过，五份成功原包保持不变。
+
+本机格式/类型、215 项脚本、最终完整核心 UI、三主题 320–1100px 阅读工具带、真实 xterm 输入、搜索/十万行历史与既有基准通过。本机独立 Windows x64 归档与包内生命周期通过；实际 release-build WebView2 搭配隔离回环 SSH，验证三主题、键盘终端信息、手动标记与定位、搜索、窄窗口和模拟 1.5 倍设备缩放，核心与插件干净退出。实际画面：[浅色](release-evidence/v0.11.1/light.png)、[深色](release-evidence/v0.11.1/dark.png)、[多巴胺](release-evidence/v0.11.1/dopamine.png)、[窄窗口与模拟缩放](release-evidence/v0.11.1/narrow-dpi.png)。
+
+发行：[terminal 0.11.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.11.1)，保持非 Latest；[核心 2.2.4](../../docs/releases/v2.2.4.md) 为默认发行入口。直接发布上述原始 run 的同一份草稿，五份程序归档不重建、不覆盖，草稿清单仅同步 notes。[永久证据](release-evidence/v0.11.1-assets.json)保存原始包来源、五份包报告、runner 失败与重试、本机 WebView2 和搜索基准、截图摘要、公开附件下载及标签核对。
+
+插件包内生命周期不代表五平台终端交互界面或原生远程发行包组合均已验证；物理 IME/DPI/指针/触控板/读屏、多屏、Linux/macOS 终端交互界面、历史版本升级和 netem 专项未执行。更新已启用插件后按提示重启生效。
 
 # 0.11.0
 
