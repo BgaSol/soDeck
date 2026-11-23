@@ -18,6 +18,7 @@
   .catalog-action-menu button {display:flex;width:100%;gap:8px;text-align:left;border:0;background:transparent;padding:8px;}
   .catalog-action-menu button:hover {background:var(--hover);}
   .catalog-action-menu svg {width:16px;flex-shrink:0;}
+  .catalog-action-menu:focus-visible {outline:2px solid var(--accent);outline-offset:-2px;}
   .catalog-action-menu .catalog-menu-title {font-weight:600;max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0;}
   .catalog-action-menu .catalog-menu-reason {color:var(--muted);font-size:11px;padding-top:0;max-width:280px;}
   .tree-origin[tabindex]:focus-visible {outline:2px solid var(--accent);outline-offset:2px;}

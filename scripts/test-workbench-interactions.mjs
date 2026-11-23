@@ -610,3 +610,111 @@ test('component filtering resizes one menu and workspace context replacement clo
     await page.locator('.workspace-menu').waitFor({state:'detached'});
   }finally{await page.close();}
 });
+
+const directoryMenuFixture=async()=>{
+  const page=await fixture();await page.setViewportSize({width:1100,height:720});
+  await page.evaluate(async()=>{
+    await import('/style.css');await import('/text-menu.js');const {ServerManager}=await import('/servers.ts');
+    window.directoryCalls=[];window.directoryNotices=[];window.directoryReadFails=false;
+    window.directoryCatalog={schemaVersion:2,revision:1,error:null,canRecover:false,tags:[],proxies:[{id:'P',protocol:'socks5',name:'公司104',host:'192.168.1.104',port:12021,authentication:{type:'none',hasSavedSecret:false,hasSessionSecret:false}}],servers:[{id:'A',protocol:'ssh',name:'目标 A',host:'a.internal',port:22,username:'ops',tagIds:[],route:[{kind:'socks5',proxyId:'P',id:'step'}],authentication:{type:'password',hasSavedSecret:false,hasSessionSecret:false}}]};
+    const host=document.querySelector('#chrome');host.innerHTML='<button id="directory-before">之前</button><main id="directory"></main><button id="directory-after">之后</button>';
+    window.installTextMenu({read:async()=>'',write:async()=>true,notify:text=>directoryNotices.push(text)});
+    window.directoryManager=new ServerManager(host.querySelector('main'),text=>directoryNotices.push(text),{read:async()=>{if(directoryReadFails)throw new Error('目录暂不可用');return structuredClone(directoryCatalog);},change:async()=>{throw new Error('只读交互夹具');}});
+    directoryManager.connectionActions={connect:async id=>directoryCalls.push(['connect',id]),cancelAttempt:async id=>directoryCalls.push(['cancel',id]),continueAttempt:async(id,q)=>directoryCalls.push(['continue',id,q]),focusWorkspace:async(id,a)=>directoryCalls.push(['focus',id,a])};
+    await directoryManager.start();
+  });
+  return page;
+};
+const directoryMenu=page=>page.locator('.catalog-action-menu');
+const openDirectoryMenu=async(page,id='P',keyboard=false)=>{
+  const row=page.locator(`.connection-node[data-id="${id}"]`);
+  if(keyboard){await row.focus();await page.keyboard.press('Shift+F10');}else await row.click({button:'right'});
+  await directoryMenu(page).waitFor();return row;
+};
+
+test('directory context menu closes on its source card, arrow and external input without swallowing their actions',async()=>{
+  const page=await directoryMenuFixture();
+  try{
+    let row=await openDirectoryMenu(page);await row.locator('strong').click();await directoryMenu(page).waitFor({state:'detached'});
+    assert.equal(await row.getAttribute('aria-selected'),'true');
+    row=await openDirectoryMenu(page);const expanded=await row.getAttribute('aria-expanded');await row.locator('.tree-toggle').click();await directoryMenu(page).waitFor({state:'detached'});
+    assert.notEqual(await row.getAttribute('aria-expanded'),expanded);await row.locator('.tree-toggle').click();
+    await openDirectoryMenu(page);await page.locator('#catalog-query').click();await directoryMenu(page).waitFor({state:'detached'});assert(await page.locator('#catalog-query').evaluate(n=>n===document.activeElement));
+    assert.equal(await page.evaluate(()=>directoryManager.menu.source),undefined,'No detached semantic menu source survives dismissal');
+    await openDirectoryMenu(page);await page.locator('#directory-after').click();await directoryMenu(page).waitFor({state:'detached'});assert(await page.locator('#directory-after').evaluate(n=>n===document.activeElement));
+  }finally{await page.close();}
+});
+
+test('directory menu remains cancellable after title clicks and all-disabled refreshes, with native Tab order',async()=>{
+  const page=await directoryMenuFixture();
+  try{
+    const row=await openDirectoryMenu(page);await directoryMenu(page).locator('.catalog-menu-title').click();await page.keyboard.press('Escape');await directoryMenu(page).waitFor({state:'detached'});assert(await row.evaluate(n=>n===document.activeElement));
+    await openDirectoryMenu(page);await page.evaluate(async()=>{directoryReadFails=true;await directoryManager.start();});
+    assert.equal(await directoryMenu(page).locator('button:not(:disabled)').count(),0);assert(await directoryMenu(page).evaluate(n=>n===document.activeElement));
+    await page.keyboard.press('Escape');await directoryMenu(page).waitFor({state:'detached'});
+    for(const key of ['Tab','Shift+Tab']){
+      await row.focus();await page.keyboard.press(key);const expected=await page.evaluate(()=>document.activeElement.outerHTML);
+      await openDirectoryMenu(page,'P',true);assert(await directoryMenu(page).evaluate(n=>n===document.activeElement));await page.keyboard.press(key);await directoryMenu(page).waitFor({state:'detached'});
+      assert.equal(await page.evaluate(()=>document.activeElement.outerHTML),expected,key+' follows the source native tab sequence');
+    }
+    await page.evaluate(async()=>{directoryReadFails=false;await directoryManager.start();});await openDirectoryMenu(page,'A');
+    await page.evaluate(()=>directoryManager.setConnections([{serverId:'A',attemptId:'attempt',state:'connecting',question:null}]));
+    await directoryMenu(page).locator('[data-menu-action="cancel-attempt"]').click();assert.deepEqual(await page.evaluate(()=>directoryCalls),[['cancel','attempt']]);
+  }finally{await page.close();}
+});
+
+test('directory dropdown toggle, command handoff and replacement keep exactly one source and one execution',async()=>{
+  const page=await directoryMenuFixture();
+  try{
+    const trigger=page.locator('#catalog-new-menu');for(const key of ['click','Enter','Space']){
+      if(key==='click')await trigger.click();else{await trigger.focus();await page.keyboard.press(key);}await directoryMenu(page).waitFor();
+      if(key==='click')await trigger.click();else await page.keyboard.press('Escape');await directoryMenu(page).waitFor({state:'detached'});
+    }
+    await openDirectoryMenu(page);await openDirectoryMenu(page,'A');assert.equal(await directoryMenu(page).count(),1);
+    await directoryMenu(page).locator('[data-menu-action="copy"]').click();await page.locator('dialog[open]').waitFor();assert.equal(await page.evaluate(()=>directoryManager.menu.source),undefined);
+    await page.keyboard.press('Escape');await page.locator('dialog[open]').waitFor({state:'detached'});assert(await page.locator('.connection-node[data-id="A"]').evaluate(n=>n===document.activeElement));
+    await trigger.click();await directoryMenu(page).locator('[data-menu-action="new-proxy"]').click();await page.locator('dialog[open]').waitFor();await page.keyboard.press('Escape');await page.locator('dialog[open]').waitFor({state:'detached'});assert(await trigger.evaluate(n=>n===document.activeElement));
+  }finally{await page.close();}
+});
+
+test('directory menu sessions release source scrolling, modal, hidden host and late positioning callbacks',async()=>{
+  const page=await directoryMenuFixture();
+  try{
+    const scrollStyle=await page.addStyleTag({content:'#directory .catalog-list {height:90px;flex:none} #directory .connection-tree {padding-bottom:300px}'});
+    for(const keyboard of [false,true]){
+      await page.locator('.catalog-list').evaluate(list=>list.scrollTop=0);
+      await openDirectoryMenu(page,'P',keyboard);
+      await page.locator('.catalog-list').evaluate(list=>list.dispatchEvent(new Event('scroll')));assert.equal(await directoryMenu(page).count(),1,'Unchanged queued scroll is harmless');
+      const scroll=await page.locator('.catalog-list').evaluate(list=>{const before=list.scrollTop;list.scrollTop=before>0?0:25;return {before,after:list.scrollTop,height:list.clientHeight,content:list.scrollHeight,overflow:getComputedStyle(list).overflowY,tree:getComputedStyle(list.firstElementChild).paddingBottom};});
+      assert.notEqual(scroll.before,scroll.after,JSON.stringify({keyboard,...scroll}));await directoryMenu(page).waitFor({state:'detached'});
+      await page.locator('.catalog-list').evaluate(list=>list.scrollTop=0);
+    }
+    await scrollStyle.evaluate(node=>node.remove());
+    await openDirectoryMenu(page);await page.evaluate(()=>document.querySelector('#directory').hidden=true);await directoryMenu(page).waitFor({state:'detached'});assert.equal(await page.evaluate(()=>directoryManager.menu.source),undefined);
+    await page.evaluate(()=>document.querySelector('#directory').hidden=false);await openDirectoryMenu(page);await page.evaluate(()=>{const d=document.createElement('dialog');d.id='external-dialog';d.innerHTML='<button>确认</button>';document.body.append(d);d.showModal();d.querySelector('button').focus();});await directoryMenu(page).waitFor({state:'detached'});assert(await page.locator('#external-dialog button').evaluate(n=>n===document.activeElement));await page.locator('#external-dialog').evaluate(n=>n.remove());
+    await openDirectoryMenu(page);await page.evaluate(()=>directoryManager.setCloseBlocked(true));await directoryMenu(page).waitFor({state:'detached'});await page.evaluate(()=>directoryManager.setCloseBlocked(false));
+    await page.evaluate(async()=>{const row=document.querySelector('.connection-node');for(let i=0;i<8;i++){row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:180,clientY:220}));directoryManager.menu.close();}document.querySelector('#directory-after').focus();await new Promise(requestAnimationFrame);});
+    assert.equal(await directoryMenu(page).count(),0);assert(await page.locator('#directory-after').evaluate(n=>n===document.activeElement));
+    await openDirectoryMenu(page);await page.evaluate(()=>directoryManager.dispose());await directoryMenu(page).waitFor({state:'detached'});await page.evaluate(()=>document.querySelector('.connection-node').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true})));assert.equal(await directoryMenu(page).count(),0);
+  }finally{await page.close();}
+});
+
+
+test('directory menu command handoff cannot let old callbacks close a replacement session',async()=>{
+  const page=await fixture();
+  try{
+    await page.evaluate(async()=>{
+      const {ServerMenu}=await import('/server-menu.ts');const anchor=document.createElement('button');anchor.id='session-anchor';anchor.textContent='菜单';document.body.append(anchor);
+      window.sessionCalls=[];const actions=[{command:{kind:'reload'},label:'刷新',group:'record'}];
+      window.sessionMenu=new ServerMenu((command,source)=>{sessionCalls.push({command,source,closed:sessionMenu.source===undefined});openSession({kind:'root'});});
+      window.openSession=source=>sessionMenu.show({source,title:source.kind,actions,anchor,reference:anchor,restore:()=>anchor.focus(),valid:()=>true});
+      openSession({kind:'toolbar'});
+    });
+    const menu=directoryMenu(page);await menu.waitFor();await menu.locator('button').click();await menu.waitFor();
+    assert.deepEqual(await page.evaluate(()=>sessionCalls),[{command:{kind:'reload'},source:{kind:'toolbar'},closed:true}]);
+    assert.equal(await page.evaluate(()=>sessionMenu.source.kind),'root');assert.equal(await menu.count(),1);
+    await page.evaluate(()=>new Promise(requestAnimationFrame));assert.equal(await page.evaluate(()=>sessionMenu.source.kind),'root');
+    await page.keyboard.press('Escape');await menu.waitFor({state:'detached'});await page.evaluate(()=>sessionMenu.update([]));assert.equal(await page.evaluate(()=>sessionMenu.source),undefined);
+    await page.evaluate(()=>{openSession({kind:'toolbar'});sessionMenu.dispose();openSession({kind:'root'});});await page.evaluate(()=>new Promise(requestAnimationFrame));assert.equal(await menu.count(),0);
+  }finally{await page.close();}
+});

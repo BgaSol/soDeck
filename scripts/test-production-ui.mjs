@@ -339,6 +339,14 @@ try {
       assert(await menu.evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;}));
       await page.keyboard.press('End');assert.equal(await page.locator('.catalog-action-menu [data-menu-action="new-proxy"]').evaluate(el=>el===document.activeElement),true);
       await page.keyboard.press('Escape');assert.equal(await newMenu.evaluate(el=>el===document.activeElement),true);
+      await newMenu.click();await menu.waitFor({state:'visible'});await newMenu.click();await menu.waitFor({state:'detached'});
+      const contextRow=page.locator('.connection-node').first();await contextRow.click({button:'right'});await menu.waitFor({state:'visible'});
+      await contextRow.locator('strong').click();await menu.waitFor({state:'detached'});
+      await contextRow.click({button:'right'});await menu.locator('.catalog-menu-title').click();await page.keyboard.press('Escape');await menu.waitFor({state:'detached'});
+      assert(await contextRow.evaluate(node=>node===document.activeElement),'Bundled menu title cancellation returns to its source');
+      await contextRow.click({button:'right'});await page.locator('[data-console-page="status"]').click();await menu.waitFor({state:'detached'});
+      await page.locator('[data-console-page="connections"]').click();
+      if(await page.locator('[data-server-action="back"]').isVisible())await page.locator('[data-server-action="back"]').click();
       assert.equal(await newMenu.getAttribute('aria-expanded'),'false');
       const catalogList=page.locator('.catalog-list');
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));

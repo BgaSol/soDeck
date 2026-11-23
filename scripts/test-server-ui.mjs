@@ -437,6 +437,15 @@ try {
   const sourceRow=work().locator(`.connection-node[data-id="${target}"]`).first();
   await sourceRow.scrollIntoViewIfNeeded();await sourceRow.click({button:'right'});
   await menu.waitFor({state:'visible'});assert.equal(await menu.locator('[data-menu-action="collapse"]').count(),0);
+  await sourceRow.locator('strong').click();await menu.waitFor({state:'detached'});
+  assert.equal(await page.evaluate(()=>manager.menu.source),undefined);
+  await sourceRow.click({button:'right'});await menu.locator('.catalog-menu-title').click();await page.keyboard.press('Escape');await menu.waitFor({state:'detached'});
+  assert(await sourceRow.evaluate(node=>node===document.activeElement));
+  await sourceRow.click({button:'right'});await menu.locator('[data-menu-action="edit"]').click();await expectDialogs(1);await page.keyboard.press('Escape');await expectDialogs(0);
+  assert(await sourceRow.evaluate(node=>node===document.activeElement));
+  await sourceRow.click({button:'right'});await menu.locator('[data-menu-action="copy"]').click();await expectDialogs(1);await page.keyboard.press('Escape');await expectDialogs(0);
+  assert(await sourceRow.evaluate(node=>node===document.activeElement));
+  await sourceRow.click({button:'right'});
   assert.match(await menu.innerText(),/经此节点新增服务器/);
   const beforeVia=await read();await menu.locator('[data-menu-action="new-via"]').click();await expectDialogs(1);
   assert.equal(await field('host').inputValue(),'');assert.equal(await field('username').inputValue(),'');assert.equal(await field('password').inputValue(),'');
