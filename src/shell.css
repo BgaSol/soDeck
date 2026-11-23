@@ -146,6 +146,8 @@
   .global-tools button:hover {
     background: var(--hover);
   }
+  #updates-button { color: var(--accent); }
+  #updates-button::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
   .health-dot {
     display: inline-block;
     width: 7px;

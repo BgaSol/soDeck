@@ -1,9 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use sodeck::{
-    desktop_updates::CoreUpdater,
+    desktop_updates::UpdateService,
     model::*,
-    updates::{ReleaseClient, UpdateView},
     windows::{self, DesktopWindows},
     AppCore,
 };
@@ -18,7 +17,7 @@ use tauri::{Emitter, Manager, State};
 
 struct Application {
     core: Arc<AppCore>,
-    updater: CoreUpdater,
+    updates: Arc<UpdateService>,
     exit_handoff: AtomicBool,
     smoke: bool,
     interactive_test: bool,
@@ -494,13 +493,8 @@ async fn set_plugin_enabled(
 }
 
 #[tauri::command]
-fn update_status(app: State<Application>) -> std::collections::HashMap<String, UpdateView> {
-    app.core.update_views()
-}
-
-#[tauri::command]
-fn update_overview(app: State<Application>) -> sodeck::updates::UpdateOverview {
-    app.core.update_overview()
+fn update_snapshot(app: State<Application>) -> sodeck::updates::UpdateSnapshot {
+    app.core.update_snapshot()
 }
 
 #[tauri::command]
@@ -547,106 +541,21 @@ async fn open_usage_help(handle: tauri::AppHandle) -> Result<(), String> {
     .await
 }
 
-async fn check_all(handle: tauri::AppHandle, automatic: bool) -> Result<(), String> {
-    let app = handle.state::<Application>();
-    let Some(mut batch) = app.core.begin_update_check(automatic) else {
-        return Ok(());
-    };
-    let client = Arc::new(app.core.release_client()?);
-    for id in app.core.update_check_ids() {
-        let result = if id == sodeck::updates::CORE_ID {
-            app.updater
-                .check_with_client(&handle, &app.core, client.clone())
-                .await
-        } else {
-            let core = app.core.clone();
-            let client = client.clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                core.check_component(&id, &client).map(|_| ())
-            })
-            .await
-            .map_err(|e| e.to_string())?
-        };
-        if result.is_ok() {
-            batch.succeeded();
-        }
-    }
-    Ok(())
-}
-
 #[tauri::command]
-async fn check_updates(handle: tauri::AppHandle, automatic: bool) -> Result<(), String> {
-    check_all(handle, automatic).await
-}
-
-async fn download_reserved(
+async fn check_updates(
     handle: tauri::AppHandle,
-    task: (String, sodeck::updates::Operation),
-    client: Arc<ReleaseClient>,
-) {
-    let (id, operation) = task;
-    let app = handle.state::<Application>();
-    let result = if id == sodeck::updates::CORE_ID {
-        app.updater
-            .download_reserved_with_client(&app.core, operation, client)
-            .await
-    } else {
-        let core = app.core.clone();
-        let plugin_id = id.clone();
-        match tauri::async_runtime::spawn_blocking(move || {
-            core.download_plugin_reserved(&plugin_id, &client, operation)
-                .map(|_| ())
-        })
-        .await
-        {
-            Ok(result) => result,
-            Err(error) => Err(error.to_string()),
-        }
-    };
-    if let Err(error) = result {
-        app.core.fail_update(&id, error);
-    }
+    app: State<'_, Application>,
+) -> Result<(), String> {
+    app.updates.check(&handle, None, false).await
 }
 
 #[tauri::command]
-async fn download_updates(handle: tauri::AppHandle, ids: Vec<String>) -> Result<(), String> {
-    let client = Arc::new(handle.state::<Application>().core.release_client()?);
-    let tasks = handle
-        .state::<Application>()
-        .core
-        .reserve_update_downloads(&ids)?;
-    let mut tasks = std::collections::VecDeque::from(tasks);
-    while let Some(first) = tasks.pop_front() {
-        let second = tasks.pop_front();
-        let other = handle.clone();
-        let second_client = client.clone();
-        tokio::join!(
-            download_reserved(handle.clone(), first, client.clone()),
-            async move {
-                if let Some(task) = second {
-                    download_reserved(other, task, second_client).await;
-                }
-            }
-        );
-    }
-    Ok(())
-}
-
-async fn background_updates(handle: tauri::AppHandle) {
-    let copy = handle.clone();
-    let _ = tauri::async_runtime::spawn_blocking(move || {
-        let app = copy.state::<Application>();
-        app.updater.restore(&copy, &app.core)
-    })
-    .await;
-    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-    loop {
-        if handle.state::<Application>().core.is_closing() {
-            break;
-        }
-        let _ = check_all(handle.clone(), true).await;
-        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-    }
+async fn download_updates(
+    handle: tauri::AppHandle,
+    app: State<'_, Application>,
+    ids: Vec<String>,
+) -> Result<(), String> {
+    app.updates.download(&handle, ids).await
 }
 
 #[tauri::command]
@@ -670,28 +579,7 @@ async fn check_update(
     app: State<'_, Application>,
     id: String,
 ) -> Result<(), String> {
-    if id == sodeck::updates::CORE_ID {
-        return app.updater.check(&handle, &app.core).await;
-    }
-    let core = app.core.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        core.check_component(&id, &core.release_client()?)
-            .map(|_| ())
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn download_update(app: State<'_, Application>, id: String) -> Result<bool, String> {
-    if id == sodeck::updates::CORE_ID {
-        app.updater.download(&app.core).await?;
-        return Ok(true);
-    }
-    let core = app.core.clone();
-    tauri::async_runtime::spawn_blocking(move || core.download_plugin(&id, &core.release_client()?))
-        .await
-        .map_err(|e| e.to_string())?
+    app.updates.check(&handle, Some(id), false).await
 }
 
 #[tauri::command]
@@ -711,7 +599,7 @@ async fn close_prepare(
         let verify = handle.clone();
         tauri::async_runtime::spawn_blocking(move || {
             let app = verify.state::<Application>();
-            app.updater.verify_for_close(&app.core)
+            app.updates.updater.verify_for_close(&app.core)
         })
         .await
         .map_err(|e| e.to_string())??;
@@ -781,7 +669,7 @@ async fn restart_app(
     if install_core {
         let verify = handle.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            verify.state::<Application>().updater.verify_ready()
+            verify.state::<Application>().updates.updater.verify_ready()
         })
         .await
         .map_err(|e| e.to_string())??;
@@ -832,9 +720,6 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
         return;
     }
     let first = !app.frontend_loaded.swap(true, Ordering::AcqRel);
-    if first && !app.smoke && !app.interactive_test {
-        tauri::async_runtime::spawn(background_updates(handle.clone()));
-    }
     if !app.smoke || !first || app.interactive_test {
         return;
     }
@@ -852,6 +737,13 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
     std::thread::spawn(move || {
         let validation = (|| {
             if package_only {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+                while !handle.state::<Application>().updates.initialized() {
+                    if std::time::Instant::now() >= deadline {
+                        return Err("应用级更新服务未随原生应用启动".into());
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
                 sodeck::validation::plugin_icons_roundtrip(&handle, &core)?;
             }
             if clipboard_test_requested {
@@ -960,12 +852,13 @@ fn attach_native_finalizer(handle: &tauri::AppHandle, core: &Arc<AppCore>) {
                 Target::Application { action } => {
                     let app = native.state::<Application>();
                     if action == Action::InstallAndRestart {
-                        if let Err(error) = app.updater.install() {
+                        if let Err(error) = app.updates.updater.install() {
                             app.core.failed_core_install(error.clone());
                             return Err(error);
                         }
                     }
                     sodeck::desktop_files::shutdown(&native)?;
+                    app.updates.stop();
                     app.exit_handoff.store(true, Ordering::Release);
                     if action == Action::Exit {
                         native.exit(0);
@@ -1037,9 +930,10 @@ fn main() {
                     if let Some(window)=value["windowId"].as_str() {let _=handle.emit_to(window,name,value.clone());}
                 } else {let _ = handle.emit(name, value);}
             }));
+            let updates = Arc::new(UpdateService::new(core.clone()));
             app.manage(Application {
                 core: core.clone(),
-                updater: CoreUpdater::default(),
+                updates: updates.clone(),
                 exit_handoff: AtomicBool::new(false),
                 smoke,
                 interactive_test,
@@ -1048,6 +942,10 @@ fn main() {
             });
             app.manage(DesktopWindows::new(core.clone()));
             attach_native_finalizer(app.handle(), &core);
+            if !interactive_test {
+                if smoke { core.set_automatic_updates(false)?; }
+                updates.start(app.handle().clone());
+            }
             if !smoke {
                 std::thread::spawn(move || core.start_enabled());
             }
@@ -1112,8 +1010,7 @@ fn main() {
             install_official_plugin,
             set_plugin_enabled,
             set_plugin_update_source,
-            update_status,
-            update_overview,
+            update_snapshot,
             check_updates,
             download_updates,
             set_automatic_updates,
@@ -1123,7 +1020,6 @@ fn main() {
             open_update_link,
             open_usage_help,
             check_update,
-            download_update,
             restart_app,
             forget_plugin,
             set_theme,

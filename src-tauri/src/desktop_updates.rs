@@ -9,6 +9,9 @@ use std::{
 use tauri::Manager;
 use tauri_plugin_updater::{Update, UpdaterExt};
 
+mod service;
+pub use service::UpdateService;
+
 #[derive(Default)]
 pub struct CoreUpdater {
     update: Mutex<Option<Update>>,
@@ -114,17 +117,17 @@ impl CoreUpdater {
             let _ = fs::remove_file(root.join(name));
         }
     }
-    pub async fn check(
+    pub async fn check<R: tauri::Runtime>(
         &self,
-        handle: &tauri::AppHandle,
+        handle: &tauri::AppHandle<R>,
         core: &Arc<AppCore>,
     ) -> Result<(), String> {
         let client = core.release_client()?.for_component(core, CORE_ID);
         self.check_with_client(handle, core, Arc::new(client)).await
     }
-    pub async fn check_with_client(
+    pub async fn check_with_client<R: tauri::Runtime>(
         &self,
-        handle: &tauri::AppHandle,
+        handle: &tauri::AppHandle<R>,
         core: &Arc<AppCore>,
         client: Arc<ReleaseClient>,
     ) -> Result<(), String> {
@@ -140,9 +143,9 @@ impl CoreUpdater {
         }
         result
     }
-    async fn discover(
+    async fn discover<R: tauri::Runtime>(
         &self,
-        handle: &tauri::AppHandle,
+        handle: &tauri::AppHandle<R>,
         core: &Arc<AppCore>,
         client: Arc<ReleaseClient>,
     ) -> Result<(), String> {

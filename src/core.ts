@@ -64,7 +64,8 @@ export interface Update {
   checkedAt?: number | null;
   network?: { endpoint: string; attempt: number; error: string | null } | null;
 }
-export interface UpdateOverview { checking: boolean; busy: boolean; lastCheckedAt: number; nextCheckAt: number }
+export interface UpdateOverview { checking: boolean; busy: boolean; lastCheckedAt: number; nextCheckAt: number; error?: string | null }
+export interface UpdateSnapshot { items: Record<string, Update>; overview: UpdateOverview }
 export interface Log {
   id: string;
   receivedAt: number;
@@ -103,15 +104,13 @@ export const core = {
   installOfficial: (id: string) => invoke<string>("install_official_plugin", { id }),
   enabled: (id: string, enabled: boolean) => invoke<void>("set_plugin_enabled", { id, enabled }),
   updateSource: (id: string, source: Manifest["updateSource"] | null, expected?: { source: Manifest["updateSource"] | null }) => invoke<void>("set_plugin_update_source", { id, source, expected }),
-  updates: () => invoke<Record<string, Update>>("update_status"),
-  updateOverview: () => invoke<UpdateOverview>("update_overview"),
-  checkUpdates: (automatic = false) => invoke<void>("check_updates", { automatic }),
+  updates: () => invoke<UpdateSnapshot>("update_snapshot"),
+  checkUpdates: () => invoke<void>("check_updates"),
   downloadUpdates: (ids: string[]) => invoke<void>("download_updates", { ids }),
   automaticUpdates: (enabled: boolean) => invoke<void>("set_automatic_updates", { enabled }),
   updateNetwork: (preferences: UpdateNetwork) => invoke<UpdateNetwork>("set_update_network", { expectedRevision: preferences.revision, preferences }),
   testMirror: (prefix: string | null) => invoke<MirrorDiagnostic[]>("test_update_mirror", { prefix }),
   checkUpdate: (id: string) => invoke<void>("check_update", { id }),
-  download: (id: string) => invoke<boolean>("download_update", { id }),
   restart: (installCore = false) => invoke<void>("restart_app", { installCore }),
   forget: (id: string) => invoke<void>("forget_plugin", { id }),
   theme: (theme: string) => invoke<void>("set_theme", { theme }),

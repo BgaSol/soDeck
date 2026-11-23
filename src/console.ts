@@ -6,7 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Workspaces, type DropPreview } from "./workspaces";
 import { core, type Snapshot, type Message } from "./core";
 import * as views from "./views";
-import { selectedUpdates, updateCount, CORE_ID } from "./updates";
+import { selectedUpdates, updateNotice } from "./update-model";
 import { networkAction, networkInput } from "./update-network";
 import { button as b, escape as e, icon } from "./ui";
 import { updateDOM } from "./dom-update";
@@ -65,8 +65,12 @@ const hostDrafts = new HostDrafts(() => snapshot, state, renderPage);
 
 
 function renderTop() {
-  const count = snapshot ? updateCount(snapshot, state) : 0;
-  const pending = snapshot?.restartRequired || state.updates[CORE_ID]?.phase === "ready";
+  const {count, pending, label} = snapshot ? updateNotice(snapshot, state) : {count: 0, pending: false, label: ""};
+  const notice = root.querySelector<HTMLElement>("#updates-button")!;
+  notice.hidden = !count && !pending;
+  notice.setAttribute("aria-label", label || "软件更新");
+  notice.title = label;
+  root.querySelector("#update-notice-label")!.textContent = label;
   const updatesBadge = root.querySelector<HTMLElement>('#console-update-count')!;
   updatesBadge.textContent = count ? String(count) : pending ? '待重启' : '';
   updatesBadge.hidden = !count && !pending;
@@ -125,7 +129,6 @@ async function enterPage(next: ConsolePage) {
   renderPage(changed);
   if(next==='messages')await refreshMessages();
   if(next==='logs'&&!state.paused)await refreshLogs();
-  if(next==='updates')void core.checkUpdates(true).catch(()=>{});
   if(['settings','plugins','updates'].includes(next))void componentSettings.catalog();
   if(next==='plugins')void loadOfficialPlugins();
   scheduleRefresh();
@@ -167,11 +170,10 @@ async function refresh() {
     const networkRevision = snapshot?.preferences.updateNetwork?.revision;
     const result = await shell.read();
     if (!result || hostDisposed) return;
-    const {updates, overview} = result;
+    const {updates} = result;
     snapshot = result.snapshot;
     if (!statusView.paused) { statusView.updatedAt = Date.now(); statusView.networkStale = shell.networkStale; }
-    if (updates.status === "fulfilled") state.updates = updates.value;
-    if (overview.status === "fulfilled") state.updateOverview = overview.value;
+    if (updates.status === "fulfilled") { state.updates = updates.value.items; state.updateOverview = updates.value.overview; }
     lastError = shell.error;
     if (networkRevision !== undefined && networkRevision !== snapshot?.preferences.updateNetwork?.revision) {
       state.networkGeneration = (state.networkGeneration ?? 0) + 1;
@@ -286,6 +288,7 @@ root.addEventListener("click", (event) => {
     }
     switch (name) {
       case "status":
+      case "updates":
       case "settings":
       case "messages":
         await showPage(name);
@@ -354,7 +357,6 @@ root.addEventListener("click", (event) => {
       case "plugin-updates":
         await showPage("updates");
         pageHost.querySelector<HTMLElement>(`[data-update-id="${CSS.escape(id)}"]`)?.focus();
-        void core.checkUpdates(true).catch(() => {});
         break;
       case "select-plugin":
         state.plugin = id;

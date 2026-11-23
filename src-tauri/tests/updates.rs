@@ -1254,7 +1254,7 @@ fn automatic_check_preferences_and_candidates_survive_restart() {
     core.check_component("test.fixture", &server.client())
         .unwrap();
     batch.succeeded();
-    drop(batch);
+    batch.finish(None);
     assert!(core.begin_update_check(true).is_none());
     core.check_component("test.fixture", &server.client())
         .unwrap();
@@ -1278,16 +1278,102 @@ fn automatic_check_preferences_and_candidates_survive_restart() {
 }
 
 #[test]
+fn batch_completion_uses_only_this_run_and_single_checks_do_not_defer_full_checks() {
+    let f = Fixture::new();
+    f.add();
+    let core = f.open();
+    let server = Server::new();
+    assert!(core
+        .check_component("test.fixture", &server.client())
+        .is_err());
+    let mut batch = core.begin_update_check(false).unwrap();
+    batch.succeeded();
+    batch.finish(None);
+    let due = core.update_overview().next_check_at;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    assert!(
+        due > now + 23 * 60 * 60 * 1000,
+        "Old item errors must not schedule this successful batch for retry"
+    );
+    let mut single = core.begin_component_check().unwrap();
+    assert!(core.begin_update_check(false).is_none());
+    single.failed();
+    single.finish(None);
+    assert_eq!(core.update_overview().next_check_at, due);
+    let batch = core.begin_update_check(false).unwrap();
+    batch.finish(Some("client construction failed".into()));
+    let overview = core.update_overview();
+    assert!(overview.next_check_at <= now + 16 * 60 * 1000);
+    assert_eq!(
+        overview.error.as_deref(),
+        Some("client construction failed")
+    );
+    assert!(!overview.checking);
+    drop(core);
+    assert_eq!(f.open().update_overview().error, overview.error);
+}
+
+#[test]
+fn interrupted_batches_release_admission_and_retry_instead_of_waiting_a_day() {
+    let f = Fixture::new();
+    let core = f.open();
+    drop(core.begin_update_check(false).unwrap());
+    let overview = core.update_overview();
+    assert!(!overview.checking && overview.error.is_some());
+    assert!(overview.last_checked_at == 0);
+    assert!(core.begin_update_check(true).is_none());
+    core.begin_update_check(false).unwrap().finish(None);
+    assert!(core.update_overview().error.is_none());
+}
+
+#[test]
+fn shared_service_continues_plugin_checks_after_core_discovery_fails() {
+    let f = Fixture::new();
+    f.add();
+    let core = f.open();
+    let server = Server::new();
+    server.release(f.package(""), "2.0", TARGET);
+    let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+    context
+        .config_mut()
+        .plugins
+        .0
+        .insert("updater".into(), json!({"pubkey":"test-discovery-only"}));
+    let app = tauri::test::mock_builder()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .build(context)
+        .unwrap();
+    let service =
+        sodeck::desktop_updates::UpdateService::with_test_client(core.clone(), server.client());
+    tauri::async_runtime::block_on(service.check(app.handle(), None, false)).unwrap();
+    let snapshot = core.update_snapshot();
+    assert_eq!(snapshot.items["test.fixture"].phase, "available");
+    #[cfg(not(target_os = "linux"))]
+    assert_eq!(
+        snapshot.items[sodeck::updates::CORE_ID]
+            .error_stage
+            .as_deref(),
+        Some("check")
+    );
+    assert!(snapshot.overview.last_checked_at > 0);
+    assert!(!snapshot.overview.checking && !snapshot.overview.busy);
+}
+
+#[test]
 fn failed_checks_remain_visible_after_reopening_without_a_candidate() {
     let f = Fixture::new();
     f.add();
     let server = Server::new();
     let core = f.open();
-    let batch = core.begin_update_check(false).unwrap();
+    let mut batch = core.begin_update_check(false).unwrap();
     assert!(core
         .check_component("test.fixture", &server.client())
         .is_err());
-    drop(batch);
+    batch.failed();
+    batch.finish(None);
     let retry_at = core.update_overview().next_check_at;
     assert_eq!(core.update_overview().last_checked_at, 0);
     drop(core);

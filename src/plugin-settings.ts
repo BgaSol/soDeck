@@ -2,7 +2,8 @@ import type { Plugin, Snapshot } from "./core";
 import type { ViewState } from "./views";
 import { button as b, empty, escape as e, icon, statusText } from "./ui";
 import { date } from "./datetime";
-import { canDownload, pluginUpdate, updateStatus, updateWorking } from "./updates";
+import { updateStatus } from "./updates";
+import { canDownload, pluginUpdate, updateWorking } from "./update-model";
 import {packageIcon, catalogIcon} from './plugin-icons';
 
 const attrs = (id: string) => `data-id="${e(id)}"`;

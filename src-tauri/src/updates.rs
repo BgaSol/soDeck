@@ -203,6 +203,7 @@ pub struct UpdateState {
     pub(crate) checking_all: bool,
     last_checked_at: u64,
     next_check_at: u64,
+    error: Option<String>,
 }
 
 #[derive(Default, Deserialize, Serialize)]
@@ -212,47 +213,69 @@ struct UpdateCache {
     candidates: HashMap<String, UpdateManifest>,
     last_checked_at: u64,
     next_check_at: u64,
+    error: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateOverview {
     pub checking: bool,
     pub busy: bool,
     pub last_checked_at: u64,
     pub next_check_at: u64,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct UpdateSnapshot {
+    pub items: HashMap<String, UpdateView>,
+    pub overview: UpdateOverview,
 }
 
 pub struct CheckBatch {
     core: Arc<AppCore>,
     successes: usize,
+    failures: usize,
+    full: bool,
+    completed: bool,
 }
 impl CheckBatch {
     pub fn succeeded(&mut self) {
         self.successes += 1;
     }
-}
-impl Drop for CheckBatch {
-    fn drop(&mut self) {
+    pub fn failed(&mut self) {
+        self.failures += 1;
+    }
+    pub fn finish(mut self, error: Option<String>) {
+        self.complete(error);
+    }
+    fn complete(&mut self, error: Option<String>) {
+        self.completed = true;
         let mut state = self.core.updates.lock().unwrap();
         state.checking_all = false;
-        let time = crate::core::now();
-        if self.successes > 0 {
-            state.last_checked_at = time;
+        if self.full {
+            let time = crate::core::now();
+            if self.successes > 0 {
+                state.last_checked_at = time;
+            }
+            state.next_check_at = time
+                + if self.failures > 0 || error.is_some() {
+                    15 * 60 * 1000
+                } else {
+                    24 * 60 * 60 * 1000
+                };
         }
-        let failed = state
-            .items
-            .values()
-            .any(|v| v.error_stage.as_deref() == Some("check"));
-        state.next_check_at = time
-            + if failed {
-                15 * 60 * 1000
-            } else {
-                24 * 60 * 60 * 1000
-            };
+        state.error = error;
         drop(state);
         self.core.persist_update_cache();
         self.core.changed();
+    }
+}
+impl Drop for CheckBatch {
+    fn drop(&mut self) {
+        if !self.completed {
+            self.complete(Some("更新检查已中断，请重试".into()));
+        }
     }
 }
 
@@ -946,6 +969,20 @@ impl AppCore {
         self.update_phase(id, "error", Some(error));
         self.changed();
     }
+    pub fn fail_check(&self, id: &str, error: String) {
+        if self
+            .updates
+            .lock()
+            .unwrap()
+            .items
+            .get(id)
+            .is_some_and(|v| v.phase == "incompatible")
+        {
+            return;
+        }
+        self.update_phase(id, "checking", None);
+        self.update_phase(id, "error", Some(error));
+    }
     pub fn failed_core_install(&self, error: String) {
         if let Some(view) = self.updates.lock().unwrap().items.get_mut(CORE_ID) {
             view.phase = "ready".into();
@@ -959,8 +996,21 @@ impl AppCore {
         state.checking_all || !state.busy.is_empty()
     }
     pub fn update_views(&self) -> HashMap<String, UpdateView> {
+        self.update_snapshot().items
+    }
+
+    pub fn update_snapshot(&self) -> UpdateSnapshot {
         let snapshot = self.snapshot();
-        let mut items = self.updates.lock().unwrap().items.clone();
+        let state = self.updates.lock().unwrap();
+        let mut items = state.items.clone();
+        let overview = UpdateOverview {
+            checking: state.checking_all,
+            busy: !state.busy.is_empty(),
+            last_checked_at: state.last_checked_at,
+            next_check_at: state.next_check_at,
+            error: state.error.clone(),
+        };
+        drop(state);
         for p in snapshot.plugins {
             if let Some(version) = p.pending_version {
                 let view = items
@@ -973,9 +1023,22 @@ impl AppCore {
                 view.version = Some(version);
                 view.error = None;
                 view.error_stage = None;
+            } else {
+                items
+                    .entry(p.manifest.id.clone())
+                    .or_insert_with(|| UpdateView {
+                        id: p.manifest.id,
+                        phase: if p.manifest.update_source.is_some() {
+                            "idle"
+                        } else {
+                            "local"
+                        }
+                        .into(),
+                        ..Default::default()
+                    });
             }
         }
-        items
+        UpdateSnapshot { items, overview }
     }
 
     pub fn update_overview(&self) -> UpdateOverview {
@@ -985,10 +1048,19 @@ impl AppCore {
             busy: !state.busy.is_empty(),
             last_checked_at: state.last_checked_at,
             next_check_at: state.next_check_at,
+            error: state.error.clone(),
         }
     }
 
     pub fn begin_update_check(self: &Arc<Self>, automatic: bool) -> Option<CheckBatch> {
+        self.begin_check(automatic, true)
+    }
+
+    pub fn begin_component_check(self: &Arc<Self>) -> Option<CheckBatch> {
+        self.begin_check(false, false)
+    }
+
+    fn begin_check(self: &Arc<Self>, automatic: bool, full: bool) -> Option<CheckBatch> {
         let enabled = self.store.lock().unwrap().preferences.automatic_updates;
         let mut state = self.updates.lock().unwrap();
         if self.is_closing()
@@ -999,11 +1071,15 @@ impl AppCore {
             return None;
         }
         state.checking_all = true;
+        state.error = None;
         drop(state);
         self.changed();
         Some(CheckBatch {
             core: self.clone(),
             successes: 0,
+            failures: 0,
+            full,
+            completed: false,
         })
     }
 
@@ -1088,6 +1164,7 @@ impl AppCore {
             candidates: state.candidates.clone(),
             last_checked_at: state.last_checked_at,
             next_check_at: state.next_check_at,
+            error: state.error.clone(),
         };
         drop(state);
         if let Err(error) = crate::storage::write_json(&root.join("updates-cache.json"), &cache) {
@@ -1134,6 +1211,7 @@ impl AppCore {
         state.items = cache.items;
         state.candidates = cache.candidates;
         state.last_checked_at = cache.last_checked_at;
+        state.error = cache.error;
         state.next_check_at = cache
             .next_check_at
             .min(crate::core::now() + 24 * 60 * 60 * 1000);

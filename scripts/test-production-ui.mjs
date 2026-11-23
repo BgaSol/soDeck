@@ -547,8 +547,19 @@ try {
       chosenPluginDirectory = null;
     } else await call('add_plugin',{directory:pluginDirectory});
   }
-  await page.reload();await page.locator('#settings-button').click();
-  await page.locator('[data-console-page="updates"]').click();
+  failCatalog = true; failReadCommand = 'snapshot';
+  await page.reload();
+  await call('start_automatic_updates');
+  await page.locator('#updates-button').filter({hasText:'更新 2'}).waitFor({timeout:20000});
+  assert.equal(await page.locator('#layer-content').getAttribute('data-page'),null,'Background discovery does not need an update or plugin page');
+  assert.equal((await call('update_snapshot')).items['test.update-one'].phase,'available');
+  const autoRequests = requests.length;
+  await page.locator('#updates-button').focus(); await page.keyboard.press('Enter');
+  await page.getByRole('heading',{name:'软件更新',exact:true}).waitFor();
+  await page.waitForTimeout(250);
+  assert.equal(requests.length,autoRequests,'Opening updates only reads the existing result');
+  failCatalog = false;
+  checks.push('Application update service discovers versions with initial snapshot/catalog failures and no update page; top entry opens existing results without another check');
   await page.locator('#update-network-summary').click();
   await page.locator('#update-network-summary').focus();await page.keyboard.press('Tab');
   assert.equal(await page.evaluate(()=>document.activeElement.id),'network-fallback','Keyboard enters expanded network settings');

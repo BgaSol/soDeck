@@ -13,7 +13,24 @@ fn main() {
         return;
     }
     let core =
-        sodeck::AppCore::open(std::env::args().nth(1).unwrap().into(), "test".into()).unwrap();
+        sodeck::AppCore::open(std::env::args().nth(1).unwrap().into(), "2.0.0".into()).unwrap();
+    let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+    context
+        .config_mut()
+        .plugins
+        .0
+        .insert("updater".into(), json!({"pubkey":"test-discovery-only"}));
+    let app = tauri::test::mock_builder()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .build(context)
+        .unwrap();
+    let updates = std::sync::Arc::new(sodeck::desktop_updates::UpdateService::with_test_client(
+        core.clone(),
+        sodeck::updates::ReleaseClient::test_server(
+            &std::env::var("SODECK_TEST_PLUGIN_API")
+                .unwrap_or_else(|_| "http://127.0.0.1:1".into()),
+        ),
+    ));
     if std::env::var_os("SODECK_TEST_SHARED_EVENTS").is_some() {
         core.set_listener(std::sync::Arc::new(|name, payload| {
             if name == "component-state-changed" {
@@ -225,8 +242,7 @@ fn main() {
                 ))
                 .map(|_| Value::Null)
             }
-            "update_status" => Ok(json!(core.update_views())),
-            "update_overview" => Ok(json!(core.update_overview())),
+            "update_snapshot" => Ok(json!(core.update_snapshot())),
             "set_update_network" => core
                 .set_update_network(
                     args["expectedRevision"].as_u64().unwrap(),
@@ -270,46 +286,25 @@ fn main() {
                     serde_json::from_value(args["expected"].clone()).unwrap(),
                 )
                 .map(|_| Value::Null),
-            "check_update" => {
-                let base = std::env::var("SODECK_TEST_PLUGIN_API").unwrap();
-                core.check_component(
-                    args["id"].as_str().unwrap(),
-                    &sodeck::updates::ReleaseClient::test_server(&base),
-                )
-                .map(|_| Value::Null)
-            }
+            "check_update" => tauri::async_runtime::block_on(updates.check(
+                app.handle(),
+                Some(args["id"].as_str().unwrap().into()),
+                false,
+            ))
+            .map(|_| Value::Null),
             "check_updates" => {
-                if let Some(mut batch) =
-                    core.begin_update_check(args["automatic"].as_bool().unwrap_or(false))
-                {
-                    let base = std::env::var("SODECK_TEST_PLUGIN_API").unwrap();
-                    let client = sodeck::updates::ReleaseClient::test_server(&base);
-                    for id in core
-                        .update_check_ids()
-                        .into_iter()
-                        .filter(|id| id != sodeck::updates::CORE_ID)
-                    {
-                        if core.check_component(&id, &client).is_ok() {
-                            batch.succeeded();
-                        }
-                    }
-                }
+                tauri::async_runtime::block_on(updates.check(app.handle(), None, false))
+                    .map(|_| Value::Null)
+            }
+            "start_automatic_updates" => {
+                updates.start(app.handle().clone());
                 Ok(Value::Null)
             }
-            "download_updates" => {
-                let ids: Vec<String> = serde_json::from_value(args["ids"].clone()).unwrap();
-                core.reserve_update_downloads(&ids).map(|tasks| {
-                    let base = std::env::var("SODECK_TEST_PLUGIN_API").unwrap();
-                    for (id, operation) in tasks {
-                        let _ = core.download_plugin_reserved(
-                            &id,
-                            &sodeck::updates::ReleaseClient::test_server(&base),
-                            operation,
-                        );
-                    }
-                    Value::Null
-                })
-            }
+            "download_updates" => tauri::async_runtime::block_on(updates.download(
+                app.handle(),
+                serde_json::from_value(args["ids"].clone()).unwrap(),
+            ))
+            .map(|_| Value::Null),
             "set_theme" => core
                 .set_theme(args["theme"].as_str().unwrap())
                 .map(|_| Value::Null),
@@ -488,6 +483,7 @@ fn main() {
         println!("{response}");
         io::stdout().flush().unwrap();
     }
+    updates.stop();
     // UI integration tests may stop early; explicitly release process groups.
     let preparation = core.close_fixture_prepare(
         "main",

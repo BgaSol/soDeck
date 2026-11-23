@@ -1,6 +1,6 @@
 import { themes } from './theme';
 import type { Snapshot, Log, Message, Filter, Update, UpdateOverview, Manifest, OfficialPlugin, UpdateNetwork, MirrorDiagnostic } from "./core";
-import { updatesPage, pendingUpdates, updateCount } from "./updates";
+import { updatesPage, pendingUpdates } from "./updates";
 import { pluginsPage } from "./plugin-settings";
 import { button as b, empty, escape as e, icon, statusText } from "./ui";
 import { date, localTime } from "./datetime";
