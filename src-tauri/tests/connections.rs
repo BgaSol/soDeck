@@ -702,6 +702,48 @@ async fn expired_saved_password_is_replaced_after_success_and_reused_on_reconnec
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deleting_a_connecting_target_preserves_catalog_and_original_attempt() {
+    let f = Fixture::new();
+    let target = SshServer::new().await;
+    let id = f.server("127.0.0.1", target.addr.port(), json!([]));
+    f.password(&id, None);
+    let attempt = f.core.start_connection("main", &id).unwrap();
+    let _prompt = credential_prompt(&f).await;
+    let before = f.disk();
+    let revision = f.core.server_catalog()["revision"].as_u64().unwrap();
+    let error = f
+        .core
+        .change_catalog(
+            revision,
+            serde_json::from_value(json!({"op":"deleteServer","id":id})).unwrap(),
+        )
+        .unwrap_err();
+    assert!(error.contains("取消连接"), "{error}");
+    assert_eq!(f.disk(), before);
+    assert_eq!(f.core.server_catalog()["revision"], revision);
+    assert_eq!(f.core.connection_views()[0].attempt_id, attempt.attempt_id);
+    assert_eq!(f.core.connection_views()[0].state, "connecting");
+    f.core
+        .cancel_connection("main", &attempt.attempt_id)
+        .unwrap();
+    until(|| f.core.connection_views()[0].state == "cancelled").await;
+    // Cancellation may be visible just before cleanup completes; retry only inUse.
+    until(|| {
+        f.core
+            .change_catalog(
+                revision,
+                serde_json::from_value(json!({"op":"deleteServer","id":id})).unwrap(),
+            )
+            .is_ok()
+    })
+    .await;
+    assert!(f.core.server_catalog()["servers"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unchecked_credentials_only_apply_to_this_attempt_and_preserve_saved_password() {
     for previous in [None, Some("expired-password")] {
         let f = Fixture::new();

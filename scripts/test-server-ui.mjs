@@ -145,7 +145,7 @@ try {
   assert.equal((await read()).tags.length,0);await closeDirty();
   assert.equal((await read()).tags.length,0);checks.push('取消服务器表单不留下新标签');
   await action("new-menu",work()).click();
-  await page.locator('.catalog-action-menu [data-server-action="new-proxy"]').click();
+  await page.locator('.catalog-action-menu [data-menu-action="new-proxy"]').click();
   await field("host").fill("127.0.0.1"); await field("authType").selectOption("usernamePassword");
   assert.equal(await field("remember").isChecked(), true);
   await field("username").fill("proxy-ops"); await field("password").fill("ui-proxy-secret"); await field("remember").check();
@@ -196,12 +196,12 @@ try {
   await work().locator(`[data-filter-tag="${databaseTag}"]`).click();
   assert.equal(await work().locator('.connection-node:not(.path-node)').count(),2);
   await work().locator(`[data-filter-tag="${catalog.tags[0].id}"]`).click();
-  assert.equal(await work().locator('.connection-node:not(.path-node)').count(),1,'AND excludes the server with only one selected tag');
-  assert.equal(await work().locator('.path-node').count(),3,'Every explicit ancestor remains visible');
+  assert.equal(await work().locator('.connection-node:not(.path-node)').count(),2,'AND filters matching routes without changing an existing ancestor target role');
+  assert.equal(await work().locator('.path-node').count(),2,'Every explicit ancestor remains visible with its canonical role');
   assert.equal(await work().locator('.path-node[data-connect-server-on-double-click]').count(),0);
   await work().locator(`.connection-node[data-id="${gateway}"]`).first().click();
-  assert.equal(await work().locator('.catalog-detail [data-connect-server]').count(),0,'A filtered ancestor is context even if its saved target shares this prefix');
-  await work().locator('.catalog-detail [data-server-action="locate-target"]').first().click();
+  assert.equal(await work().locator('.catalog-detail [data-connect-server]').count(),1,'Filtering preserves a shared prefix that is also a saved target');
+  await action('clear-tags',work()).click();
   assert.equal(await work().locator('[data-filter-tag][aria-pressed=true]').count(),0);
   assert.equal(await work().locator('.catalog-detail [data-connect-server]').count(),1);
   await work().locator(`[data-filter-tag="${databaseTag}"]`).click();
@@ -272,7 +272,7 @@ try {
   await page.evaluate(()=>window.manager.setConnections([]));
   checks.push('图标访问路径、真实阶段方向、凭据/指纹暂停、失败定位、后台/屏外/减少动态及快照连续性');
   await search.fill('公网');
-  assert.equal(await work().locator('.connection-node:not(.path-node)').count(),1,'Searching a route node retains its matching target');
+  assert.equal(await work().locator('.connection-node:not(.path-node)').count(),2,'Searching retains its matching target and the canonical ancestor target role');
   await action('clear-tags',work()).click();assert.equal(await search.inputValue(),'公网','All clears labels without clearing search');
   await work().locator(`[data-filter-tag="${databaseTag}"]`).click();
   await work().locator(`[data-filter-tag="${catalog.tags[0].id}"]`).click();
@@ -285,7 +285,7 @@ try {
   failCatalogRead=true;await action('reload',work()).click();
   await work().locator('.error-box').waitFor();
   assert.equal(await work().locator('.connection-node.selected').getAttribute('data-path'),selectedPath);
-  assert.equal(await work().locator('[data-connect-server]').count(),0);
+  assert.equal(await work().locator('[data-connect-server]').isDisabled(),true);
   assert.equal(await action('new-server',work()).isDisabled(),true);
   for(const name of ['edit','copy','delete'])assert.equal(await action(name,work()).isDisabled(),true);
   failCatalogRead=false;await action('reload',work()).click();
@@ -331,9 +331,9 @@ try {
   await work().locator(`[data-server-action="select"][data-id="${gateway}"]`).first().click();
   await action('delete',work()).click(); assert((await dialogs().innerText()).includes("生产数据库")); await action("confirm-yes").click();
   await expectDialogs(0); assert.equal((await read()).servers.length, 2);
-  await work().locator("#catalog-query").fill("deploy"); assert.equal(await work().locator(".connection-node:not(.path-node)").count(), 1);
+  await work().locator("#catalog-query").fill("deploy"); assert.equal(await work().locator(".connection-node:not(.path-node)").count(), 2);
   await work().locator("#catalog-query").fill(""); await work().locator(`[data-filter-tag="${catalog.tags[0].id}"]`).click();
-  assert.equal(await work().locator(".connection-node:not(.path-node)").count(), 1); await work().locator(`[data-filter-tag="${catalog.tags[0].id}"]`).click();
+  assert.equal(await work().locator(".connection-node:not(.path-node)").count(), 2); await work().locator(`[data-filter-tag="${catalog.tags[0].id}"]`).click();
   checks.push("引用阻止删除，按账号搜索和标签筛选");
 
   await action("new-server", work()).click(); await field("host").fill("unsaved.internal"); await action("inline-proxy").count().then(async n => {
@@ -429,6 +429,59 @@ try {
   await page.setViewportSize({ width: 1100, height: 720 });
   if (process.env.SODECK_UI_SCREENSHOT) await page.screenshot({ path: process.env.SODECK_UI_SCREENSHOT });
   checks.push("系统、浅色、深色、多巴胺主题与 1100/900/720px 操作换行、表单、焦点和固定页脚");
+
+  await page.setViewportSize({width:1100,height:720});
+  await action('clear-filters',work()).count()&&await action('clear-filters',work()).click();
+  await page.evaluate(()=>{manager.state.query='';manager.state.tags=[];manager.render();});
+  const menu=page.locator('.catalog-action-menu');
+  const sourceRow=work().locator(`.connection-node[data-id="${target}"]`).first();
+  await sourceRow.scrollIntoViewIfNeeded();await sourceRow.click({button:'right'});
+  await menu.waitFor({state:'visible'});assert.equal(await menu.locator('[data-menu-action="collapse"]').count(),0);
+  assert.match(await menu.innerText(),/经此节点新增服务器/);
+  const beforeVia=await read();await menu.locator('[data-menu-action="new-via"]').click();await expectDialogs(1);
+  assert.equal(await field('host').inputValue(),'');assert.equal(await field('username').inputValue(),'');assert.equal(await field('password').inputValue(),'');
+  assert.equal(await dialogs().locator('.route-editor-step').count(),beforeVia.servers.find(s=>s.id===target).route.length+1);
+  const expectedVia=[...beforeVia.servers.find(s=>s.id===target).route.map(r=>r.kind==='ssh'?r.serverId:r.proxyId),target];
+  assert.deepEqual(await dialogs().locator('[data-step]').evaluateAll(nodes=>nodes.map(n=>n.value)),expectedVia);
+  await page.keyboard.press('Escape');await expectDialogs(0);assert.equal((await read()).servers.length,beforeVia.servers.length);
+  assert.equal(await sourceRow.evaluate(row=>row===document.activeElement),true);
+  await sourceRow.focus();await page.keyboard.press('Shift+F10');await menu.waitFor({state:'visible'});
+  await menu.locator('[data-menu-action="new-via"]').click();await field('host').fill('via-context.internal');await field('username').fill('ops');
+  await bridge.call('change_catalog',{revision:(await read()).revision,change:{op:'saveTag',id:null,name:'右键并发标签'}});
+  await save();assert.match(await dialogs().locator('.error-box').innerText(),/目录已更新/);
+  await action('reload-editor').click();assert.equal(await field('host').inputValue(),'via-context.internal');
+  assert.deepEqual(await dialogs().locator('[data-step]').evaluateAll(nodes=>nodes.map(n=>n.value)),expectedVia);
+  await save();await expectDialogs(0);
+  const via=(await read()).servers.find(r=>r.host==='via-context.internal');assert(via);assert(!via.authentication.hasSavedSecret);assert(!via.authentication.hasSessionSecret);
+  assert.deepEqual(via.route.map(r=>r.kind==='ssh'?r.serverId:r.proxyId),expectedVia);
+  const viaRow=work().locator(`.connection-node[data-id="${via.id}"]`);assert.equal(await viaRow.getAttribute('aria-selected'),'true');
+  for(const theme of ['light','dark','dopamine']){
+    await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+    await viaRow.click({button:'right'});await menu.waitFor({state:'visible'});
+    const bounds=await menu.boundingBox();assert(bounds.x>=0&&bounds.y>=0&&bounds.x+bounds.width<=1101&&bounds.y+bounds.height<=721);
+    await page.evaluate(()=>Promise.allSettled(document.getAnimations().map(a=>a.finished)));
+    fs.mkdirSync('artifacts/server-context-menu',{recursive:true});await page.screenshot({path:`artifacts/server-context-menu/${theme}.png`});
+    await page.keyboard.press('Escape');
+  }
+  await page.setViewportSize({width:720,height:540});await action('back',work()).click();
+  await viaRow.click({button:'right'});await menu.waitFor({state:'visible'});
+  assert.equal(await work().locator('.catalog-layout').evaluate(node=>node.classList.contains('has-detail')),false,'Narrow context selection stays in the tree');
+  await page.keyboard.press('Escape');await viaRow.focus();await page.keyboard.press('Shift+F10');await page.keyboard.press('End');
+  assert.equal(await menu.locator('[data-menu-action="delete"]').evaluate(node=>node===document.activeElement),true);
+  await page.keyboard.press('Escape');assert(await viaRow.evaluate(node=>node===document.activeElement));
+  await viaRow.click({button:'right'});await menu.locator('[data-menu-action="delete"]').click();await action('confirm-no').click();await expectDialogs(0);
+  assert((await read()).servers.some(s=>s.id===via.id));
+  await viaRow.click({button:'right'});await menu.locator('[data-menu-action="delete"]').click();await action('confirm-yes').click();await expectDialogs(0);
+  assert(!(await read()).servers.some(s=>s.id===via.id));await viaRow.waitFor({state:'detached'});
+  await work().locator('#tree-origin').focus();await page.keyboard.press('Shift+F10');await menu.waitFor({state:'visible'});
+  assert.deepEqual(await menu.locator('[data-menu-action]').evaluateAll(nodes=>nodes.map(n=>n.dataset.menuAction)),['new-server','new-proxy','reload']);
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({width:1100,height:720});
+  await sourceRow.click({button:'right'});await menu.locator('[data-menu-action="new-via"]').click();await field('host').fill('cancel-via.internal');
+  await closeDirty();assert(!(await read()).servers.some(s=>s.host==='cancel-via.internal'));
+  await page.evaluate(async()=>{manager.dispose();const {ServerManager}=await import('/servers.ts');window.manager=new ServerManager(document.querySelector('main'),text=>document.querySelector('#test-notice').textContent=text);await manager.start();});
+  await sourceRow.click({button:'right'});await menu.locator('[data-menu-action="new-via"]').click();await expectDialogs(1);await page.keyboard.press('Escape');await expectDialogs(0);
+  checks.push('右键与键盘菜单、完整路径继承、无凭据复制、冲突保留、取消无残留、三主题边缘定位、窄窗、删除确认和销毁重建');
 
   await bridge.stop(); bridge = startBridge(); await load(); catalog = await read();
   assert.equal(catalog.servers.find(s => s.id === gateway).authentication.hasSavedSecret, true);

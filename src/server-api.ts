@@ -55,6 +55,10 @@ export function newCopyDraft(source: Server): Draft {
   draft.remember = source.authentication.hasSavedSecret || !source.authentication.hasSessionSecret;
   return draft;
 }
+export function newViaDraft(route:RouteStep[],tags:string[]):Draft {
+  const draft=newDraft();draft.routed=true;draft.tagIds=[...tags];
+  draft.route=route.map(step=>({...step,id:crypto.randomUUID()}));return draft;
+}
 export function canCopySecret(d: Draft) {
   const auth = d.copySource?.authentication;
   return !!auth && (auth.hasSavedSecret || auth.hasSessionSecret) && auth.type === d.authType

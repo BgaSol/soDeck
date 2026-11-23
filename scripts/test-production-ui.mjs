@@ -337,7 +337,7 @@ try {
       const newMenu=page.locator('[data-server-action="new-menu"]');await newMenu.click();
       const menu=page.locator('.catalog-action-menu');await menu.waitFor({state:'visible'});
       assert(await menu.evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;}));
-      await page.keyboard.press('End');assert.equal(await page.locator('.catalog-action-menu [data-server-action="new-proxy"]').evaluate(el=>el===document.activeElement),true);
+      await page.keyboard.press('End');assert.equal(await page.locator('.catalog-action-menu [data-menu-action="new-proxy"]').evaluate(el=>el===document.activeElement),true);
       await page.keyboard.press('Escape');assert.equal(await newMenu.evaluate(el=>el===document.activeElement),true);
       assert.equal(await newMenu.getAttribute('aria-expanded'),'false');
       const catalogList=page.locator('.catalog-list');
@@ -365,7 +365,7 @@ try {
       await page.screenshot({path:`artifacts/production-ui/server-detail-${theme}-${width}.png`});
       if(await page.locator('[data-server-action="back"]').isVisible())await page.locator('[data-server-action="back"]').click();
       for (const kind of ["servers", "proxies"]) {
-        if(kind==='proxies'){await page.locator('[data-server-action="new-menu"]').click();await page.locator('.catalog-action-menu [data-server-action="new-proxy"]').click();}
+        if(kind==='proxies'){await page.locator('[data-server-action="new-menu"]').click();await page.locator('.catalog-action-menu [data-menu-action="new-proxy"]').click();}
         else await page.locator('[data-server-action="new-server"]').first().click();
         if (kind === "servers") {
           await field("authType").selectOption("privateKey");

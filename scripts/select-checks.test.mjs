@@ -287,3 +287,10 @@ test('integration groups isolate network on both native architectures from other
 });
 
 test('single-file copying selects both files and MCP consumers',()=>{for(const file of ['src-tauri/src/local_files.rs','src-tauri/src/remote_files/operations/copy/state.rs']){const p=selectChecks([file]);assert.equal(p.native.length,5);assert(p.integration.some(t=>t.files&&t.mcp));}});
+
+test('directory model and action tests select their frontend consumer without unrelated plugin builds',()=>{
+  for(const name of ['connection-tree','server-actions','server-copy','server-tags']){
+    const plan=selectChecks([`scripts/${name}.test.mjs`]);
+    assert(plan.web&&plan.scripts&&plan.browser);assert.deepEqual(plan.plugins,[]);assert.deepEqual(plan.integration,[]);
+  }
+});

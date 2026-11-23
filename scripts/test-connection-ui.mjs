@@ -32,7 +32,7 @@ await page.exposeBinding("testInvoke", (_, command, args) => {
   return call(command, args);
 });
 await page.addInitScript(() => { window.__TAURI_INTERNALS__ = { invoke: (command, args) => window.testInvoke(command, args) }; });
-await page.route(url, route => route.fulfill({ contentType: "text/html", body: `<html lang="zh-CN"><head><meta charset="UTF-8"></head><body><button id="new-workspace" class="sd-icon" aria-label="选择服务器">＋</button><main class="workspace"></main><script type="module">import '/style.css';import {ServerManager} from '/servers.ts';import {ConnectionsUi} from '/connections.ts';import {ServerPicker} from '/server-picker.ts';window.notices=[];const notify=text=>window.notices.push(text);const manager=new ServerManager(document.querySelector('main'),notify);window.connections=new ConnectionsUi('main',v=>{manager.setConnections(v);picker.setConnections(v);},notify);const picker=new ServerPicker(document.querySelector('#new-workspace'),id=>window.connections.connect(id),notify);await manager.start();window.testReady=true;</script></body></html>` }));
+await page.route(url, route => route.fulfill({ contentType: "text/html", body: `<html lang="zh-CN"><head><meta charset="UTF-8"></head><body><button id="new-workspace" class="sd-icon" aria-label="选择服务器">＋</button><main class="workspace"></main><script type="module">import '/style.css';import {ServerManager} from '/servers.ts';import {ConnectionsUi} from '/connections.ts';import {ServerPicker} from '/server-picker.ts';window.notices=[];const notify=text=>window.notices.push(text);const manager=new ServerManager(document.querySelector('main'),notify);window.connections=new ConnectionsUi('main',v=>{manager.setConnections(v);picker.setConnections(v);},notify);manager.connectionActions=window.connections;const picker=new ServerPicker(document.querySelector('#new-workspace'),id=>window.connections.connect(id),notify);await manager.start();window.testReady=true;</script></body></html>` }));
 async function settle(predicate) { for (let i = 0; i < 100; i++) { const v = await call("connection", { command: { op: "snapshot" } }); if (predicate(v)) { await page.evaluate(() => window.connections.refresh()); return v; } await new Promise(resolve => setTimeout(resolve, 25)); } throw new Error("Connection state did not settle"); }
 try {
   const saved = await call("change_catalog", { revision: 0, change: { op: "saveServer", draft: { name: "隔离测试服务器", host: "127.0.0.1", port: server.address().port, username: "ops", authentication: { type: "password", secret: { action: "clear" } }, route: [] } } });
@@ -71,7 +71,7 @@ try {
   assert.equal(sockets.size, 1);
   await page.screenshot({ path: "artifacts/connection-ui/progress.png" });
   assert(!JSON.stringify(await call("connection", { command: { op: "snapshot" } })).includes("ui-ephemeral-secret"));
-  await progress.locator("[data-connection-cancel]").click(); await settle(v => v[0]?.state === "cancelled");
+  await serverRow.click({button:'right'});await page.locator('.catalog-action-menu [data-menu-action="cancel-attempt"]').click(); await settle(v => v[0]?.state === "cancelled");
   await progress.waitFor({state:'hidden'});
   assert.equal(await page.locator('.catalog-detail .route-edge-flow').count(),0,'Actual cancellation stops the line');
   for (let i = 0; sockets.size && i < 100; i++) await new Promise(resolve => setTimeout(resolve, 10));

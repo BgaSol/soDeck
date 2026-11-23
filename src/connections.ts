@@ -35,11 +35,13 @@ export class ConnectionsUi {
     this.progress.setAttribute("role", "status"); this.progress.setAttribute("aria-label", "连接进度");
     this.progress.hidden = true; document.body.append(this.progress);
     document.addEventListener("dblclick", event => {
+      if ((event.target as Element).closest('.catalog-page')) return;
       const row = (event.target as Element).closest<HTMLButtonElement>("[data-connect-server-on-double-click]");
       const server = row && !row.disabled ? row.dataset.connectServerOnDoubleClick : undefined;
       if (server) void this.connect(server).catch(error => notify(String(error)));
     });
     document.addEventListener("click", event => {
+      if ((event.target as Element).closest('.catalog-page')) return;
       const b = (event.target as Element).closest<HTMLElement>("[data-connect-server],[data-connection-cancel],[data-connection-prompt],[data-disconnect-context],[data-reconnect-server]");
       if (b) void this.action(b).catch(error => notify(String(error)));
     });
@@ -71,6 +73,18 @@ export class ConnectionsUi {
       this.acceptIntents();
     } catch(error) {if(this.intents.get(serverId)===intent)this.intents.delete(serverId);throw error;
     } finally { this.starting.delete(serverId); }
+  }
+  async cancelAttempt(attemptId:string){await this.send({op:'cancel',attemptId});}
+  async continueAttempt(attemptId:string,questionId:string){
+    await this.refresh();const view=this.views.find(v=>v.attemptId===attemptId&&v.question?.id===questionId&&v.state==='connecting');
+    if(!view)throw new Error('连接问题已变化，请重新打开菜单');this.prompt(view);
+  }
+  async focusWorkspace(serverId:string,attemptId:string){
+    const revision=this.navigation?.begin()??0;await this.refresh();
+    const view=this.views.find(v=>v.serverId===serverId&&v.attemptId===attemptId&&v.state==='connected');
+    if(!view?.context)throw new Error('工作区连接已变化，请重新选择');
+    if(this.navigation)await this.navigation.accept(view.context,revision);
+    else await this.call('connection',{command:{op:'focus',context:view.context}});
   }
   private acceptIntents() {
     for(const [id,intent] of this.intents) {

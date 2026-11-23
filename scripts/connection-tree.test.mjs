@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {connectionTree,visibleNodes,ancestors} from '../src/connection-tree.ts';
+import {connectionTree as fullTree,filterTree,visibleNodes,ancestors} from '../src/connection-tree.ts';
+const connectionTree=(catalog,filter)=>filterTree(fullTree(catalog),catalog,filter);
 const server=(id,route=[],tags=[])=>({id,name:id,host:`${id}.internal`,username:'ops',tagIds:tags,route});
 const ssh=id=>({kind:'ssh',serverId:id,id:'unstable-step'});
 const proxy=id=>({kind:'socks5',proxyId:id,id:'step'});

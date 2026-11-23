@@ -142,6 +142,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
         continue;
       }
       if (/^scripts\/(select-checks|check-docs|cli-arguments|verified-download|core-release|release-metadata|collect-core|cargo-package|resolve-native-inputs|prepare-native-packages|run-ci-suite)\.test\.mjs$/.test(file) || /^scripts\/(select-checks|check-docs)\.mjs$/.test(file)) { plan.scripts = true; continue; }
+      if (/^scripts\/(connection-tree|server-actions|server-copy|server-tags)\.test\.mjs$/.test(file)) { ui(); continue; }
       if (file === 'scripts/fixtures/events.js') { plan.scripts = true; ['terminal', 'files', 'network-proxy'].forEach(name => integration.add(name)); continue; }
       if(file==='scripts/workbench-transfer-fixture.mjs'){ui();plan.communication=true;['terminal','files','system-status'].forEach(name=>integration.add(name));continue;}
       if (file === 'scripts/test-close-native.mjs' || file === 'scripts/native-pointer.ps1') { core(); ui(); plan.ssh = true; continue; }

@@ -367,6 +367,12 @@ impl AppCore {
                 selected = Some(id);
             }
             CatalogChange::DeleteServer { id } | CatalogChange::DeleteProxy { id } => {
+                if !deleting_proxy && self.connections.target_pending(&id) {
+                    return Err(CatalogError::new(
+                        "inUse",
+                        "请先取消连接并等待结束，再删除服务器资料",
+                    ));
+                }
                 if !deleting_proxy && self.workspace_state().server_open(&id) {
                     return Err(CatalogError::new(
                         "inUse",

@@ -351,6 +351,16 @@ impl Connections {
             }
         }
     }
+    pub(crate) fn target_pending(&self, server: &str) -> bool {
+        self.registry
+            .lock()
+            .unwrap()
+            .current
+            .get(server)
+            .is_some_and(|attempt| {
+                !attempt.done.is_cancelled() && attempt.view().state != "connected"
+            })
+    }
     pub fn cancel_window(&self, window: &str) {
         for a in self.registry.lock().unwrap().current.values() {
             if a.source_window == window && a.view().state == "connecting" {

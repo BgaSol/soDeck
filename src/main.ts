@@ -20,6 +20,7 @@ const servers=win.label==='main'?new ServerManager(shell.catalog,notify):undefin
 if(servers)servers.onSelection=()=>shell.selectionChanged();
 const workspaces=new Workspaces(shell.tabs,shell.content,notify);
 const connections=new ConnectionsUi(win.label,views=>{servers?.setConnections(views);picker?.setConnections(views);shell.renderStatus();},notify);
+if(servers)servers.connectionActions=connections;
 const picker=win.label!=='main'?new ServerPicker(shell.pickerButton,id=>connections.connect(id),notify):undefined;
 shell.attach(workspaces,connections);
 await startConsole(shell,workspaces,servers,connections,picker,win).catch(error=>notify(String(error)));
