@@ -43,7 +43,10 @@ const save=()=>section().getByRole('button',{name:'保存',exact:true}).click();
 try{
   for(const plugin of ['terminal','files','network-proxy','docker']){
     const metadata=fileEditorSettings(JSON.parse(fs.readFileSync(`plugins/${plugin}/release.json`,'utf8'))),directory=path.join(root,metadata.id);fs.mkdirSync(path.join(directory,'ui'),{recursive:true});
-    fs.writeFileSync(path.join(directory,'entry'),'never executed');fs.writeFileSync(path.join(directory,'ui/index.html'),'never mounted');
+    fs.writeFileSync(path.join(directory,'entry'),'never executed');
+    for(const entry of new Set([metadata.ui.entry,...metadata.ui.views.map(view=>view.entry).filter(Boolean)])){
+      const file=path.join(directory,entry);fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,'never mounted');
+    }
     packageSettingsAssets(metadata,directory);
     fs.writeFileSync(path.join(directory,'plugin.json'),JSON.stringify({...metadata,version:'1.0.0',target,entry:'entry'}));
     await call('add_plugin',{directory});await call('set_plugin_enabled',{id:metadata.id,enabled:false});
@@ -112,9 +115,9 @@ try{
   const compact=await section().evaluate(el=>{const fields=el.querySelector('.settings-fields').getBoundingClientRect(),commit=el.querySelector('.settings-commit').getBoundingClientRect(),pane=el.getBoundingClientRect();return {gap:commit.top-fields.bottom,free:pane.bottom-commit.bottom,width:fields.width};});
   assert(compact.gap<=24&&compact.free>100&&compact.width<=680,JSON.stringify(compact));
   assert.equal(await page.locator('#layer-content .console-settings-nav').count(),0,'Settings navigation belongs to the shell sidebar');
-  await section().getByRole('switch').focus();await page.keyboard.press('Space');assert.equal(await section().getByRole('switch').isChecked(),false);
+  const refresh=section().getByLabel('资源树刷新间隔');await refresh.focus();await page.keyboard.press('ArrowDown');assert.equal(await refresh.inputValue(),'1');
   await save();await page.waitForFunction(()=>document.querySelector('.settings-feedback')?.textContent.includes('已保存'));
-  await page.emulateMedia({forcedColors:'active'});assert.equal(await section().getByRole('switch').evaluate(el=>getComputedStyle(el).opacity),'1');await page.emulateMedia({forcedColors:'none'});
+  await page.emulateMedia({forcedColors:'active'});assert.equal(await refresh.evaluate(el=>getComputedStyle(el).opacity),'1');await page.emulateMedia({forcedColors:'none'});
   for(const theme of ['light','dark','dopamine'])for(const width of [1100,720]){
     await page.setViewportSize({width,height:width===720?480:720});await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;},theme);
     await choose('Docker');await page.locator('.console-settings-nav [aria-current="page"]').filter({hasText:'Docker'}).waitFor();
@@ -127,7 +130,7 @@ try{
   await page.locator('.console-settings-nav [aria-current="page"]').filter({hasText:'终端'}).waitFor();await page.evaluate(()=>Promise.all(document.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
   fs.mkdirSync('artifacts/settings-ui',{recursive:true});await page.screenshot({path:'artifacts/settings-ui/terminal.png'});
   assert(fontRequests.some(r=>r.relative.includes('jetbrains'))&&fontRequests.some(r=>r.relative.includes('source-code'))&&fontRequests.some(r=>r.relative.includes('ibm-plex')));
-  assert.deepEqual(errors,[]);console.log('Settings UI passed: full-width scrolling with constrained forms, merged shell navigation, 5 disabled-plugin pages, real offline fonts, drafts/close/reopen, conflict, missing local font, port validation, compact Docker form, keyboard switch, forced colors and 18 responsive/theme layouts');
+  assert.deepEqual(errors,[]);console.log('Settings UI passed: full-width scrolling with constrained forms, merged shell navigation, 5 disabled-plugin pages, real offline fonts, drafts/close/reopen, conflict, missing local font, port validation, compact Docker form, keyboard selection, forced colors and 18 responsive/theme layouts');
 }finally{
   await browser.close();await vite.close();child.stdin.end();await new Promise(resolve=>child.once('exit',resolve));
   if(path.dirname(path.resolve(root))!==path.resolve(os.tmpdir())||!path.basename(root).startsWith('sodeck-settings-ui-'))throw new Error('Unexpected cleanup path');
