@@ -25,14 +25,13 @@ pub struct App {
     bindings: BTreeMap<String, Snapshot>,
     binding_revision: u64,
     pub exec_dispatch: Arc<Mutex<()>>,
-    pub stream_dispatch: Arc<Mutex<()>>,
     pub directory: PathBuf,
     pub refresh_seconds: u64,
-    pub show_log_minimap: bool,
     pub settings_revision: u64,
     jobs: VecDeque<Job>,
 }
 pub struct View {
+    pub stream_dispatch: Arc<Mutex<()>>,
     pub browser: Option<BrowserState>,
     pub epoch: u64,
     pub pull: Value,
@@ -254,7 +253,7 @@ impl View {
         self.terminal.clear();
     }
 }
-fn now() -> u64 {
+pub(crate) fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -269,10 +268,8 @@ impl App {
             bindings: BTreeMap::new(),
             binding_revision: 0,
             exec_dispatch: Arc::new(Mutex::new(())),
-            stream_dispatch: Arc::new(Mutex::new(())),
             directory,
             refresh_seconds: 5,
-            show_log_minimap: true,
             settings_revision: 0,
             jobs: VecDeque::new(),
         })
@@ -334,6 +331,7 @@ impl App {
             }
         }
         let view = View {
+            stream_dispatch: Arc::new(Mutex::new(())),
             browser: if kind == "browser" {
                 Some(BrowserState::default())
             } else {
@@ -397,8 +395,7 @@ impl App {
             "busy":v.busy,"paused":v.paused,"nextIntent":(v.intent+1).to_string(),"navigation":v.navigation,
             "state":v.data["state"],"error":v.data["error"],"engine":v.data["engine"],"name":v.data["name"],"status":v.data["status"],
             "health":v.data["health"],"observedAt":v.data["observedAt"],"partial":v.data["partial"],"operation":v.data["operation"],
-            "tty":v.data["tty"],"stats":v.data["stats"],"count":v.data["rows"].as_array().map_or(0,Vec::len),
-            "showLogMinimap":self.show_log_minimap});
+            "tty":v.data["tty"],"stats":v.data["stats"],"count":v.data["rows"].as_array().map_or(0,Vec::len)});
         data["connection"] = json!({"config":self.configs.get(v.context["serverId"].as_str().unwrap()).cloned().unwrap_or_default(),"target":v.target.as_ref().map(|t|t.info()),"test":v.connection_test});
         data["defaultShell"] = v
             .target
@@ -1468,6 +1465,13 @@ pub fn log_target(
     let mut target = expected.clone();
     target["engine"]["systemTime"] = info["SystemTime"].clone();
     target["status"] = container["State"]["Status"].clone();
+    target["name"] = json!(container["Name"]
+        .as_str()
+        .unwrap_or("容器")
+        .trim_start_matches('/'));
+    target["tty"] = container["Config"]["Tty"].clone();
+    target["startedAt"] = container["State"]["StartedAt"].clone();
+    target["finishedAt"] = container["State"]["FinishedAt"].clone();
     Ok(target)
 }
 pub fn bound_target(app: &Shared, view: &str, expected: &Value) -> Result<Snapshot, String> {
@@ -1495,7 +1499,14 @@ pub fn open_stream(
     budget: usize,
     fixed: bool,
 ) -> Result<(Value, Option<Value>), String> {
-    let dispatch = app.lock().unwrap().stream_dispatch.clone();
+    let dispatch = app
+        .lock()
+        .unwrap()
+        .views
+        .get(view)
+        .ok_or("页面已关闭")?
+        .stream_dispatch
+        .clone();
     let _guard = dispatch.lock().unwrap();
     let mut params = {
         let mut a = app.lock().unwrap();
@@ -1659,6 +1670,8 @@ fn collect(app: &Shared, job: &Job, client: &Client) -> Result<Value, String> {
         "observedAt":now(),"state":"ready","error":null,"partial":false});
     if kind == "logs" {
         data["tty"] = container["Config"]["Tty"].clone();
+        data["startedAt"] = container["State"]["StartedAt"].clone();
+        data["finishedAt"] = container["State"]["FinishedAt"].clone();
     } else if job.action.as_str() == "stats" {
         if container["State"]["Running"] != true {
             data["stats"] = json!({"unavailable":"容器未运行"});

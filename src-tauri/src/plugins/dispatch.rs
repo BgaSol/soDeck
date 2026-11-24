@@ -215,12 +215,18 @@ pub(super) struct Dispatcher {
     alive: Arc<AtomicBool>,
 }
 impl Dispatcher {
-    pub fn new(core: Weak<AppCore>, id: String, instance: String) -> Self {
+    pub fn new(
+        core: Weak<AppCore>,
+        id: String,
+        instance: String,
+        wake: SyncSender<super::Output>,
+    ) -> Self {
         let (jobs, receiver) = mpsc::sync_channel::<Job>(MAX_PENDING);
         let receiver = Arc::new(Mutex::new(receiver));
         let (completed, completion_rx) = mpsc::sync_channel(MAX_PENDING);
         let alive = Arc::new(AtomicBool::new(true));
         for _ in 0..WORKERS {
+            let wake = wake.clone();
             let (receiver, completed, core, id, instance, alive) = (
                 receiver.clone(),
                 completed.clone(),
@@ -261,6 +267,8 @@ impl Dispatcher {
                     {
                         break;
                     }
+                    // A ready response wakes the supervisor instead of waiting for its idle poll.
+                    let _ = wake.try_send(super::Output::Wake);
                 }
             });
         }

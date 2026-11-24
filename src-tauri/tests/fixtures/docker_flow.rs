@@ -49,7 +49,7 @@ async fn openssh_docker_plugin() {
             if snapshot["busy"] == false && (snapshot["kind"]!="browser" || snapshot["state"]!="ready" || !matches!(snapshot["indexes"]["container"]["phase"].as_str(),Some("loading"|"unloaded"))) {
                 return snapshot;
             }
-            assert!(std::time::Instant::now() < end, "{snapshot}");
+            assert!(std::time::Instant::now() < end, "{snapshot}; diagnostics: {:?}",f.core.logs(&Default::default()));
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     }
@@ -152,21 +152,17 @@ async fn openssh_docker_plugin() {
     f.core.ui_surface_ready("main", logs).unwrap();
     let snapshot = idle(&f, logs).await;
     assert_eq!(snapshot["state"], "ready", "{snapshot}");
-    event(logs,json!({"action":"logs.start","requestId":"native-logs","intentSequence":"1","windowSeconds":900,"live":true}));
+    event(logs,json!({"action":"logs.open","requestId":"native-logs","intentSequence":"1","range":{"kind":"latest"}}));
     let deadline=std::time::Instant::now()+Duration::from_secs(40);
-    let capture=loop{let state=event(logs,json!({"action":"logs.status"}));if state["resources"].as_array().is_some_and(|r|r.iter().any(|r|!r["end"].is_null()&&r["status"]["finished"]==true)){break state;}assert!(std::time::Instant::now()<deadline,"{state}");tokio::time::sleep(Duration::from_millis(50)).await;};
-    let resource=capture["resources"].as_array().unwrap().iter().find(|r|!r["end"].is_null()).unwrap();
-    assert_eq!(resource["status"]["state"],"completed","{resource}");
-    let resource_id=resource["id"].as_str().unwrap();let watermark=resource["status"]["producedBytes"].as_str().unwrap();
-    async fn captured(core:&Arc<AppCore>,token:&str,id:&str,watermark:&str)->Vec<u8>{let end=watermark.parse::<u64>().unwrap();let mut offset=0u64;let mut bytes=vec![];while offset<end{let value=core.process_output_data("main",token,json!({"id":id,"action":"read","offset":offset.to_string(),"watermark":watermark}),None).await.unwrap();let part:Vec<u8>=serde_json::from_value(value["data"].clone()).unwrap();offset+=part.len() as u64;bytes.extend(part);}bytes}
-    let lines=captured(&f.core,logs,resource_id,watermark).await;
-    use base64::{engine::general_purpose::STANDARD, Engine};
-    let raw=lines.split(|b|*b==b'\n').filter(|l|!l.is_empty()).flat_map(|line|{let envelope:Value=serde_json::from_slice(line).unwrap();STANDARD.decode(envelope["dataBase64"].as_str().unwrap()).unwrap()}).collect::<Vec<_>>();
-    assert!(String::from_utf8_lossy(&raw).contains("sodeck-docker-log 中文"));
-    assert_eq!(raw.iter().filter(|b|**b==b'\n').count(),2001,"million-line container only returns its finite initial tail");
-    assert!(String::from_utf8_lossy(&raw).contains("INFO historical 0999999 中文"));
-    assert!(!String::from_utf8_lossy(&raw).contains("INFO historical 0000000 中文"));
-    assert!(watermark.parse::<u64>().unwrap()<=4*1024*1024);
+    let capture=loop{let state=f.core.ui_read("main",logs,json!({"op":"status"})).unwrap();if state["ready"]==true&&state["active"]==false&&state["windowTotal"].as_u64().unwrap_or(0)>0{break state;}assert!(std::time::Instant::now()<deadline,"{state}");tokio::time::sleep(Duration::from_millis(50)).await;};
+    event(logs,json!({"action":"logs.hold","revision":capture["revision"]}));
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    let capture=f.core.ui_read("main",logs,json!({"op":"status"})).unwrap();
+    let revision=capture["revision"].as_str().unwrap();let mut rows=Vec::new();
+    loop{let page=f.core.ui_read("main",logs,json!({"op":"window","revision":revision,"start":rows.len(),"count":100})).unwrap();rows.extend(page["rows"].as_array().unwrap().iter().cloned());if rows.len()>=page["total"].as_u64().unwrap()as usize{break;}}
+    let lines=serde_json::to_vec(&rows).unwrap();
+    let text=rows.iter().map(|r|r["text"].as_str().unwrap()).collect::<Vec<_>>().join("\n");
+    assert!(text.contains("sodeck-docker-log 中文"));assert!(text.contains("INFO historical 0999999 中文"));assert!(!text.contains("INFO historical 0000000 中文"));assert!(rows.len()<=1000);
     let operate=|mut data:Value| {data["id"]=json!(id);data["engineId"]=browser["engine"]["id"].clone();data["endpoint"]=browser["endpoint"].clone();data["expectedContext"]=browser["context"].clone();event(token,data)};
     let status=||event(token,json!({"action":"browser.page","query":"","group":false,"expandedKeys":["engine","category:container"]}))["nodes"].as_array().unwrap().iter().find(|row|row["resource"]["id"]==id).map(|row|row["status"].clone()).unwrap_or(Value::Null);
     operate(
@@ -220,7 +216,7 @@ async fn openssh_docker_plugin() {
     f.core.disconnect_connection("main", &context).unwrap();
     event(logs, json!({"action":"refresh"}));
     assert!(idle(&f, logs).await["error"].is_string());
-    let retained = captured(&f.core,logs,resource_id,watermark).await;
+    let capture=f.core.ui_read("main",logs,json!({"op":"status"})).unwrap();let mut retained_rows=Vec::new();loop{let page=f.core.ui_read("main",logs,json!({"op":"window","revision":capture["revision"],"start":retained_rows.len(),"count":100})).unwrap();retained_rows.extend(page["rows"].as_array().unwrap().iter().cloned());if retained_rows.len()>=page["total"].as_u64().unwrap()as usize{break;}}let retained=serde_json::to_vec(&retained_rows).unwrap();
     assert_eq!(
         retained, lines,
         "disconnect must retain log snapshot"

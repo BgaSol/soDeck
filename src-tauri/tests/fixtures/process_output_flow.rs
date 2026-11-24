@@ -1,3 +1,17 @@
+#[tokio::test(flavor="multi_thread",worker_threads=4)]
+#[ignore="Thirty-second actual core/plugin IPC throughput probe"]
+async fn process_pages_sustain_log_ingestion_through_real_plugin_ipc(){
+    let f=Fixture::new();let target=SshServer::new().await;let server=f.server("127.0.0.1",target.addr.port(),json!([]));let context=connected(&f,&server).await.context.unwrap();let (_,token,_)=terminal_fixture(&f);
+    let input=json!({"rpc":"session.process.start","params":{"expectedContext":context,"operationId":"throughput","sequence":"1","command":"status-test:process-throughput","maxOutputBytes":16*1024*1024,"retention":"rolling"}});
+    let opened=f.core.ui_event("main",&token,input).unwrap();let id=&opened["processId"];
+    f.core.ui_event("main",&token,json!({"rpc":"consumeStart","processId":id})).unwrap();
+    let deadline=std::time::Instant::now()+Duration::from_secs(50);
+    let report=loop{let report=f.core.ui_read("main",&token,json!({"op":"consumeStats"})).unwrap();if report["finished"]==true{break report;}assert!(std::time::Instant::now()<deadline,"{report}");tokio::time::sleep(Duration::from_millis(100)).await;};
+    assert!(report["error"].is_null(),"{report}");assert_eq!(report["bytes"],960*32*8192);assert!(report["seconds"].as_f64().unwrap()<40.0,"{report}");
+    let mut report=report;report["receivedMiBPerSecond"]=json!(report["bytes"].as_u64().unwrap()as f64/1048576.0/report["seconds"].as_f64().unwrap());
+    println!("Process IPC throughput: {report}");std::fs::create_dir_all("../artifacts/docker-ingestion").unwrap();std::fs::write("../artifacts/docker-ingestion/process-ipc.json",serde_json::to_vec_pretty(&report).unwrap()).unwrap();
+    f.core.ui_event("main",&token,json!({"rpc":"session.process.release","params":{"processId":id}})).unwrap();close_terminal_views(&f);f.core.shutdown().unwrap();
+}
 #[tokio::test(flavor="multi_thread",worker_threads=2)]
 async fn process_output_recovers_raw_bytes_and_cancels_only_its_channel() {
     use base64::{engine::general_purpose::STANDARD, Engine};

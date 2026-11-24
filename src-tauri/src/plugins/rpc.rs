@@ -28,28 +28,28 @@ pub(super) fn encode(frame: &Value) -> Result<Vec<u8>, String> {
 pub(super) struct Writer {
     priority: SyncSender<Vec<u8>>,
     calls: SyncSender<Vec<u8>>,
+    wake: SyncSender<()>,
 }
 
 pub(super) fn spawn_writer(input: ChildStdin) -> Writer {
-    use std::{sync::mpsc, time::Duration};
+    use std::sync::mpsc;
     // A full batch of completed inbound calls must fit even before the writer
     // thread gets CPU time. Ordinary outbound calls cannot occupy these slots.
     let (priority, urgent) = mpsc::sync_channel::<Vec<u8>>(64);
     let (calls, normal) = mpsc::sync_channel::<Vec<u8>>(16);
+    let (wake, ready) = mpsc::sync_channel(1);
     thread::spawn(move || {
         let mut input = BufWriter::new(input);
         loop {
             let bytes = match urgent.try_recv() {
                 Ok(bytes) => bytes,
-                Err(_) => match normal.recv_timeout(Duration::from_millis(10)) {
+                Err(_) => match normal.try_recv() {
                     Ok(bytes) => bytes,
-                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
-                    Err(mpsc::RecvTimeoutError::Disconnected) => {
-                        match urgent.recv_timeout(Duration::from_millis(10)) {
-                            Ok(bytes) => bytes,
-                            Err(mpsc::RecvTimeoutError::Timeout) => continue,
-                            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(_) => {
+                        if ready.recv().is_err() {
+                            break;
                         }
+                        continue;
                     }
                 },
             };
@@ -58,7 +58,11 @@ pub(super) fn spawn_writer(input: ChildStdin) -> Writer {
             }
         }
     });
-    Writer { priority, calls }
+    Writer {
+        priority,
+        calls,
+        wake,
+    }
 }
 
 pub(crate) fn read_frame(reader: &mut impl BufRead, limit: usize) -> io::Result<Option<Vec<u8>>> {
@@ -91,7 +95,9 @@ pub(super) fn queue_frame(writer: &Writer, frame: Value) -> Result<(), String> {
     };
     queue
         .try_send(bytes)
-        .map_err(|_| "插件未及时读取核心响应，已停止通信".into())
+        .map_err(|_| "插件未及时读取核心响应，已停止通信".to_owned())?;
+    let _ = writer.wake.try_send(());
+    Ok(())
 }
 
 pub(super) fn spawn_reader(

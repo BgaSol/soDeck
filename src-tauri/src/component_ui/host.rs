@@ -327,7 +327,7 @@ impl AppCore {
             },
         );
         Ok(
-            json!({"inputEpoch":token,"surfaceId":token,"view":view,"data":data["data"],"readOnly":candidate}),
+            json!({"inputEpoch":token,"surfaceId":token,"view":view,"data":data["data"],"readOnly":candidate,"capabilities":{"viewRead":true}}),
         )
     }
     pub fn ui_surface_ready(&self, window: &str, token: &str) -> Result<(), String> {
@@ -339,6 +339,53 @@ impl AppCore {
             .ok_or("界面挂载已失效")?;
         s.ready = true;
         Ok(())
+    }
+    /// Read local plugin view data without granting input or changing host metadata.
+    pub fn ui_read(
+        &self,
+        window: &str,
+        token: &str,
+        query: Value,
+    ) -> Result<Value, sodeck_plugin_protocol::ApiError> {
+        if !query.is_object()
+            || serde_json::to_vec(&query).map_err(|e| e.to_string())?.len() > 24 * 1024
+        {
+            return Err("只读页面查询必须为不超过 24 KiB 的对象".into());
+        }
+        let (view, _call) = {
+            let ui = self.ui_state();
+            let surface = ui
+                .surfaces
+                .get(token)
+                .filter(|s| s.window == window)
+                .ok_or("界面挂载已失效")?;
+            let view = ui.resource_view(&surface.view)?.clone();
+            if view.calls.active() >= 16 {
+                return Err("只读页面查询达到在途上限".into());
+            }
+            let call = view.calls.enter()?;
+            (view, call)
+        };
+        let response = self.ui_plugin_call(&view, "ui.getView", json!({"read":query}))?;
+        let ui = self.ui_state();
+        let current = ui
+            .surfaces
+            .get(token)
+            .filter(|s| s.window == window && s.view == view.id)
+            .and_then(|s| ui.resource_view(&s.view).ok())
+            .filter(|v| {
+                v.context == view.context
+                    && v.plugin_instance_id == view.plugin_instance_id
+                    && std::sync::Arc::ptr_eq(&v.creation, &view.creation)
+            });
+        if current.is_none() {
+            return Err("只读查询返回时原界面或上下文已失效".into());
+        }
+        let data = response["data"].clone();
+        if serde_json::to_vec(&data).map_err(|e| e.to_string())?.len() > 24 * 1024 {
+            return Err("只读页面回复超过 24 KiB，请分块读取".into());
+        }
+        Ok(data)
     }
     pub fn ui_event(
         &self,

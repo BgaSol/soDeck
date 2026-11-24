@@ -1,7 +1,7 @@
 export interface Context {workspaceId:string;serverId:string;connectionId:string;generation:number}
 export interface ApiError extends Error {code:string|number;data?:{code?:string;dispatch?:'notSent'|'unknown';[key:string]:unknown}}
-export interface Mount {surfaceId:string;viewId:string;viewType:string;context:Context;readOnly:boolean;connected:boolean;visible:boolean;data:unknown;tokens:Record<string,string>;settings:unknown}
-export type PageMethod='data'|'event'|'state'|'clipboard'|'settings'|'localFiles'|'openView'|'closeView';
+export interface Mount {surfaceId:string;viewId:string;viewType:string;context:Context;readOnly:boolean;connected:boolean;visible:boolean;data:unknown;tokens:Record<string,string>;settings:unknown;capabilities?:{viewRead?:boolean}}
+export type PageMethod='read'|'data'|'event'|'state'|'clipboard'|'settings'|'localFiles'|'openView'|'closeView';
 export interface PageClient {
   readonly channel:string;
   request<T=unknown>(method:PageMethod,params:Record<string,unknown>):Promise<T>;

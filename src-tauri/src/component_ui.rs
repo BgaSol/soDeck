@@ -42,6 +42,8 @@ pub struct RegisteredAction {
 #[serde(rename_all = "camelCase")]
 pub struct Definition {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub create_action_id: Option<String>,
     pub id: String,
     pub title: String,
@@ -110,6 +112,9 @@ impl Declaration {
         }
         let mut ids = HashSet::new();
         for d in &self.views {
+            if let Some(entry) = &d.entry {
+                resource(root, entry)?;
+            }
             if d.id.is_empty()
                 || d.id.len() > 80
                 || !d
@@ -342,6 +347,7 @@ pub fn dispatch(
             core.ui_detach(window, text("surfaceId")?);
             Ok(Value::Null)
         }
+        "read" => core.ui_read(window, text("surfaceId")?, args["query"].clone()),
         "event" => core.ui_event(window, text("surfaceId")?, args["event"].clone()),
         "state" => core
             .state_surface_request(window, text("surfaceId")?, &args["input"])

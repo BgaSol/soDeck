@@ -10,7 +10,7 @@ const manifest=JSON.parse(fs.readFileSync(path.join(root,'plugin.json')));
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-docker-process-'));
 const tickets=new Map(),submissions=[],streams=new Map(),streamRequests=[],streamLookups=[];let loseCommandReceipt=true,loseStreamReceipts=2,tunnelOutcome='accepted';
 const id='a'.repeat(64),tasks=new Map(),commands=[],diagnostics=[];let number=0,hold=false,holdMutation=false,loseReceipt=true,malformed=false,engineId='engine',peer;
-const programs=new Map();
+const programs=new Map(),streamBodies=new Map();
 const inspect={Id:id,Name:'/service-中文',Image:'sha256:'+'b'.repeat(64),Config:{Image:'demo:1',Env:['TOKEN=a=b'],Labels:{}},State:{Status:'running',Running:true,Health:{Status:'unhealthy',Log:[]}},Mounts:[],NetworkSettings:{Ports:{'80/tcp':[{HostIp:'0.0.0.0',HostPort:'8080'},{HostIp:'::',HostPort:'8080'}]},Networks:{}}};
 const unusedImage='sha256:'+'d'.repeat(64),networkId='c'.repeat(64),systemNetwork='e'.repeat(64);
 let volumeExists=true,volumeCreatedAt='2026-11-16T00:00:00Z',holdPull=false,streamConfirmed=false;
@@ -67,15 +67,18 @@ peer=pluginPeer(path.join(root,manifest.entry),withProcessFacts(async(method,p)=
   if(method==='ui.openView')return {viewId:'opened'};
   if(method==='session.process.start'){
     let old=streamRequests.find(r=>r.operationId===p.operationId);if(old){const {processId,...original}=old;assert.deepEqual(p,original);}else{
-      const processId='stream-'+(++number);old={...p,processId};streamRequests.push(old);const pull=p.command.includes("'image' 'pull'");streams.set(processId,{state:p.retention==='rolling'||pull&&holdPull?'running':'completed',finished:p.retention!=='rolling'&&!(pull&&holdPull),producedBytes:'100',earliestAvailableOffset:'0',...(pull&&streamConfirmed?{remoteExitConfirmed:true,exitCode:0}:{})});
+      const processId='stream-'+(++number);old={...p,processId};streamRequests.push(old);const pull=p.command.includes("'image' 'pull'");const follow=programs.get(p.command)?.argv.includes('--follow');const log=programs.get(p.command)?.argv.includes('logs');
+      const raw=log&&!follow?Buffer.from(output(p.command)):Buffer.alloc(0);const envelope=raw.length?Buffer.from(JSON.stringify({v:1,sequence:'1',source:'stdout',receivedAt:1794736800000,dataBase64:raw.toString('base64')})+'\n'):Buffer.alloc(0);streamBodies.set(processId,envelope);
+      streams.set(processId,processFacts({state:log?(follow?'running':'completed'):(p.retention==='rolling'||pull&&holdPull?'running':'completed'),finished:log?!follow:p.retention!=='rolling'&&!(pull&&holdPull),producedBytes:String(envelope.length||100),earliestAvailableOffset:'0',...(log?{outputComplete:!follow,remoteExitConfirmed:!follow,exitCode:follow?null:0}:pull&&streamConfirmed?{remoteExitConfirmed:true,exitCode:0}:{})}));
     }
     if(loseStreamReceipts>0){loseStreamReceipts--;throw Object.assign(new Error('lost stream receipt'),{code:-32003,data:{dispatch:'unknown'}});}return {processId:old.processId,status:streams.get(old.processId)};
   }
   if(method==='session.process.lookup'){
     streamLookups.push(p);const old=streamRequests.find(r=>r.operationId===p.operationId);if(!old)return {known:false};const {processId,...original}=old;assert.deepEqual(p,original);return {known:true,processId,status:streams.get(processId)};
   }
+  if(method==='session.process.read'){const status=streams.get(p.processId);assert(status);const body=streamBodies.get(p.processId);const chunks=body?.length&&p.offset==='0'?[JSON.parse(body.toString())]:[];return {chunks,nextOffset:body?.length?String(body.length):'0',watermark:body?.length?String(body.length):'0',earliestAvailableOffset:'0',status};}
   if(method==='session.process.status'){assert(streams.has(p.processId));return streams.get(p.processId);}
-  if(method==='session.process.cancel'){streams.set(p.processId,{...streams.get(p.processId),state:'cancelled',finished:true});return streams.get(p.processId);}
+  if(method==='session.process.cancel'){streams.set(p.processId,{...streams.get(p.processId),state:'cancelled',finished:true,workerFinished:true});return streams.get(p.processId);}
   if(method==='session.process.release'){const status=streams.get(p.processId);streams.delete(p.processId);return {releaseRequested:true,resourceReleased:true,status};}
   if(method==='session.exec.start'){
     const old=[...tasks.values()].find(t=>t.operationId===p.operationId);if(old)return {taskId:old.id,state:'running'};
@@ -155,21 +158,22 @@ try{
   await request('ui.event','detail',{data:{action:'operate',operation:'remove',requestId:'reject-running-remove',intentSequence:'3'}});detail=await idle('detail');
   assert.equal(detail.operation.state,'failed','preflight rejection must not claim a sent mutation');assert.equal(commands.filter(c=>c.includes("'rm'")).length,0);
   await request('ui.createView','logs',{viewType:'logs',resourceKey:JSON.stringify({id,engineId:'engine'})});await idle('logs');
-  const logRequest={action:'logs.start',requestId:'logs-once',intentSequence:'1',windowSeconds:900,live:true,complete:false};
+  const logRead=query=>request('ui.getView','logs',{data:{read:query}}).then(r=>r.data);
+  const logRequest={action:'logs.open',requestId:'logs-once',intentSequence:'1',range:{kind:'latest'}};
   await request('ui.event','logs',{data:logRequest});await request('ui.event','logs',{data:logRequest});
-  const logs=await until(async()=>(await request('ui.event','logs',{data:{action:'logs.status'}})).data,s=>s.resources.length===2&&s.resources.every(r=>r.id)&&!s.loading);
-  assert.equal(streamRequests.length,2,'lost open receipt and repeated UI request must not rerun a command');
-  assert.equal(loseStreamReceipts,0);assert.equal(new Set(streamLookups.map(r=>r.operationId)).size,2,'both lost tickets are resolved independently');
-  assert(streamRequests.some(r=>r.command.includes("'--tail' '2001'")));assert(streamRequests.some(r=>r.command.includes("'--follow'")));
-  assert(streamRequests.every(r=>programs.get(r.command).checks[1].argv.includes('inspect')&&programs.get(r.command).checks[0].expectedStdout==='engine'&&r.programOutput==='startup-v1'));
-  assert.equal(logs.resources.find(r=>r.end!=null).end,1794736800,'range uses fresh Engine time');
-  await assert.rejects(request('ui.event','logs',{data:{...logRequest,complete:true}}),/相同日志请求参数不同/);
-  const count=streamRequests.length;await request('ui.getView','logs');assert.equal(streamRequests.length,count,'remount only describes existing captures');
-  await request('ui.event','logs',{data:{action:'logs.stop'}});await until(async()=>(await request('ui.event','logs',{data:{action:'logs.status'}})).data,s=>s.resources.every(r=>r.status.finished));
+  const logs=await until(()=>logRead({op:'status'}),s=>s.ready&&!s.loading&&!s.active&&s.windowTotal>0);
+  assert.equal(streamRequests.length,2,'lost open receipt and repeated UI intent do not rerun commands');
+  assert.equal(loseStreamReceipts,0);assert.equal(new Set(streamLookups.map(r=>r.operationId)).size,2);
+  assert(streamRequests.some(r=>r.command.includes("'--tail' '1000'")));assert(streamRequests.some(r=>r.command.includes("'--follow'")));
+  assert(!streamRequests.find(r=>r.command.includes("'--tail'")).command.includes("'--since'"),'latest output has no age cutoff');
+  assert.equal(logs.selection.to,'2026-11-15T10:00:00.123456789Z');
+  await assert.rejects(request('ui.event','logs',{data:{...logRequest,range:{kind:'recent',seconds:3600}}}),/同一日志请求参数不同/);
+  const count=streamRequests.length;await request('ui.getView','logs');assert.equal(streamRequests.length,count);
+  await request('ui.event','logs',{data:{action:'logs.stop',all:true}});await until(()=>logRead({op:'status'}),s=>!s.receiving);
   inspect.State.Status='exited';inspect.State.Running=false;
   await request('ui.event','logs',{data:{...logRequest,requestId:'stopped-tail',intentSequence:'2'}});
-  const stoppedLogs=await until(async()=>(await request('ui.event','logs',{data:{action:'logs.status'}})).data,s=>s.generation===2&&!s.loading);
-  assert.equal(stoppedLogs.resources.length,1);assert.equal(stoppedLogs.resources[0].start,0,'stopped container shows its latest retained tail even if it stopped long ago');
+  await until(()=>logRead({op:'status'}),s=>s.nextIntent==='3'&&!s.loading&&!s.active&&s.windowTotal>0);
+  assert(!streamRequests.at(-1).command.includes("'--since'"));
   await assert.rejects(request('ui.event','logs',{data:{...logRequest,requestId:'stale-log-intent'}}),/旧日志请求/);
   inspect.State.Status='running';inspect.State.Running=true;
   await assert.rejects(request('ui.event','detail',{data:{action:'section',section:'environment'}}),/未知 Docker 操作/);

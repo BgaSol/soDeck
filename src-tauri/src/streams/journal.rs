@@ -1,10 +1,13 @@
 //! Temporary, bounded recovery bytes. The terminal plugin owns display interpretation.
 use std::{
     collections::BTreeMap,
-    fs::{self, OpenOptions},
+    fs::{self, File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::PathBuf,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Mutex,
+    },
 };
 const SEGMENT: u64 = 1024 * 1024;
 const LIMIT: usize = 128 * 1024 * 1024;
@@ -25,6 +28,8 @@ pub(crate) struct Journal {
     root: PathBuf,
     segments: BTreeMap<u64, usize>,
     size: usize,
+    writer: Option<(u64, File)>,
+    reader: Mutex<Option<(u64, File)>>,
 }
 impl Journal {
     pub(crate) fn new(root: PathBuf) -> Result<Self, String> {
@@ -39,6 +44,8 @@ impl Journal {
             root,
             segments: BTreeMap::new(),
             size: 0,
+            writer: None,
+            reader: Mutex::new(None),
         })
     }
     pub(crate) fn append(&mut self, offset: u64, bytes: &[u8]) -> Result<(), String> {
@@ -63,11 +70,17 @@ impl Journal {
                     use std::os::unix::fs::OpenOptionsExt;
                     options.mode(0o600);
                 }
-                let mut file = options
-                    .create(true)
-                    .truncate(false)
-                    .write(true)
-                    .open(self.root.join(segment.to_string()))?;
+                if self.writer.as_ref().is_none_or(|(key, _)| *key != segment) {
+                    self.writer = Some((
+                        segment,
+                        options
+                            .create(true)
+                            .truncate(false)
+                            .write(true)
+                            .open(self.root.join(segment.to_string()))?,
+                    ));
+                }
+                let file = &mut self.writer.as_mut().unwrap().1;
                 file.seek(SeekFrom::Start(start % SEGMENT))?;
                 file.write_all(data)
             })();
@@ -92,13 +105,21 @@ impl Journal {
     pub(crate) fn read(&self, offset: u64, length: usize) -> Result<Vec<u8>, String> {
         let mut bytes = vec![0; length];
         let mut position = 0;
+        let mut cached = self.reader.lock().unwrap();
         while position < length {
             let start = offset + position as u64;
             let amount = (length - position).min((SEGMENT - start % SEGMENT) as usize);
-            let mut file = OpenOptions::new()
-                .read(true)
-                .open(self.root.join((start / SEGMENT).to_string()))
-                .map_err(|e| e.to_string())?;
+            let key = start / SEGMENT;
+            if cached.as_ref().is_none_or(|(segment, _)| *segment != key) {
+                *cached = Some((
+                    key,
+                    OpenOptions::new()
+                        .read(true)
+                        .open(self.root.join(key.to_string()))
+                        .map_err(|e| e.to_string())?,
+                ));
+            }
+            let file = &mut cached.as_mut().unwrap().1;
             file.seek(SeekFrom::Start(start % SEGMENT))
                 .map_err(|e| e.to_string())?;
             file.read_exact(&mut bytes[position..position + amount])
@@ -115,6 +136,7 @@ impl Journal {
             .take_while(|n| (n + 1) * SEGMENT <= offset)
             .collect();
         for key in old {
+            self.close_segment(key);
             if fs::remove_file(self.root.join(key.to_string())).is_ok() {
                 if let Some(size) = self.segments.remove(&key) {
                     self.size -= size;
@@ -136,6 +158,7 @@ impl Journal {
             })
             .collect();
         for key in old {
+            self.close_segment(key);
             if fs::remove_file(self.root.join(key.to_string())).is_ok() {
                 if let Some(size) = self.segments.remove(&key) {
                     self.size -= size;
@@ -144,9 +167,27 @@ impl Journal {
             }
         }
     }
+    fn close_segment(&mut self, key: u64) {
+        if self
+            .writer
+            .as_ref()
+            .is_some_and(|(segment, _)| *segment == key)
+        {
+            self.writer = None;
+        }
+        let reader = self.reader.get_mut().unwrap();
+        if reader.as_ref().is_some_and(|(segment, _)| *segment == key) {
+            *reader = None;
+        }
+    }
 }
 impl Drop for Journal {
     fn drop(&mut self) {
+        self.writer = None;
+        self.reader
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
         let _ = fs::remove_dir_all(&self.root);
         USED.fetch_sub(self.size, Ordering::AcqRel);
     }

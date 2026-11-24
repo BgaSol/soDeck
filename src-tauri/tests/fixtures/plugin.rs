@@ -1,10 +1,11 @@
+use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};
 use std::{
     fs,
     io::{self, BufRead, Write},
     process::Command,
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 fn send(value: Value) {
@@ -12,6 +13,32 @@ fn send(value: Value) {
     serde_json::to_writer(&mut out, &value).unwrap();
     writeln!(out).unwrap();
     out.flush().unwrap();
+}
+struct Consume {
+    process: Value,
+    offset: u64,
+    bytes: u64,
+    pages: u64,
+    started: Instant,
+    first: Option<Instant>,
+    finished: bool,
+    error: Value,
+}
+impl Consume {
+    fn metrics(&self) -> Value {
+        json!({"finished":self.finished,"error":self.error,"bytes":self.bytes,"pages":self.pages,"seconds":self.first.unwrap_or(self.started).elapsed().as_secs_f64()})
+    }
+}
+fn poll_consume(job: &Consume, wait: bool) {
+    let request = json!({"jsonrpc":"2.0","id":"consume-output","method":"session.process.read","params":{"processId":job.process,"offset":job.offset.to_string()}});
+    if wait {
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(5));
+            send(request);
+        });
+    } else {
+        send(request);
+    }
 }
 fn main() {
     if std::env::args().any(|a| a == "--child") {
@@ -34,6 +61,7 @@ fn main() {
     let mut action_count = 0;
     let mut deferred = None;
     let mut probes: Option<(Value, std::collections::HashMap<String, Value>)> = None;
+    let mut consume: Option<Consume> = None;
     for line in io::stdin().lock().lines() {
         let frame: Value = serde_json::from_str(&line.unwrap()).unwrap();
         match frame["method"].as_str() {
@@ -118,6 +146,24 @@ fn main() {
                     continue;
                 }
                 if method == "ui.event" {
+                    if p["data"]["rpc"] == "consumeStart" {
+                        let job = Consume {
+                            process: p["data"]["processId"].clone(),
+                            offset: 0,
+                            bytes: 0,
+                            pages: 0,
+                            started: Instant::now(),
+                            first: None,
+                            finished: false,
+                            error: Value::Null,
+                        };
+                        poll_consume(&job, false);
+                        consume = Some(job);
+                        send(
+                            json!({"jsonrpc":"2.0","id":frame["id"],"result":{"data":{"accepted":true}}}),
+                        );
+                        continue;
+                    }
                     if let Some(rpc) = p["data"]["rpc"].as_str().filter(|s| {
                         s.starts_with("session.")
                             || s.starts_with("connections.")
@@ -200,6 +246,32 @@ fn main() {
                     send(
                         json!({"jsonrpc":"2.0","id":frame["id"],"error":{"code":-1,"message":"view does not exist"}}),
                     );
+                    continue;
+                }
+                if method == "ui.getView" && p["data"].get("read").is_some() {
+                    let query = &p["data"]["read"];
+                    if query["op"] == "consumeStats" {
+                        send(
+                            json!({"jsonrpc":"2.0","id":frame["id"],"result":{"data":consume.as_ref().map(Consume::metrics)}}),
+                        );
+                        continue;
+                    }
+                    let value = if query["oversized"] == true {
+                        json!({"text":"x".repeat(25 * 1024)})
+                    } else {
+                        json!({"query":query,"text":ui_views[id]["text"]})
+                    };
+                    let response = json!({"jsonrpc":"2.0","id":frame["id"],"result":{"data":value,"metadata":{"title":"must-not-change","dirty":false}}});
+                    if query["delay"] == true {
+                        fs::write(format!("{}/read-pending", data.as_ref().unwrap()), "ready")
+                            .unwrap();
+                        thread::spawn(move || {
+                            thread::sleep(Duration::from_millis(200));
+                            send(response);
+                        });
+                    } else {
+                        send(response);
+                    }
                     continue;
                 }
                 if method == "ui.createView" && !ui_views.contains_key(id) {
@@ -352,6 +424,37 @@ fn main() {
                 send(
                     json!({"jsonrpc":"2.0","id":3,"method":"logging.write","params":{"level":"info","message":"fixture stopping"}}),
                 );
+            }
+            _ if frame["id"] == "consume-output" => {
+                let job = consume.as_mut().unwrap();
+                job.pages += 1;
+                if frame.get("error").is_some() {
+                    job.error = frame["error"].clone();
+                    job.finished = true;
+                    continue;
+                }
+                let value = &frame["result"];
+                let chunks = value["chunks"].as_array().unwrap();
+                for chunk in chunks {
+                    let bytes = STANDARD
+                        .decode(chunk["dataBase64"].as_str().unwrap())
+                        .unwrap();
+                    if !bytes.is_empty() && job.first.is_none() {
+                        job.first = Some(Instant::now());
+                    }
+                    job.bytes += bytes.len() as u64;
+                }
+                job.offset = value["nextOffset"].as_str().unwrap().parse().unwrap();
+                job.finished = value["status"]["workerFinished"] == true
+                    && value["nextOffset"] == value["watermark"];
+                if job.finished {
+                    if value["status"]["outputComplete"] != true || value["status"]["exitCode"] != 0
+                    {
+                        job.error = value["status"].clone();
+                    }
+                } else {
+                    poll_consume(job, chunks.is_empty());
+                }
             }
             _ if frame["id"] == "settings-init" => {
                 fs::write(

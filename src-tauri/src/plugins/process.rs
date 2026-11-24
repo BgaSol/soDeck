@@ -53,9 +53,14 @@ pub(crate) fn supervise(
     });
     let (output_tx, output_rx) = mpsc::sync_channel(256);
     spawn_reader(child.stdout.take().unwrap(), output_tx.clone(), false);
-    spawn_reader(child.stderr.take().unwrap(), output_tx, true);
+    spawn_reader(child.stderr.take().unwrap(), output_tx.clone(), true);
     let writer = rpc::spawn_writer(child.stdin.take().unwrap());
-    let mut dispatcher = Dispatcher::new(Arc::downgrade(&core), id.into(), instance_id.into());
+    let mut dispatcher = Dispatcher::new(
+        Arc::downgrade(&core),
+        id.into(),
+        instance_id.into(),
+        output_tx,
+    );
     let mut failure = core.plugin_data(id).and_then(|path| queue_frame(&writer, json!({
         "jsonrpc":"2.0", "id":"initialize", "method":"initialize", "params":{
             "coreApiVersion":API_VERSION, "coreVersion":core.version(), "dataDirectory":path,
@@ -304,6 +309,7 @@ pub(crate) fn supervise(
             continue;
         }
         match output_rx.recv_timeout(Duration::from_millis(20)) {
+            Ok(Output::Wake) => {}
             Ok(Output::Diagnostic(text)) => {
                 let _ = core.plugin_log(
                     id,

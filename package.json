@@ -31,7 +31,7 @@
     "system-status:ui:test": "node scripts/test-system-status-ui.mjs",
     "docker:test": "node scripts/test-docker.mjs",
     "docker:windows:test": "node scripts/test-docker-windows.mjs",
-    "docker:process:test": "node scripts/test-docker-process.mjs",
+    "docker:process:test": "node scripts/test-docker-process.mjs && node scripts/test-docker-logs-process.mjs",
     "docker:ui:test": "node scripts/test-docker-ui.mjs",
     "mcp:test": "node scripts/test-mcp.mjs",
     "mcp:process:test": "node scripts/test-mcp-process.mjs && node scripts/test-mcp-connections.mjs",

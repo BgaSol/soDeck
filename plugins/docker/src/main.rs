@@ -56,6 +56,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(json!({"accepted":true,"revision":revision.to_string()}));
         }
         let id = p["viewId"].as_str().ok_or("缺少 viewId")?;
+        if method == "ui.getView" && p["data"].get("read").is_some() {
+            let logs = log_holder.lock().unwrap().clone().ok_or("日志服务未就绪")?;
+            let value = logs.read(id, &p["data"]["read"])?;
+            return Ok(json!({"data":value}));
+        }
         if method == "ui.disposeView" {
             if let Some(pulls) = pull_holder.lock().unwrap().as_ref() {
                 pulls.dispose(id);
@@ -189,14 +194,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             _ => return Err("未知 Docker 方法".into()),
         }
-        let mut data = a.snapshot(id)?;
+        let data = a.snapshot(id)?;
         a.prune_bindings();
-        if data["kind"] == "logs" {
+        let is_logs = data["kind"] == "logs";
+        let mut response = a.response(id, data)?;
+        drop(a);
+        if is_logs {
             if let Some(logs) = log_holder.lock().unwrap().as_ref() {
-                data["logCapture"] = logs.snapshot(id)?;
+                response["data"]["logCapture"] = logs.snapshot(id)?;
             }
         }
-        a.response(id, data).map_err(Into::into)
+        Ok(response)
     })
 }
 fn apply_settings(a: &mut runtime::App, values: &Value) -> Result<(), String> {
@@ -213,6 +221,5 @@ fn apply_settings(a: &mut runtime::App, values: &Value) -> Result<(), String> {
         return Err("Docker 设置值无效".into());
     }
     a.refresh_seconds = refresh;
-    a.show_log_minimap = values["showLogMinimap"].as_bool().unwrap_or(true);
     Ok(())
 }

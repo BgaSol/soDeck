@@ -294,3 +294,5 @@ test('directory model and action tests select their frontend consumer without un
     assert(plan.web&&plan.scripts&&plan.browser);assert.deepEqual(plan.plugins,[]);assert.deepEqual(plan.integration,[]);
   }
 });
+
+test('Docker session fixtures select real Docker business checks',()=>{for(const file of ['scripts/docker-logs-fixture.mjs','scripts/test-docker-logs-process.mjs']){const plan=selectChecks([file]);assert(plan.scripts);assert(plan.integration.some(t=>t.docker));}});

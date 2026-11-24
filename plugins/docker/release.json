@@ -31,7 +31,7 @@
     ]
   },
   "settings": {
-    "schemaVersion": 2,
+    "schemaVersion": 3,
     "pages": [
       {
         "id": "display",
@@ -66,13 +66,6 @@
                     "title": "30 秒"
                   }
                 ],
-                "apply": "live"
-              },
-              {
-                "key": "showLogMinimap",
-                "title": "默认显示日志缩略",
-                "type": "boolean",
-                "default": true,
                 "apply": "live"
               }
             ]

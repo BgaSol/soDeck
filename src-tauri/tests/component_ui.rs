@@ -1668,6 +1668,79 @@ fn v2_fixture() -> Fixture {
     f
 }
 #[test]
+fn per_view_entry_is_validated_persisted_and_resolved_independently() {
+    let f = Fixture::new();
+    let manifest_path = f.plugin.join("plugin.json");
+    let mut manifest: Value = serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+    manifest["ui"]["views"][1]["entry"] = json!("../outside.html");
+    fs::write(&manifest_path, manifest.to_string()).unwrap();
+    assert!(f.load().is_err());
+    fs::write(f.plugin.join("ui/detail.html"), "detail").unwrap();
+    manifest["ui"]["views"][1]["entry"] = json!("ui/detail.html");
+    fs::write(&manifest_path, manifest.to_string()).unwrap();
+    f.load().unwrap();
+    let _ = f.open("entry");
+    let ui = f.core.ui_state();
+    assert_eq!(ui.definitions["test.ui:terminal"].entry, "ui/detail.html");
+    assert_eq!(ui.definitions["test.ui:browser"].entry, "ui/index.html");
+    let json = serde_json::to_string(&ui.definitions["test.ui:terminal"]).unwrap();
+    assert_eq!(json.matches("\"entry\"").count(), 1);
+    drop(ui);
+    let installed = f.core.snapshot().plugins;
+    assert_eq!(
+        serde_json::to_value(&installed[0].manifest).unwrap()["ui"]["views"][1]["entry"],
+        "ui/detail.html"
+    );
+}
+#[test]
+fn ui_read_bounds_local_pages_and_fences_detached_replies() {
+    let f = v2_fixture();
+    let w = f.open("read");
+    let (id, token) = page(&f, &w.context, "main", "/read", None);
+    f.core
+        .ui_event("main", &token, json!({"text":"preserved"}))
+        .unwrap();
+    let metadata = || {
+        let ui = f.core.ui_state();
+        let v = ui.workspaces[&w.context.workspace_id]
+            .views
+            .iter()
+            .find(|v| v.id == id)
+            .unwrap();
+        (v.title.clone(), v.dirty)
+    };
+    let title = metadata().0;
+    assert_eq!(
+        f.core
+            .ui_read("main", &token, json!({"op":"window"}))
+            .unwrap()["text"],
+        "preserved"
+    );
+    assert_eq!(metadata().0, title);
+    assert!(metadata().1);
+    assert!(f
+        .core
+        .ui_read("main", &token, json!({"text":"x".repeat(25*1024)}))
+        .is_err());
+    assert!(f
+        .core
+        .ui_read("main", &token, json!({"oversized":true}))
+        .is_err());
+    assert!(f.core.ui_read("main", &token, json!([])).is_err());
+    let core = f.core.clone();
+    let read_token = token.clone();
+    let pending =
+        std::thread::spawn(move || core.ui_read("main", &read_token, json!({"delay":true})));
+    let marker = f.root.join("data/plugin-data/test.ui/read-pending");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while !marker.exists() {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    f.core.ui_detach("main", &token);
+    assert!(pending.join().unwrap().is_err());
+}
+#[test]
 fn relocated_tool_entry_uses_actual_side_and_excludes_editor_locate_entry() {
     let f = v2_fixture();
     let w = f.open("tool-entry");
@@ -2649,6 +2722,14 @@ fn v2_page_transfer_keeps_draft_denies_candidate_input_and_retires_old_surface()
     let token = candidate["surfaceId"].as_str().unwrap();
     f.core.ui_surface_ready("child", token).unwrap();
     assert_eq!(candidate["data"]["text"], "unsaved");
+    assert_eq!(candidate["capabilities"]["viewRead"], true);
+    assert_eq!(
+        f.core
+            .ui_read("child", token, json!({"op":"window"}))
+            .unwrap()["text"],
+        "unsaved"
+    );
+    assert!(f.core.ui_read("main", token, json!({})).is_err());
     assert!(f
         .core
         .ui_event("child", token, json!({"text":"wrong"}))
@@ -2662,6 +2743,7 @@ fn v2_page_transfer_keeps_draft_denies_candidate_input_and_retires_old_surface()
     let current = f.core.ui_attach("child", &id).unwrap();
     assert_eq!(current["data"]["text"], "unsaved");
     assert_eq!(current["readOnly"], false);
+    assert!(f.core.ui_read("main", &old, json!({})).is_err());
     assert!(f
         .root
         .join(format!("data/plugin-data/test.ui/created-{id}"))

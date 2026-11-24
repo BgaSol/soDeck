@@ -33,7 +33,7 @@ interface UiWorkspace {tools?:ToolEntry[];returnLocations?:Record<string,ReturnL
 interface ActionDefinition { command:string; key: string; title: string; available: boolean; reason?: string }
 interface ActionResult { commandId?:string; command?:string; groupId?:string; hostId?:string; status: "pending" | "completed" | "failed" | "invalidated" | "unknown"; requestId: string; context: Context; viewId?: string; error?: string }
 export interface UiProjection { definitions: Record<string, Definition>; actions?: Record<string, ActionDefinition>; defaultCreateAction?: string; pendingAction?: ActionResult[]; workspaces: Record<string, UiWorkspace>; error?: string; layoutSaveError?:string; transfers?:Transfer[] }
-interface Surface { readOnly?:boolean; transferEpoch?:string; node: HTMLDivElement; frame: HTMLIFrameElement; view: View; token?: string; chain: Promise<unknown>; deferred: Map<string,MessageEvent>; visible: boolean; initialized: boolean; mounted?: boolean; acceptsLocalFiles?: boolean; focusPending?: number; flushable?: boolean; flushing?: {id: string; done: (error?: string) => void}; timeout: ReturnType<typeof setTimeout> }
+interface Surface { readOnly?:boolean; readPending?:number; transferEpoch?:string; node: HTMLDivElement; frame: HTMLIFrameElement; view: View; token?: string; chain: Promise<unknown>; deferred: Map<string,MessageEvent>; visible: boolean; initialized: boolean; mounted?: boolean; acceptsLocalFiles?: boolean; focusPending?: number; flushable?: boolean; flushing?: {id: string; done: (error?: string) => void}; timeout: ReturnType<typeof setTimeout> }
 interface Shell { region: DomRegion; tabStrips?: Map<string, {strip?:TabStrip;scroll:number;active:string|null;seen?:boolean}>; node: HTMLElement; surfaces: Map<string, Surface>; observer: ResizeObserver; workspace: Workspace; ui: UiWorkspace; railCapacity?: number; layoutFrame?: number; motionKey?: string; layoutBefore?: Map<Element, DOMRect>; renderedSides?: {left:string|null;right:string|null}; closingSides?: {left:string|null;right:string|null} }
 interface MenuEntry { label: string; action: () => Promise<unknown>; extra?: MenuEntry; checked?: boolean; disabled?: boolean; separatorBefore?: boolean }
 const empty = (): UiWorkspace => ({ views: [], preferences: {}, left: null, right: null, editor: null });
@@ -607,11 +607,11 @@ export class Components {
     const message = event.data;
     if (message.type === "ready") {
       if (surface.initialized) return; surface.initialized = true;
-      surface.chain = this.invoke<{ surfaceId: string; data: unknown; view: View; readOnly?:boolean }>("attach", { viewId: surface.view.id }).then(async result => {
+      surface.chain = this.invoke<{ surfaceId: string; data: unknown; view: View; readOnly?:boolean; capabilities?:{viewRead?:boolean} }>("attach", { viewId: surface.view.id }).then(async result => {
         surface.token = result.surfaceId; surface.readOnly=result.readOnly;
         this.shared.attach(result.surfaceId,result.view.context,message=>this.post(surface,message));
         const settings = await this.call("settings_for_surface", {surfaceId: result.surfaceId});
-        this.post(surface, { type: "mount", readOnly:result.readOnly, connected: this.shells.get(surface.view.context.workspaceId)?.workspace.connected, context: result.view.context, serverName: this.shells.get(surface.view.context.workspaceId)?.workspace.name, viewId: surface.view.id, viewType: surface.view.definitionKey.split(":")[1], data: result.data, tokens: this.tokens(), settings, visible: surface.visible });
+        this.post(surface, { type: "mount", readOnly:result.readOnly, capabilities:result.capabilities, connected: this.shells.get(surface.view.context.workspaceId)?.workspace.connected, context: result.view.context, serverName: this.shells.get(surface.view.context.workspaceId)?.workspace.name, viewId: surface.view.id, viewType: surface.view.definitionKey.split(":")[1], data: result.data, tokens: this.tokens(), settings, visible: surface.visible });
         surface.frame.dataset.surfaceId = result.surfaceId;
       }).catch(error => this.surfaceError(surface, String(error)));
       return;
@@ -622,6 +622,16 @@ export class Components {
     if (message.type === "flushed" && surface.flushing && surface.flushing.id === message.id) { surface.flushing.done(message.error); return; }
     if (message.type !== "request" || typeof message.id !== "string") return;
     const requestId = message.id;
+    if(message.method === 'read'){
+      const token=surface.token,context=JSON.stringify(surface.view.context);
+      if((surface.readPending??0)>=2){this.post(surface,{type:'response',id:requestId,error:surfaceError(new Error('只读页面查询达到在途上限'))});return;}
+      surface.readPending=(surface.readPending??0)+1;
+      void this.invoke('read',{surfaceId:token,query:message.params??{}})
+        .then(data=>{if(surface.token===token && JSON.stringify(surface.view.context)===context)this.post(surface,{type:'response',id:requestId,data});})
+        .catch(error=>{if(surface.token===token)this.post(surface,{type:'response',id:requestId,error:surfaceError(error)});})
+        .finally(()=>{surface.readPending=Math.max(0,(surface.readPending??1)-1);});
+      return;
+    }
     if(message.method === 'state'){
       const token=surface.token,context=JSON.stringify(surface.view.context);
       void this.shared.request(token,message.params??{}).then(data=>{if(surface.token===token && JSON.stringify(surface.view.context)===context)this.post(surface,{type:'response',id:requestId,data});})

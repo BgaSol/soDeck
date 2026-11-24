@@ -32,11 +32,6 @@
 .log-line.is-context { color:var(--muted); }
 .log-line mark { color:var(--text); background:var(--accent-bg); }
 #log-empty { padding:28px 20px; color:var(--muted); max-width:60ch; }
-.log-minimap { width:96px; flex:none; position:relative; background:var(--subtle); border-inline-start:1px solid var(--border); touch-action:none; }
-.log-minimap canvas { width:100%; height:100%; display:block; }
-.log-map-thumb { position:absolute; left:3px; right:3px; min-height:20px; border:1px solid var(--muted); background:transparent; cursor:grab; }
-.log-map-thumb:focus-visible { outline:2px solid var(--accent); }
-.log-map-thumb:active { cursor:grabbing; background:var(--accent-bg); }
 .log-detail { width:min(380px,45%); padding:12px; background:var(--subtle); border-inline-start:1px solid var(--border); overflow:auto; }
 .log-detail-header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .log-detail h2 { margin:0; font-size:13px; }
@@ -45,6 +40,10 @@
 .log-detail .toolbar { flex-wrap:wrap; }
 .log-footer { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:5px 12px; padding:6px 16px; color:var(--muted); font-size:11px; border-top:1px solid var(--border); overflow-wrap:anywhere; }
 .log-footer #log-latest { margin-left:auto; color:var(--sd-link,var(--accent)); }
-@container(max-width:650px) { .log-minimap { width:40px; } .log-line { padding-inline:10px; gap:8px; } .log-time { width:92px; } .log-tools { padding-inline:10px; } }
-@container(max-width:430px) { .log-minimap { width:20px; } .log-detail { position:absolute; inset:0; width:auto; z-index:10; } .log-search { flex-basis:100%; } .log-line { gap:7px; } .log-time { width:74px; font-size:10px; } }
+@container(max-width:650px) {  .log-line { padding-inline:10px; gap:8px; } .log-time { width:92px; } .log-tools { padding-inline:10px; } }
+@container(max-width:430px) {  .log-detail { position:absolute; inset:0; width:auto; z-index:10; } .log-search { flex-basis:100%; } .log-line { gap:7px; } .log-time { width:74px; font-size:10px; } }
 @container(max-width:280px) { .log-search { min-width:0; flex-wrap:wrap; } .log-search input { flex-basis:100%; } .log-time { width:54px; overflow:hidden; } .log-tools { gap:4px; } }
+
+.log-range-label { margin:4px 16px; font-size:11px; color:var(--muted); }
+#log-at-range { padding:8px 16px; display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.log-time { width:128px; }

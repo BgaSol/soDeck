@@ -329,7 +329,7 @@ messages.publish 使用 info/success/warning/error，title 最多 1024 字节、
 
 ## 页面公共服务与远程位置
 
-页面请求支持 event、openView、closeView、data、settings、state、clipboard 和 localFiles。数据、剪贴板及本地输入始终验证真实 Surface；正文不经控制 RPC。剪贴板分块上限 256 KiB UTF-8、单 Surface 一个传输、15 秒期限。公共 SDK 负责分块、清理和文本菜单接入，不检测历史核心能力。
+页面请求支持 read、event、openView、closeView、data、settings、state、clipboard 和 localFiles。数据、剪贴板及本地输入始终验证真实 Surface；通用文件和终端正文走原有数据通道；插件自有记录可经有界 read 分页读取。剪贴板分块上限 256 KiB UTF-8、单 Surface 一个传输、15 秒期限。公共 SDK 负责分块、清理和文本菜单接入，不检测历史核心能力。
 
 主题 tokens 名称由[token-names.ts](../packages/ui/token-names.ts)定义，页面应用为同名 CSS 变量；shared.css 随插件打包。主题变化不重建会话。文件编辑、终端和 Docker Worker 业务留在各自组件。
 
@@ -397,3 +397,11 @@ filter 为 `{topics:[...] ,producer?,key?}`，需要 1–8 个明确主题。快
 页面使用随插件打包的 [state.js](../packages/plugin-sdk/src/state.js)：`new SharedState(mount)`，`request(op,params)`，`watch(filter,onProjection)`，最终 `dispose()`。watch 会分页、原子拼批、确认、续订及重同步；onProjection 收到 null 表示当前不可用。Rust 使用 [plugin-client::shared_state](../crates/plugin-client/src/shared_state.rs) 的 request/Watch::open/snapshot/renew，持有 Watch 时每 30 秒调用 renew；snapshot 为 None 或 renew 失败时由调用者在有效 Context 内重建。两者使用同一组线协议样例测试。
 
 首批业务契约：Core 发布 `workspace.presentation.v1/current` 的 activeEditorViewId；终端发布 `terminal.location.v1/current` 的 state/path/pathStyle/filesystemView/terminalId/outputOffset/observedAt；系统状态发布 `filesystem.mounts.v1` 的 mount 与 scan-status，以及同源同 mountId 的 `filesystem.capacity.v1`。容量字节数使用十进制字符串，业务新鲜度由 observedAt/staleAfterMs 表达。扫描 coverage 与 publishState 分开：complete/partial/unsupported 描述采集覆盖，publishing/synced/limited 描述共享副本。没有跨记录事务。
+
+### 只读页面查询与视图入口
+
+核心 2.3.0 的挂载消息提供 capabilities.viewRead=true。页面使用 sodeck.request('read', query)，query 必须是至多 24 KiB 的对象；核心以 ui.getView 的 data={read:query} 转发，返回 data 至多 24 KiB。默认挂载/后台 ui.getView 的 data=null 行为不变。插件须先分流只读查询，只返回已有本地状态与有界页面，不执行远端任务或业务变更。
+
+read 不修改宿主 metadata、不触发宿主整体刷新；允许已挂载的只读候选 Surface，仍核对 window/Surface/View/实例及 Context，登记在途调用，View 封闭后拒绝新查询。回复返回时再次核对原挂载和 View 身份，过期结果不得作用到新挂载。页面每 Surface 最多两个并发查询，核心 View 在途上限 16。真正的业务意图继续使用 event 和原输入权检查；不引入插件授权流程。
+
+ui.views[].entry 可选，使用与 ui.entry 相同的包内相对资源验证；声明时该视图使用自己的入口，省略则沿用 ui.entry。持久安装清单保留此字段，注册投影只输出一个解析后的 entry。旧插件不受影响，新插件通过可选挂载能力检测提示升级；不增加 initialize 字段或历史数据通路。

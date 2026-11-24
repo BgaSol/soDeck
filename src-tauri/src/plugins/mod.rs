@@ -70,6 +70,7 @@ pub(crate) struct Control {
     stops: Receiver<Sender<Result<(), String>>>,
 }
 enum Output {
+    Wake,
     Frame(Value),
     Diagnostic(String),
     Broken(String),

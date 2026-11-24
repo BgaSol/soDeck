@@ -441,15 +441,20 @@ impl AppCore {
                     if !preference.side_customized {
                         preference.side = d.default_side.clone();
                     }
+                    let mut definition = d.clone();
+                    let entry = definition
+                        .entry
+                        .take()
+                        .unwrap_or_else(|| declaration.entry.clone());
                     ui.definitions.insert(
                         key.clone(),
                         Registered {
-                            definition: d.clone(),
+                            definition,
                             key,
                             plugin_id: p.manifest.id.clone(),
                             plugin_name: p.manifest.name.clone(),
                             plugin_instance_id: p.instance_id.clone().unwrap(),
-                            entry: declaration.entry.clone(),
+                            entry,
                             available: true,
                             icon_url: crate::plugin_icons::url(&p.manifest, &d.icon),
                         },
