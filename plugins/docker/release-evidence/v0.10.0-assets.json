@@ -1,0 +1,144 @@
+{
+  "component": "docker",
+  "version": "0.10.0",
+  "source": "cf3aaae8e8e0392a314d322fe5ba012eb5059b34",
+  "packageRun": 45377730480,
+  "release": {
+    "id": 456637043,
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.10.0",
+    "tag": "plugin-docker-v0.10.0"
+  },
+  "nativePackageReports": [
+    {
+      "id": "sodeck.docker",
+      "version": "0.10.0",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "cf3aaae8e8e0392a314d322fe5ba012eb5059b34",
+      "sha256": "056024ecc5a76804390b3e53e9b29ffad64f1e1dd168596c7b3b420d87bb64b7",
+      "runId": "45377730480",
+      "toolCommit": "cf3aaae8e8e0392a314d322fe5ba012eb5059b34",
+      "passed": true,
+      "pluginIcons": [
+        "docker",
+        "log"
+      ],
+      "calls": [
+        "settings.get"
+      ]
+    },
+    {
+      "id": "sodeck.docker",
+      "version": "0.10.0",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "cf3aaae8e8e0392a314d322fe5ba012eb5059b34",
+      "sha256": "ad860e2467814ca973630001b8e7cc424fce34c7274be43c6cbb615fc0b90d3f",
+      "runId": "45377730480",
+      "toolCommit": "cf3aaae8e8e0392a314d322fe5ba012eb5059b34",
+      "passed": true,
+      "pluginIcons": [
+        "docker",
+        "log"
+      ],
+      "calls": [
+        "settings.get"
+      ]
+    },
+    {
+      "id": "sodeck.docker",
+      "version": "0.10.0",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "cf3aaae8e8e0392a314d322fe5ba012eb5059b34",
+      "sha256": "b22e07ca9187a486eb529854bb99bc746177966eb173dd035d21adfb0d3269bd",
+      "runId": "45377730480",
+      "toolCommit": "cf3aaae8e8e0392a314d322fe5ba012eb5059b34",
+      "passed": true,
+      "pluginIcons": [
+        "docker",
+        "log"
+      ],
+      "calls": [
+        "settings.get"
+      ]
+    },
+    {
+      "id": "sodeck.docker",
+      "version": "0.10.0",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "cf3aaae8e8e0392a314d322fe5ba012eb5059b34",
+      "sha256": "fb8cfe6404bb05e592159b0f06f6830c2989e331cce6970356615fb699b49f9d",
+      "runId": "45377730480",
+      "toolCommit": "cf3aaae8e8e0392a314d322fe5ba012eb5059b34",
+      "passed": true,
+      "pluginIcons": [
+        "docker",
+        "log"
+      ],
+      "calls": [
+        "settings.get"
+      ]
+    },
+    {
+      "id": "sodeck.docker",
+      "version": "0.10.0",
+      "target": "aarch64-apple-darwin",
+      "commit": "cf3aaae8e8e0392a314d322fe5ba012eb5059b34",
+      "sha256": "94e1a339b22fbf85f7709123ce83658f08edc0c96a7f83e5f690dbd9bd50370c",
+      "runId": "45377730480",
+      "toolCommit": "cf3aaae8e8e0392a314d322fe5ba012eb5059b34",
+      "passed": true,
+      "pluginIcons": [
+        "docker",
+        "log"
+      ],
+      "calls": [
+        "settings.get"
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "id": 786817805,
+      "name": "plugin-update.json",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.10.0/plugin-update.json",
+      "size": 42711,
+      "sha256": "e96869ac61c1165e306a28f4d10ca30dcf03d1158f45368ebd7c33c12175f885"
+    },
+    {
+      "id": 786817742,
+      "name": "sodeck-docker_0.10.0_aarch64-apple-darwin.tar.gz",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.10.0/sodeck-docker_0.10.0_aarch64-apple-darwin.tar.gz",
+      "size": 1161159,
+      "sha256": "94e1a339b22fbf85f7709123ce83658f08edc0c96a7f83e5f690dbd9bd50370c"
+    },
+    {
+      "id": 786817593,
+      "name": "sodeck-docker_0.10.0_aarch64-pc-windows-msvc.zip",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.10.0/sodeck-docker_0.10.0_aarch64-pc-windows-msvc.zip",
+      "size": 1216231,
+      "sha256": "ad860e2467814ca973630001b8e7cc424fce34c7274be43c6cbb615fc0b90d3f"
+    },
+    {
+      "id": 786817692,
+      "name": "sodeck-docker_0.10.0_aarch64-unknown-linux-gnu.tar.gz",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.10.0/sodeck-docker_0.10.0_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 1174385,
+      "sha256": "fb8cfe6404bb05e592159b0f06f6830c2989e331cce6970356615fb699b49f9d"
+    },
+    {
+      "id": 786817531,
+      "name": "sodeck-docker_0.10.0_x86_64-pc-windows-msvc.zip",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.10.0/sodeck-docker_0.10.0_x86_64-pc-windows-msvc.zip",
+      "size": 1309474,
+      "sha256": "056024ecc5a76804390b3e53e9b29ffad64f1e1dd168596c7b3b420d87bb64b7"
+    },
+    {
+      "id": 786817651,
+      "name": "sodeck-docker_0.10.0_x86_64-unknown-linux-gnu.tar.gz",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.10.0/sodeck-docker_0.10.0_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 1294217,
+      "sha256": "b22e07ca9187a486eb529854bb99bc746177966eb173dd035d21adfb0d3269bd"
+    }
+  ],
+  "anonymousDownloads": true,
+  "completed": true
+}

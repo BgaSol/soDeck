@@ -1,0 +1,204 @@
+{
+  "packageSource": "cf3aaae8e8e0392a314d322fe5ba012eb5059b34",
+  "productionSourceUnchangedByFixtureCorrection": true,
+  "fixtureCorrection": "scripts/test-settings-ui.mjs",
+  "initialFailure": "The settings-only package fixture omitted the newly declared Docker logs entry. Its old minimap switch assertion also needed to follow the current refresh-interval declaration. Both reproduced locally and the corrected complete Linux UI passed.",
+  "checks": [
+    {
+      "conclusion": "failure",
+      "head_sha": "cf3aaae8e8e0392a314d322fe5ba012eb5059b34",
+      "html_url": "https://github.com/BgaSol/soDeck/actions/runs/45377712290",
+      "id": 45377712290,
+      "run_attempt": 1,
+      "status": "completed",
+      "jobs": [
+        {
+          "completed_at": "2026-11-24T10:45:15Z",
+          "conclusion": "success",
+          "id": 138388308344,
+          "name": "select",
+          "started_at": "2026-11-24T10:45:04Z",
+          "status": "completed"
+        },
+        {
+          "completed_at": "2026-11-24T10:52:17Z",
+          "conclusion": "failure",
+          "id": 138388438372,
+          "name": "browser",
+          "started_at": "2026-11-24T10:45:18Z",
+          "status": "completed"
+        },
+        {
+          "completed_at": "2026-11-24T10:45:58Z",
+          "conclusion": "success",
+          "id": 138388438489,
+          "name": "checks",
+          "started_at": "2026-11-24T10:45:18Z",
+          "status": "completed"
+        },
+        {
+          "completed_at": "2026-11-24T10:49:15Z",
+          "conclusion": "success",
+          "id": 138388438497,
+          "name": "integration-network-linux-x86_64",
+          "started_at": "2026-11-24T10:45:18Z",
+          "status": "completed"
+        },
+        {
+          "completed_at": "2026-11-24T10:56:52Z",
+          "conclusion": "success",
+          "id": 138388438613,
+          "name": "integration-business-linux-x86_64",
+          "started_at": "2026-11-24T10:45:18Z",
+          "status": "completed"
+        },
+        {
+          "completed_at": "2026-11-24T10:52:28Z",
+          "conclusion": "success",
+          "id": 138388438690,
+          "name": "native-windows-x86_64",
+          "started_at": "2026-11-24T10:45:18Z",
+          "status": "completed"
+        },
+        {
+          "completed_at": "2026-11-24T10:50:16Z",
+          "conclusion": "success",
+          "id": 138388438751,
+          "name": "desktop",
+          "started_at": "2026-11-24T10:45:18Z",
+          "status": "completed"
+        },
+        {
+          "completed_at": "2026-11-24T10:49:34Z",
+          "conclusion": "success",
+          "id": 138388438775,
+          "name": "integration-network-linux-aarch64",
+          "started_at": "2026-11-24T10:45:21Z",
+          "status": "completed"
+        },
+        {
+          "completed_at": "2026-11-24T10:53:29Z",
+          "conclusion": "success",
+          "id": 138388438832,
+          "name": "native-windows-aarch64",
+          "started_at": "2026-11-24T10:45:18Z",
+          "status": "completed"
+        },
+        {
+          "completed_at": "2026-11-24T10:59:06Z",
+          "conclusion": "success",
+          "id": 138388438862,
+          "name": "native-macos-aarch64",
+          "started_at": "2026-11-24T10:50:19Z",
+          "status": "completed"
+        },
+        {
+          "completed_at": "2026-11-24T10:50:28Z",
+          "conclusion": "success",
+          "id": 138388438962,
+          "name": "native-linux-x86_64",
+          "started_at": "2026-11-24T10:45:19Z",
+          "status": "completed"
+        },
+        {
+          "completed_at": "2026-11-24T10:50:39Z",
+          "conclusion": "success",
+          "id": 138388439804,
+          "name": "native-linux-aarch64",
+          "started_at": "2026-11-24T10:45:21Z",
+          "status": "completed"
+        },
+        {
+          "completed_at": "2026-11-24T10:45:15Z",
+          "conclusion": "skipped",
+          "id": 138388441909,
+          "name": "netem",
+          "started_at": "2026-11-24T10:45:16Z",
+          "status": "completed"
+        },
+        {
+          "completed_at": "2026-11-24T10:59:17Z",
+          "conclusion": "failure",
+          "id": 138395901639,
+          "name": "format",
+          "started_at": "2026-11-24T10:59:09Z",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "conclusion": "success",
+      "head_sha": "9f03fb9bf9017e7ecc843a0622f19123a8bfe74a",
+      "html_url": "https://github.com/BgaSol/soDeck/actions/runs/45380033066",
+      "id": 45380033066,
+      "run_attempt": 1,
+      "status": "completed",
+      "jobs": [
+        {
+          "completed_at": "2026-11-24T11:00:17Z",
+          "conclusion": "success",
+          "id": 138396373479,
+          "name": "select",
+          "started_at": "2026-11-24T11:00:03Z",
+          "status": "completed"
+        },
+        {
+          "completed_at": "2026-11-24T11:07:21Z",
+          "conclusion": "success",
+          "id": 138396536557,
+          "name": "browser",
+          "started_at": "2026-11-24T11:00:21Z",
+          "status": "completed"
+        },
+        {
+          "completed_at": "2026-11-24T11:00:58Z",
+          "conclusion": "success",
+          "id": 138396536584,
+          "name": "checks",
+          "started_at": "2026-11-24T11:00:21Z",
+          "status": "completed"
+        },
+        {
+          "completed_at": "2026-11-24T11:00:18Z",
+          "conclusion": "skipped",
+          "id": 138396538713,
+          "name": "desktop",
+          "started_at": "2026-11-24T11:00:18Z",
+          "status": "completed"
+        },
+        {
+          "completed_at": "2026-11-24T11:00:18Z",
+          "conclusion": "skipped",
+          "id": 138396538873,
+          "name": "integration-${{ matrix.name }}",
+          "started_at": "2026-11-24T11:00:18Z",
+          "status": "completed"
+        },
+        {
+          "completed_at": "2026-11-24T11:00:18Z",
+          "conclusion": "skipped",
+          "id": 138396539121,
+          "name": "netem",
+          "started_at": "2026-11-24T11:00:18Z",
+          "status": "completed"
+        },
+        {
+          "completed_at": "2026-11-24T11:00:18Z",
+          "conclusion": "skipped",
+          "id": 138396539162,
+          "name": "native-${{ matrix.name }}",
+          "started_at": "2026-11-24T11:00:18Z",
+          "status": "completed"
+        },
+        {
+          "completed_at": "2026-11-24T11:07:37Z",
+          "conclusion": "success",
+          "id": 138400460655,
+          "name": "format",
+          "started_at": "2026-11-24T11:07:24Z",
+          "status": "completed"
+        }
+      ]
+    }
+  ]
+}

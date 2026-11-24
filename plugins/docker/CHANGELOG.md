@@ -7,7 +7,11 @@
 - 读取恢复清除暂时错误，重挂载恢复所选时段与查找；正文、状态和详情串行查询，卸载后的排队读取不发往新页面。
 - 历史进程及时释放，记录由 View 会话有界持有；观察失败不伪造进程完成，旧任务与源身份分开校验。未新增生产依赖。
 
-发行准备中。本机 Rust 34 项、207 项工程脚本、POSIX/Windows 执行环境与 Linux/Windows Engine 进程夹具、真实插件会话与三主题浏览器验证通过；隔离 OpenSSH/Engine 24.0.9 的百万行尾部、容器维护/终端/隧道、断线保留与释放通过。原生 WebView 与五平台原生包的本轮结果、包来源、原始 run 与 Release 在完成后补齐，既有设备与长期专项继续按实际范围保留。
+发行：[Docker 0.10.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.10.0)，保持独立非 Latest；核心 2.3.0 为默认发行入口。包来源 [cf3aaae](https://github.com/BgaSol/soDeck/commit/cf3aaae8e8e0392a314d322fe5ba012eb5059b34)；[原始独立打包](https://github.com/BgaSol/soDeck/actions/runs/45377730480)的 Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 原生构建、架构/资源、实际包挂载/释放及退出全部通过。直接发布同一草稿，六个公开附件匿名大小与 SHA-256 全部核对，[永久证据](release-evidence/v0.10.0-assets.json)保存原包报告和公开摘要。
+
+本机 Rust 34 项、207 项工程脚本、POSIX/Windows 执行环境和 Linux/Windows Engine 进程夹具、真实插件会话、三主题浏览器、隔离 OpenSSH/Engine 24.0.9 百万行尾部及维护/终端/隧道回归通过。Windows 原生 WebView/CSP/正文查询、60 秒固定阅读与查找/回到最新、20 次回收及退出通过；单次首正文至绘制约 4.8 ms，核算数据约 9.1 MiB。读取暂时失败恢复、历史时段重挂载、并发查询上限和迟到绘制均补回归；样本及早期失败见[本机记录](../../docs/releases/v2.3.0-local.json)。
+
+包来源的五平台源码及普通业务通过；首轮总 UI 在设置夹具缺少日志入口时失败，修正夹具与旧缩略开关断言后，生产源码不变的完整 Linux UI 和脚本补验通过，详见[检查收据](../../docs/releases/v2.3.0-checks.json)。本轮不代表其他系统日志 WebView/设备、全部远端 Engine/驱动及生命周期组合、8 MiB/s 端到端压力、30 次分位数或一小时无调试连接内存已验；netem 与其余[既有专项](../../docs/plans/docker-log-viewer.md)仍未完成。
 
 # 0.9.0
 
