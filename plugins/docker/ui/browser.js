@@ -1,5 +1,5 @@
 import {ResourceTree,icon,escape} from './tree.js';
-import {ResourceInline} from './resource-inline.js';
+import {ResourceDetails} from './resource-details.js';
 import {TreeMenu} from './tree-menu.js';
 import {installConnectionForm} from './connection.js';
 const $=id=>document.getElementById(id);
@@ -24,7 +24,7 @@ export function installBrowserPage(){
     if(snapshot&&data.scopeEpoch!==snapshot.scopeEpoch){nav.inline=null;closeInline();nav.selected='';nav.expandedKeys=['engine','category:container'];nav.offset=0;menu.close(false);formTarget=null;searchBefore=null;tree.positions.clear();}
     snapshot=data;render(paint&&navPainted===navSequence,motion);
   }
-  function state(){return {...nav,schemaVersion:3,query:$('query').value,status:$('status-filter').value,health:$('health-filter').value,group:$('group').checked,scrollTop:$('tree-viewport').scrollTop,anchor:tree.anchor(),engineId:snapshot.engine?.id,endpoint:snapshot.endpoint};}
+  function state(){if(nav.inline?.kind==='resource'&&inlineController)Object.assign(nav.inline,inlineController.navigation());return {...nav,schemaVersion:3,query:$('query').value,status:$('status-filter').value,health:$('health-filter').value,group:$('group').checked,scrollTop:$('tree-viewport').scrollTop,anchor:tree.anchor(),engineId:snapshot.engine?.id,endpoint:snapshot.endpoint};}
   function remember(motion=false){if(!enabled||frozen)return Promise.resolve();const data=state(),local=epoch,serial=++navSequence;
     navTail=navTail.catch(()=>{}).then(async()=>{if(local!==epoch)return;const result=await request({action:'browser.navigation',scopeEpoch:snapshot.scopeEpoch,state:data});if(local!==epoch||!result)return;if(serial===navSequence){navPainted=serial;apply(result,true,motion);}}).catch(error=>message(error.message));return navTail;
   }
@@ -44,7 +44,7 @@ export function installBrowserPage(){
     const pull=snapshot.pull;$('pull-status').hidden=!pull;$('pull-status').textContent=pull?`${pull.reference} · ${phases[pull.state]||pull.state}：${pull.message||''}`:'';
     $('pull-cancel').hidden=!pull||!['running','opening'].includes(pull.state);$('pull-cancel').disabled=!enabled||frozen;
   }
-  function closeInline(){menu.close(false);formTarget=null;inlineController?.dispose();inlineController=null;inlineKey='';for(const id of ['connection','browser-tasks','browser-panel'])$('inline-storage').append($(id));tree.inline.replaceChildren();}
+  function closeInline(){menu.close(false);formTarget=null;inlineController?.dispose();inlineController=null;inlineKey='';for(const id of ['connection','browser-tasks','browser-panel'])$('inline-storage').append($(id));tree.inline.replaceChildren();tree.inline.classList.remove('resource-detail-host');}
   function syncVisibility(){inlineController?.enabled(enabled&&!frozen,visible&&tree.inlineVisible());}
   function actionItems(n){const writable=current(identity()),items=[];const add=(action,label,disabled=false,danger=false)=>items.push({action,label,disabled:!enabled||frozen||disabled,danger});
     if(n.resource?.kind==='container'){add('logs','日志');add('terminal','终端',!writable||n.status!=='running'||snapshot.terminal?.status==='pending');for(const op of ['start','stop','restart','pause','unpause','remove'])if(available(op,n.status)&&!(snapshot.engine?.os==='windows'&&['pause','unpause'].includes(op)))add(op,operationNames[op],!writable,op==='remove');}
@@ -55,7 +55,7 @@ export function installBrowserPage(){
     const anchor=snapshot.tree?.inlineAnchor,kind=nav.inline?.kind,key=anchor?`${snapshot.scopeEpoch}:${anchor.node.key}`:'';
     if(!key||!kind){if(inlineKey)closeInline();return;}const n=anchor.node;
     if(inlineKey!==key){closeInline();inlineKey=key;
-      if(kind==='resource'){const root=document.createElement('div');root.className='resource-inline';root.setAttribute('role','treeitem');root.setAttribute('aria-level',String(n.depth+2));root.setAttribute('aria-label',n.label+'的信息与操作');tree.inline.append(root);inlineController=new ResourceInline(root,{request,send,copy,locate,actions:actionItems,action,phase:value=>phases[value]||value,focus:()=>tree.focus(n.key)});inlineController.mount(n,snapshot,mountData);root.append($('browser-panel'));}
+      if(kind==='resource'){const root=document.createElement('div');root.className='resource-details';root.setAttribute('role','group');root.setAttribute('aria-label',n.label+'的信息与操作');tree.inline.classList.add('resource-detail-host');tree.inline.append(root);inlineController=new ResourceDetails(root,{request,send,copy,locate,actions:actionItems,action,phase:value=>phases[value]||value,focus:()=>tree.focus(n.key),navigation:value=>{Object.assign(nav.inline,value);void remember();}});inlineController.mount(n,snapshot,mountData,nav.inline);inlineController.attachConfirmation($('browser-panel'));}
       else if(kind==='connection'){tree.inline.append($('connection'));$('connection').setAttribute('role','treeitem');$('connection').setAttribute('aria-level',String(n.depth+2));$('connection').hidden=false;}
       else if(kind==='tasks'){tree.inline.append($('browser-tasks'));$('browser-tasks').setAttribute('role','treeitem');$('browser-tasks').setAttribute('aria-level',String(n.depth+2));$('browser-tasks').hidden=false;void tasks();}
       else if(kind==='pull'){tree.inline.append($('browser-panel'));pull();}
@@ -63,7 +63,8 @@ export function installBrowserPage(){
     if(inlineController){syncVisibility();inlineController.update(n,snapshot);}if(kind==='tasks')void tasks();
   }
   const renderSelection=()=>renderInline();
-  async function activate(n,kind='resource'){menu.close(false);formTarget=null;nav.selected=n.key;nav.inline=kind==='resource'?{kind,nodeKey:n.key,resource:n.resource}:{kind};await remember(true);if(kind==='resource'&&current(identity()))await load(null,n.resource);}
+  function detailNavigation(key,resource,tab){return {...(nav.inline?.nodeKey===key?nav.inline:{kind:'resource',nodeKey:key,resource}),...(tab?{tab}:{})};}
+  async function activate(n,kind='resource',tab){const same=kind==='resource'&&nav.inline?.nodeKey===n.key;menu.close(false);formTarget=null;nav.selected=n.key;nav.inline=kind==='resource'?detailNavigation(n.key,n.resource,tab):{kind};if(same&&tab){inlineController?.selectTab(tab);await navTail;}else await remember(!same);if(kind==='resource'&&!same&&current(identity()))await load(null,n.resource);}
   function select(n,focus){if(!n)return;if(focus&&(n.type==='resource'||n.type==='tool')){void activate(n,n.type==='tool'?n.key.split(':')[1]:'resource').then(()=>tree.focus(n.key));return;}if(formTarget&&n.key!==nav.selected){menu.close(false);formTarget=null;}nav.selected=n.key;selectedNode=n;tree.render(tree.page,nav.selected);renderSelection();if(focus)tree.focus(n.key);void remember();}
   async function toggle(n){if(!n?.expandable)return;if(n.type==='resource'||n.type==='tool'){if(snapshot.tree?.inlineAnchor?.node.key===n.key){nav.inline=null;closeInline();await remember(true);tree.focus(n.key);}else await activate(n,n.type==='tool'?n.key.split(':')[1]:'resource');return;}const keys=new Set(nav.expandedKeys||[]);if(keys.has(n.key)){keys.delete(n.key);nav.inline=null;closeInline();}else{if(keys.size>=64){message('最多保存 64 个展开节点，请先折叠部分分支');return;}keys.add(n.key);}nav.expandedKeys=[...keys];await remember(true);
     if(keys.has(n.key)&&n.type==='category'&&['unloaded','failed','stale'].includes(snapshot.indexes?.[n.branchKind]?.phase))await load(n.branchKind,undefined,true);
@@ -76,14 +77,14 @@ export function installBrowserPage(){
   async function focusKey(key){if(tree.node(key)){select(tree.node(key),true);return;}const index=tree.positions.get(key);if(index!==undefined){await focusIndex(index);return;}nav.offset=0;await remember();const n=tree.node(key);if(n)select(n,true);}
   async function locate(resource){let result=await send({action:'browser.locate',resource,scopeEpoch:snapshot.scopeEpoch});if(!result)return;
     if(!result.found){await load(resource.kind);message('正在读取目标所属分类，请再次定位');return;}
-    nav.revealTarget=resource;nav.expandedKeys=[...new Set([...(nav.expandedKeys||[]),...result.expandedKeys])].slice(-64);nav.selected=result.key;nav.inline={kind:'resource',nodeKey:result.key,resource};nav.offset=Math.max(0,result.index-5);await remember();tree.focus(result.key);$('reveal-condition').hidden=false;await load(null,resource);
+    nav.revealTarget=resource;nav.expandedKeys=[...new Set([...(nav.expandedKeys||[]),...result.expandedKeys])].slice(-64);nav.selected=result.key;nav.inline=detailNavigation(result.key,resource);nav.offset=Math.max(0,result.index-5);await remember();tree.focus(result.key);$('reveal-condition').hidden=false;await load(null,resource);
   }
   function open(n){if(!n)return;if(n.type==='root'){void activate({key:'tool:connection'},'connection');}else if(n.type==='load')void load(n.branchKind,n.resource);else void toggle(n);}
   async function openView(action,n){if(!n?.resource)return;await send({action,resource:n.resource,id:n.resource.id,...identity(),requestId:crypto.randomUUID()});}
   async function copy(text){if(!text)return;const local=epoch;try{await sodeckClipboard.writeText(text,()=>local===epoch&&enabled&&!frozen);message('已复制');return true;}catch(error){message(error.message);return false;}}
   async function openMenu(n,trigger){if(!n||!enabled||frozen)return;nav.selected=n.key;formTarget=null;const items=[];const add=(label,run,disabled=false,reason='',danger=false)=>items.push({label,run,disabled,reason,danger});
     if(n.resource){add('展开信息',()=>activate(n));for(const item of actionItems(n))add(item.label,async()=>{await activate(n);void action(item.action,n);},item.disabled,'当前资源或连接状态不可用',item.danger);
-      if(n.resource.kind==='container'){add('端口隧道…',async()=>{await activate(n);tree.inline.querySelector('#port-tunnels')?.scrollIntoView({block:'nearest'});});add('终端选项',async()=>{await activate(n);shell(n);},n.status!=='running'||!current(identity()));}add('重新读取信息',()=>load(null,n.resource));add('复制完整标识',()=>copy(n.resource.id));
+      if(n.resource.kind==='container'){add('端口隧道…',async()=>{await activate(n,'resource','ports');tree.inline.querySelector('[data-details-tab=ports]')?.focus({preventScroll:true});});add('终端选项',async()=>{await activate(n);shell(n);},n.status!=='running'||!current(identity()));}add('重新读取信息',()=>load(null,n.resource));add('复制完整标识',()=>copy(n.resource.id));
     }else if(n.type==='engine'){
       add('全部折叠',()=>{nav.inline=null;nav.expandedKeys=['engine'];nav.offset=0;closeInline();void remember();},!!nav.query,'清空搜索后可折叠');add('刷新资源树',()=>send({action:'refresh'}),snapshot.busy);add(snapshot.paused?'恢复自动刷新':'暂停自动刷新',()=>send({action:'pauseRefresh',paused:!snapshot.paused}));add('连接设置',()=>activate({key:'tool:connection'},'connection'));add('查看任务',()=>activate({key:'tool:tasks'},'tasks'));add('拉取公开镜像',async()=>{nav.expandedKeys=[...new Set([...(nav.expandedKeys||[]),'engine','category:image'])];await activate({key:'tool:pull'},'pull');});
     }else if(n.type==='root'){add('复制路径',()=>copy(snapshot.engine?.dockerRootDir),!snapshot.engine?.dockerRootDir);add('连接设置',()=>activate({key:'tool:connection'},'connection'));}

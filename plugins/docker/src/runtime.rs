@@ -713,7 +713,7 @@ impl App {
                     .ok_or("对象尚未读取")?
                     .collection(name)?
             };
-            let mut result = page(&json!(rows), d["offset"].as_u64().unwrap_or(0) as usize, 20);
+            let mut result = page(&json!(rows), d["offset"].as_u64().unwrap_or(0) as usize, 5);
             result["resource"] = json!(resource);
             result["scopeEpoch"] = json!(v.epoch.to_string());
             result["observationRevision"] = json!(object.generation.to_string());

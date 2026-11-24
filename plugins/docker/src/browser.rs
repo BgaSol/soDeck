@@ -595,13 +595,73 @@ pub fn navigation(value: &Value, old: &Value) -> Result<Value, String> {
         return Err("导航状态无效".into());
     }
     v["schemaVersion"] = json!(3);
-    let inline = v["inline"].clone();
+    let mut inline = v["inline"].clone();
     if !inline.is_null() {
         match inline["kind"].as_str() {
             Some("resource") => {
-                ResourceRef::read(&inline["resource"])?;
+                let resource = ResourceRef::read(&inline["resource"])?;
                 if inline["nodeKey"].as_str().is_none_or(|k| k.len() > 1024) {
                     return Err("行内对象标识无效".into());
+                }
+                if resource.kind == Kind::Container {
+                    inline["tab"] = json!(match inline["tab"].as_str() {
+                        Some(tab @ ("ports" | "mounts" | "networks")) => tab,
+                        _ => "overview",
+                    });
+                    let mut offsets = serde_json::Map::new();
+                    let mut previous = serde_json::Map::new();
+                    for field in ["offsets", "previousOffsets"] {
+                        if !inline[field].is_null()
+                            && inline[field].as_object().is_none_or(|map| {
+                                map.keys().any(|name| {
+                                    !["ports", "mounts", "networks"].contains(&name.as_str())
+                                })
+                            })
+                        {
+                            return Err("详情分页状态无效".into());
+                        }
+                    }
+                    for name in ["ports", "mounts", "networks"] {
+                        let offset = if inline["offsets"][name].is_null() {
+                            0
+                        } else {
+                            inline["offsets"][name]
+                                .as_u64()
+                                .filter(|offset| *offset < 100)
+                                .ok_or("详情分页位置无效")?
+                        };
+                        let history = if inline["previousOffsets"][name].is_null() {
+                            vec![]
+                        } else {
+                            let rows = inline["previousOffsets"][name]
+                                .as_array()
+                                .ok_or("详情前页状态无效")?;
+                            if rows.len() > 100 {
+                                return Err("详情前页状态超限".into());
+                            }
+                            let rows = rows
+                                .iter()
+                                .map(|value| {
+                                    value
+                                        .as_u64()
+                                        .filter(|value| *value < offset)
+                                        .ok_or("详情前页位置无效")
+                                })
+                                .collect::<Result<Vec<_>, _>>()?;
+                            if rows.windows(2).any(|pair| pair[0] >= pair[1]) {
+                                return Err("详情前页顺序无效".into());
+                            }
+                            rows
+                        };
+                        offsets.insert(name.into(), json!(offset));
+                        previous.insert(name.into(), json!(history));
+                    }
+                    inline["offsets"] = json!(offsets);
+                    inline["previousOffsets"] = json!(previous);
+                } else {
+                    for field in ["tab", "offsets", "previousOffsets"] {
+                        inline.as_object_mut().unwrap().remove(field);
+                    }
                 }
             }
             Some("connection" | "pull" | "tasks") => {}
@@ -881,6 +941,28 @@ mod tests {
         assert_eq!(nav["shell"], "/bin/bash");
         assert_eq!(nav["expandedKeys"].as_array().unwrap().len(), 2);
         assert_eq!(nav["selected"], format!("container:{}", "a".repeat(64)));
+    }
+    #[test]
+    fn container_detail_navigation_restores_tabs_and_actual_page_cursors() {
+        let id = "a".repeat(64);
+        let mut input = json!({"inline":{"kind":"resource","nodeKey":format!("container:{id}"),"resource":{"kind":"container","id":id},"tab":"mounts","offsets":{"mounts":3},"previousOffsets":{"mounts":[0,1]}}});
+        let nav = navigation(&input, &Value::Null).unwrap();
+        assert_eq!(nav["inline"]["tab"], "mounts");
+        assert_eq!(nav["inline"]["previousOffsets"]["mounts"], json!([0, 1]));
+        input["inline"]["tab"] = json!("future-tab");
+        assert_eq!(
+            navigation(&input, &Value::Null).unwrap()["inline"]["tab"],
+            "overview"
+        );
+        input["inline"]["offsets"]["mounts"] = json!(100);
+        assert!(navigation(&input, &Value::Null).is_err());
+        input["inline"]["offsets"]["mounts"] = json!(3);
+        input["inline"]["previousOffsets"]["mounts"] = json!([1, 0]);
+        assert!(navigation(&input, &Value::Null).is_err());
+        input["inline"]["resource"] = json!({"kind":"volume","id":"data"});
+        let nav = navigation(&input, &Value::Null).unwrap();
+        assert!(nav["inline"].get("tab").is_none());
+        assert!(nav["inline"].get("previousOffsets").is_none());
     }
     #[test]
     fn idle_observation_cache_is_bounded_and_generation_never_reuses_an_old_request() {

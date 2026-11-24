@@ -41,7 +41,21 @@ try {
   await page.locator(`[data-id="${context.workspaceId}"] [data-workspace-action="select"]`).click();
   const opened=await invoke('component_ui',{operation:'action',args:{context,action:{op:'open',key:'sodeck.docker:browser',requestId:'native-docker'}}});browserView=opened.viewId;
   const browserFrame=page.frameLocator(`.component-surface[data-view-id="${browserView}"] iframe`);
-  await browserFrame.locator('#query').fill(ssh.containerId);await browserFrame.locator(`[data-tree-key="container:${ssh.containerId}"]`).click();await browserFrame.getByRole('button',{name:'日志',exact:true}).click();
+  await browserFrame.locator('#query').fill(ssh.containerId);await browserFrame.locator(`[data-tree-key="container:${ssh.containerId}"]`).click();
+  await browserFrame.locator('[data-details-tab=overview][aria-selected=true]').waitFor();
+  await browserFrame.locator('.details-summary .details-reference').waitFor();
+  await browserFrame.locator('.resource-details').evaluate(element=>{window.__nativeDetails=element;window.__nativeLogs=element.querySelector('[data-inline-action=logs]');});
+  for(const tab of ['ports','mounts','networks','overview']){
+    await browserFrame.locator(`[data-details-tab=${tab}]`).click();
+    assert.equal(await browserFrame.locator(`[data-details-tab=${tab}]`).getAttribute('aria-selected'),'true');
+    assert(await browserFrame.locator('.resource-details').evaluate(element=>element===window.__nativeDetails&&element.querySelector('[data-inline-action=logs]')===window.__nativeLogs),'Native tabs must preserve details and action DOM');
+    assert(await browserFrame.locator('body').evaluate(element=>element.scrollWidth<=element.clientWidth),'Native Docker details horizontal overflow');
+  }
+  await browserFrame.locator('[data-details-tab=ports]').click();await browserFrame.locator('[data-details-tab=ports]').press('ArrowRight');
+  assert.equal(await browserFrame.locator('[data-details-tab=mounts]').getAttribute('aria-selected'),'true');
+  await page.screenshot({path:path.join(reportRoot,'native-details.png')});
+  report.checks.push('native container tabs, keyboard, stable detail/action DOM and actual plugin/SSH/Engine observation');save();
+  await browserFrame.getByRole('button',{name:'日志',exact:true}).click();
   await until(async()=>{logView=(await views()).find(v=>v.definitionKey==='sodeck.docker:logs')?.id;return !!logView;},'Logs view did not open');
   frame=page.frameLocator(`.component-surface[data-view-id="${logView}"] iframe`);
   await frame.locator('.log-text').first().waitFor({timeout:45000});

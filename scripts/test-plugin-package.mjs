@@ -59,7 +59,8 @@ try {
     assert.equal(manifest.ui.views.length,2);
     const browser=manifest.ui.views.find(view=>view.id==='browser');assert.equal(browser.defaultSide,'right');assert.equal(browser.defaultPinned,true);assert.equal(browser.openOnWorkspace,'none');
     {assert.deepEqual(manifest.ui.views.map(v=>v.id),['browser','logs']);assert.equal(manifest.ui.views.find(v=>v.id==='logs').entry,'ui/logs.html');}
-    for(const file of ['style.css','sdk/index.js','browser.js','connection.js','tree.js','tree-menu.js','dom-update.js',...['logs.html','logs-page.js','resource-inline.js','tree-layout.js']])assert(fs.statSync(path.join(checked.root,'ui',file)).size>0);
+    for(const file of ['style.css','sdk/index.js','browser.js','connection.js','tree.js','tree-menu.js','dom-update.js',...['logs.html','logs-page.js','resource-details.js','resource-details-data.js','resource-details.css','tree-layout.js']])assert(fs.statSync(path.join(checked.root,'ui',file)).size>0);
+    assert(!fs.existsSync(path.join(checked.root,'ui','resource-inline.js')));
 
   }
   if (plugin === "system-status") {

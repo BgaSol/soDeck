@@ -121,7 +121,17 @@ try{
   const launch=submissions[0].payload;assert.equal(launch.directoryIntegration,'off');assert.deepEqual(programs.get(launch.launch.command).removeEnv,['DOCKER_HOST','DOCKER_CONTEXT','DOCKER_TLS_VERIFY','DOCKER_CERT_PATH','DOCKER_API_VERSION']);assert.equal(programs.get(launch.launch.command).checks[0].expectedStdout,'engine');assert(launch.launch.command.includes(id));assert(programs.get(launch.launch.command).argv.includes(shell));
   await request('ui.event','detail',{data:{action:'browser.load',resource:{kind:'container',id}}});
   const observed=await until(async()=>(await request('ui.event','detail',{data:{action:'browser.object',resource:{kind:'container',id}}})).data,o=>o.relation?.phase==='ready');
-  const ports=(await request('ui.event','detail',{data:{action:'browser.collection',resource:{kind:'container',id},collection:'ports',observationRevision:observed.observationRevision,offset:0}})).data;
+  const detailNavigation={schemaVersion:3,inline:{kind:'resource',nodeKey:'container:'+id,resource:{kind:'container',id},tab:'mounts',offsets:{mounts:3},previousOffsets:{mounts:[0,1]}}};
+  const savedNavigation=(await request('ui.event','detail',{data:{action:'browser.navigation',state:detailNavigation}})).data.navigation;
+  assert.equal(savedNavigation.inline.tab,'mounts');assert.deepEqual(savedNavigation.inline.previousOffsets.mounts,[0,1]);
+  const originalMounts=inspect.Mounts;
+  inspect.Mounts=Array.from({length:12},(_,index)=>({Type:'bind',Source:'/srv/data-'+index,Destination:'/data-'+index,RW:true}));
+  await request('ui.event','detail',{data:{action:'browser.load',resource:{kind:'container',id}}});
+  const pagedObservation=await until(async()=>(await request('ui.event','detail',{data:{action:'browser.object',resource:{kind:'container',id}}})).data,o=>o.relation?.phase==='ready');
+  const mountsPage=(await request('ui.event','detail',{data:{action:'browser.collection',resource:{kind:'container',id},collection:'mounts',observationRevision:pagedObservation.observationRevision,offset:0}})).data;
+  assert.equal(mountsPage.rows.length,5);assert.equal(mountsPage.nextOffset,5);
+  inspect.Mounts=originalMounts;
+  const ports=(await request('ui.event','detail',{data:{action:'browser.collection',resource:{kind:'container',id},collection:'ports',observationRevision:pagedObservation.observationRevision,offset:0}})).data;
   assert.equal(ports.rows.length,2);assert.deepEqual(ports.rows.map(r=>r.target.host),['127.0.0.1','::1']);
   const tunnel={action:'tunnel.create',requestId:'tunnel-once',binding:ports.rows[0].binding,selectedRule:null,expectedContext:context,engineId:'engine',endpoint:terminalResult.endpoint};
   loseCommandReceipt=true;const tunnelBefore=submissions.length;
