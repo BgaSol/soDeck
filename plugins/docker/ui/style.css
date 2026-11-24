@@ -93,7 +93,7 @@ footer {display:flex;gap:5px 12px;justify-content:space-between;padding:6px 10px
 #resource-tree {position:relative;padding:0 4px;}
 #resource-tree .tree-row {position:absolute;left:4px;right:4px;height:30px;}
 #tree-inline {position:absolute;left:calc(20px + var(--depth)*12px);right:10px;min-width:0;padding:4px 0 12px 10px;border-left:1px solid var(--border);}
-#tree-inline button {font-size:11px;min-height:27px;padding:3px 6px;}
+:where(#tree-inline) button {font-size:11px;min-height:27px;padding:3px 6px;}
 .mono {font:11px/1.5 ui-monospace,Consolas,monospace;overflow-wrap:anywhere;}
 #browser-panel {padding:9px 0 2px;}
 #browser-panel form,#endpoint-form {display:grid;gap:7px;font-size:12px;}

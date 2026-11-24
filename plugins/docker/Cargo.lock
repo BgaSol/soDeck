@@ -83,7 +83,7 @@ dependencies = [
 
 [[package]]
 name = "sodeck-docker"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "serde",
  "serde_json",

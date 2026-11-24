@@ -15,7 +15,7 @@ export class ResourceDetails {
     this.callbacks = callbacks;
     this.data = new ResourceDetailsData(callbacks.request, () => this.render());
     root.innerHTML = `<div class="details-actions"><div data-action-group="read"></div><div data-action-group="maintain"></div></div>
-      <div class="details-tabs" role="tablist" aria-label="容器详情">${['overview','ports','mounts','networks'].map(tab => `<button type="button" role="tab" id="docker-details-${tab}-tab" aria-controls="docker-details-${tab}" aria-selected="${tab==='overview'}" tabindex="${tab==='overview'?0:-1}" data-details-tab="${tab}">${tab==='overview'?'概览':labels[tab]}</button>`).join('')}</div>
+      <div class="details-tabs" role="tablist" aria-label="容器详情">${['overview','ports','mounts','networks'].map(tab => `<button type="button" role="tab" id="docker-details-${tab}-tab" aria-controls="docker-details-${tab}" aria-selected="${tab==='overview'}" tabindex="${tab==='overview'?0:-1}" data-details-tab="${tab}"><span>${tab==='overview'?'概览':labels[tab]}</span>${tab==='overview'?'':' <span class="details-tab-count">—</span>'}</button>`).join('')}</div>
       <p class="details-observation" role="status" hidden></p>
       <div class="details-panels">
         <section id="docker-details-overview" role="tabpanel" aria-labelledby="docker-details-overview-tab"><div class="details-summary"></div><details class="details-more"><summary>更多信息</summary><div class="details-identity"></div><div class="details-stats"></div></details></section>
@@ -96,7 +96,8 @@ export class ResourceDetails {
     for (const tab of this.root.querySelectorAll('[data-details-tab]')) {
       const selected=tab.dataset.detailsTab===this.data.tab;
       tab.setAttribute('aria-selected',String(selected));tab.tabIndex=selected?0:-1;tab.disabled=!this.ready;
-      tab.textContent=tab.dataset.detailsTab==='overview'?'概览':`${labels[tab.dataset.detailsTab]} ${info?.counts?.[tab.dataset.detailsTab]??'—'}`;
+      const count=tab.querySelector('.details-tab-count');
+      if (count) count.textContent=info?.counts?.[tab.dataset.detailsTab]??'—';
       this.root.querySelector('#'+tab.getAttribute('aria-controls')).hidden=this.container&&!selected || !this.container&&tab.dataset.detailsTab!=='overview';
     }
     const notice=this.root.querySelector('.details-observation');
