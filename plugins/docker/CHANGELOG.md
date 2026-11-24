@@ -6,7 +6,15 @@
 - 修复集合前进 20 条、返回仅减 5 条的问题：每页最多 5 条，返回记录的实际起点，兼容字节预算短页、数据减少及重挂载。
 - 删除旧详情模块并同步包内资源检查；镜像、网络、卷、日志、终端和隧道沿用原业务边界，未新增生产依赖或核心 API。仍需核心 2.3.0。
 
-待发布；本机与五平台实际验收、来源及独立打包记录在收尾时补全。当前实现行为见 [Docker 功能](../../docs/features/docker.md#容器页签详情)。
+包来源：[cccbb99c9b3246ab8f8ba4c1e3631d46aa066f85](https://github.com/BgaSol/soDeck/commit/cccbb99c9b3246ab8f8ba4c1e3631d46aa066f85)；同一来源的 [Check](https://github.com/BgaSol/soDeck/actions/runs/45395237974) 全部选中任务通过，覆盖五平台核心/插件源码、类型/格式/脚本、完整浏览器和桌面回归、网络及真实 OpenSSH/Engine 业务，netem 未选中。
+
+本机 216 项工程脚本、35 项 Docker Rust、四页签三主题及 280/320/400/900px 浏览器回归通过；覆盖按需请求、缓存、实际游标短页/返回、数据减少、迟到响应、确认 DOM、只读候选、冻结与重挂载导航。隔离 Engine 24.0.9 的资源维护、终端、端口隧道字节与来源关闭/释放通过；Windows 原生 WebView2 的页签/键盘、稳定 DOM、60 秒固定日志阅读、查找/回到最新、20 次开关回收及退出通过。
+
+前一次 Engine 联调在停止后等待分类刷新超时，未稳定复现，原样重跑通过；首次原生验证误用依赖开发服务器的 debug 核心，改用已有 release 核心后通过，未放宽断言。包内启动与真实 WebView/Engine 业务分别验收；本轮不代表新增 Windows Server Engine、ARM64 远端、物理 IME/DPI/读屏、netem 或正式旧版线上升级已验。
+
+发行：[Docker 0.11.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.11.0)，按用户要求设为仓库 Latest。[原始独立打包](https://github.com/BgaSol/soDeck/actions/runs/45395272728) 的 Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 原生构建、架构/资源、包内挂载/释放与退出全部通过；Windows x86_64 的同一 CI 原归档另在本机通过启动和退出。macOS 首次因 GitHub hosted runner 容量不足未执行，仅在原运行重试失败任务，保留四个成功平台的包；第二次及后续五平台 verify 全部通过。
+
+直接发布同一草稿的五份程序归档，六个公开附件匿名大小与 SHA-256 全部核对，更新清单 notes 与 Release 一致。[永久证据](release-evidence/v0.11.0-assets.json) 保存固定源码、原始运行、五份实际包报告、Check 和公开附件摘要。当前实现行为见 [Docker 功能](../../docs/features/docker.md#容器页签详情)；更新已启用插件后按提示重启生效。
 
 # 0.10.0
 
