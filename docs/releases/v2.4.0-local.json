@@ -1,0 +1,171 @@
+{
+  "version": "2.4.0",
+  "source": "58cc776b3a9c20c034198115ae67352a3abc216e",
+  "packageSource": "2b9a25236c781c1cfefe06e7e6c8e254adc73661",
+  "packageSourceDifference": "Only Linux workflow dependencies and distribution/remaining-verification documentation changed after the local app tests; application code is identical.",
+  "recordedAt": "2026-11-25T13:00:42.916Z",
+  "platform": "windows-x86_64",
+  "checks": {
+    "typeFormat": true,
+    "webBuild": true,
+    "scripts": {
+      "passed": 217,
+      "failed": 0
+    },
+    "core": {
+      "suites": [
+        {
+          "passed": 132,
+          "failed": 0,
+          "ignored": 1
+        },
+        {
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 11,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 56,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 34,
+          "failed": 0,
+          "ignored": 14
+        },
+        {
+          "passed": 11,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 17,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 13,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 37,
+          "failed": 0,
+          "ignored": 2
+        },
+        {
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 12,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0
+        }
+      ],
+      "passed": 341,
+      "ignored": 17
+    },
+    "browser": {
+      "initialUiSuite": "Passed through workspace; connection synthetic fingerprint setup adapted to current question identity checks; remaining suites passed.",
+      "production": true,
+      "settings": true,
+      "desktopPolicy": true,
+      "layout": true,
+      "interactions": true,
+      "shellNavigation": true,
+      "desktopShell": true
+    },
+    "native": {
+      "coreBuild": true,
+      "executableSha256": "78b56be4a3f1db618f8020aed0a3b09088695a5f030aa64d150c841b3d396bfa",
+      "traySmoke": {
+        "passed": true,
+        "actualWindowHideRestore": true,
+        "nativeMenuDispatch": true,
+        "unreadProjection": true,
+        "reopenExit": true
+      },
+      "firstExplanation": {
+        "cua": true,
+        "cancelKeptWindow": true,
+        "nextCloseExplainedAgain": true,
+        "confirmActuallyHidWindow": true,
+        "preferencePersisted": true,
+        "realTrayMouseClick": false
+      },
+      "business": {
+        "completed": true,
+        "platform": "win32",
+        "trayOnly": true,
+        "checks": [
+          "titlebar: background kept original views, unsaved editor and actual tunnel bytes; restored original window",
+          "titlebar: cancel kept original views/draft, PTY and forwarding; discard stopped four plugins, drained SSH/forwarding, released the port and exited",
+          "native: background kept original views, unsaved editor and actual tunnel bytes; restored original window",
+          "native: cancel kept original views/draft, PTY and forwarding; discard stopped four plugins, drained SSH/forwarding, released the port and exited"
+        ],
+        "plugins": [
+          {
+            "id": "sodeck.terminal",
+            "version": "0.11.1"
+          },
+          {
+            "id": "sodeck.files",
+            "version": "0.12.0"
+          },
+          {
+            "id": "sodeck.network-proxy",
+            "version": "0.6.0"
+          },
+          {
+            "id": "sodeck.system-status",
+            "version": "0.5.0"
+          }
+        ]
+      }
+    }
+  },
+  "skipped": [
+    "Five-target native results are recorded separately after CI.",
+    "Linux real desktop tray/WM, macOS menu-bar/Dock mouse interactions, Windows tray mouse interactions.",
+    "All-platform IME, screen readers, multi-monitor DPI, OS session termination, native failure injection and stress.",
+    "Existing system-pointer tear-out missed target tab under local mixed DPI; tray-only business driver skips pointer scenarios."
+  ],
+  "earlyFailures": [
+    "Stale local fixture plugins with API 1 were rejected; rebuilt declared test fixtures from source.",
+    "Legacy native terminal action fixture expected synchronous result; migrated to current command submit/get contract.",
+    "Synthetic fingerprint UI fixture omitted the registered current question; added its view before requesting the dialog."
+  ]
+}

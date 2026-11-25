@@ -1,0 +1,138 @@
+{
+  "packageSource": "2b9a25236c781c1cfefe06e7e6c8e254adc73661",
+  "checks": [
+    {
+      "id": 45620260574,
+      "html_url": "https://github.com/BgaSol/soDeck/actions/runs/45620260574",
+      "head_sha": "2b9a25236c781c1cfefe06e7e6c8e254adc73661",
+      "status": "completed",
+      "conclusion": "success",
+      "run_attempt": 1,
+      "jobs": [
+        {
+          "id": 139226489320,
+          "name": "select",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T13:07:16Z",
+          "completed_at": "2026-11-25T13:07:28Z"
+        },
+        {
+          "id": 139226637110,
+          "name": "desktop",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T13:07:31Z",
+          "completed_at": "2026-11-25T13:14:36Z"
+        },
+        {
+          "id": 139226637136,
+          "name": "native-windows-x86_64",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T13:07:30Z",
+          "completed_at": "2026-11-25T13:14:33Z"
+        },
+        {
+          "id": 139226637186,
+          "name": "native-macos-aarch64",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T13:07:31Z",
+          "completed_at": "2026-11-25T13:13:29Z"
+        },
+        {
+          "id": 139226637262,
+          "name": "integration-network-linux-x86_64",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T13:07:31Z",
+          "completed_at": "2026-11-25T13:11:11Z"
+        },
+        {
+          "id": 139226637267,
+          "name": "native-linux-x86_64",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T13:07:31Z",
+          "completed_at": "2026-11-25T13:12:47Z"
+        },
+        {
+          "id": 139226637292,
+          "name": "browser",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T13:07:31Z",
+          "completed_at": "2026-11-25T13:16:09Z"
+        },
+        {
+          "id": 139226637302,
+          "name": "native-linux-aarch64",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T13:07:33Z",
+          "completed_at": "2026-11-25T13:13:29Z"
+        },
+        {
+          "id": 139226637334,
+          "name": "integration-business-linux-x86_64",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T13:07:31Z",
+          "completed_at": "2026-11-25T13:19:47Z"
+        },
+        {
+          "id": 139226637528,
+          "name": "integration-network-linux-aarch64",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T13:07:33Z",
+          "completed_at": "2026-11-25T13:11:59Z"
+        },
+        {
+          "id": 139226638172,
+          "name": "native-windows-aarch64",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T13:07:31Z",
+          "completed_at": "2026-11-25T13:19:43Z"
+        },
+        {
+          "id": 139226638275,
+          "name": "checks",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T13:07:31Z",
+          "completed_at": "2026-11-25T13:08:14Z"
+        },
+        {
+          "id": 139226638696,
+          "name": "netem",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T13:07:28Z",
+          "completed_at": "2026-11-25T13:07:28Z"
+        },
+        {
+          "id": 139233887608,
+          "name": "format",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T13:19:50Z",
+          "completed_at": "2026-11-25T13:20:00Z"
+        }
+      ]
+    }
+  ],
+  "previousPackageAttempt": {
+    "id": 45618652650,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45618652650",
+    "source": "58cc776b3a9c20c034198115ae67352a3abc216e",
+    "conclusion": "failure",
+    "reason": "Both Linux apps compiled, but bundling could not detect AppIndicator. Added libayatana-appindicator3-dev to build and libayatana-appindicator3-1 to runtime verification. All five final packages originate from the fixed source."
+  },
+  "skipped": [
+    "netem was not selected",
+    "Physical desktop, tray mouse, IME, screen-reader, mixed-DPI and fault/stress scopes remain in docs/plans/system-tray.md"
+  ]
+}
