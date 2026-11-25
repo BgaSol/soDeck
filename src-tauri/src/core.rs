@@ -735,6 +735,41 @@ impl AppCore {
     pub fn mark_read(&self, id: Option<&str>) -> Result<(), String> {
         let result = self.store.lock().unwrap().mark_read(id);
         self.changed();
+        if result.is_ok() {
+            self.event("messages-changed", Value::Null);
+        }
+        result
+    }
+
+    pub fn unread_count(&self) -> usize {
+        self.store
+            .lock()
+            .unwrap()
+            .messages
+            .iter()
+            .filter(|m| !m.read)
+            .count()
+    }
+
+    pub fn desktop_preferences(&self) -> (CloseBehavior, bool) {
+        let store = self.store.lock().unwrap();
+        (
+            store.preferences.close_behavior,
+            store.preferences.background_close_explained,
+        )
+    }
+
+    pub fn set_desktop_preferences(
+        &self,
+        behavior: Option<CloseBehavior>,
+        explained: bool,
+    ) -> Result<(), String> {
+        let result = self
+            .store
+            .lock()
+            .unwrap()
+            .set_desktop_preferences(behavior, explained);
+        self.changed();
         result
     }
 
@@ -869,10 +904,15 @@ impl AppCore {
             count: 1,
             dedupe_key: input.dedupe_key,
         };
+        self.commit_message(message, input.notify)
+    }
+
+    fn commit_message(&self, message: Message, notify: bool) -> Result<Message, String> {
         let result = self.store.lock().unwrap().publish(message);
         self.changed();
         let (saved, fresh) = result?;
-        if input.notify && fresh {
+        self.event("messages-changed", Value::Null);
+        if notify && fresh {
             self.event("core-message", serde_json::to_value(&saved).unwrap());
         }
         Ok(saved)
@@ -901,11 +941,63 @@ impl AppCore {
             count: 1,
             dedupe_key: input.dedupe_key,
         };
-        if let Ok((message, fresh)) = self.store.lock().unwrap().publish(message) {
-            if fresh {
-                self.event("core-message", serde_json::to_value(message).unwrap());
+        let _ = self.commit_message(message, true);
+    }
+}
+
+#[cfg(test)]
+mod desktop_message_tests {
+    use super::*;
+    #[test]
+    fn unread_events_cover_silent_duplicate_failure_and_read_without_holding_storage_lock() {
+        let root = std::env::temp_dir().join(format!(
+            "sodeck-message-events-{}-{}",
+            std::process::id(),
+            now()
+        ));
+        let core = AppCore::open(root.clone(), "test".into()).unwrap();
+        let observed = Arc::new(Mutex::new(Vec::new()));
+        let output = observed.clone();
+        let weak = Arc::downgrade(&core);
+        core.set_listener(Arc::new(move |name, _| {
+            if name == "messages-changed" {
+                output
+                    .lock()
+                    .unwrap()
+                    .push(weak.upgrade().unwrap().unread_count());
             }
-        }
-        self.changed();
+        }));
+        let input = || PublishMessage {
+            title: "silent".into(),
+            body: "".into(),
+            level: "info".into(),
+            notify: false,
+            dedupe_key: Some("key".into()),
+        };
+        let first = core.publish(None, input()).unwrap();
+        assert_eq!(core.unread_count(), 1);
+        core.mark_read(Some(&first.id)).unwrap();
+        core.publish(None, input()).unwrap();
+        assert_eq!(core.messages().len(), 1);
+        assert_eq!(core.unread_count(), 1);
+        core.plugin_failure("test", "instance", "failure");
+        core.mark_read(None).unwrap();
+        assert_eq!(*observed.lock().unwrap(), vec![1, 0, 1, 2, 0]);
+        let messages = root.join("messages.json");
+        std::fs::remove_file(&messages).unwrap();
+        std::fs::create_dir(&messages).unwrap();
+        assert!(core.publish(None, input()).is_err());
+        assert_eq!(observed.lock().unwrap().len(), 5);
+        core.detach_host();
+        drop(core);
+        let _ = std::fs::remove_dir_all(root);
+    }
+    #[test]
+    fn old_preferences_default_to_background_without_overwriting_other_fields() {
+        let preferences: Preferences = serde_json::from_value(json!({"theme":"dark"})).unwrap();
+        assert_eq!(preferences.close_behavior, CloseBehavior::Background);
+        assert!(!preferences.background_close_explained);
+        assert_eq!(preferences.theme, "dark");
+        assert!(serde_json::from_value::<CloseBehavior>(json!("unknown")).is_err());
     }
 }

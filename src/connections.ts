@@ -1,7 +1,7 @@
 import { updateDOM } from './dom-update';
 import { enterMotion, exitMotion } from './motion.js';
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import {chooseLocalPath} from "./desktop";
 import { escape as e } from "./ui";
 import type { Context } from "./workspaces";
 
@@ -77,7 +77,7 @@ export class ConnectionsUi {
   async cancelAttempt(attemptId:string){await this.send({op:'cancel',attemptId});}
   async continueAttempt(attemptId:string,questionId:string){
     await this.refresh();const view=this.views.find(v=>v.attemptId===attemptId&&v.question?.id===questionId&&v.state==='connecting');
-    if(!view)throw new Error('连接问题已变化，请重新打开菜单');this.prompt(view);
+    if(!view)throw new Error('连接问题已变化，请重新打开菜单');await this.prompt(view);
   }
   async focusWorkspace(serverId:string,attemptId:string){
     const revision=this.navigation?.begin()??0;await this.refresh();
@@ -114,7 +114,7 @@ export class ConnectionsUi {
     if (this.dialog && !views.some(v => v.attemptId === this.dialog!.attempt && v.question?.id === this.dialog!.id)) this.closePrompt();
     if (!this.dialog) {
       const v = views.find(v => v.windowId === this.windowId && v.state === "connecting" && v.question && !this.dismissed.has(v.question.id));
-      if (v) this.prompt(v);
+      if (v) void this.prompt(v).catch(error=>this.notify(String(error)));
     }
   }
   private async action(b: HTMLElement) {
@@ -122,12 +122,16 @@ export class ConnectionsUi {
     if (server) {
       await this.connect(server);
     } else if (b.dataset.connectionCancel) await this.send({ op: "cancel", attemptId: b.dataset.connectionCancel });
-    else if (b.dataset.connectionPrompt) { const v = this.views.find(v => v.attemptId === b.dataset.connectionPrompt); if (v) this.prompt(v); }
+    else if (b.dataset.connectionPrompt) { const v = this.views.find(v => v.attemptId === b.dataset.connectionPrompt); if (v) await this.prompt(v); }
     else if (b.dataset.disconnectContext) await this.send({ op: "disconnect", context: JSON.parse(b.dataset.disconnectContext) });
   }
   private closePrompt() { if(this.dialog)exitMotion(this.dialog.node);this.dialog?.node.close(); this.dialog?.node.remove(); this.dialog = undefined; }
-  private prompt(v: ConnectionView) {
-    const q = v.question; if (!q || this.dialog?.id === q.id) return;
+  private presenting?:string;
+  private async prompt(v: ConnectionView) {
+    const q = v.question; if (!q || this.dialog?.id === q.id || this.presenting===q.id) return;
+    this.presenting=q.id;
+    try{await this.call('desktop_present',{attemptId:v.attemptId,questionId:q.id});}finally{this.presenting=undefined;}
+    if(!this.views.some(view=>view.attemptId===v.attemptId&&view.question?.id===q.id))return;
     this.closePrompt();
     const node = document.createElement("dialog"); node.className = "catalog-dialog connection-dialog";
     const title = q.kind === "credentials" ? "补充连接凭据" : q.kind === "targetChange" ? "重连目标已变更" : q.previousFingerprint ? "SSH 主机密钥已变化" : "确认 SSH 主机身份";
@@ -163,7 +167,7 @@ export class ConnectionsUi {
     node.querySelector("[data-prompt-cancel]")!.addEventListener("click", () => void submit(true));
     node.querySelector("[data-prompt-accept]")!.addEventListener("click", () => void submit(false));
     node.querySelector("form")?.addEventListener("submit", event => { event.preventDefault(); void submit(false); });
-    node.querySelector("[data-key-picker]")?.addEventListener("click", () => { void open({ multiple: false }).then(path => { if (typeof path === "string" && this.dialog === current) node.querySelector<HTMLInputElement>('[name="path"]')!.value = path; }).catch(error => this.notify(String(error))); });
+    node.querySelector("[data-key-picker]")?.addEventListener("click", () => { void chooseLocalPath("privateKey").then(path => { if (typeof path === "string" && this.dialog === current) node.querySelector<HTMLInputElement>('[name="path"]')!.value = path; }).catch(error => this.notify(String(error))); });
     node.querySelectorAll<HTMLButtonElement>("[data-copy-fingerprint]").forEach(button => button.addEventListener("click", () => {
       void this.call("clipboard_text", { operation: "write", text: button.dataset.copyFingerprint }).then(() => { button.textContent = "已复制"; }).catch(error => {
         const target = node.querySelector<HTMLElement>(".connection-prompt-error")!; target.hidden = false; target.textContent = `复制失败：${error}`;

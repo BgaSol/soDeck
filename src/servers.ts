@@ -1,5 +1,5 @@
 import {connectionTree, filterTree, routeTo, targetPath, ancestors, visibleNodes, type ConnectionTree} from './connection-tree';
-import { open } from "@tauri-apps/plugin-dialog";
+import {chooseLocalPath} from "./desktop";
 import { commitTagInput, newDraft, newCopyDraft, newViaDraft, referenced, serverApi, toInput, type Catalog, type Change, type Draft, type ServerApi } from "./server-api";
 import { action, editor, page, type PageState } from "./server-views";
 import { escape as e } from "./ui";
@@ -410,7 +410,7 @@ export class ServerManager {
       case "clear-secret": if (d) { d.clearSecret = !d.clearSecret; d.password = ""; this.renderEditor(f!); } break;
       case "choose-key": {
         if (!d) break;
-        const path = await open({ multiple: false, directory: false, title: "选择私钥文件" });
+        const path = await chooseLocalPath("privateKey");
         if (typeof path === "string" && f === this.top()) { if (d.copySource && path !== d.privateKeyPath) d.clearSecret = true; d.privateKeyPath = path; this.renderEditor(f!); } break;
       }
     }

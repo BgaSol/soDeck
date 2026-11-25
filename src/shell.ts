@@ -23,6 +23,7 @@ export class Shell {
   networkStale = true;
   private projection?: Projection;
   private revision = 0;
+  private windowVisible = true;
   private startupApplied = false;
   private disposed = false;
   private workspaces?: Workspaces;
@@ -55,7 +56,7 @@ export class Shell {
   }
   attach(workspaces: Workspaces, connections: ConnectionsUi) {
     this.workspaces=workspaces;this.connections=connections;
-    workspaces.setHostVisible(this.route.kind==='workbench');
+    this.syncVisibility();
     workspaces.setHostCallbacks(state=>{this.projection=state;if(this.route.kind==='workbench'&&!state.window.activeWorkspace&&this.main)this.navigate('connections');else this.paint();},()=>this.showWorkbench(),blocked=>this.setBlocked(blocked),()=>this.selectionChanged());
     connections.setNavigation({begin:()=>++this.revision,accept:async(context,revision)=>{
       if(revision!==this.revision||this.disposed)return;
@@ -72,6 +73,12 @@ export class Shell {
     if(changed)enterMotion(page==='connections'?this.catalog:this.page,'x');
   }
   selectionChanged(){this.revision++;}
+  setWindowVisible(visible:boolean) {
+    if(this.windowVisible===visible)return;
+    if(!visible)this.revision++;
+    this.windowVisible=visible;this.syncVisibility();
+  }
+  private syncVisibility(){this.workspaces?.setHostVisible(this.windowVisible&&this.route.kind==='workbench');}
   takeStartupPage(snapshot: Snapshot): ConsolePage | null {
     if (this.startupApplied) return null;
     this.startupApplied = true;
@@ -80,7 +87,7 @@ export class Shell {
   updateSettingsNavigation(html:string) { updateDOM(this.settingsNavigation,html); }
   showWorkbench() {
     if(this.main&&!this.projection?.window.activeWorkspace)return;
-    this.revision++;this.route={kind:'workbench'};this.workspaces?.setHostVisible(true);this.paint();
+    this.revision++;this.route={kind:'workbench'};this.syncVisibility();this.paint();
   }
   private paint() {
     const managing=this.route.kind==='console';

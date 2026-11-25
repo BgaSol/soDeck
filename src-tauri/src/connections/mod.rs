@@ -239,6 +239,12 @@ impl Attempt {
             s.question_clock = Some(Instant::now());
         }
         self.changed();
+        if let Some(core) = self.core.upgrade() {
+            let view = self.view();
+            if let Some(question) = &view.question {
+                core.event("connection-input-required", serde_json::json!({"windowId":view.window_id,"attemptId":view.attempt_id,"questionId":question.id()}));
+            }
+        }
         let result = tokio::select! {biased;_=self.cancel.cancelled()=>Err(Error::cancelled()),v=rx=>v.map_err(|_|Error::cancelled())};
         {
             let mut s = self.state.lock().unwrap();
@@ -419,6 +425,15 @@ impl Drop for Connections {
 }
 
 impl AppCore {
+    pub fn connection_question_current(&self, window: &str, attempt: &str, question: &str) -> bool {
+        self.connection_views().iter().any(|v| {
+            v.window_id == window
+                && v.attempt_id == attempt
+                && v.state == "connecting"
+                && v.question.as_ref().is_some_and(|q| q.id() == question)
+        })
+    }
+
     pub(crate) fn connection_session(
         &self,
         context: &Context,

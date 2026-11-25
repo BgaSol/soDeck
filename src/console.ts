@@ -1,7 +1,7 @@
 import { enterMotion, exitMotion, captureMotion, settleMotion } from './motion.js';
 import { listen, type UnlistenFn, type EventCallback } from "@tauri-apps/api/event";
 import type { Window } from "@tauri-apps/api/window";
-import { open } from "@tauri-apps/plugin-dialog";
+import {DesktopUi, chooseLocalPath} from "./desktop";
 import { invoke } from "@tauri-apps/api/core";
 import { Workspaces, type DropPreview } from "./workspaces";
 import { core, type Snapshot, type Message } from "./core";
@@ -24,7 +24,6 @@ import { Shell, type ConsolePage } from './shell';
 export async function startConsole(shell:Shell, workspaces:Workspaces, servers:ServerManager|undefined, connections:ConnectionsUi, picker:ServerPicker|undefined, win:Window) {
 const root=shell.root;
 async function restart(install: boolean) {
-  if (!servers) { await invoke("request_main_action", { action: install ? "install" : "restart" }); return; }
   await workspaces.restart(install);
 }
 const pageHost = shell.page;
@@ -384,11 +383,7 @@ root.addEventListener("click", (event) => {
         break;
       }
       case "choose-plugin": {
-        const directory = await open({
-          directory: true,
-          multiple: false,
-          title: "选择已解压的插件目录",
-        });
+        const directory = await chooseLocalPath("pluginDirectory");
         if (typeof directory === "string")
           await pluginAction("choose", async () => {
             state.plugin = await core.add(directory);
@@ -519,6 +514,10 @@ root.addEventListener("click", (event) => {
 let queryTimer: ReturnType<typeof setTimeout>;
 root.addEventListener("input", (event) => {
   const input = event.target as HTMLInputElement;
+  if(input.id==='close-behavior'&&snapshot){
+    const behavior=input.value;if(behavior!=='background'&&behavior!=='exit')return;
+    void action(async()=>{input.disabled=true;try{await core.closeBehavior(behavior);if(snapshot)snapshot.preferences.closeBehavior=behavior;}finally{input.disabled=false;await refresh();renderPage();}});return;
+  }
   if (snapshot && networkInput(input, snapshot, state)) { if (!(event as InputEvent).isComposing) renderPage(); return; }
   if (input.dataset.source && state.plugin) {
     hostDrafts.input(state.plugin, input.dataset.source, input.value);
@@ -548,13 +547,15 @@ root.addEventListener("change", (event) => {
 });
 let hostDisposed=false;
 let statusTimer:ReturnType<typeof setInterval>|undefined;
+const desktop=new DesktopUi(win,shell,target=>{if(target==='settings')settingsSection='about';shell.navigate(target);},async()=>{await hostDrafts.flushInputs();return workspaces.canBackground();},message=>toast(message,undefined,true));
 const hostListeners:UnlistenFn[]=[];
 async function subscribe<T>(name:string,callback:EventCallback<T>) {
   const unlisten=await listen<T>(name,callback);
   if(hostDisposed)unlisten();else hostListeners.push(unlisten);
 }
-window.addEventListener("pagehide",()=>{hostDisposed=true;clearTimeout(refreshTimer);clearTimeout(queryTimer);servers?.dispose();componentSettings.dispose();hostDrafts.dispose();clearInterval(statusTimer);hostListeners.forEach(fn=>fn());picker?.dispose();workspaces.dispose();shell.dispose();},{once:true});
+window.addEventListener("pagehide",()=>{hostDisposed=true;desktop.dispose();clearTimeout(refreshTimer);clearTimeout(queryTimer);servers?.dispose();componentSettings.dispose();hostDrafts.dispose();clearInterval(statusTimer);hostListeners.forEach(fn=>fn());picker?.dispose();workspaces.dispose();shell.dispose();},{once:true});
 async function start() {
+  await desktop.listen();
   await subscribe("core-changed", scheduleRefresh);
   await subscribe<SettingsSnapshot>("core-settings-changed", event => componentSettings.changed(event.payload));
   await subscribe<Parameters<ComponentSettings["applied"]>[0]>("core-settings-application", event => componentSettings.applied(event.payload));
@@ -564,14 +565,11 @@ async function start() {
   await subscribe("workspace-request-close", () => void action(() => workspaces.closeWindow()));
   await subscribe<{token:string}>("workspace-drop-settle", event => { void workspaces.settleDrop(event.payload.token).catch(error => toast(String(error))); });
   await subscribe<DropPreview>("workspace-drop-preview", event => workspaces.previewDrop(event.payload));
-  await subscribe<string>("core-main-action", event => { if (servers) void action(() => event.payload==="exit"?workspaces.exit():restart(event.payload === "install")); });
-  await subscribe("core-request-close", () => {
-    void action(()=>workspaces.exit());
-  });
   await subscribe<Message>("core-message", (event) => {
     toast(event.payload.title, event.payload);
     scheduleRefresh();
   });
+  await subscribe<string>("core-desktop-error", event => toast(event.payload,undefined,true));
   await subscribe<string>("core-exit-error", (event) =>
     toast(`退出未完成：${event.payload}`, undefined, true),
   );
@@ -582,6 +580,7 @@ async function start() {
   });
   if(hostDisposed)unresize();else hostListeners.push(unresize);
   const [, catalogReady] = await Promise.all([refresh(), servers?.start() ?? Promise.resolve(true), workspaces.start(), connections.refresh()]);
+  await desktop.ready();
   if (snapshot && catalogReady) await core.ready();
   if(hostDisposed)return;
   statusTimer=setInterval(() => {

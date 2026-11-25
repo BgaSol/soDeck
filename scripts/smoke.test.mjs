@@ -11,12 +11,14 @@ test("basic package mode requires its own fresh report and never accepts a nonze
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "sodeck-basic-smoke-test-"));
   try {
     const launcher = path.join(root, "launcher.mjs");
-    fs.writeFileSync(launcher, `import fs from 'node:fs';import path from 'node:path';const args=process.argv.slice(2),data=args[args.indexOf('--test-data-dir')+1];if(!args.includes('--package-only'))throw Error('Missing basic mode');fs.writeFileSync(path.join(data,'smoke-result.json'),JSON.stringify({completed:true,workspaceNative:false,packageNative:process.env.REPORT==='valid',pluginIconsNative:process.env.ICON_REPORT==='valid'}));process.exit(Number(process.env.EXIT_CODE||0));`);
+    fs.writeFileSync(launcher, `import fs from 'node:fs';import path from 'node:path';const args=process.argv.slice(2),data=args[args.indexOf('--test-data-dir')+1];if(!args.includes('--package-only'))throw Error('Missing basic mode');fs.writeFileSync(path.join(data,'smoke-result.json'),JSON.stringify({completed:true,workspaceNative:false,packageNative:process.env.REPORT==='valid',pluginIconsNative:process.env.ICON_REPORT==='valid',desktopShellNative:process.env.DESKTOP_REPORT==='valid'}));process.exit(Number(process.env.EXIT_CODE||0));`);
     const env = { ...process.env, SODECK_PACKAGE_ONLY: "1" };
     const run = () => spawnSync(process.execPath, [fileURLToPath(new URL('./smoke.mjs', import.meta.url)), process.execPath, launcher], { env, encoding: "utf8" });
     assert.notEqual(run().status, 0);
     env.REPORT = "valid"; assert.notEqual(run().status, 0);
     env.ICON_REPORT = "valid"; assert.equal(run().status, 0);
+    env.SODECK_REQUIRE_DESKTOP_SHELL='1';assert.notEqual(run().status,0);
+    env.DESKTOP_REPORT='valid';assert.equal(run().status,0);
     env.EXIT_CODE = "7"; assert.notEqual(run().status, 0);
   } finally { assert.equal(path.dirname(root), os.tmpdir()); fs.rmSync(root, { recursive: true, force: true }); }
 });

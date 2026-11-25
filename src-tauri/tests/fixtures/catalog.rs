@@ -317,7 +317,17 @@ fn main() {
             "set_theme" => core
                 .set_theme(args["theme"].as_str().unwrap())
                 .map(|_| Value::Null),
-            "frontend_ready" => Ok(Value::Null),
+            "set_close_behavior" => serde_json::from_value(args["behavior"].clone())
+                .map_err(|e| e.to_string())
+                .and_then(|behavior| core.set_desktop_preferences(Some(behavior), false))
+                .map(|_| Value::Null),
+            "desktop_state" | "desktop_ready" => Ok(
+                json!({"generation":1,"visible":true,"blocked":false,"navigation":null,"background":null}),
+            ),
+            "desktop_present"
+            | "desktop_navigation_done"
+            | "desktop_background_done"
+            | "frontend_ready" => Ok(Value::Null),
             "connection" => {
                 let c = &args["command"];
                 let window = args["window"].as_str().unwrap_or("main");

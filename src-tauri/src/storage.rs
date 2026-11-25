@@ -166,6 +166,24 @@ impl Store {
         Ok(())
     }
 
+    pub fn set_desktop_preferences(
+        &mut self,
+        behavior: Option<CloseBehavior>,
+        explained: bool,
+    ) -> Result<(), String> {
+        if self.blocked[2] {
+            return Err(self.errors[2].clone().unwrap());
+        }
+        let mut preferences = self.preferences.clone();
+        if let Some(behavior) = behavior {
+            preferences.close_behavior = behavior;
+        }
+        preferences.background_close_explained |= explained;
+        self.save(2, "preferences.json", &preferences)?;
+        self.preferences = preferences;
+        Ok(())
+    }
+
     pub fn set_update_network(
         &mut self,
         expected_revision: u64,
@@ -429,14 +447,30 @@ mod tests {
         assert!(store.set_theme("dark").is_err());
         assert!(store.errors[2].is_some());
         assert_eq!(store.preferences.theme, "system");
+        assert!(store
+            .set_desktop_preferences(Some(CloseBehavior::Exit), true)
+            .is_err());
+        assert_eq!(store.preferences.close_behavior, CloseBehavior::Background);
+        assert!(!store.preferences.background_close_explained);
         fs::remove_dir(root.join("preferences.json")).unwrap();
         store.set_theme("dark").unwrap();
+        store
+            .set_desktop_preferences(Some(CloseBehavior::Exit), false)
+            .unwrap();
+        store.set_desktop_preferences(None, true).unwrap();
+        assert_eq!(store.preferences.theme, "dark");
+        assert_eq!(store.preferences.close_behavior, CloseBehavior::Exit);
+        assert!(store.preferences.background_close_explained);
         assert!(store.errors[2].is_none());
         assert!(
             Store::open(root.clone()).is_err(),
             "second writer must not open the same data"
         );
         drop(store);
+        let reopened = Store::open(root.clone()).unwrap();
+        assert_eq!(reopened.preferences.close_behavior, CloseBehavior::Exit);
+        assert!(reopened.preferences.background_close_explained);
+        drop(reopened);
         fs::remove_dir_all(root).unwrap();
     }
 }

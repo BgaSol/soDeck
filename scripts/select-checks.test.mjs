@@ -296,3 +296,5 @@ test('directory model and action tests select their frontend consumer without un
 });
 
 test('Docker session fixtures select real Docker business checks',()=>{for(const file of ['scripts/docker-logs-fixture.mjs','scripts/test-docker-logs-process.mjs']){const plan=selectChecks([file]);assert(plan.scripts);assert(plan.integration.some(t=>t.docker));}});
+
+test('native desktop shell selects core targets and browser regression without plugin releases',()=>{const p=selectChecks(['src-tauri/src/desktop_shell.rs']);assert.equal(p.native.length,5);assert(p.native.every(r=>r.core));assert(p.browser);assert.deepEqual(p.plugins,[]);});

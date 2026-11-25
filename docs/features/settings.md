@@ -20,6 +20,26 @@ JetBrains Mono、Source Code Pro、IBM Plex Mono 字体随相关插件独立打�
 
 ## 桌面交互
 
+### 托盘与后台运行
+
+核心 2.4.0 起，应用启动后提供系统托盘。菜单固定为“显示主窗口”“消息（N 条未读）”“设置”和“退出 SoDeck”；没有未读时显示“消息”。显示入口保留原页面和布局，消息打开现有消息中心，设置打开“应用与数据”。打开消息入口不批量标为已读。
+
+“设置 → 应用与数据 → 关闭主窗口时”可选择“在后台继续运行（推荐）”或“退出应用”，立即保存并作用于之后的关闭，不要求重启。旧配置和新安装默认后台运行；保存失败保持原有效值。首次收起前解释一次，取消则保留窗口，确认并成功收起后不重复提示。
+
+| 平台 | 后台运行时关闭主窗口 | 返回入口 |
+| --- | --- | --- |
+| Windows | 托盘建立成功后隐藏；托盘不可用则沿现有退出流程处理 | 左键单击托盘，或右键菜单 |
+| macOS | 隐藏主窗口，保留 Dock；托盘不可用则沿现有退出流程处理 | 菜单栏托盘菜单、Dock |
+| Linux | 最小化，保留任务栏或系统窗口切换入口；不依赖桌面一定展示托盘 | 系统窗口入口、可用的托盘菜单 |
+
+系统拒绝收起时保留窗口并反馈原因。最小化按钮仍执行普通最小化。关闭独立窗口处理其自身页面和资源，不受主窗口设置影响；主窗口收起不隐藏独立窗口，最后一个独立窗口关闭也不退出后台主进程。
+
+收起不结束 SSH、隧道、文件传输、插件任务或草稿，不改变页面和资源归属；插件显示通过原有可见性接口暂停/恢复，业务继续按各自规则运行。收起期间较早的连接成功不抢焦点；必须回答的认证、主机身份、关闭决定和原生文件选择会恢复所属窗口。正在处理模态交互或页面交接时需先完成该操作。真正退出、Cmd+Q 和各类重启仍走[关闭生命周期](lifecycle.md)，取消/失败后窗口保持可达。
+
+托盘未读数随消息中心变化；普通日志或消息不主动恢复窗口，不新增系统桌面通知。后台只持续到本次进程结束，不承诺系统休眠/断网后连接保持。重复启动仍使用原应用数据锁，不提供第二实例唤醒；请通过上述系统入口返回。首版不提供开机启动、自动隐藏启动、插件自定义托盘项或全局快捷键。
+
+### 其他交互
+
 - 核心与插件使用统一应用菜单；关闭浏览器的刷新、打印、查找、缩放、历史导航和开发工具等默认入口，保留文本编辑、终端控制键和业务快捷键。
 - 通用文本菜单保留选区、只读/密码框限制和异步剪贴板身份校验。终端和文件编辑器使用自己的业务菜单，见对应功能说明。
 - 滚动条跟随三主题；标签栏可以隐藏轨道，正文保留可操作滚动区域。菜单根据实际尺寸避开窗口边缘，长列表内部滚动，搜索后重新定位。
@@ -30,7 +50,7 @@ JetBrains Mono、Source Code Pro、IBM Plex Mono 字体随相关插件独立打�
 
 设置声明及应用回执的协议只在[插件 API](../plugin-api.md)定义。网络默认值只影响之后新建的规则，不改现有监听或已打开表单；文件排版不修改正文编码、换行或草稿修订。
 
-- 核心：[settings.rs](../../src-tauri/src/settings.rs)、[设置存储](../../src-tauri/src/settings/store.rs)、[声明](../../src-tauri/src/settings/declaration.rs)、[桌面行为](../../src-tauri/src/desktop_behavior.rs)、[系统打开](../../src-tauri/src/desktop_open.rs)。
+- 核心：[settings.rs](../../src-tauri/src/settings.rs)、[设置存储](../../src-tauri/src/settings/store.rs)、[声明](../../src-tauri/src/settings/declaration.rs)、[桌面壳](../../src-tauri/src/desktop_shell.rs)、[桌面行为](../../src-tauri/src/desktop_behavior.rs)、[系统打开](../../src-tauri/src/desktop_open.rs)。
 - 界面：[settings.ts](../../src/settings.ts)、[plugin-settings.ts](../../src/plugin-settings.ts)、[theme.ts](../../src/theme.ts)、[text-menu.js](../../src/text-menu.js)、[menu-position.js](../../src/menu-position.js)。
 - 回归：[核心设置](../../src-tauri/tests/settings.rs)、[设置 UI](../../scripts/test-settings-ui.mjs)、[桌面 UI](../../scripts/test-desktop-ui.mjs)、[真实默认应用](../../scripts/test-desktop-open-native.mjs)、[字体资源](../../scripts/plugin-settings-assets.test.mjs)。
 - 本机字体、系统 IME、混合 DPI、读屏、高对比及原生桌面互操作的验证范围见对应发行记录；浏览器模拟不等于这些设备验证。

@@ -22,7 +22,7 @@ try {
   assert.deepEqual(validateCoreArtifacts(input, metadata, commit).present, [target]);
   const names = coreNames(metadata.version, target), file = name => path.resolve(input, target, name);
   const bundle = file(target.includes("windows") ? names.nsis[0] : target.includes("linux") ? names.appimage[0] : names.macos[0]);
-  const env = { SODECK_PACKAGE_ONLY: "1", SODECK_EXPECT_TARGET: target, SODECK_EXPECT_CORE_VERSION: metadata.version, SODECK_TEST_UPDATE_BUNDLE: bundle, WEBKIT_DISABLE_DMABUF_RENDERER: "1", APPIMAGE_EXTRACT_AND_RUN: "1" };
+  const env = { SODECK_PACKAGE_ONLY: "1", SODECK_REQUIRE_DESKTOP_SHELL: "1", SODECK_EXPECT_TARGET: target, SODECK_EXPECT_CORE_VERSION: metadata.version, SODECK_TEST_UPDATE_BUNDLE: bundle, WEBKIT_DISABLE_DMABUF_RENDERER: "1", APPIMAGE_EXTRACT_AND_RUN: "1" };
   function smoke(executable, appimage = false) {
     if (!appimage) verifyBinary(executable, target);
     const launch = process.platform === "linux" ? ["dbus-run-session", "--", "xvfb-run", "-a", executable] : [executable];
@@ -77,6 +77,7 @@ try {
   validateCoreArtifacts(input, metadata, commit);
   report.passed = true;
   report.pluginIconsNative = true;
+  report.desktopShellNative = true;
 } catch (error) { report.error = String(error.stack ?? error); throw error; }
 finally {
   fs.mkdirSync("artifacts/verification", { recursive: true });

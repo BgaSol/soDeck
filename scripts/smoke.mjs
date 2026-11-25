@@ -60,6 +60,7 @@ function launch(persisted = false) {
       "Packaged application did not complete the current smoke-test protocol",
     );
   const actual = JSON.parse(fs.readFileSync(report, "utf8"));
+  if(process.env.SODECK_REQUIRE_DESKTOP_SHELL==='1' && !actual.desktopShellNative) throw new Error('Native tray/background package validation missing');
   if(process.env.SODECK_PACKAGE_ONLY==='1' && !actual.pluginIconsNative) throw new Error('Native plugin icon package validation missing');
   if ((process.env.SODECK_EXPECT_CORE_VERSION && actual.version !== process.env.SODECK_EXPECT_CORE_VERSION)
       || (process.env.SODECK_EXPECT_TARGET && actual.target !== process.env.SODECK_EXPECT_TARGET))

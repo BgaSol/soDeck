@@ -300,7 +300,10 @@ impl DesktopWindows {
         Ok(window)
     }
     pub fn record_bounds(&self, window: &WebviewWindow) {
-        if window.is_maximized().unwrap_or(true) || window.is_fullscreen().unwrap_or(true) {
+        if window.is_minimized().unwrap_or(true)
+            || window.is_maximized().unwrap_or(true)
+            || window.is_fullscreen().unwrap_or(true)
+        {
             return;
         }
         let (Ok(position), Ok(size), Ok(scale)) = (
@@ -394,8 +397,7 @@ impl DesktopWindows {
                     target
                 };
                 let display = (|| {
-                    let window =
-                        self.create_display(handle, &target, saved.bounds.as_ref(), None)?;
+                    self.create_display(handle, &target, saved.bounds.as_ref(), None)?;
                     self.core.workspace_changed();
                     let deadline = Instant::now() + Duration::from_secs(8);
                     while !self.core.workspace_state().is_ready(&target) {
@@ -404,7 +406,7 @@ impl DesktopWindows {
                         }
                         std::thread::sleep(Duration::from_millis(20));
                     }
-                    window.show().map_err(|e| e.to_string())?;
+                    self.present_window(handle, &target, false)?;
                     Ok(())
                 })();
                 if let Err(error) = display {
@@ -471,10 +473,7 @@ impl DesktopWindows {
         session: crate::workspaces::ConnectedSession,
     ) -> Result<crate::workspaces::Workspace, String> {
         let workspace = self.core.accept_connected(session)?;
-        if let Some(window) = handle.get_webview_window(&workspace.window_id) {
-            let _ = window.show();
-            let _ = window.set_focus();
-        }
+        self.present_window(handle, &workspace.window_id, true)?;
         Ok(workspace)
     }
     pub fn new(core: Arc<AppCore>) -> Self {
@@ -510,6 +509,33 @@ impl DesktopWindows {
         }
         Ok(())
     }
+    pub fn present_window(
+        &self,
+        handle: &tauri::AppHandle,
+        label: &str,
+        focus: bool,
+    ) -> Result<(), String> {
+        if focus {
+            if let Some(shell) = handle.try_state::<crate::desktop_shell::DesktopShell>() {
+                shell.cancel_pending_background(label);
+            }
+        }
+        let window = handle.get_webview_window(label).ok_or("目标窗口不存在")?;
+        window.show().map_err(|e| e.to_string())?;
+        if window.is_minimized().map_err(|e| e.to_string())? {
+            window.unminimize().map_err(|e| e.to_string())?;
+        }
+        if focus {
+            window.set_focus().map_err(|e| e.to_string())?;
+        }
+        if handle
+            .try_state::<crate::desktop_shell::DesktopShell>()
+            .is_some()
+        {
+            crate::desktop_shell::DesktopShell::changed(handle);
+        }
+        Ok(())
+    }
     pub fn focused(&self, window: &str) {
         let mut focus = self.focus.lock().unwrap();
         focus.retain(|w| w != window);
@@ -529,9 +555,7 @@ impl DesktopWindows {
             crate::lifecycle::Target::Window { id: window.into() },
         )?;
         self.core.close_unhosted(&op.id);
-        if let Some(w) = handle.get_webview_window(window) {
-            let _ = w.set_focus();
-        }
+        self.present_window(handle, window, true)?;
         Ok(())
     }
     pub fn finish_window(&self, handle: &tauri::AppHandle, window: &str) -> Result<(), String> {
@@ -779,8 +803,7 @@ impl DesktopWindows {
                 }
             }
             let window = handle.get_webview_window(&target).ok_or("目标窗口已关闭")?;
-            window.unminimize().map_err(|e| e.to_string())?;
-            window.show().map_err(|e| e.to_string())?;
+            self.present_window(handle, &target, false)?;
             if full {
                 self.core.commit_workbench_move(&m)?;
             } else {
@@ -790,7 +813,7 @@ impl DesktopWindows {
             self.core
                 .log(None, "info", "工作台迁移提交", Some(fields.clone()));
             self.core.workspace_changed();
-            let _ = window.set_focus();
+            let _ = self.present_window(handle, &target, true);
             Ok(())
         })();
         if result.is_err() {
@@ -834,12 +857,11 @@ impl DesktopWindows {
                 }
                 std::thread::sleep(Duration::from_millis(20));
             }
-            let main = handle.get_webview_window("main").ok_or("主窗口已关闭")?;
-            main.unminimize().map_err(|e| e.to_string())?;
-            main.show().map_err(|e| e.to_string())?;
+            handle.get_webview_window("main").ok_or("主窗口已关闭")?;
+            self.present_window(handle, "main", false)?;
             self.core.commit_workbench_moves(&movements)?;
             self.core.workspace_changed();
-            let _ = main.set_focus();
+            let _ = self.present_window(handle, "main", true);
             Ok(())
         })();
         if result.is_err() {
@@ -1175,8 +1197,7 @@ pub fn workbench_locate_view(
         .activate(&target, Some(&context.workspace_id))?;
     desktop.core.workspace_changed();
     let target_window = handle.get_webview_window(&target).ok_or("目标窗口已消失")?;
-    target_window.show().map_err(|e| e.to_string())?;
-    target_window.set_focus().map_err(|e| e.to_string())?;
+    desktop.present_window(&handle, &target, true)?;
     target_window
         .emit(
             "workbench-locate-view",

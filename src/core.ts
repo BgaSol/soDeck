@@ -43,7 +43,7 @@ export interface Snapshot {
   uptimeMs: number;
   dataDirectory: string;
   logDirectory: string;
-  preferences: { theme: string; automaticUpdates: boolean; updateNetwork?: UpdateNetwork };
+  preferences: { theme: string; automaticUpdates: boolean; updateNetwork?: UpdateNetwork; closeBehavior?:'background'|'exit'; backgroundCloseExplained?:boolean };
   updateMirrors?: BuiltinMirror[];
   plugins: Plugin[];
   unreadCount: number;
@@ -99,7 +99,6 @@ export interface Filter {
 }
 export const core = {
   network: () => invoke<NetworkSnapshot>("network_snapshot"),
-  close: () => invoke<void>("close_app"),
   snapshot: () => invoke<Snapshot>("snapshot"),
   add: (directory: string) => invoke<string>("add_plugin", { directory }),
   officialPlugins: (refresh = false) => invoke<OfficialCatalog>("official_plugins", { refresh }),
@@ -114,9 +113,9 @@ export const core = {
   updateNetwork: (preferences: UpdateNetwork) => invoke<UpdateNetwork>("set_update_network", { expectedRevision: preferences.revision, preferences }),
   testMirror: (prefix: string | null) => invoke<MirrorDiagnostic[]>("test_update_mirror", { prefix }),
   checkUpdate: (id: string) => invoke<void>("check_update", { id }),
-  restart: (installCore = false) => invoke<void>("restart_app", { installCore }),
   forget: (id: string) => invoke<void>("forget_plugin", { id }),
   theme: (theme: string) => invoke<void>("set_theme", { theme }),
+  closeBehavior: (behavior:'background'|'exit') => invoke<void>('set_close_behavior',{behavior}),
   logs: (filter: Filter) => invoke<Log[]>("read_logs", { filter }),
   messages: () => invoke<Message[]>("read_messages"),
   markRead: (id: string | null) => invoke<void>("mark_read", { id }),

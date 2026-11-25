@@ -116,7 +116,7 @@ export class CloseCoordinator {
         const action=(event.target as Element).closest<HTMLElement>("[data-decision]")?.dataset.decision;
         const current=this.operations.get(op.id)!;
         if(action==="retry")void this.call<Operation>("close_retry",{operationId:op.id}).then(o=>this.receive(o)).catch(e=>this.notify(String(e)));
-        else if(action==="exit")void (this.windowId()!=="main"?this.call("request_main_action",{action:"exit"}):current.target.kind==="application"?this.call<Operation>("close_exit_after_failure",{operationId:op.id}).then(o=>this.receive(o)):this.request({kind:"application",action:"exit"})).catch(e=>this.notify(String(e)));
+        else if(action==="exit")void (current.target.kind==="application"?this.call<Operation>("close_exit_after_failure",{operationId:op.id}).then(o=>this.receive(o)):this.request({kind:"application",action:"exit"})).catch(e=>this.notify(String(e)));
         else if(action)void this.decide(current,action);
       });
       document.body.append(this.dialog);this.dialog.showModal();

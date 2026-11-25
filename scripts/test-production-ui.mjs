@@ -159,7 +159,7 @@ let statusSnapshot, statusNetwork;
 page.on("pageerror", error => errors.push(String(error)));
 await page.exposeBinding("desktopInvoke", async (_, command, args) => {
   if (command === 'read_logs') logFilters.push(args.filter);
-  if (command === 'plugin:dialog|open') return chosenPluginDirectory;
+  if (command === 'choose_local_path') return chosenPluginDirectory;
   if (command === 'server_catalog' && failCatalog) throw new Error('隔离测试：目录暂时不可读');
   if (command === failReadCommand) {
     failedReads.set(command,(failedReads.get(command)??0)+1);
@@ -986,6 +986,16 @@ try {
   assert.equal(await page.getByRole('button',{name:'查看插件',exact:true}).count(),0,'Recovered plugin failures remove their actions');
   await page.screenshot({path:'artifacts/production-ui/status-empty.png',fullPage:true});
   statusSnapshot=undefined;statusNetwork=undefined;await refreshStatus();
+  await page.locator('.status-side [data-action="status-about"]').click();
+  await page.locator('#close-behavior').selectOption('exit');
+  for(let i=0;(await call('snapshot')).preferences.closeBehavior!=='exit';i++){assert(i<50,'Desktop close preference did not persist');await page.waitForTimeout(50);}
+  await page.locator('#close-behavior').selectOption('background');
+  for(let i=0;(await call('snapshot')).preferences.closeBehavior!=='background';i++){assert(i<50);await page.waitForTimeout(50);}
+  failReadCommand='set_close_behavior';await page.locator('#close-behavior').selectOption('exit');
+  await page.getByText('受控读取失败：set_close_behavior',{exact:false}).waitFor();
+  assert.equal((await call('snapshot')).preferences.closeBehavior,'background','Failed desktop preference write retains the effective value');
+  await page.locator('[data-console-page="status"]').click();
+  checks.push('Desktop close preference saves immediately and failed saves retain the effective preference');
   checks.push('Status overview: real bundled actions, current/disconnected records, expanded and focused details across refresh, pause across page navigation, error filtering, missing readings, empty states, three themes and narrow layouts');
   await page.getByRole('button',{name:'查看日志',exact:true}).click();
   await page.locator('.log-row').first().waitFor();const currentLogs=await page.locator('#log-results').textContent();assert(currentLogs.length>0);

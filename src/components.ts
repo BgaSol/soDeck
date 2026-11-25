@@ -583,8 +583,15 @@ export class Components {
   setHostVisible(visible:boolean) {
     if(this.hostVisible===visible)return;
     this.hostVisible=visible;this.focusEpoch++;this.cancelGestures();this.closeMenu();this.closeTabPicker();
-    for(const shell of this.shells.values()){for(const surface of shell.surfaces.values())surface.focusPending=undefined;this.scheduleLayout(shell.workspace.context.workspaceId);}
+    for(const shell of this.shells.values()){
+      for(const surface of shell.surfaces.values()){
+        surface.focusPending=undefined;
+        if(!visible&&surface.visible){surface.visible=false;if(surface.token)this.clipboard.discard(surface.token);this.post(surface,{type:'visibilityChanged',visible:false});}
+      }
+      this.scheduleLayout(shell.workspace.context.workspaceId);
+    }
   }
+  canBackground(){return !this.transfers.length&&!this.pendingMoves.size;}
   async retryLayoutSave() {
     const result=await this.invoke<{persistence:string}>('retryLayoutSave');
     if(result.persistence==='saved'){this.layoutSaveFailed=false;this.notify('工作台布局已保存');await this.refresh();}

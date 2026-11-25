@@ -118,6 +118,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
         continue;
       }
       if (file === 'src-tauri/src/desktop_open.rs') { core(); ui(); integration.add('files'); continue; }
+      if (file === 'scripts/test-desktop-shell-ui.mjs') { ui(); continue; }
       if (file === 'src-tauri/tests/fixtures/native_pointer.rs') { core(['windows-x86_64', 'windows-aarch64']); ui(); plan.ssh = true; continue; }
       if (['src-tauri/src/network_metrics.rs', 'src-tauri/src/settings/declaration.rs'].includes(file)) {
         core(['linux-x86_64']); plan.scripts = true;
@@ -137,7 +138,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
         integration.add(service[2] === 'network' ? 'network-proxy' : service[2] === 'terminal' ? 'terminal' : 'files');
         continue;
       }
-      if (/^src-tauri\/(src|tests)\/(updates|update_network|desktop_updates|desktop_behavior|settings|storage|windows|window_config|workspaces|component_ui|official_plugins)(\/|\.)/.test(file)) {
+      if (/^src-tauri\/(src|tests)\/(updates|update_network|desktop_updates|desktop_behavior|desktop_shell|settings|storage|windows|window_config|workspaces|component_ui|official_plugins)(\/|\.)/.test(file)) {
         core(); ui();
         continue;
       }

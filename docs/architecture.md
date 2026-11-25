@@ -6,7 +6,7 @@
 
 | 层 | 职责与主要入口 |
 | --- | --- |
-| 桌面适配 | 原生窗口、系统事件、Tauri 命令及应用收尾：[main.rs](../src-tauri/src/main.rs)、[windows.rs](../src-tauri/src/windows.rs) |
+| 桌面适配 | 装配/命令、桌面行为与原生窗口：[main.rs](../src-tauri/src/main.rs)、[desktop_shell.rs](../src-tauri/src/desktop_shell.rs)、[windows.rs](../src-tauri/src/windows.rs) |
 | 宿主界面 | 启动组合、壳导航及应用读取、管理台、工作区和插件 Surface：[main.ts](../src/main.ts)、[shell.ts](../src/shell.ts)、[console.ts](../src/console.ts)、[workspaces.ts](../src/workspaces.ts)、[components.ts](../src/components.ts) |
 | 核心状态 | 服务组合、持久配置、受管实例和事件：[core.rs](../src-tauri/src/core.rs) |
 | 连接服务 | 资料快照、认证、主机密钥、SSH/SOCKS5 混合链、取消与代次：[connections](../src-tauri/src/connections/mod.rs) |
@@ -19,6 +19,8 @@
 | 业务插件 | [terminal](../plugins/terminal/src/main.rs)、[files](../plugins/files/src/main.rs)、[network-proxy](../plugins/network-proxy/src/main.rs)、[system-status](../plugins/system-status/src/main.rs)、[docker](../plugins/docker/src/main.rs)、[mcp](../plugins/mcp/src/main.rs) |
 
 共享 [plugin-protocol](../crates/plugin-protocol/src/lib.rs) 定义 API 版本、Context、请求和错误，核心与插件客户端使用同一契约。[页面 SDK](../packages/plugin-sdk/src/index.js) 随每个插件独立打包，负责 Surface 身份、等待请求与清理。
+
+原生桌面壳统一托盘、关闭/收起分流、应用收尾、必要交互显示和主文档导航交接；DesktopWindows 保留工作台移窗、坐标与显示原语。主文档代次拒绝旧回执，待导航只保留最新目标，事件用于唤醒而快照用于恢复。原生模态框按窗口保留实际存续保护，取消请求不提前解除。前端 [desktop.ts](../src/desktop.ts) 将原生可见性与 Shell 路由组合，再沿原 `visibilityChanged` 更新插件显示，不改变资源生命周期。消息成功提交释放存储锁后独立通知托盘未读投影，通用日志刷新不触发该投影。具体行为见[桌面设置](features/settings.md#托盘与后台运行)。
 
 [plugin-client](../crates/plugin-client/src/lib.rs) 提供 RPC、命令票据、设置、共享状态和文件编辑生命周期客户端，不保存连接凭据，也不封装插件之间的直接调用。文件编辑的标准 UI 在 [packages/file-editor](../packages/file-editor/)，随使用组件独立打包；[接入与职责](features/file-editor.md)由通用编辑功能说明维护。
 

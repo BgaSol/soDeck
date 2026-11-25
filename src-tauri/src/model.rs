@@ -213,10 +213,22 @@ pub struct PublishMessage {
 #[serde(rename_all = "camelCase")]
 pub struct Preferences {
     pub theme: String,
+    #[serde(default)]
+    pub close_behavior: CloseBehavior,
+    #[serde(default)]
+    pub background_close_explained: bool,
     #[serde(default = "automatic_updates_default")]
     pub automatic_updates: bool,
     #[serde(default)]
     pub update_network: crate::update_network::Preferences,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CloseBehavior {
+    #[default]
+    Background,
+    Exit,
 }
 
 fn automatic_updates_default() -> bool {
@@ -227,6 +239,8 @@ impl Default for Preferences {
     fn default() -> Self {
         Self {
             theme: "system".into(),
+            close_behavior: CloseBehavior::Background,
+            background_close_explained: false,
             automatic_updates: true,
             update_network: crate::update_network::Preferences::default(),
         }

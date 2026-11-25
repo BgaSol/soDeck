@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use sodeck::{
+    desktop_shell::{self, DesktopShell},
     desktop_updates::UpdateService,
     model::*,
     windows::{self, DesktopWindows},
@@ -18,11 +19,10 @@ use tauri::{Emitter, Manager, State};
 struct Application {
     core: Arc<AppCore>,
     updates: Arc<UpdateService>,
-    exit_handoff: AtomicBool,
     smoke: bool,
     interactive_test: bool,
     verify_persisted: bool,
-    frontend_loaded: AtomicBool,
+    smoke_started: AtomicBool,
 }
 #[tauri::command]
 fn close_register_host(
@@ -221,6 +221,9 @@ async fn component_data(
     if request["op"] == "contentExport" {
         if request["action"] == "begin" {
             use tauri_plugin_dialog::DialogExt;
+            let desktop = window.state::<DesktopShell>();
+            desktop.present(window.app_handle(), window.label(), true)?;
+            let dialog_guard = desktop.modal(window.app_handle(), window.label());
             let started = app
                 .core
                 .content_export_begin(window.label(), &surface_id, &request)?;
@@ -230,8 +233,10 @@ async fn component_data(
                 window
                     .dialog()
                     .file()
+                    .set_parent(&window)
                     .set_file_name(request["name"].as_str().unwrap_or("logs.txt"))
                     .save_file(move |chosen| {
+                        drop(dialog_guard);
                         let selected = chosen
                             .map(|p| p.into_path().map_err(|e| e.to_string()))
                             .transpose();
@@ -305,6 +310,9 @@ async fn component_data(
         }
         if action == "input.chooseUpload" || action == "input.chooseDownload" {
             use tauri_plugin_dialog::DialogExt;
+            let desktop = window.state::<DesktopShell>();
+            desktop.present(window.app_handle(), window.label(), true)?;
+            let dialog_guard = desktop.modal(window.app_handle(), window.label());
             let started = app.core.files_begin_input(
                 window.label(),
                 &surface_id,
@@ -315,7 +323,8 @@ async fn component_data(
             let core = app.core.clone();
             let window = window.clone();
             tauri::async_runtime::spawn_blocking(move || {
-                let dialog = window.dialog().file();
+                let _dialog_guard = dialog_guard;
+                let dialog = window.dialog().file().set_parent(&window);
                 let result = (|| {
                     let paths = if request["action"] == "input.chooseUpload" {
                         if request["directory"] == true {
@@ -349,6 +358,9 @@ async fn component_data(
         }
         if request["action"] == "export.start" {
             use tauri_plugin_dialog::DialogExt;
+            let desktop = window.state::<DesktopShell>();
+            desktop.present(window.app_handle(), window.label(), true)?;
+            let dialog_guard = desktop.modal(window.app_handle(), window.label());
             let (receipt, task) =
                 app.core
                     .files_export_begin(window.label(), &surface_id, &request)?;
@@ -360,16 +372,22 @@ async fn component_data(
                     .rsplit('/')
                     .next()
                     .unwrap_or("draft.txt");
-                let dialog = window.dialog().file().set_file_name(filename);
+                let dialog = window
+                    .dialog()
+                    .file()
+                    .set_parent(&window)
+                    .set_file_name(filename);
                 tauri::async_runtime::spawn(async move {
-                    let chosen =
-                        tauri::async_runtime::spawn_blocking(move || dialog.blocking_save_file())
-                            .await
-                            .map_err(|e| e.to_string())
-                            .and_then(|v| {
-                                v.map(|p| p.into_path().map_err(|e| e.to_string()))
-                                    .transpose()
-                            });
+                    let chosen = tauri::async_runtime::spawn_blocking(move || {
+                        let _dialog_guard = dialog_guard;
+                        dialog.blocking_save_file()
+                    })
+                    .await
+                    .map_err(|e| e.to_string())
+                    .and_then(|v| {
+                        v.map(|p| p.into_path().map_err(|e| e.to_string()))
+                            .transpose()
+                    });
                     core.files_export_finish(task, chosen).await;
                 });
             }
@@ -407,22 +425,6 @@ fn network_snapshot(app: State<Application>) -> serde_json::Value {
 fn snapshot(app: State<Application>) -> Snapshot {
     app.core.snapshot()
 }
-#[tauri::command]
-fn close_app(handle: tauri::AppHandle) {
-    begin_exit(&handle);
-}
-
-#[tauri::command]
-fn request_main_action(handle: tauri::AppHandle, action: String) -> Result<(), String> {
-    if !matches!(action.as_str(), "exit" | "restart" | "install") {
-        return Err("未知应用操作".into());
-    }
-    let main = handle.get_webview_window("main").ok_or("主窗口不可用")?;
-    let _ = main.set_focus();
-    main.emit("core-main-action", action)
-        .map_err(|e| e.to_string())
-}
-
 #[tauri::command]
 fn server_catalog(app: State<Application>) -> serde_json::Value {
     app.core.server_catalog()
@@ -586,25 +588,13 @@ async fn check_update(
 async fn close_prepare(
     handle: tauri::AppHandle,
     window: tauri::WebviewWindow,
-    app: State<'_, Application>,
     request_id: String,
     target: sodeck::lifecycle::Target,
 ) -> Result<sodeck::lifecycle::Operation, String> {
-    if matches!(
-        target,
-        sodeck::lifecycle::Target::Application {
-            action: sodeck::lifecycle::Action::InstallAndRestart
-        }
-    ) {
-        let verify = handle.clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            let app = verify.state::<Application>();
-            app.updates.updater.verify_for_close(&app.core)
-        })
+    handle
+        .state::<DesktopShell>()
+        .prepare_close(&handle, window.label(), &request_id, target)
         .await
-        .map_err(|e| e.to_string())??;
-    }
-    app.core.close_prepare(window.label(), &request_id, target)
 }
 #[tauri::command]
 fn close_status(
@@ -661,33 +651,6 @@ fn close_exit_after_failure(
         .close_exit_after_failure(window.label(), &operation_id)
 }
 #[tauri::command]
-async fn restart_app(
-    handle: tauri::AppHandle,
-    app: State<'_, Application>,
-    install_core: bool,
-) -> Result<(), String> {
-    if install_core {
-        let verify = handle.clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            verify.state::<Application>().updates.updater.verify_ready()
-        })
-        .await
-        .map_err(|e| e.to_string())??;
-    }
-    app.core.close_native_prepare(
-        "main",
-        sodeck::lifecycle::Target::Application {
-            action: if install_core {
-                sodeck::lifecycle::Action::InstallAndRestart
-            } else {
-                sodeck::lifecycle::Action::Restart
-            },
-        },
-    )?;
-    Ok(())
-}
-
-#[tauri::command]
 fn forget_plugin(app: State<Application>, id: String) -> Result<(), String> {
     app.core.forget(&id)
 }
@@ -719,7 +682,7 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
     if window.label() != "main" {
         return;
     }
-    let first = !app.frontend_loaded.swap(true, Ordering::AcqRel);
+    let first = !app.smoke_started.swap(true, Ordering::AcqRel);
     if !app.smoke || !first || app.interactive_test {
         return;
     }
@@ -737,6 +700,7 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
     std::thread::spawn(move || {
         let validation = (|| {
             if package_only {
+                DesktopShell::verify_native(&handle)?;
                 let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
                 while !handle.state::<Application>().updates.initialized() {
                     if std::time::Instant::now() >= deadline {
@@ -779,7 +743,7 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
         let result = validation.and(stopped);
         if result.is_ok() {
             let status = core.snapshot();
-            let report = serde_json::json!({"completed":true,"workspaceNative":!package_only,"packageNative":true,"pluginIconsNative":package_only,"sshNative":ssh_test_requested,"clipboardNative":clipboard_test_requested,"desktopFilesNative":desktop_files_requested,"desktopOpenNative":desktop_open_requested,"version":status.version,"target":status.target});
+            let report = serde_json::json!({"completed":true,"workspaceNative":!package_only,"packageNative":true,"pluginIconsNative":package_only,"desktopShellNative":package_only,"sshNative":ssh_test_requested,"clipboardNative":clipboard_test_requested,"desktopFilesNative":desktop_files_requested,"desktopOpenNative":desktop_open_requested,"version":status.version,"target":status.target});
             let _ = std::fs::write(
                 status.data_directory.join("smoke-result.json"),
                 report.to_string(),
@@ -792,10 +756,7 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
         } else {
             0
         };
-        handle
-            .state::<Application>()
-            .exit_handoff
-            .store(true, Ordering::Release);
+        handle.state::<DesktopShell>().handoff();
         handle.exit(code);
     });
 }
@@ -805,77 +766,6 @@ fn argument(name: &str) -> Option<PathBuf> {
     args.find(|a| a == name)
         .and_then(|_| args.next())
         .map(PathBuf::from)
-}
-
-fn request_exit(handle: &tauri::AppHandle) {
-    let app = handle.state::<Application>();
-    match app.core.close_native_prepare(
-        "main",
-        sodeck::lifecycle::Target::Application {
-            action: sodeck::lifecycle::Action::Exit,
-        },
-    ) {
-        Ok(op) => {
-            app.core.close_unhosted(&op.id);
-            if let Some(main) = handle.get_webview_window("main") {
-                let _ = main.set_focus();
-            }
-        }
-        Err(error) => {
-            let _ = handle.emit("core-exit-error", error);
-        }
-    }
-}
-fn begin_exit(handle: &tauri::AppHandle) {
-    request_exit(handle);
-}
-
-fn attach_native_finalizer(handle: &tauri::AppHandle, core: &Arc<AppCore>) {
-    use sodeck::lifecycle::{Action, Target};
-    let (finalize, requests) =
-        std::sync::mpsc::sync_channel::<(Target, std::sync::mpsc::Sender<Result<(), String>>)>(4);
-    core.set_finalizer(Arc::new(move |target| {
-        let (reply, result) = std::sync::mpsc::channel();
-        finalize
-            .send((target, reply))
-            .map_err(|_| "原生收尾通道已关闭")?;
-        result.recv().map_err(|_| "原生收尾结果未确认")?
-    }));
-    let native = handle.clone();
-    std::thread::spawn(move || {
-        while let Ok((target, reply)) = requests.recv() {
-            let global = matches!(target, Target::Application { .. });
-            let result = (|| match target {
-                Target::Window { id } => {
-                    native.state::<DesktopWindows>().finish_window(&native, &id)
-                }
-                Target::Application { action } => {
-                    let app = native.state::<Application>();
-                    if action == Action::InstallAndRestart {
-                        if let Err(error) = app.updates.updater.install() {
-                            app.core.failed_core_install(error.clone());
-                            return Err(error);
-                        }
-                    }
-                    sodeck::desktop_files::shutdown(&native)?;
-                    app.updates.stop();
-                    app.exit_handoff.store(true, Ordering::Release);
-                    if action == Action::Exit {
-                        native.exit(0);
-                    } else {
-                        native.request_restart();
-                    }
-                    Ok(())
-                }
-                _ => Ok(()),
-            })();
-            let ended = global && result.is_ok();
-            let _ = reply.send(result);
-            if ended {
-                break;
-            }
-        }
-    });
 }
 
 fn main() {
@@ -926,6 +816,7 @@ fn main() {
             let core = AppCore::open(directory, sodeck::app_version())?;
             let handle = app.handle().clone();
             core.set_listener(Arc::new(move |name, value| {
+                if handle.try_state::<DesktopShell>().is_some() { DesktopShell::on_core_event(&handle, name, &value); }
                 if name == "component-state-changed" {
                     if let Some(window)=value["windowId"].as_str() {let _=handle.emit_to(window,name,value.clone());}
                 } else {let _ = handle.emit(name, value);}
@@ -934,14 +825,17 @@ fn main() {
             app.manage(Application {
                 core: core.clone(),
                 updates: updates.clone(),
-                exit_handoff: AtomicBool::new(false),
                 smoke,
                 interactive_test,
                 verify_persisted: smoke && std::env::args().any(|a| a == "--verify-persisted"),
-                frontend_loaded: AtomicBool::new(false),
+                smoke_started: AtomicBool::new(false),
             });
             app.manage(DesktopWindows::new(core.clone()));
-            attach_native_finalizer(app.handle(), &core);
+            app.manage(DesktopShell::new(core.clone(), updates.clone()));
+            DesktopShell::attach_finalizer(app.handle(), &core);
+            if let Err(error) = app.state::<DesktopShell>().install(app.handle()) {
+                app.state::<DesktopShell>().report(app.handle(), format!("系统托盘创建失败：{error}"));
+            }
             let preparation = if !smoke && !interactive_test { updates.reserve_default_installation() } else { None };
             if !interactive_test {
                 if smoke { core.set_automatic_updates(false)?; }
@@ -957,38 +851,28 @@ fn main() {
             }
             Ok(())
         })
+        .on_page_load(|webview, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Started {
+                if let Some(shell) = webview.try_state::<DesktopShell>() { shell.page_started(webview.label()); }
+            }
+        })
         .on_window_event(|window, event| {
+            let shell = window.state::<DesktopShell>();
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window
-                    .state::<Application>()
-                    .exit_handoff
-                    .load(Ordering::Acquire) == false
-                {
-                    api.prevent_close();
-                    if window.label() == "main" {
-                        request_exit(window.app_handle());
-                    } else {
-                        let desktop = window.state::<DesktopWindows>();
-                        if let Err(error)=desktop.close_secondary(window.app_handle(),window.label()){let _=window.emit("core-exit-error",error);}
-                    }
-                }
+                if !shell.handed_off() { api.prevent_close(); shell.close_requested(window.app_handle(), window.label()); }
             }
-            if let tauri::WindowEvent::Focused(true) = event {
-                window.state::<DesktopWindows>().focused(window.label());
-            }
-            if matches!(event,tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)) {
-                if let Some(webview)=window.app_handle().get_webview_window(window.label()) {window.state::<DesktopWindows>().record_bounds(&webview);}
+            if let tauri::WindowEvent::Focused(true) = event { window.state::<DesktopWindows>().focused(window.label()); }
+            if matches!(event, tauri::WindowEvent::Focused(_) | tauri::WindowEvent::Resized(_)) { DesktopShell::changed(window.app_handle()); }
+            if matches!(event, tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)) {
+                if let Some(webview) = window.app_handle().get_webview_window(window.label()) { window.state::<DesktopWindows>().record_bounds(&webview); }
             }
             if let tauri::WindowEvent::Destroyed = event {
+                shell.page_started(window.label());
                 let desktop = window.state::<DesktopWindows>();
-                desktop.core.close_host_lost(window.label());
-                desktop.remove_surface(window.label());
-                desktop.core.workspace_changed();
-                if window.label()=="main" && !desktop.core.is_closing() {
-                    let native=window.app_handle().clone();let recreate=native.clone();
-                    let _=native.run_on_main_thread(move || {
-                        let _=recreate.state::<DesktopWindows>().restore_main_display(&recreate);
-                    });
+                desktop.core.close_host_lost(window.label()); desktop.remove_surface(window.label()); desktop.core.workspace_changed();
+                if window.label() == "main" && !desktop.core.is_closing() && !shell.handed_off() {
+                    let native = window.app_handle().clone(); let recreate = native.clone();
+                    let _ = native.run_on_main_thread(move || { let _ = recreate.state::<DesktopWindows>().restore_main_display(&recreate); });
                 }
             }
         })
@@ -1008,7 +892,6 @@ fn main() {
             change_catalog,
             recover_catalog,
             snapshot,
-            close_app,
             close_register_host,
             close_prepare,close_status,close_operations,close_report_inputs,close_decide,close_retry,close_exit_after_failure,
             add_plugin,
@@ -1027,14 +910,14 @@ fn main() {
             open_update_link,
             open_usage_help,
             check_update,
-            restart_app,
             forget_plugin,
             set_theme,
             read_logs,
             read_messages,
             mark_read,
             frontend_ready,
-            request_main_action,
+            desktop_shell::desktop_present, desktop_shell::desktop_state, desktop_shell::desktop_ready, desktop_shell::desktop_navigation_done,
+            desktop_shell::desktop_background_done, desktop_shell::set_close_behavior, desktop_shell::choose_local_path,
             windows::workspace_snapshot,
             windows::workspace_ready,
             windows::workspace_surface,
@@ -1060,12 +943,12 @@ fn main() {
         if matches!(event, tauri::RunEvent::Exit) {
             handle.state::<Application>().core.detach_host();
         }
+        #[cfg(target_os = "macos")]
+        if matches!(event, tauri::RunEvent::Reopen { .. }) {
+            DesktopShell::menu(handle, "desktop.show");
+        }
         if let tauri::RunEvent::ExitRequested { api, .. } = event {
-            if handle
-                .state::<Application>()
-                .exit_handoff
-                .load(Ordering::Acquire)
-            {
+            if handle.state::<DesktopShell>().handed_off() {
                 return;
             }
             api.prevent_exit();
@@ -1076,7 +959,7 @@ fn main() {
                     .state::<DesktopWindows>()
                     .restore_main_display(handle);
             } else {
-                request_exit(handle);
+                DesktopShell::request_exit(handle);
             }
         }
     });

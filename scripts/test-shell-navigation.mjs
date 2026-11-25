@@ -30,6 +30,7 @@ try {
   return [empty.takeStartupPage({startedWithoutPlugins:true}),empty.takeStartupPage({startedWithoutPlugins:true}),installed.takeStartupPage({startedWithoutPlugins:false}),navigated.takeStartupPage({startedWithoutPlugins:true}),secondary.takeStartupPage({startedWithoutPlugins:true})];
  });
  assert.deepEqual(startup,['plugins',null,null,null,null],'Startup routing is once per host and never replaces an explicit user choice or a secondary workspace');
+ await page.evaluate(()=>{shell.setWindowVisible(false);shell.showWorkbench();shell.setWindowVisible(true);shell.navigate('connections');});
  assert.equal(await page.locator('#management-console').isVisible(),true);
  assert.equal(await page.locator('#return-workbench').isVisible(),false,'No return action without an active workspace');
  assert.deepEqual(await page.locator('[data-console-page]').evaluateAll(nodes=>nodes.map(node=>node.dataset.consolePage)),['connections','plugins','messages','logs','status','settings','updates'],'Visual and keyboard order follow the navigation groups');
@@ -81,6 +82,12 @@ try {
  await page.evaluate(()=>shell.selectionChanged());await page.evaluate(()=>finish());await page.evaluate(()=>connecting);
  assert.equal(await page.evaluate(()=>focuses.length),0,'Choosing another target cancels the previous presentation intent');
  assert.equal(await page.evaluate(()=>shell.route.kind),'console');
+ await page.evaluate(()=>{shell.navigate('connections');clear();window.connecting=connection.connect('s');});await page.waitForFunction(()=>gated());
+ await page.evaluate(()=>{shell.setWindowVisible(false);finish();});await page.evaluate(()=>connecting);
+ assert.equal(await page.evaluate(()=>focuses.length),0,'Closing into background invalidates the old connection presentation intent');
+ await page.evaluate(()=>{shell.setWindowVisible(true);shell.showWorkbench();});assert.equal(await page.evaluate(()=>hidden.at(-1)),false);
+ await page.evaluate(()=>{shell.navigate('logs');shell.setWindowVisible(false);shell.setWindowVisible(true);});
+ assert.equal(await page.evaluate(()=>hidden.at(-1)),true,'Restoring management console never makes plugin workbench visible');
  await page.evaluate(()=>{clear();return passive();});assert.equal(await page.evaluate(()=>focuses.length),0,'Passive snapshots cannot activate a workspace');
  await page.evaluate(()=>connection.connect('s'));await page.waitForFunction(()=>shell.route.kind==='workbench');
  assert.equal(await page.evaluate(()=>focuses.length),1,'Explicit selection reuses an existing online session');

@@ -63,10 +63,7 @@ pub async fn connection(
         let owner = state.owner(&context.workspace_id).ok_or("工作区已关闭")?;
         state.activate(&owner, Some(&context.workspace_id))?;
         drop(state);
-        if let Some(target) = window.app_handle().get_webview_window(&owner) {
-            let _ = target.show();
-            let _ = target.set_focus();
-        }
+        desktop.present_window(window.app_handle(), &owner, true)?;
         core.workspace_changed();
     }
     Ok(core.connection_views())

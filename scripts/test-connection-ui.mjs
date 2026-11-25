@@ -112,7 +112,7 @@ try {
   assert.equal(starts.length, previousStarts + 1, "An unselected row connects on the first double click at 720px");
   await page.keyboard.press("Escape"); await settle(v => v[0]?.state === "cancelled");
   await dialog.waitFor({ state: "hidden" }); assert.deepEqual(errors, []);
-  await page.evaluate(()=>window.connections.prompt({attemptId:'fingerprint-review',question:{kind:'hostKey',id:'fingerprint-review',nodeIndex:1,name:'跳板',endpoint:'example:22',algorithm:'ssh-ed25519',fingerprint:'SHA256:new-test-key',previousFingerprint:'SHA256:old-test-key'}}));
+  await page.evaluate(()=>{const view={attemptId:'fingerprint-review',question:{kind:'hostKey',id:'fingerprint-review',nodeIndex:1,name:'跳板',endpoint:'example:22',algorithm:'ssh-ed25519',fingerprint:'SHA256:new-test-key',previousFingerprint:'SHA256:old-test-key'}};window.connections.views=[view];return window.connections.prompt(view);});
   const keyDialog=page.getByRole('dialog',{name:'SSH 主机密钥已变化',exact:true});
   await keyDialog.getByRole('button',{name:'复制原指纹',exact:true}).click();assert.equal(clipboard,'SHA256:old-test-key');
   await keyDialog.getByRole('button',{name:'复制新指纹',exact:true}).focus();await page.keyboard.press('Enter');assert.equal(clipboard,'SHA256:new-test-key');

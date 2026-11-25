@@ -376,6 +376,7 @@ export class Workspaces {
   private hostBlock?: (blocked:boolean)=>void;
   setCloseParticipants(inputs:HostInputs,block:(blocked:boolean)=>void){this.closer.hostInputs=inputs;this.hostBlock=block;}
   exit() { this.finishResize(true); return this.closer.request({kind:"application",action:"exit"}); }
+  canBackground(){return !this.moving.size&&this.components.canBackground()&&!document.querySelector('dialog[open], .workspace[inert]');}
   restart(install:boolean) { this.finishResize(true); return this.closer.request({kind:"application",action:install?"installAndRestart":"restart"}); }
   async flush() { this.finishResize(true); await this.flushLayouts(); return this.components.flush(); }
   closeWindow() { this.finishResize(true); return this.closer.request({kind:"window",id:this.state?.window.id??"main"}); }

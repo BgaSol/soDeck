@@ -14,6 +14,7 @@ assert.equal(process.platform, 'win32', 'This harness controls native WebView2 o
 const [executable] = process.argv.slice(2);
 assert(executable && fs.existsSync(executable), 'Provide the actual packaged executable');
 const ssh = JSON.parse(fs.readFileSync(process.env.SODECK_TEST_SSH_CONFIG, 'utf8'));
+const trayOnly = process.env.SODECK_TEST_TRAY_ONLY === '1';
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sodeck-close-native-'));
 const output = path.resolve('artifacts/close-lifecycle');
 fs.mkdirSync(output, { recursive: true });
@@ -24,6 +25,7 @@ const records = ['TERMINAL', 'FILES', 'NETWORK', 'SYSTEM_STATUS'].map(name => {
   return { directory: path.resolve(root), manifest: JSON.parse(fs.readFileSync(path.join(root, 'plugin.json'), 'utf8')), enabled: true };
 });
 fs.writeFileSync(path.join(directory, 'plugins.json'), JSON.stringify(records));
+fs.writeFileSync(path.join(directory,'preferences.json'),JSON.stringify({theme:'system',backgroundCloseExplained:true}));
 const checks = [];
 let child, browser, page, held;
 let spawnError;
@@ -76,6 +78,7 @@ async function launch() {
   await page.getByRole('button', { name: '关闭窗口', exact: true }).waitFor();
   await until(async () => (await invoke('snapshot')).plugins.every(p => p.status === 'running'), 'Plugins did not start');
   assert.equal((await invoke('snapshot')).dataDirectory.toLowerCase(), directory.toLowerCase());
+  await invoke('set_close_behavior',{behavior:'exit'});
 }
 async function connect() {
   let catalog = await invoke('server_catalog');
@@ -211,9 +214,7 @@ try {
   for (const entry of ['titlebar', 'native']) {
     await launch();
     const workspace = await connect();
-    const terminal = await completedAction(invoke, {context:workspace.context,requestId:`${entry}-terminal`}, await invoke('component_ui', { operation: 'action', args: { context: workspace.context, action: {
-      op: 'open', key: 'sodeck.terminal:terminal', requestId: `${entry}-terminal`,
-    } } }));
+    const terminal = await completedAction(invoke, {context:workspace.context,requestId:`${entry}-terminal`}, await invoke('component_ui', {operation:'command',args:{op:'submit',name:'terminal.open.v1',expectedContext:workspace.context,requestId:`${entry}-terminal`,actionKey:'sodeck.terminal:new-terminal',payload:null}}));
     const terminalFrame = page.frameLocator(`.component-surface[data-view-id="${terminal.viewId}"] iframe`);
     await terminalFrame.locator('body[data-ready="true"]').waitFor();
     await terminalFrame.locator('.xterm-helper-textarea').focus();
@@ -221,8 +222,7 @@ try {
     await page.keyboard.type(`echo ${marker}`);
     await page.keyboard.press('Enter');
     await until(async () => (await terminalFrame.locator('.xterm-rows').innerText()).replace(/\s+/g, '').split(marker).length >= 3, 'Actual PTY did not echo the command result');
-    await verifyPanelResize(workspace,terminalFrame,entry);
-    await verifyWorkbench(workspace,terminal,marker,entry);
+    if(!trayOnly){await verifyPanelResize(workspace,terminalFrame,entry);await verifyWorkbench(workspace,terminal,marker,entry);}
     assert((await terminalFrame.locator('.xterm-rows').innerText()).replace(/\s+/g,'').split(marker).length>=3,'Native resize discarded the existing terminal output');
     const networkEntry=page.getByRole('button', { name: '网络隧道', exact: true });
     if(await networkEntry.getAttribute('aria-expanded')!=='true')await networkEntry.click();
@@ -270,7 +270,7 @@ try {
     const display=await page.context().newCDPSession(page);
     await display.send('Emulation.setDeviceMetricsOverride',{width:Math.floor(geometry.width/geometry.scale),height:Math.floor(geometry.height/geometry.scale),deviceScaleFactor:geometry.scale,mobile:false});
     await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-    for(const side of ['left','right']){
+    for(const side of trayOnly?[]:['left','right']){
       const button=await board.locator(`[data-tool-key="${networkTool.key}"]`).boundingBox(),rail=await board.locator(`.${side}-rail`).boundingBox();
       const point=(x,y)=>({x:Math.round(geometry.x+x*geometry.scale),y:Math.round(geometry.y+y*geometry.scale)});
       await nativePointer('drag',{from:point(button.x+button.width/2,button.y+button.height/2),to:point(rail.x+rail.width/2,rail.y+140)});
@@ -285,12 +285,24 @@ try {
     const afterDock=await invoke('component_ui',{operation:'snapshot',args:{}});
     assert.deepEqual(afterDock.workspaces[workspace.context.workspaceId].views.map(v=>v.id).sort(),beforeDock.workspaces[workspace.context.workspaceId].views.map(v=>v.id).sort());
     fs.mkdirSync('artifacts/workbench-layout',{recursive:true});await page.screenshot({path:`artifacts/workbench-layout/native-tools-${entry}.png`});
-    checks.push(`${entry}: native system-pointer tool docking kept button/panel side, original file/network iframes, draft and live forwarding`);
+    if(!trayOnly)checks.push(`${entry}: native system-pointer tool docking kept button/panel side, original file/network iframes, draft and live forwarding`);
     const before = await invoke('component_ui', { operation: 'snapshot', args: {} });
     const identity = before.workspaces[workspace.context.workspaceId].views.map(v => v.id).sort();
     const pids = (await invoke('snapshot')).plugins.map(p => p.pid);
     assert.equal(pids.length, 4);
     assert(pids.every(pid => Number.isInteger(pid) && pid > 0));
+    await invoke('set_close_behavior',{behavior:'background'});
+    await page.getByRole('button',{name:'关闭窗口',exact:true}).click();
+    await until(async()=>!(await invoke('desktop_state')).visible,'Main window did not enter background');
+    await echo();
+    assert.equal(child.exitCode,null);
+    const hiddenState=await invoke('component_ui',{operation:'snapshot',args:{}});
+    assert.deepEqual(hiddenState.workspaces[workspace.context.workspaceId].views.map(v=>v.id).sort(),identity);
+    await invoke('desktop_present');
+    await until(async()=>(await invoke('desktop_state')).visible,'Main window did not restore');
+    assert.equal(await editor.inputValue(),draft);
+    checks.push(entry+': background kept original views, unsaved editor and actual tunnel bytes; restored original window');
+    await invoke('set_close_behavior',{behavior:'exit'});
     if (entry === 'titlebar') await page.getByRole('button', { name: '关闭窗口', exact: true }).click();
     else await invoke('plugin:window|close', { label: 'main' });
     await page.locator('.component-close-dialog').getByRole('button', { name: '放弃并关闭', exact: true }).waitFor();
@@ -322,7 +334,7 @@ try {
     checks.push(`${entry}: cancel kept original views/draft, PTY and forwarding; discard stopped four plugins, drained SSH/forwarding, released the port and exited`);
     await browser.close(); browser = undefined; child = undefined;
   }
-  const report = { completed: true, platform: process.platform, checks, plugins: records.map(r => ({ id: r.manifest.id, version: r.manifest.version })), executable: path.resolve(executable) };
+  const report = { completed: true, platform: process.platform, trayOnly, checks, plugins: records.map(r => ({ id: r.manifest.id, version: r.manifest.version })), executable: path.resolve(executable) };
   fs.writeFileSync(path.join(output, 'native-close.json'), JSON.stringify(report, null, 2) + '\n');
   console.log(JSON.stringify(report, null, 2));
 } catch (error) {
