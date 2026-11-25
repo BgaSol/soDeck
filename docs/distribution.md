@@ -18,6 +18,8 @@
 
 版本唯一来源为 [tauri.conf.json](../src-tauri/tauri.conf.json)。构建使用仓库工具链与锁文件，命令统一见[开发指南](development.md#打包)。Linux 运行基线为 Ubuntu 22.04/24.04 LTS。用户运行发行程序无需开发工具链。
 
+系统托盘使用 Tauri 原生 AppIndicator 后端；Linux 构建安装 `libayatana-appindicator3-dev`，实际包运行验收安装 `libayatana-appindicator3-1`。DEB/AppImage 继续由标准 Tauri 打包器处理依赖，不通过开发机手工复制库。图标是否显示仍受桌面环境影响，窗口回退见[桌面行为](features/settings.md#托盘与后台运行)。
+
 正式核心更新包使用 [tauri.release.conf.json](../src-tauri/tauri.release.conf.json) 和固定的 Tauri 官方 updater 签名。公钥提交到 Tauri 配置，私钥保存在维护者用户目录 .sodeck-signing/updater.key，并配置为 Actions 的 TAURI_SIGNING_PRIVATE_KEY Secret，绝不提交私钥；密码使用 TAURI_SIGNING_PRIVATE_KEY_PASSWORD，初始无密码密钥留空。必须备份原私钥，更换公钥会影响旧客户端升级。此签名与商业代码签名或插件授权无关，本地普通构建无需私钥。
 
 发行清单始终保存原始 GitHub Release URL、版本、平台和哈希/签名；客户端备用传输地址不改变发行来源。核心下载、安装和已准备包的离线验签恢复继续使用官方 updater。插件使用归档 SHA-256 和基本清单检查，不增加插件签名信任链。
