@@ -1,5 +1,20 @@
 {
   "packageSource": "70606263ebd4cded8e23524459e89ae5fa5d60f1",
+  "releaseRecovery": {
+    "packageRun": 45647246699,
+    "metadataJob": 139328906763,
+    "packageAndVerifyPassed": true,
+    "metadataFailed": "GitHub POST /releases returned HTTP 500",
+    "retryAttempts": "Failed-jobs and job-specific REST reruns, workflow dispatch and authenticated web failed-job rerun returned server errors; no new attempt was created.",
+    "statusPage": "https://www.githubstatus.com/",
+    "statusAt": "2026-11-25T16:09:30Z",
+    "status": "Partial System Outage",
+    "latestStill": "v2.4.0",
+    "resolved": true,
+    "packageAttempt": 2,
+    "finalPackageConclusion": "success",
+    "latest": "v2.4.1"
+  },
   "checks": [
     {
       "id": 45647202156,
@@ -124,20 +139,8 @@
       ]
     }
   ],
-  "releaseRecovery": {
-    "packageRun": 45647246699,
-    "metadataJob": 139328906763,
-    "packageAndVerifyPassed": true,
-    "metadataFailed": "GitHub POST /releases returned HTTP 500",
-    "retryAttempts": "Failed-jobs and job-specific REST reruns, workflow dispatch and authenticated web failed-job rerun returned server errors; no new attempt was created.",
-    "statusPage": "https://www.githubstatus.com/",
-    "statusAt": "2026-11-25T16:09:30Z",
-    "status": "Partial System Outage",
-    "latestStill": "v2.4.0"
-  },
   "skipped": [
     "netem was not selected",
-    "Physical tray/Dock mouse, fixed/recent shortcuts, full-screen/Spaces, IME/screen-reader/DPI and OS session termination remain outside automated policy assertions.",
-    "The new five-platform native remote plugin combination was not dispatched because GitHub workflow dispatch failed with HTTP 500."
+    "Physical tray/Dock mouse, fixed/recent shortcuts, full-screen/Spaces, IME/screen-reader/DPI and OS session termination remain outside automated policy assertions."
   ]
 }
