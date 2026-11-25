@@ -37,7 +37,8 @@ const receipt=JSON.parse(fs.readFileSync(path.join(data,'macos-login-service.jso
 assert(receipt.enabled&&receipt.migrated&&receipt.disabled&&receipt.processContinued);
 const launcher=path.join(output,'login-event');
 const compile=spawnSync('clang',['-fobjc-arc','-framework','AppKit','-framework','Carbon','scripts/fixtures/macos-login-event.m','-o',launcher],{stdio:'inherit'});assert.equal(compile.status,0);
-const eventData=path.join(output,'native-event');
-const event=spawnSync(process.execPath,['scripts/smoke.mjs',launcher,binary],{env:{...env,SODECK_TEST_DATA_DIR:eventData,SODECK_TEST_MACOS_LOGIN:'0',SODECK_EXPECT_NATIVE_LOGIN:'1'},stdio:'inherit',timeout:120000});assert.equal(event.status,0);
+// Reuse saved data: a hidden first-ever launch intentionally suppresses startup navigation.
+// Ordinary package smoke independently verifies fresh-data navigation and icon rendering.
+const event=spawnSync(process.execPath,['scripts/smoke.mjs',launcher,binary],{env:{...env,SODECK_VERIFY_PERSISTED:'1',SODECK_TEST_MACOS_LOGIN:'0',SODECK_EXPECT_NATIVE_LOGIN:'1'},stdio:'inherit',timeout:120000});assert.equal(event.status,0);
 fs.writeFileSync(path.join(output,'macos-login-result.json'),JSON.stringify({...receipt,syntheticNativeEvent:true,realLogoutLogin:false,visualInspection:false},null,2)+'\n');
 console.log('Main-app registration, old-file migration, idempotence, running-process preservation and native login Apple Event passed.');
