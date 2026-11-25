@@ -13,6 +13,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
+    time::Duration,
 };
 use tauri::{Emitter, Manager, State};
 
@@ -24,6 +25,23 @@ struct Application {
     interactive_test: bool,
     verify_persisted: bool,
     smoke_started: AtomicBool,
+}
+
+/// macOS login-item APIs and NSBundle are main-thread-only in the AppKit host.
+/// Keep the command async while routing the platform call through Tauri's UI thread.
+fn on_main_thread<T: Send + 'static>(
+    handle: &tauri::AppHandle,
+    operation: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, String> {
+    let (send, receive) = std::sync::mpsc::sync_channel(1);
+    handle
+        .run_on_main_thread(move || {
+            let _ = send.send(operation());
+        })
+        .map_err(|e| e.to_string())?;
+    receive
+        .recv_timeout(Duration::from_secs(5))
+        .map_err(|_| "原生设置读取超时，请重试".into())
 }
 #[tauri::command]
 fn close_register_host(
@@ -426,12 +444,11 @@ fn snapshot(app: State<Application>) -> Snapshot {
 
 #[tauri::command]
 async fn login_startup_state(
+    handle: tauri::AppHandle,
     app: State<'_, Application>,
 ) -> Result<sodeck::login_startup::Status, String> {
     let service = app.login_startup.clone();
-    tauri::async_runtime::spawn_blocking(move || service.refresh())
-        .await
-        .map_err(|e| e.to_string())
+    on_main_thread(&handle, move || service.refresh())
 }
 
 #[tauri::command]
@@ -444,9 +461,7 @@ async fn set_login_startup(
         return Err("应用正在退出或重启，不能修改启动设置".into());
     }
     let service = app.login_startup.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || service.set(enabled))
-        .await
-        .map_err(|e| e.to_string())?;
+    let result = on_main_thread(&handle, move || service.set(enabled))?;
     app.core.record_login_startup(enabled, &result);
     let _ = handle.emit("login-startup-changed", ());
     result
@@ -770,6 +785,18 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
                 }
             }
             if package_only {
+                #[cfg(target_os = "macos")]
+                if std::env::var("SODECK_TEST_LOGIN_SETTINGS").as_deref() == Ok("1") {
+                    let service = handle.state::<Application>().login_startup.clone();
+                    let state = on_main_thread(&handle, move || service.refresh())?;
+                    std::fs::write(
+                        core.snapshot()
+                            .data_directory
+                            .join("login-startup-settings-smoke.json"),
+                        serde_json::to_string(&state).map_err(|e| e.to_string())?,
+                    )
+                    .map_err(|e| e.to_string())?;
+                }
                 sodeck::login_startup::verify_native(&core.snapshot().data_directory)?;
                 sodeck::desktop_startup::verify_native(&handle, &core)?;
                 DesktopShell::verify_native(&handle)?;
