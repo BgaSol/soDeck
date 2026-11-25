@@ -138,7 +138,7 @@ fn verify_registration(directory: &Path) -> Result<(), String> {
         }
         set(true)?;
         std::fs::write(directory.join("macos-login-enabled.json"), serde_json::json!({"pid":std::process::id(),"bundle":bundle.path,"state":"enabled","migration":true}).to_string()).map_err(|e|e.to_string())?;
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
         while !directory.join("macos-login-inspected.json").exists() {
             if std::time::Instant::now() >= deadline {
                 return Err("登录项系统证据采集未完成".into());

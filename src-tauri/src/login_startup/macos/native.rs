@@ -150,10 +150,17 @@ pub fn launched_at_login() -> bool {
         NSAppleEventManager::sharedAppleEventManager()
             .currentAppleEvent()
             .is_some_and(|event| {
-                event.eventID() == u32::from_be_bytes(*b"oapp")
-                    && event
-                        .paramDescriptorForKeyword(u32::from_be_bytes(*b"prdt"))
-                        .is_some_and(|value| value.enumCodeValue() == u32::from_be_bytes(*b"lgit"))
+                let class: u32 = unsafe { msg_send![&*event, eventClass] };
+                let id: u32 = unsafe { msg_send![&*event, eventID] };
+                let property: Option<Retained<AnyObject>> = unsafe {
+                    msg_send![&*event, paramDescriptorForKeyword: u32::from_be_bytes(*b"prdt")]
+                };
+                class == u32::from_be_bytes(*b"aevt")
+                    && id == u32::from_be_bytes(*b"oapp")
+                    && property.is_some_and(|value| {
+                        let code: u32 = unsafe { msg_send![&*value, enumCodeValue] };
+                        code == u32::from_be_bytes(*b"lgit")
+                    })
             })
     })
 }
