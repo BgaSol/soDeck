@@ -3,7 +3,11 @@
 - 更新现有 MCP Rust SDK `rmcp` 3.10.0 → 3.11.0、随机数依赖 `rand` 0.10.3 → 0.10.4，并同步锁文件。
 - 保留现有十五工具、HTTP 接入、Token、设置与 API 2.0 契约；已启用插件更新后重启生效。
 
-待发行。五平台原生构建、实际归档与 MCP 业务验证在本次执行，完成后补齐源码、打包 run、Release 与实际范围。插件正式发布保持非 Latest。
+发行：[Agent MCP 0.12.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.12.1)，独立正式插件版本，保持非 Latest。包来源 [a2a13db](https://github.com/BgaSol/soDeck/commit/a2a13db93ab6d82ffe503652867ea6c97328214c)；[原始五平台打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/45707461100)全部通过；[包来源完整 Check](https://github.com/BgaSol/soDeck/actions/runs/45707453525)通过。直接发布同一草稿及五份原始归档，没有重建插件包。
+
+Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五份原生归档已验证架构、图标资源、包内程序启动/挂载/销毁/退出、MCP HTTP 十五工具、任务查询及连接。本机 24 项单元、218 项工程脚本与更新后真实插件进程回归通过；覆盖上传恢复、范围查询、稳定收尾、分页/等待/断开配额、未知接纳、清理失败、共享连接请求和迟到取消。首次本机进程检查误用了旧测试夹具，重建当前插件夹具后通过；未改测试断言规避失败。
+
+六个正式附件公开下载、摘要与更新清单核对结果保存于[永久发行证据](https://github.com/BgaSol/soDeck/blob/main/plugins/mcp/release-evidence/v0.12.1-assets.json)。本次未重复旧版升级、认证 Codex CLI 或五平台真实 SSH 包组合；核心 SSH 与其他插件的共享行为不由 MCP 依赖更新改变，核心依赖更新随自身 2.5.1 发行。
 
 # 0.12.0
 
