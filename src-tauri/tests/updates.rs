@@ -1,4 +1,6 @@
 #![cfg(feature = "test-fixtures")]
+#[path = "support/write_failure.rs"]
+mod write_failure;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use sodeck::{
@@ -1195,7 +1197,9 @@ fn official_install_failures_leave_no_record_and_can_retry() {
         .unwrap_err()
         .contains("ID"));
     server.official_release(f.package_for("sodeck.terminal", ""), "2.0", TARGET);
-    fs::create_dir_all(f.root.join("data/plugins.json.tmp")).unwrap();
+    let Some(_blocked_write) = write_failure::block(f.root.join("data/plugins.json")) else {
+        return;
+    };
     assert!(install_official(&core, "sodeck.terminal", &server.client()).is_err());
     assert!(core.snapshot().plugins.is_empty());
     assert_eq!(
@@ -1209,7 +1213,7 @@ fn official_install_failures_leave_no_record_and_can_retry() {
         .path()
         .extension()
         .is_some_and(|e| e == "part")));
-    fs::remove_dir(f.root.join("data/plugins.json.tmp")).unwrap();
+    drop(_blocked_write);
     install_official(&core, "sodeck.terminal", &server.client()).unwrap();
     assert_eq!(core.update_views()["sodeck.terminal"].phase, "ready");
 }

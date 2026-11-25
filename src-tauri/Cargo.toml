@@ -67,6 +67,9 @@ serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
 russh = { version = "=0.65.2", default-features = false, features = ["ring", "rsa"] }
 russh-sftp = "=3.0.1"
+ssh-encoding = { version = "=0.3.0", features = ["alloc"] }
+tempfile = "=3.27.0"
+dunce = "=1.0.5"
 socker = "=1.0.0"
 tokio = { version = "=1.54.1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "fs"] }
 tokio-util = { version = "=0.7.20", features = ["rt"] }

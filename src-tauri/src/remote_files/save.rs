@@ -296,8 +296,8 @@ pub(super) async fn commit_file(
     destination: &str,
 ) -> Result<Option<FileAttributes>, SaveFailure> {
     let mut data = Vec::new();
-    ssh_string(&mut data, temporary);
-    ssh_string(&mut data, destination);
+    ssh_string(&mut data, temporary).map_err(|e| e.to_string())?;
+    ssh_string(&mut data, destination).map_err(|e| e.to_string())?;
     match raw.extended("posix-rename@openssh.com", data).await {
         Ok(Packet::Status(status)) if status.status_code == StatusCode::Ok => (),
         Ok(Packet::Status(status)) | Err(Error::Status(status))

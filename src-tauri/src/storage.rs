@@ -43,15 +43,49 @@ fn read_json<T: DeserializeOwned + Default>(path: &Path) -> (T, Option<String>) 
 }
 
 pub fn write_json(path: &Path, value: &impl Serialize) -> Result<(), String> {
-    let temporary = path.with_extension("json.tmp");
-    let result = (|| -> std::io::Result<()> {
-        let mut file = File::create(&temporary)?;
-        serde_json::to_writer_pretty(&mut file, value)?;
+    let result = atomic_write(path, |file| {
+        serde_json::to_writer_pretty(&mut *file, value)?;
         file.write_all(b"\n")?;
-        file.sync_all()?;
-        fs::rename(&temporary, path)
-    })();
+        Ok(())
+    });
     result.map_err(|error| format!("无法保存 {}：{error}", path.display()))
+}
+
+pub(crate) fn atomic_write(
+    path: &Path,
+    write: impl FnOnce(&mut File) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| std::io::Error::other("目标没有父目录"))?;
+    // tempfile calls Win32 directly when persisting; preserve extended long-path semantics.
+    let parent = fs::canonicalize(parent)?;
+    let target = parent.join(
+        path.file_name()
+            .ok_or_else(|| std::io::Error::other("目标没有文件名"))?,
+    );
+    let mut temporary = tempfile::NamedTempFile::new_in(&parent)?;
+    match fs::metadata(path) {
+        Ok(metadata) => {
+            #[cfg(unix)]
+            temporary
+                .as_file()
+                .set_permissions(metadata.permissions())?;
+            #[cfg(windows)]
+            if metadata.permissions().readonly() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "目标为只读文件",
+                ));
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+        Err(error) => return Err(error),
+    }
+    write(temporary.as_file_mut())?;
+    temporary.as_file().sync_all()?;
+    temporary.persist(target).map_err(|e| e.error)?;
+    Ok(())
 }
 
 impl Store {
@@ -354,6 +388,60 @@ pub fn query_logs(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn atomic_writes_preserve_original_and_clean_failed_staging() {
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("config.json");
+        fs::write(&target, b"original").unwrap();
+        assert!(atomic_write(&target, |file| {
+            file.write_all(b"partial")?;
+            Err(std::io::Error::other("injected short write"))
+        })
+        .is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"original");
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
+        write_json(&target, &serde_json::json!({"ok":true})).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"{\n  \"ok\": true\n}\n");
+        let blocked = directory.path().join("directory");
+        fs::create_dir(&blocked).unwrap();
+        assert!(atomic_write(&blocked, |f| f.write_all(b"new")).is_err());
+        assert!(blocked.is_dir());
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_writes_preserve_existing_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("config");
+        fs::write(&target, b"old").unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o640)).unwrap();
+        atomic_write(&target, |f| f.write_all(b"new")).unwrap();
+        assert_eq!(
+            fs::metadata(target).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_locked_destination_is_not_truncated_or_removed() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("locked.json");
+        fs::write(&target, b"original").unwrap();
+        let lock = OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(&target)
+            .unwrap();
+        assert!(write_json(&target, &serde_json::json!({"new":true})).is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"original");
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
+        drop(lock);
+    }
 
     #[test]
     fn log_query_stops_only_the_oversized_file_and_skips_short_invalid_json() {

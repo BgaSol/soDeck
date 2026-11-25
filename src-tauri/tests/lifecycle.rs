@@ -1,4 +1,6 @@
 #![cfg(feature = "test-fixtures")]
+#[path = "support/write_failure.rs"]
+mod write_failure;
 use serde_json::json;
 use sodeck::{
     model::{LogFilter, PluginStatus},
@@ -364,13 +366,15 @@ fn retired_examples_are_removed_before_startup_and_removal_is_persisted() {
     }
     fs::write(&path, serde_json::to_vec(&records).unwrap()).unwrap();
     // An unwritable migration leaves the original records available for recovery.
-    fs::create_dir(path.with_extension("json.tmp")).unwrap();
+    let Some(_blocked_write) = write_failure::block(&path) else {
+        return;
+    };
     assert!(AppCore::open(f.root.join("data"), "test".into()).is_err());
     assert_eq!(
         serde_json::from_slice::<serde_json::Value>(&fs::read(&path).unwrap()).unwrap(),
         json!(records)
     );
-    fs::remove_dir(path.with_extension("json.tmp")).unwrap();
+    drop(_blocked_write);
     for _ in 0..2 {
         let core = f.open();
         core.start_enabled();

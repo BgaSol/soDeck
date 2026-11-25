@@ -1,4 +1,6 @@
 #![cfg(feature = "test-fixtures")]
+#[path = "support/write_failure.rs"]
+mod write_failure;
 use russh::{
     server::{self, Session, VerifiedPublicKey},
     Channel, ChannelId,
@@ -847,7 +849,9 @@ async fn credential_save_failure_keeps_old_password_and_can_retry() {
     let original = f.disk();
     f.core.start_connection("main", &id).unwrap();
     let prompt = credential_prompt(&f).await;
-    std::fs::create_dir(f.path.join("servers.json.tmp")).unwrap();
+    let Some(_blocked_write) = write_failure::block(f.path.join("servers.json")) else {
+        return;
+    };
     submit_credentials(&f, &prompt, "secret", true);
     until(|| f.core.connection_views()[0].state == "failed").await;
     assert_eq!(
@@ -861,7 +865,7 @@ async fn credential_save_failure_keeps_old_password_and_can_retry() {
         .unwrap()
         .workspaces
         .is_empty());
-    std::fs::remove_dir(f.path.join("servers.json.tmp")).unwrap();
+    drop(_blocked_write);
     f.core.start_connection("main", &id).unwrap();
     let prompt = credential_prompt(&f).await;
     submit_credentials(&f, &prompt, "secret", true);

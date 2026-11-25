@@ -1,3 +1,5 @@
+#[path = "support/write_failure.rs"]
+mod write_failure;
 use serde_json::{json, Value};
 use sodeck::AppCore;
 use std::{
@@ -152,14 +154,16 @@ fn failed_server_save_does_not_leave_new_tags_or_advance_revision() {
     assert!(core
         .change_catalog(0, serde_json::from_value(input.clone()).unwrap())
         .is_err());
-    fs::create_dir(f.0.join("servers.json.tmp")).unwrap();
+    let Some(_blocked_write) = write_failure::block(f.0.join("servers.json")) else {
+        return;
+    };
     assert!(change(&core, input.clone()).is_err());
     let after = core.server_catalog();
     for field in ["revision", "servers", "proxies", "tags"] {
         assert_eq!(after[field], before[field]);
     }
     assert_eq!(f.disk(), disk);
-    fs::remove_dir(f.0.join("servers.json.tmp")).unwrap();
+    drop(_blocked_write);
     change(&core, input).unwrap();
     assert_eq!(core.server_catalog()["tags"].as_array().unwrap().len(), 1);
 }
@@ -497,7 +501,9 @@ fn failed_write_keeps_memory_disk_and_secret() {
     let a = id(change(&core, server("original.invalid")).unwrap());
     let before = core.server_catalog();
     let disk = f.disk();
-    fs::create_dir(f.0.join("servers.json.tmp")).unwrap();
+    let Some(_blocked_write) = write_failure::block(f.0.join("servers.json")) else {
+        return;
+    };
     let mut d = edit(&core, &a);
     d["draft"]["name"] = json!("unsaved");
     d["draft"]["authentication"]["secret"] =
@@ -637,13 +643,15 @@ fn invalid_copy_sources_conflicts_and_failed_writes_keep_catalog_and_secrets() {
     assert!(core
         .change_catalog(0, serde_json::from_value(valid.clone()).unwrap())
         .is_err());
-    fs::create_dir(f.0.join("servers.json.tmp")).unwrap();
+    let Some(_blocked_write) = write_failure::block(f.0.join("servers.json")) else {
+        return;
+    };
     assert!(change(&core, valid.clone()).is_err());
     let mut after = core.server_catalog();
     after["canRecover"] = before["canRecover"].clone();
     assert_eq!(after, before);
     assert_eq!(f.disk(), disk);
-    fs::remove_dir(f.0.join("servers.json.tmp")).unwrap();
+    drop(_blocked_write);
     change(&core, valid.clone()).unwrap();
     change(&core, json!({"op":"deleteServer","id":source})).unwrap();
     assert!(change(&core, valid).is_err());
@@ -705,12 +713,14 @@ fn patch_preserves_credentials_fields_and_failure_state() {
     for p in [json!({"port":null}), json!({"madeUp":1})] {
         assert!(serde_json::from_value::<sodeck::servers::CatalogChange>(patch(p)).is_err());
     }
-    fs::create_dir(f.0.join("servers.json.tmp")).unwrap();
+    let Some(_blocked_write) = write_failure::block(f.0.join("servers.json")) else {
+        return;
+    };
     let disk = f.disk();
     assert!(change(&core,patch(json!({"authentication":{"type":"password","secret":{"action":"replace","value":"uncommitted","remember":false}}}))).is_err());
     assert_eq!(f.disk(), disk);
     assert_eq!(core.server_catalog(), after);
-    fs::remove_dir(f.0.join("servers.json.tmp")).unwrap();
+    drop(_blocked_write);
     change(&core,patch(json!({"tagIds":[],"route":[],"authentication":{"type":"password","secret":{"action":"keep","remember":false}}}))).unwrap();
     let after = core.server_catalog();
     let actual = after["servers"]

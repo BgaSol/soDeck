@@ -14,8 +14,8 @@ pub(super) async fn commit_remote(
             .map_err(mutation_error);
     }
     let mut data = Vec::new();
-    ssh_string(&mut data, temp);
-    ssh_string(&mut data, target);
+    ssh_string(&mut data, temp).map_err(|e| failure("invalidParams", e))?;
+    ssh_string(&mut data, target).map_err(|e| failure("invalidParams", e))?;
     match raw.extended("posix-rename@openssh.com", data).await {
         Ok(Packet::Status(status)) if status.status_code == StatusCode::Ok => Ok(()),
         Ok(Packet::Status(status)) => Err(mutation_error(Error::Status(status))),
@@ -50,17 +50,17 @@ mod tests {
             assert_eq!(request[0], if replace { 200 } else { 18 });
             let mut expected = vec![];
             if replace {
-                ssh_string(&mut expected, "posix-rename@openssh.com");
+                ssh_string(&mut expected, "posix-rename@openssh.com").unwrap();
             }
-            ssh_string(&mut expected, "/temp");
-            ssh_string(&mut expected, "/target");
+            ssh_string(&mut expected, "/temp").unwrap();
+            ssh_string(&mut expected, "/target").unwrap();
             assert_eq!(&request[5..], expected);
             if let Some(code) = code {
                 let mut response = vec![101];
                 response.extend_from_slice(&request[1..5]);
                 response.extend_from_slice(&(code as u32).to_be_bytes());
-                ssh_string(&mut response, "result");
-                ssh_string(&mut response, "en");
+                ssh_string(&mut response, "result").unwrap();
+                ssh_string(&mut response, "en").unwrap();
                 send(&mut server, &response).await;
                 let mut rest = vec![];
                 server.read_to_end(&mut rest).await.unwrap();

@@ -1,3 +1,4 @@
+import {blockTarget,restoreTarget} from './write-failure-fixture.mjs';
 import {fixtureBinary} from './cargo-fixture.mjs';
 // Actual DOM -> desktop API -> Rust catalog -> isolated local files. No server connections.
 import assert from "node:assert/strict";
@@ -125,9 +126,9 @@ try {
   await save();await dialogs().locator('.error-box:not([hidden])').waitFor();
   await action('reload-editor').click();assert.equal(await field('host').inputValue(),'retry-copy.invalid');
   assert.match(await dialogs().innerText(),/输入已保留/);
-  fs.mkdirSync(path.join(directory,'servers.json.tmp'));await save();await dialogs().locator('.error-box:not([hidden])').waitFor();
+  blockTarget(path.join(directory,'servers.json'));await save();await dialogs().locator('.error-box:not([hidden])').waitFor();
   assert.equal((await read()).servers.length,1);assert(!(await read()).tags.some(t=>t.name==='复制标签'));
-  fs.rmdirSync(path.join(directory,'servers.json.tmp'));await save();await expectDialogs(0);
+  restoreTarget(path.join(directory,'servers.json'));await save();await expectDialogs(0);
   copied=(await read()).servers.find(s=>s.host==='retry-copy.invalid');assert(copied.authentication.hasSavedSecret);
   await deleteSelected();
   for(const tag of (await read()).tags)await bridge.call('change_catalog',{revision:(await read()).revision,change:{op:'deleteTag',id:tag.id}});
@@ -366,9 +367,9 @@ try {
   checks.push("旧修订拒绝覆盖并保留草稿，Escape 放弃确认");
 
   await action("edit", work()).click(); await field("name").fill("保存失败后重试");
-  fs.mkdirSync(path.join(directory, "servers.json.tmp")); await save(); await dialogs().locator(".error-box").waitFor();
+  blockTarget(path.join(directory, "servers.json")); await save(); await dialogs().locator(".error-box").waitFor();
   assert.equal(await field("name").inputValue(), "保存失败后重试");
-  fs.rmdirSync(path.join(directory, "servers.json.tmp")); await save(); await expectDialogs(0);
+  restoreTarget(path.join(directory, "servers.json")); await save(); await expectDialogs(0);
   checks.push("写入失败保留输入并可重试");
 
   const productionTag=(await read()).tags.find(tag=>tag.name==='生产环境').id;

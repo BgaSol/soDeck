@@ -3,6 +3,16 @@ use super::*;
 use tokio::io::{AsyncReadExt, DuplexStream};
 
 #[test]
+fn ssh_strings_encode_byte_lengths_independently_of_character_count() {
+    for text in ["", "/中文/🧪", &"x".repeat(4096)] {
+        let mut bytes = Vec::new();
+        ssh_string(&mut bytes, text).unwrap();
+        assert_eq!(&bytes[..4], &(text.len() as u32).to_be_bytes());
+        assert_eq!(&bytes[4..], text.as_bytes());
+    }
+}
+
+#[test]
 fn digest_hex_preserves_lowercase_and_leading_zeroes() {
     assert_eq!(
         digest(b""),
@@ -33,8 +43,8 @@ async fn status(stream: &mut DuplexStream, request: &[u8], code: StatusCode) {
     let mut bytes = vec![101];
     bytes.extend_from_slice(&request[1..5]);
     bytes.extend_from_slice(&(code as u32).to_be_bytes());
-    ssh_string(&mut bytes, "injected result");
-    ssh_string(&mut bytes, "en");
+    ssh_string(&mut bytes, "injected result").unwrap();
+    ssh_string(&mut bytes, "en").unwrap();
     send(stream, &bytes).await;
 }
 
@@ -48,9 +58,9 @@ async fn commit_reply(code: Option<StatusCode>) -> Result<Option<FileAttributes>
         let commit = packet(&mut server).await;
         assert_eq!(commit[0], 200);
         let mut expected = vec![];
-        ssh_string(&mut expected, "posix-rename@openssh.com");
-        ssh_string(&mut expected, "/temporary");
-        ssh_string(&mut expected, "/destination");
+        ssh_string(&mut expected, "posix-rename@openssh.com").unwrap();
+        ssh_string(&mut expected, "/temporary").unwrap();
+        ssh_string(&mut expected, "/destination").unwrap();
         assert_eq!(&commit[5..], expected);
         arrived_tx.send(()).unwrap();
         reply_rx.await.unwrap();
@@ -64,7 +74,7 @@ async fn commit_reply(code: Option<StatusCode>) -> Result<Option<FileAttributes>
             let remove = packet(&mut server).await;
             assert_eq!(remove[0], 13);
             let mut expected = vec![];
-            ssh_string(&mut expected, "/temporary");
+            ssh_string(&mut expected, "/temporary").unwrap();
             assert_eq!(
                 &remove[5..],
                 expected,

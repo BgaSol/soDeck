@@ -449,7 +449,6 @@ impl Drop for LocalTemporary {
     }
 }
 
-fn ssh_string(data: &mut Vec<u8>, s: &str) {
-    data.extend_from_slice(&(s.len() as u32).to_be_bytes());
-    data.extend_from_slice(s.as_bytes());
+fn ssh_string(data: &mut Vec<u8>, s: &str) -> Result<(), ssh_encoding::Error> {
+    ssh_encoding::Encode::encode(s, data)
 }

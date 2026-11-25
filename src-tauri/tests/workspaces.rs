@@ -1,3 +1,5 @@
+#[path = "support/write_failure.rs"]
+mod write_failure;
 use serde_json::json;
 use sodeck::{
     workspaces::{ConnectedSession, Layout},
@@ -117,7 +119,9 @@ fn rejected_or_failed_resize_changes_neither_memory_nor_saved_defaults() {
     f.core.workspace_resize("main", id, "left", 300).unwrap();
     let saved = std::fs::read(f.path.join("ui-layout.json")).unwrap();
     let before = f.core.workspace_projection("main").unwrap();
-    std::fs::create_dir(f.path.join("ui-layout.json.tmp")).unwrap();
+    let Some(_blocked_write) = write_failure::block(f.path.join("ui-layout.json")) else {
+        return;
+    };
     assert!(f.core.workspace_resize("main", id, "left", 350).is_err());
     assert_eq!(std::fs::read(f.path.join("ui-layout.json")).unwrap(), saved);
     let after = f.core.workspace_projection("main").unwrap();

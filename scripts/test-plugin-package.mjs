@@ -81,7 +81,10 @@ try {
     if (plugin === "network-proxy" && method === "state.remove") return {};
     unexpected.push(method); throw new Error(`Unexpected package RPC: ${method}`);
   });
-  const initialized = await peer.initialize( { dataDirectory: path.join(directory, "data") });
+  const dataDirectory=path.toNamespacedPath(path.join(directory,'data 中文','segment'.repeat(13),'segment'.repeat(13),'segment'.repeat(13)));
+  fs.mkdirSync(dataDirectory,{recursive:true});
+  const initialized = await peer.initialize({dataDirectory});
+  report.dataDirectory={unicode:true,extended:process.platform==='win32',length:dataDirectory.length};
   assert.equal(initialized.apiVersion, "2.0");
   if (manifest.commands) {
     assert.deepEqual([...initialized.commandHandlers].sort(), [...manifest.commands.handlers].sort());
@@ -91,7 +94,7 @@ try {
   await peer.request("ui.createView", view);
   await peer.request("ui.getView", view);
   if(plugin==='mcp'){
-    const token=fs.readFileSync(path.join(directory,'data/access-token'),'utf8');
+    const token=fs.readFileSync(path.join(dataDirectory,'access-token'),'utf8');
     let response;for(let i=0;i<50;i++){try{response=await fetch(mcpUrl,{method:'POST',headers:{Authorization:'Bearer '+token,Accept:'application/json, text/event-stream','Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'package-check',version:'1'}}})});break;}catch{await new Promise(r=>setTimeout(r,50));}}
     assert.equal(response?.status,200);const result=await response.json();assert(result.result.capabilities.tools);
     const listed=await fetch(mcpUrl,{method:'POST',headers:{Authorization:'Bearer '+token,Accept:'application/json, text/event-stream','Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/list',params:{}})});assert.equal(listed.status,200);assert.equal((await listed.json()).result.tools.length,15);

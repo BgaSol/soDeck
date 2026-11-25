@@ -124,9 +124,12 @@ pub fn remove(entry: &Entry) -> Result<(), String> {
 pub fn write(executable: &Path) -> Result<(), String> {
     let path = path()?;
     fs::create_dir_all(path.parent().ok_or("登录项路径无效")?).map_err(|e| e.to_string())?;
-    let temporary = path.with_extension("plist.tmp");
-    fs::write(&temporary, content(executable)?).map_err(|e| e.to_string())?;
-    fs::rename(temporary, path).map_err(|e| format!("无法提交 macOS 登录项：{e}"))
+    let bytes = content(executable)?;
+    crate::storage::atomic_write(&path, |file| {
+        use std::io::Write;
+        file.write_all(bytes.as_bytes())
+    })
+    .map_err(|e| format!("无法提交 macOS 登录项：{e}"))
 }
 
 pub fn verify(directory: &Path) -> Result<(), String> {

@@ -20,10 +20,15 @@ fn open(path: &Path) -> io::Result<File> {
     }
     #[cfg(windows)]
     {
-        let value = path.to_string_lossy().replace('/', "\\");
-        if value.starts_with("\\\\?\\")
-            || value.starts_with("\\\\.\\")
-            || value.contains(':') && value.chars().skip(2).any(|c| c == ':')
+        use std::path::{Component, Prefix};
+        let mut components = path.components();
+        if !matches!(components.next(), Some(Component::Prefix(prefix))
+            if matches!(prefix.kind(), Prefix::Disk(_) | Prefix::UNC(_, _) | Prefix::VerbatimDisk(_) | Prefix::VerbatimUNC(_, _)))
+            || components.any(|part| match part {
+                Component::Normal(name) => name.as_encoded_bytes().contains(&b':'),
+                Component::RootDir => false,
+                _ => true,
+            })
         {
             return Err(invalid("不支持设备或数据流路径"));
         }
@@ -128,6 +133,29 @@ impl ReadSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn extended_ordinary_sources_work_while_devices_and_streams_stay_rejected() {
+        let root = tempfile::tempdir().unwrap();
+        let parent = std::fs::canonicalize(root.path())
+            .unwrap()
+            .join("nested".repeat(20))
+            .join("nested".repeat(20))
+            .join("中文");
+        std::fs::create_dir_all(&parent).unwrap();
+        let path = parent.join("ordinary.txt");
+        std::fs::write(&path, b"original").unwrap();
+        let source = ReadSource::open(path.clone()).await.unwrap();
+        source.verify().await.unwrap();
+        drop(source);
+        for rejected in [
+            PathBuf::from(r"\\.\NUL"),
+            PathBuf::from(r"\\?\GLOBALROOT\Device\Null"),
+            path.with_extension("txt:stream"),
+        ] {
+            assert!(ReadSource::open(rejected).await.is_err());
+        }
+    }
     #[tokio::test]
     async fn keeps_open_file_and_detects_replacement_and_changes() {
         let root = std::env::temp_dir().join(format!("sodeck-source-{}", rand::random::<u64>()));

@@ -184,10 +184,11 @@ mod platform {
         fs::create_dir_all(parent)
             .map_err(|error| format!("无法创建 Linux 登录启动项目录：{error}"))?;
         let content = content(&executable)?;
-        let temporary = path.with_extension("desktop.tmp");
-        fs::write(&temporary, content)
-            .map_err(|error| format!("无法写入 Linux 登录启动项：{error}"))?;
-        fs::rename(&temporary, &path).map_err(|error| format!("无法提交 Linux 登录启动项：{error}"))
+        crate::storage::atomic_write(&path, |file| {
+            use std::io::Write;
+            file.write_all(content.as_bytes())
+        })
+        .map_err(|error| format!("无法提交 Linux 登录启动项：{error}"))
     }
 
     fn content(executable: &std::path::Path) -> Result<String, String> {

@@ -1,3 +1,5 @@
+#[path = "support/write_failure.rs"]
+mod write_failure;
 use serde_json::{json, Value};
 use sodeck::{settings::declaration::Page, AppCore, TARGET};
 use std::{
@@ -171,7 +173,10 @@ fn corrupt_main_recovers_backup_and_failed_write_keeps_memory() {
         .file_name()
         .to_string_lossy()
         .contains(".corrupt-")));
-    fs::create_dir(f.root.join("data/component-settings.json.tmp")).unwrap();
+    let Some(_blocked_write) = write_failure::block(f.root.join("data/component-settings.json"))
+    else {
+        return;
+    };
     let before = core.settings_page("test.settings", "appearance").unwrap();
     assert!(core.save_settings("test.settings","appearance",json!({"definitionToken":before["definitionToken"],"baseRevision":before["revision"],"requestId":"fail","values":{"size":21}})).is_err());
     assert_eq!(
