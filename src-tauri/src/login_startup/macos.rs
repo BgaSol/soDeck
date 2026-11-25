@@ -137,12 +137,22 @@ fn verify_registration(directory: &Path) -> Result<(), String> {
     let old = legacy::path()?;
     if std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
         || !bundle.path.starts_with(home.join("Applications"))
-        || old.try_exists().map_err(|e| e.to_string())?
-        || native::status()? != State::NotRegistered
     {
-        return Err("真实登录项验收仅允许在干净 CI 用户的 Applications 安装中运行".into());
+        return Err(format!(
+            "真实登录项验收仅允许在干净 CI 用户的 Applications 安装中运行：bundle={} home={}",
+            bundle.path.display(),
+            home.display()
+        ));
     }
     let result = (|| {
+        match native::status()? {
+            State::Enabled => native::set(false)?,
+            State::NotRegistered | State::NotFound => {}
+            State::RequiresApproval => return Err("CI 用户已有待允许的 SoDeck 主应用登录项".into()),
+        }
+        if let Some(entry) = legacy::inspect(&bundle.executable)? {
+            legacy::remove(&entry)?;
+        }
         // Reproduce the exact 2.5.0 disk registration, without bootstrapping the running app.
         legacy::write(&bundle.executable)?;
         set(true)?;

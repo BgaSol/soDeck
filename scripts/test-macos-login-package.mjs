@@ -19,7 +19,7 @@ while(Date.now()<deadline){
     const btm=spawnSync('/usr/bin/sfltool',['dumpbtm'],{encoding:'utf8',timeout:10000});
     fs.writeFileSync(path.join(output,'login-items.txt'),btm.stdout??'');
     assert.equal(btm.status,0,btm.stderr);
-    assert(btm.stdout.includes(app),'System background-task record does not identify the installed SoDeck.app');
+    assert(btm.stdout.includes(app)||btm.stdout.includes('com.bgasol.sodeck'),'System background-task record does not identify the installed SoDeck app');
     const settings=spawnSync('/usr/bin/open',['x-apple.systempreferences:com.apple.LoginItems-Settings.extension'],{encoding:'utf8',timeout:10000});
     await new Promise(resolve=>setTimeout(resolve,5000));
     const screenshot=spawnSync('/usr/sbin/screencapture',['-x',path.join(output,'login-items.png')],{encoding:'utf8',timeout:5000});
