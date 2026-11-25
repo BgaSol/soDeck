@@ -419,12 +419,16 @@ impl Store {
     }
     pub fn layout(&self, revision: &str, start: usize) -> Result<Value, String> {
         let projected = self.projection(revision)?;
-        let ids: Vec<_> = projected
-            .iter()
-            .skip(start)
-            .take(900)
-            .map(|r| r.record.id.to_string())
-            .collect();
+        let mut ids = Vec::new();
+        let mut bytes = 512;
+        for row in projected.iter().skip(start) {
+            let id = row.record.id.to_string();
+            bytes += id.len() + 3; // JSON quotes and separator, IDs are decimal ASCII.
+            if bytes > PAGE_BYTES {
+                break;
+            }
+            ids.push(id);
+        }
         Ok(json!({"revision":revision,"total":projected.len(),"next":start+ids.len(),"ids":ids}))
     }
     pub fn window(&self, revision: &str, start: usize, count: usize) -> Result<Value, String> {
@@ -618,6 +622,41 @@ mod tests {
             incomplete: false,
         }
     }
+    #[test]
+    fn layout_pages_follow_the_byte_budget_and_reassemble_the_projection() {
+        let mut s = store();
+        let rows = s
+            .ingest((0..6000).map(|n| row("INFO", n)).collect(), true)
+            .unwrap();
+        s.append_recent(rows);
+        s.refresh();
+        let revision = s.status()["revision"].as_str().unwrap().to_owned();
+        let mut ids = Vec::new();
+        let mut pages = 0;
+        while ids.len() < 6000 {
+            let page = s.layout(&revision, ids.len()).unwrap();
+            assert!(serde_json::to_vec(&page).unwrap().len() <= PAGE_BYTES);
+            ids.extend(
+                page["ids"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_str().unwrap().to_owned()),
+            );
+            assert_eq!(page["next"].as_u64().unwrap() as usize, ids.len());
+            pages += 1;
+        }
+        assert_eq!(ids.len(), 6000);
+        assert_eq!(
+            ids.iter().collect::<std::collections::HashSet<_>>().len(),
+            6000
+        );
+        assert!(
+            pages < 7,
+            "small IDs should not use the previous fixed 900-row pages"
+        );
+    }
+
     #[test]
     fn fixed_reading_counts_all_new_rows_after_recent_eviction() {
         let mut s = store();

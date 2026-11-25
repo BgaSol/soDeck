@@ -19,40 +19,41 @@ impl Stamp {
         Self(self.0 + 1)
     }
     pub fn parse(value: &str) -> Result<Self, String> {
-        let seconds = clock_seconds(value)?;
-        let fraction = if value.as_bytes().get(19) == Some(&b'.') {
-            value[20..].split(['Z', '+', '-']).next().unwrap()
+        let invalid = || "日志源时间无效".to_owned();
+        // Keep the Docker source contract stricter than chrono's RFC3339 parser.
+        if !value.is_ascii()
+            || value.len() < 20
+            || value.as_bytes()[10] != b'T'
+            || &value[0..4] < "1970"
+            || &value[0..4] > "9999"
+            || &value[17..19] > "59"
+        {
+            return Err(invalid());
+        }
+        let suffix = &value[19..];
+        let zone = if let Some(fraction) = suffix.strip_prefix('.') {
+            let at = fraction.find(['Z', '+', '-']).ok_or_else(invalid)?;
+            if at == 0 || at > 9 || !fraction[..at].bytes().all(|b| b.is_ascii_digit()) {
+                return Err(invalid());
+            }
+            &fraction[at..]
         } else {
-            ""
+            suffix
         };
-        let nanos = if fraction.is_empty() {
-            0
-        } else {
-            fraction.parse::<u128>().unwrap() * 10u128.pow(9 - fraction.len() as u32)
-        };
-        Ok(Self(seconds as u128 * NS + nanos))
+        if zone != "Z"
+            && (zone.len() != 6 || !zone.starts_with(['+', '-']) || zone.as_bytes()[3] != b':')
+        {
+            return Err(invalid());
+        }
+        let parsed = chrono::DateTime::parse_from_rfc3339(value).map_err(|_| invalid())?;
+        let seconds = u128::try_from(parsed.timestamp()).map_err(|_| invalid())?;
+        Ok(Self(seconds * NS + parsed.timestamp_subsec_nanos() as u128))
     }
     pub fn text(self) -> String {
-        let seconds = self.0 / NS;
-        let days = seconds / 86400;
-        let clock = seconds % 86400;
-        let z = days as i64 + 719468;
-        let era = z / 146097;
-        let doe = z - era * 146097;
-        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-        let mut year = yoe + era * 400;
-        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-        let mp = (5 * doy + 2) / 153;
-        let day = doy - (153 * mp + 2) / 5 + 1;
-        let month = mp + if mp < 10 { 3 } else { -9 };
-        year += if month <= 2 { 1 } else { 0 };
-        format!(
-            "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:09}Z",
-            clock / 3600,
-            clock / 60 % 60,
-            clock % 60,
-            self.0 % NS
-        )
+        let seconds = i64::try_from(self.0 / NS).expect("bounded Docker timestamp");
+        chrono::DateTime::from_timestamp(seconds, (self.0 % NS) as u32)
+            .expect("bounded Docker calendar")
+            .to_rfc3339_opts(chrono::SecondsFormat::Nanos, true)
     }
 }
 #[derive(Clone, Debug)]
@@ -69,9 +70,11 @@ pub struct Draft {
 struct Fragment {
     bytes: Vec<u8>,
     incomplete: bool,
+    preview: Option<(Option<Stamp>, String)>,
 }
 pub struct Parser {
     channels: [Fragment; 2],
+    plain: [super::plain::Plain; 2],
     sequence: Option<u64>,
     combined: bool,
     pub raw_bytes: u64,
@@ -81,6 +84,7 @@ impl Parser {
     pub fn new(combined: bool) -> Self {
         Self {
             channels: Default::default(),
+            plain: Default::default(),
             sequence: None,
             combined,
             raw_bytes: 0,
@@ -89,6 +93,7 @@ impl Parser {
     }
     pub fn gap(&mut self) {
         self.channels = Default::default();
+        self.plain = Default::default();
         self.sequence = None;
         self.skip = [true; 2];
     }
@@ -116,12 +121,20 @@ impl Parser {
                 fragment
                     .bytes
                     .extend_from_slice(&part[..part.len().min(available)]);
-                fragment.incomplete |= part.len() > available;
+                if part.len() > available {
+                    if !fragment.incomplete {
+                        fragment.preview = Some(display(&fragment.bytes, &mut self.plain[channel]));
+                    }
+                    // Feed discarded bytes too: a truncated OSC/DCS must not poison the next row.
+                    self.plain[channel].discard(&part[available..]);
+                    fragment.incomplete = true;
+                }
                 if part.last() == Some(&b'\n') {
                     let fragment = std::mem::take(fragment);
                     if !self.skip[channel] {
                         rows.push(decode(
                             fragment,
+                            &mut self.plain[channel],
                             chunk.received_at,
                             if self.combined {
                                 "combined"
@@ -147,6 +160,7 @@ impl Parser {
                 } else {
                     Some(decode(
                         f,
+                        &mut self.plain[i],
                         received_at,
                         if self.combined {
                             "combined"
@@ -161,17 +175,26 @@ impl Parser {
             .collect()
     }
 }
-fn decode(fragment: Fragment, received_at: u64, source: &'static str) -> Draft {
-    let raw = fragment.bytes;
-    let decoded = String::from_utf8_lossy(&raw);
+fn display(raw: &[u8], plain: &mut super::plain::Plain) -> (Option<Stamp>, String) {
+    let decoded = String::from_utf8_lossy(raw);
     let line = decoded.trim_end_matches(['\r', '\n']);
     let prefix = line.split_once(' ');
     let time = prefix.and_then(|(time, _)| Stamp::parse(time).ok());
-    let text = plain(if time.is_some() {
+    let text = plain.text(if time.is_some() {
         prefix.unwrap().1
     } else {
         line
     });
+    (time, text)
+}
+fn decode(
+    fragment: Fragment,
+    plain: &mut super::plain::Plain,
+    received_at: u64,
+    source: &'static str,
+) -> Draft {
+    let raw = fragment.bytes;
+    let (time, text) = fragment.preview.unwrap_or_else(|| display(&raw, plain));
     let level = level(&text);
     Draft {
         raw,
@@ -221,36 +244,6 @@ pub fn level(text: &str) -> String {
     }
     .into()
 }
-fn plain(value: &str) -> String {
-    let mut output = String::with_capacity(value.len());
-    let mut chars = value.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\u{1b}' {
-            match chars.next() {
-                Some('[') => {
-                    for c in chars.by_ref() {
-                        if ('@'..='~').contains(&c) {
-                            break;
-                        }
-                    }
-                }
-                Some(']') => {
-                    while let Some(c) = chars.next() {
-                        if c == '\u{7}' || (c == '\u{1b}' && chars.next() == Some('\\')) {
-                            break;
-                        }
-                    }
-                }
-                _ => {}
-            }
-        } else if c.is_control() && c != '\t' {
-            output.push('�');
-        } else {
-            output.push(c);
-        }
-    }
-    output
-}
 pub fn matches(text: &str, query: &str) -> Vec<[usize; 2]> {
     if query.is_empty() {
         return Vec::new();
@@ -280,101 +273,6 @@ pub fn matches(text: &str, query: &str) -> Vec<[usize; 2]> {
         .collect()
 }
 
-fn clock_seconds(value: &str) -> Result<u64, String> {
-    let invalid = || "日志源时间无效".to_owned();
-    if !value.is_ascii()
-        || value.len() < 20
-        || value.as_bytes()[4] != b'-'
-        || value.as_bytes()[7] != b'-'
-        || value.as_bytes()[10] != b'T'
-        || value.as_bytes()[13] != b':'
-        || value.as_bytes()[16] != b':'
-    {
-        return Err(invalid());
-    }
-    let number = |a, b| {
-        if !value[a..b].bytes().all(|b| b.is_ascii_digit()) {
-            return Err(invalid());
-        }
-        value[a..b].parse::<i64>().map_err(|_| invalid())
-    };
-    let (mut year, month, day, hour, minute, second) = (
-        number(0, 4)?,
-        number(5, 7)?,
-        number(8, 10)?,
-        number(11, 13)?,
-        number(14, 16)?,
-        number(17, 19)?,
-    );
-    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
-    let days = [
-        31,
-        if leap { 29 } else { 28 },
-        31,
-        30,
-        31,
-        30,
-        31,
-        31,
-        30,
-        31,
-        30,
-        31,
-    ];
-    if !(1970..=9999).contains(&year)
-        || !(1..=12).contains(&month)
-        || !(1..=days[(month - 1) as usize]).contains(&day)
-        || !(0..=23).contains(&hour)
-        || !(0..=59).contains(&minute)
-        || !(0..=59).contains(&second)
-    {
-        return Err(invalid());
-    }
-    let suffix = &value[19..];
-    let zone = if let Some(fraction) = suffix.strip_prefix('.') {
-        let at = fraction.find(['Z', '+', '-']).ok_or_else(invalid)?;
-        if at == 0 || at > 9 || !fraction[..at].bytes().all(|b| b.is_ascii_digit()) {
-            return Err(invalid());
-        }
-        &fraction[at..]
-    } else {
-        suffix
-    };
-    let offset = if zone == "Z" {
-        0
-    } else {
-        if zone.len() != 6
-            || !zone.starts_with(['+', '-'])
-            || &zone[3..4] != ":"
-            || !zone[1..3]
-                .bytes()
-                .chain(zone[4..6].bytes())
-                .all(|b| b.is_ascii_digit())
-        {
-            return Err(invalid());
-        }
-        let h = zone[1..3].parse::<i64>().map_err(|_| invalid())?;
-        let m = zone[4..6].parse::<i64>().map_err(|_| invalid())?;
-        if h > 23 || m > 59 {
-            return Err(invalid());
-        }
-        (h * 3600 + m * 60) * if zone.starts_with('+') { 1 } else { -1 }
-    };
-    year -= if month <= 2 { 1 } else { 0 };
-    let era = year / 400;
-    let y = year - era * 400;
-    let m = month + if month > 2 { -3 } else { 9 };
-    let d = (153 * m + 2) / 5 + day - 1;
-    u64::try_from(
-        (era * 146097 + y * 365 + y / 4 - y / 100 + d - 719468) * 86400
-            + hour * 3600
-            + minute * 60
-            + second
-            - offset,
-    )
-    .map_err(|_| invalid())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -394,6 +292,11 @@ mod tests {
         assert_eq!(time.text(), "2026-11-24T00:00:00.123456789Z");
         assert_eq!(Stamp::seconds(0).text(), "1970-01-01T00:00:00.000000000Z");
         for s in [
+            "2016-12-31T23:59:60Z",
+            "2026-11-24T00:00:00.1234567891Z",
+            "1969-12-31T23:59:59Z",
+            "1970-01-01T00:00:00+00:01",
+            "2026-11-24t00:00:00z",
             "2026-02-29T00:00:00Z",
             "2026-11-24T00:00:00.helloZ",
             "中文中文中文中文中文中文中文中文",
@@ -401,6 +304,31 @@ mod tests {
         ] {
             assert!(Stamp::parse(s).is_err());
         }
+        let maximum = "9999-12-31T23:59:59.999999999Z";
+        assert_eq!(Stamp::parse(maximum).unwrap().text(), maximum);
+        assert_eq!(
+            Stamp::parse("2000-02-29T00:00:00.1Z").unwrap().text(),
+            "2000-02-29T00:00:00.100000000Z"
+        );
+    }
+    #[test]
+    fn terminal_sequences_cross_records_without_leaking_payload_or_sources() {
+        let mut p = Parser::new(false);
+        let rows = p
+            .append(&[
+                chunk(1, "stdout", b"2026-11-24T00:00:00Z INFO\t\x1bPqsecret\n"),
+                chunk(2, "stderr", b"2026-11-24T00:00:00Z WARN independent\n"),
+                chunk(
+                    3,
+                    "stdout",
+                    b"2026-11-24T00:00:01Z more\x1b\\\x1b(0lqqk\x1b(B\n",
+                ),
+            ])
+            .unwrap();
+        assert_eq!(rows[0].text, "INFO\t");
+        assert_eq!(rows[1].text, "WARN independent");
+        assert_eq!(rows[2].text, "lqqk");
+        assert!(rows[0].raw.windows(6).any(|v| v == b"secret"));
     }
     #[test]
     fn split_utf8_interleaved_sources_and_repeats_preserve_original_bytes() {
@@ -452,6 +380,32 @@ mod tests {
         assert_eq!(rows[0].text, "INFO �");
         assert_eq!(rows[0].raw, raw);
     }
+    #[test]
+    fn fragmented_osc_truncation_and_gaps_keep_bounded_parser_state() {
+        let mut p = Parser::new(false);
+        assert!(p
+            .append(&[chunk(1, "stdout", b"\x1b]0;hidden")])
+            .unwrap()
+            .is_empty());
+        let rows = p
+            .append(&[chunk(2, "stdout", b"title\x07INFO ok\n")])
+            .unwrap();
+        assert_eq!(rows[0].text, "INFO ok");
+        let mut oversized = b"\x1b]0;".to_vec();
+        oversized.extend(vec![b'x'; RECORD_BYTES]);
+        oversized.extend_from_slice(b"\x07\nINFO next\n");
+        let rows = p.append(&[chunk(3, "stdout", &oversized)]).unwrap();
+        assert!(rows[0].incomplete);
+        assert_eq!(rows[0].text, "");
+        assert_eq!(rows[1].text, "INFO next");
+        p.append(&[chunk(4, "stdout", b"\x1bPqhidden\n")]).unwrap();
+        p.gap();
+        let rows = p
+            .append(&[chunk(6, "stdout", b"unknown fragment\nWARN recovered\n")])
+            .unwrap();
+        assert_eq!(rows[0].text, "WARN recovered");
+    }
+
     #[test]
     fn explicit_levels_and_utf16_highlights() {
         assert_eq!(level("failed to connect"), "");

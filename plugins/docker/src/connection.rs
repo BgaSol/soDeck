@@ -158,21 +158,19 @@ pub fn save(directory: &Path, servers: &BTreeMap<String, Config>) -> Result<(), 
         return Err("Docker 连接配置已达上限".into());
     }
     std::fs::create_dir_all(directory).map_err(|e| e.to_string())?;
+    let directory = std::fs::canonicalize(directory).map_err(|e| e.to_string())?;
     let path = directory.join("endpoints.json");
-    let temp = directory.join("endpoints.tmp");
     if path.exists() && !directory.join("endpoints.previous.json").exists() {
         std::fs::copy(&path, directory.join("endpoints.previous.json"))
             .map_err(|e| e.to_string())?;
     }
     let result = (|| -> std::io::Result<()> {
-        let mut file = std::fs::File::create(&temp)?;
+        let mut file = tempfile::NamedTempFile::new_in(&directory)?;
         file.write_all(&bytes)?;
-        file.sync_all()?;
-        std::fs::rename(&temp, &path)
+        file.as_file().sync_all()?;
+        file.persist(&path).map_err(|e| e.error)?;
+        Ok(())
     })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(temp);
-    }
     result.map_err(|e| format!("Docker 连接配置保存失败，原文件已保留：{e}"))
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -397,5 +395,18 @@ mod tests {
         assert!(save(&dir, &configs).is_err());
         assert_eq!(std::fs::read(dir.join("endpoints.json")).unwrap(), valid);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+    #[test]
+    fn long_local_config_paths_replace_existing_files() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = std::fs::canonicalize(root.path())
+            .unwrap()
+            .join("data".repeat(30))
+            .join("data".repeat(30));
+        let configs = BTreeMap::new();
+        save(&directory, &configs).unwrap();
+        save(&directory, &configs).unwrap();
+        assert_eq!(load(&directory).unwrap(), configs);
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 2);
     }
 }

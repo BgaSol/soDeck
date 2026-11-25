@@ -1,5 +1,6 @@
 //! View-owned Docker log sessions. Core resources transport bytes, surfaces render projections.
 mod contract;
+mod plain;
 mod records;
 mod source;
 mod store;
