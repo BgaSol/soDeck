@@ -303,25 +303,29 @@
       const positions=previous||(motion?SoDeckMotion.captureMotion(this.tree,'.tree-row'):new Map());
       const rows=new Map([...this.tree.querySelectorAll('.tree-row')].map(row=>[row.dataset.path,row]));
       const before=new Map([...this.tree.querySelectorAll('.tree-row')].map(row=>[row.dataset.path,row.getAttribute('aria-expanded')]));
-      const fragment = document.createDocumentFragment(); this.visible = []; this.maxDepth = 1;
+      const ordered = []; this.visible = []; this.maxDepth = 1;
       const visit = (n, level, pos, count) => {
         this.maxDepth = Math.max(this.maxDepth, level);
-        const row = rows.get(n.path)||document.createElement('div');row.replaceChildren();row.removeAttribute('aria-expanded');row.removeAttribute('aria-busy'); row.className = 'tree-row'; row.id = n.key; row.dataset.path = n.path; row.dataset.kind = n.attrs.kind;
-        row.setAttribute('role', 'treeitem'); row.setAttribute('aria-level', level); row.setAttribute('aria-posinset', pos); row.setAttribute('aria-setsize', count); row.setAttribute('aria-label', n.name);
-        row.setAttribute('aria-selected', String(this.selection.has(n.path))); row.style.setProperty('--depth', level - 1); row.title = n.path;
+        const row = rows.get(n.path)||document.createElement('div');
         const directory = n.attrs.kind === 'directory', expanded = this.expanded.has(n.path);
-        if (directory) row.setAttribute('aria-expanded', String(expanded));
-        if (n.loading) row.setAttribute('aria-busy', 'true');
-        const arrow = document.createElement('span'); arrow.className = 'tree-arrow' + (expanded ? ' expanded' : '');
-        if (directory) { arrow.append(icon('chevron')); arrow.addEventListener('click', e => { e.stopPropagation(); this.tree.focus(); void this.run(() => this.toggle(n)); }); }
-        const name = document.createElement('span'); name.className = 'tree-name'; name.textContent = n.name;
-        const size = document.createElement('span'); size.className = 'tree-size'; size.textContent = directory ? '' : bytes(n.attrs.size);
-        row.append(arrow, icon(directory ? 'folder' : n.attrs.kind === 'link' ? 'link' : 'file'), name, size);
+        const shape=JSON.stringify([n.attrs.kind,n.attrs.size,n.name,level,pos,count,expanded,!!n.loading,this.selection.has(n.path)]);
+        if(row.sodeckShape!==shape){
+          row.sodeckShape=shape;row.replaceChildren();row.removeAttribute('aria-expanded');row.removeAttribute('aria-busy');row.className='tree-row';row.id=n.key;row.dataset.path=n.path;row.dataset.kind=n.attrs.kind;
+          row.setAttribute('role','treeitem');row.setAttribute('aria-level',level);row.setAttribute('aria-posinset',pos);row.setAttribute('aria-setsize',count);row.setAttribute('aria-label',n.name);
+          row.setAttribute('aria-selected',String(this.selection.has(n.path)));row.style.setProperty('--depth',level-1);row.title=n.path;
+          if(directory)row.setAttribute('aria-expanded',String(expanded));if(n.loading)row.setAttribute('aria-busy','true');
+          const arrow=document.createElement('span');arrow.className='tree-arrow'+(expanded?' expanded':'');
+          if(directory){arrow.append(icon('chevron'));arrow.addEventListener('click',e=>{e.stopPropagation();this.tree.focus();void this.run(()=>this.toggle(n));});}
+          const name=document.createElement('span');name.className='tree-name';name.textContent=n.name;
+          const size=document.createElement('span');size.className='tree-size';size.textContent=directory?'':bytes(n.attrs.size);
+          row.append(arrow,icon(directory?'folder':n.attrs.kind==='link'?'link':'file'),name,size);
+          row.onclick=e=>{this.tree.focus();this.select(n,false,e);};
+          row.ondblclick=e=>{if(!e.target.closest('.tree-arrow'))void this.run(()=>this.open(n));};
+          row.oncontextmenu=e=>{e.preventDefault();if(!this.selection.has(n.path))this.select(n,false);this.showMenu(n,e.clientX,e.clientY);};
+        }
         this.decorateMount(row);
-        row.onclick=e=>{this.tree.focus();this.select(n,false,e);};
-        row.ondblclick=e=>{if(!e.target.closest('.tree-arrow'))void this.run(()=>this.open(n));};
-        row.oncontextmenu=e=>{e.preventDefault();if(!this.selection.has(n.path))this.select(n,false);this.showMenu(n,e.clientX,e.clientY);};
-        this.visible.push(n); fragment.append(row);
+        this.visible.push(n); ordered.push(row);
+
         if (!directory || !expanded) return;
         const children=this.children(n);
         for (const [index, child] of children.entries()) visit(this.nodes.get(child), level + 1, index + 1, children.length);
@@ -332,11 +336,15 @@
             const b = document.createElement('button'); b.dataset.directory = n.path; b.textContent = n.error ? '读取失败 · 重试' : !children.length?'暂无可见条目 · 加载更多':'加载更多'; b.title = n.error || '继续读取此目录';
             b.addEventListener('click', () => void this.run(() => this.load(n, !n.error))); item.append(b);
           } else item.textContent = n.children.length?'暂无可见条目':'空目录';
-          fragment.append(item);
+          ordered.push(item);
         }
       };
       const root = this.nodes.get(this.rootPath); if (root) visit(root, 1, 1, 1);
-      this.tree.replaceChildren(fragment); this.tree.scrollTop = scroll;
+      // Leave unchanged rows attached: selection, focus and layout survive refresh.
+      let cursor=this.tree.firstChild;
+      for(const node of ordered){if(node===cursor)cursor=cursor.nextSibling;else this.tree.insertBefore(node,cursor);}
+      while(cursor){const next=cursor.nextSibling;cursor.remove();cursor=next;}
+      this.tree.scrollTop = scroll;
       const visible=new Set(this.visible.map(n=>n.path));this.selection=new Set([...this.selection].filter(path=>visible.has(path)));if(!visible.has(this.anchor))this.anchor='';
       this.indent();
       if(motion)SoDeckMotion.settleMotion(this.tree,positions,'.tree-row',false);

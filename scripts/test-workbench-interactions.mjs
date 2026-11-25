@@ -243,7 +243,8 @@ test('file tree refresh retains row identity, scroll and an open pointer menu',a
       window.retainedRow=tree.row('/item-35');const rect=retainedRow.getBoundingClientRect();tree.showMenu(tree.nodes.get('/item-35'),rect.left+20,rect.top+5);
     });
     await page.getByRole('menuitem',{name:'复制路径',exact:true}).waitFor({state:'visible'});
-    await page.evaluate(()=>{window.retainedMenu=tree.menu;window.scrollBefore=tree.tree.scrollTop;tree.render();});
+    const stable=await page.evaluate(()=>{window.retainedMenu=tree.menu;window.scrollBefore=tree.tree.scrollTop;const name=retainedRow.querySelector('.tree-name');const changes=[];const observer=new MutationObserver(items=>changes.push(...items));observer.observe(tree.tree,{childList:true,subtree:true});tree.render();changes.push(...observer.takeRecords());observer.disconnect();return {sameName:name===retainedRow.querySelector('.tree-name'),removed:changes.flatMap(c=>[...c.removedNodes]).filter(n=>n===retainedRow||n.contains?.(retainedRow)).length};});
+    assert.deepEqual(stable,{sameName:true,removed:0},'Unchanged file rows and their contents remain attached');
     assert.equal(await page.evaluate(()=>tree.tree.scrollTop),await page.evaluate(()=>scrollBefore),'Reusing rows must capture scroll before moving any existing node');
     await page.waitForTimeout(200);
     assert(await page.evaluate(()=>retainedRow===tree.row('/item-35')&&retainedMenu===tree.menu&&retainedMenu.isConnected));
