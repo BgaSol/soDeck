@@ -164,3 +164,28 @@ pub fn launched_at_login() -> bool {
             })
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_status_reads_native_api_without_registering_a_login_item() {
+        if !available() {
+            return; // SMAppService is only available on macOS 13+.
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("legacy login item.plist");
+        std::fs::write(
+            &path,
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>Label</key><string>com.bgasol.sodeck.login-regression</string>
+<key>ProgramArguments</key><array><string>/usr/bin/true</string></array>
+<key>RunAtLoad</key><true/>
+</dict></plist>"#,
+        )
+        .unwrap();
+        assert!(legacy_status(&path).is_ok());
+    }
+}
