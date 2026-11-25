@@ -66,11 +66,33 @@ impl AppCore {
     }
 
     pub fn open(directory: PathBuf, version: String) -> Result<Arc<Self>, String> {
+        // Headless callers can reopen just after shutdown while the last worker releases its Arc.
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let lease = loop {
+            match crate::app_data::Lease::acquire(&directory) {
+                Ok(lease) => break lease,
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::WouldBlock
+                        && Instant::now() < deadline =>
+                {
+                    std::thread::sleep(Duration::from_millis(25))
+                }
+                Err(error) => return Err(format!("无法取得应用数据锁：{error}")),
+            }
+        };
+        Self::open_locked(lease, version)
+    }
+
+    pub fn open_locked(
+        lease: crate::app_data::Lease,
+        version: String,
+    ) -> Result<Arc<Self>, String> {
+        let directory = lease.root.clone();
+        let store = Store::open_locked(lease)?;
         let recovery = directory.join("terminal-recovery");
         std::thread::spawn(move || crate::streams::cleanup(&recovery));
         let recovery = directory.join("command-output");
         std::thread::spawn(move || crate::streams::cleanup(&recovery));
-        let store = Store::open(directory.clone())?;
         let started_without_plugins = store.errors[0].is_none() && store.plugins.is_empty();
         let servers = crate::servers::ServerStore::open(directory.clone());
         let startup_enabled = store

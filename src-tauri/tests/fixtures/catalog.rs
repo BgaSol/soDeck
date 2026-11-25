@@ -54,6 +54,9 @@ fn main() {
         let request: Value = serde_json::from_str(&line.unwrap()).unwrap();
         let args = &request["args"];
         let result = match request["command"].as_str().unwrap() {
+            "login_startup_state" => Ok(
+                json!({"enabled":false,"state":"unavailable","reason":"无界面测试不修改系统启动项"}),
+            ),
             "close_register_host" => core
                 .register_close_host(args["window"].as_str().unwrap_or("main"))
                 .map(|_| Value::Null),

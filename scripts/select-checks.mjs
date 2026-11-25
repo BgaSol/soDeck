@@ -138,7 +138,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
         integration.add(service[2] === 'network' ? 'network-proxy' : service[2] === 'terminal' ? 'terminal' : 'files');
         continue;
       }
-      if (/^src-tauri\/(src|tests)\/(updates|update_network|desktop_updates|desktop_behavior|desktop_shell|settings|storage|windows|window_config|workspaces|component_ui|official_plugins)(\/|\.)/.test(file)) {
+      if (/^src-tauri\/(src|tests)\/(updates|update_network|desktop_updates|desktop_behavior|desktop_shell|desktop_startup|app_data|login_startup|settings|storage|windows|window_config|workspaces|component_ui|official_plugins)(\/|\.)/.test(file)) {
         core(); ui();
         continue;
       }
@@ -163,7 +163,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
       if (/^scripts\/(terminal-reading\.test|test-terminal-reading-ui)\.mjs$/.test(file)) { plan.scripts = plan.terminalInput = true; continue; }
       if (/^scripts\/test-terminal-powershell(?:-pty)?\.mjs$/.test(file)) { plan.scripts = true; plugin('terminal');plan.desktop=plan.ssh=true;continue; }
       if (/^scripts\/(test-terminal-(history|search-ui)|benchmark-terminal-history|terminal-history\.test)\.mjs$/.test(file)) { plan.scripts = plan.terminalInput = true; continue; }
-      if (/^scripts\/test-(plugin-icons-ui|theme-ui|connection-ui|desktop-ui|production-ui|server-ui|settings-ui|workspace-ui|workbench-interactions|workbench-layout)\.mjs$/.test(file)) { ui(); continue; }
+      if (/^scripts\/test-(plugin-icons-ui|theme-ui|connection-ui|desktop-ui|desktop-shell-ui|application-settings-ui|production-ui|server-ui|settings-ui|workspace-ui|workbench-interactions|workbench-layout)\.mjs$/.test(file)) { ui(); continue; }
       plan.reasons.push(`Shared build input or unmapped path: ${file.replace(/[\r\n|`]/g, ' ')}`);
       full();
     }

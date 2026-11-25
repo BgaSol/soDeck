@@ -1,3 +1,4 @@
+pub mod app_data;
 pub mod commands;
 pub mod component_ui;
 pub mod connections;
@@ -7,10 +8,12 @@ pub mod desktop_behavior;
 pub mod desktop_files;
 mod desktop_open;
 pub mod desktop_shell;
+pub mod desktop_startup;
 pub mod desktop_updates;
 mod execution_output;
 pub mod lifecycle;
 mod local_files;
+pub mod login_startup;
 pub mod model;
 pub mod network;
 pub mod network_metrics;

@@ -19,6 +19,7 @@ use tauri::{Emitter, Manager, State};
 struct Application {
     core: Arc<AppCore>,
     updates: Arc<UpdateService>,
+    login_startup: Arc<sodeck::login_startup::Service>,
     smoke: bool,
     interactive_test: bool,
     verify_persisted: bool,
@@ -422,6 +423,34 @@ fn network_snapshot(app: State<Application>) -> serde_json::Value {
 fn snapshot(app: State<Application>) -> Snapshot {
     app.core.snapshot()
 }
+
+#[tauri::command]
+async fn login_startup_state(
+    app: State<'_, Application>,
+) -> Result<sodeck::login_startup::Status, String> {
+    let service = app.login_startup.clone();
+    tauri::async_runtime::spawn_blocking(move || service.refresh())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn set_login_startup(
+    handle: tauri::AppHandle,
+    app: State<'_, Application>,
+    enabled: bool,
+) -> Result<sodeck::login_startup::Status, String> {
+    if app.core.is_closing() {
+        return Err("应用正在退出或重启，不能修改启动设置".into());
+    }
+    let service = app.login_startup.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || service.set(enabled))
+        .await
+        .map_err(|e| e.to_string())?;
+    app.core.record_login_startup(enabled, &result);
+    let _ = handle.emit("login-startup-changed", ());
+    result
+}
 #[tauri::command]
 fn server_catalog(app: State<Application>) -> serde_json::Value {
     app.core.server_catalog()
@@ -695,8 +724,54 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
     let persisted = app.verify_persisted;
     let package_only = std::env::args().any(|arg| arg == "--package-only");
     std::thread::spawn(move || {
+        let restart_probe = std::env::args_os().any(|arg| arg == "--startup-restart-test");
+        if restart_probe && !std::env::args_os().any(|arg| arg == "--restart-from") {
+            let preparation = (|| {
+                sodeck::desktop_startup::verify_native(&handle, &core)?;
+                let path = core
+                    .snapshot()
+                    .data_directory
+                    .join("startup-restart-origin.json");
+                std::fs::write(path,serde_json::json!({"pid":std::process::id(),"login":std::env::args_os().any(|arg|arg=="--login-start")}).to_string()).map_err(|e|e.to_string())?;
+                let operation = core.close_native_prepare(
+                    "main",
+                    sodeck::lifecycle::Target::Application {
+                        action: sodeck::lifecycle::Action::Restart,
+                    },
+                )?;
+                core.close_unhosted(&operation.id);
+                Ok::<(), String>(())
+            })();
+            if let Err(error) = preparation {
+                let _ = std::fs::write(
+                    core.snapshot().data_directory.join("smoke-error.txt"),
+                    error,
+                );
+                handle.exit(1);
+            }
+            return;
+        }
         let validation = (|| {
+            if restart_probe {
+                let original: serde_json::Value = serde_json::from_slice(
+                    &std::fs::read(
+                        core.snapshot()
+                            .data_directory
+                            .join("startup-restart-origin.json"),
+                    )
+                    .map_err(|e| e.to_string())?,
+                )
+                .map_err(|e| e.to_string())?;
+                if original["pid"] == std::process::id()
+                    || original["login"] != true
+                    || std::env::args_os().any(|arg| arg == "--login-start")
+                {
+                    return Err("登录启动后的普通重启来源或进程身份错误".into());
+                }
+            }
             if package_only {
+                sodeck::login_startup::verify_native(&core.snapshot().data_directory)?;
+                sodeck::desktop_startup::verify_native(&handle, &core)?;
                 DesktopShell::verify_native(&handle)?;
                 let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
                 while !handle.state::<Application>().updates.initialized() {
@@ -740,7 +815,7 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
         let result = validation.and(stopped);
         if result.is_ok() {
             let status = core.snapshot();
-            let report = serde_json::json!({"completed":true,"workspaceNative":!package_only,"packageNative":true,"pluginIconsNative":package_only,"desktopShellNative":package_only,"macosApplicationPolicyNative":package_only && cfg!(target_os = "macos"),"sshNative":ssh_test_requested,"clipboardNative":clipboard_test_requested,"desktopFilesNative":desktop_files_requested,"desktopOpenNative":desktop_open_requested,"version":status.version,"target":status.target});
+            let report = serde_json::json!({"completed":true,"pid":std::process::id(),"workspaceNative":!package_only,"packageNative":true,"pluginIconsNative":package_only,"desktopShellNative":package_only,"desktopStartupNative":package_only,"loginRegistrationIoNative":package_only,"loginRestartNative":restart_probe,"macosApplicationPolicyNative":package_only && cfg!(target_os = "macos"),"sshNative":ssh_test_requested,"clipboardNative":clipboard_test_requested,"desktopFilesNative":desktop_files_requested,"desktopOpenNative":desktop_open_requested,"version":status.version,"target":status.target});
             let _ = std::fs::write(
                 status.data_directory.join("smoke-result.json"),
                 report.to_string(),
@@ -766,9 +841,35 @@ fn argument(name: &str) -> Option<PathBuf> {
 }
 
 fn main() {
+    if let Err(error) = run() {
+        eprintln!("{error}");
+        #[cfg(windows)]
+        {
+            use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+            let text: Vec<u16> = error.encode_utf16().chain(Some(0)).collect();
+            let title: Vec<u16> = "SoDeck 无法启动".encode_utf16().chain(Some(0)).collect();
+            unsafe {
+                MessageBoxW(
+                    std::ptr::null_mut(),
+                    text.as_ptr(),
+                    title.as_ptr(),
+                    MB_OK | MB_ICONERROR,
+                );
+            }
+        }
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), String> {
+    let args: Vec<_> = std::env::args_os().collect();
+    let launch = sodeck::desktop_startup::Launch::parse(&args)?;
+    let setup_launch = launch.clone();
     let smoke = std::env::args().any(|arg| arg == "--smoke-test");
     let interactive_test = std::env::args().any(|arg| arg == "--interactive-test");
-    let app = tauri::Builder::default()
+    #[allow(unused_mut)]
+    let mut app = tauri::Builder::default()
+        .manage(sodeck::desktop_startup::Launch::restart_environment(&args))
         .plugin(sodeck::desktop_behavior::plugin())
         .register_uri_scheme_protocol("sodeck-plugin", |context, request| {
             let path = request.uri().path().trim_start_matches('/');
@@ -801,16 +902,10 @@ fn main() {
             }
         })
         .setup(move |app| {
-            let directory = if interactive_test {
-                argument("--test-data-dir").ok_or("交互验收必须指定隔离的 --test-data-dir")?
-            } else if smoke {
-                argument("--test-data-dir").unwrap_or_else(|| {
-                    std::env::temp_dir().join(format!("sodeck-smoke-{}", std::process::id()))
-                })
-            } else {
-                app.path().app_data_dir()?
-            };
-            let core = AppCore::open(directory, sodeck::app_version())?;
+            let lease = app.state::<sodeck::desktop_startup::Prepared>().0.lock().unwrap().take().ok_or("应用启动资格已被消费")?;
+            let core = AppCore::open_locked(lease, sodeck::app_version())?;
+            let login_startup = Arc::new(sodeck::login_startup::Service::new(smoke || interactive_test));
+            app.manage(login_startup.clone());
             let handle = app.handle().clone();
             core.set_listener(Arc::new(move |name, value| {
                 if handle.try_state::<DesktopShell>().is_some() { DesktopShell::on_core_event(&handle, name, &value); }
@@ -822,6 +917,7 @@ fn main() {
             app.manage(Application {
                 core: core.clone(),
                 updates: updates.clone(),
+                login_startup,
                 smoke,
                 interactive_test,
                 verify_persisted: smoke && std::env::args().any(|a| a == "--verify-persisted"),
@@ -832,6 +928,18 @@ fn main() {
             DesktopShell::attach_finalizer(app.handle(), &core);
             if let Err(error) = app.state::<DesktopShell>().install(app.handle()) {
                 app.state::<DesktopShell>().report(app.handle(), format!("系统托盘创建失败：{error}"));
+            }
+            app.state::<DesktopWindows>().ensure_main_display(app.handle())?;
+            if setup_launch.login
+                && !app.state::<sodeck::desktop_startup::Activation>().take_pending()
+                && (cfg!(target_os = "linux") || app.state::<DesktopShell>().tray_available())
+            {
+                if let Err(error) = app.state::<DesktopShell>().start_background(app.handle()) {
+                    app.state::<DesktopShell>().present(app.handle(), "main", false)?;
+                    app.state::<DesktopShell>().report(app.handle(), error);
+                }
+            } else {
+                app.state::<DesktopShell>().present(app.handle(), "main", false)?;
             }
             let preparation = if !smoke && !interactive_test { updates.reserve_default_installation() } else { None };
             if !interactive_test {
@@ -892,6 +1000,8 @@ fn main() {
             change_catalog,
             recover_catalog,
             snapshot,
+            login_startup_state,
+            set_login_startup,
             close_register_host,
             close_prepare,close_status,close_operations,close_report_inputs,close_decide,close_retry,close_exit_after_failure,
             add_plugin,
@@ -938,7 +1048,23 @@ fn main() {
             ,sodeck::component_ui::component_ui
         ])
         .build(tauri::generate_context!())
-        .expect("failed to start SoDeck");
+        .map_err(|e| e.to_string())?;
+    match sodeck::desktop_startup::prepare(app.handle(), &launch) {
+        Ok(true) => {}
+        Ok(false) => return Ok(()),
+        Err(error) => {
+            use tauri_plugin_dialog::DialogExt;
+            app.dialog()
+                .message(&error)
+                .title("SoDeck 无法启动")
+                .blocking_show();
+            std::process::exit(1);
+        }
+    }
+    #[cfg(target_os = "macos")]
+    if launch.login {
+        app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+    }
     app.run(|handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
             handle.state::<Application>().core.detach_host();
@@ -961,4 +1087,5 @@ fn main() {
             }
         }
     });
+    Ok(())
 }

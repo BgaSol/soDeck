@@ -52,6 +52,13 @@ struct State {
     modals: HashMap<u64, String>,
     main_backgrounded: bool,
     presentation: u64,
+    problem: Option<Problem>,
+}
+
+#[derive(Clone, Serialize)]
+struct Problem {
+    id: u64,
+    message: String,
 }
 impl State {
     fn next(&mut self) -> u64 {
@@ -83,6 +90,7 @@ pub struct Snapshot {
     background: Option<Background>,
     blocked: bool,
     tray_available: bool,
+    problem: Option<Problem>,
 }
 pub struct DesktopShell {
     core: Arc<AppCore>,
@@ -109,6 +117,19 @@ impl DesktopShell {
     pub fn handed_off(&self) -> bool {
         self.exit_handoff.load(Ordering::Acquire)
     }
+
+    pub fn accepts_activation(&self) -> bool {
+        !self.handed_off()
+            && (!self.core.is_closing()
+                || self.core.close_operations("main").iter().any(|op| {
+                    matches!(
+                        op.phase,
+                        crate::lifecycle::Phase::Preparing
+                            | crate::lifecycle::Phase::Deciding
+                            | crate::lifecycle::Phase::Failed
+                    )
+                }))
+    }
     pub fn handoff(&self) {
         self.exit_handoff.store(true, Ordering::Release);
     }
@@ -132,6 +153,7 @@ impl DesktopShell {
             tray_available,
             generation: state.generation,
             visible,
+            problem: state.problem.clone(),
             navigation: (label == "main")
                 .then(|| state.navigation.clone())
                 .flatten(),
@@ -150,13 +172,21 @@ impl DesktopShell {
     }
     pub fn report(&self, handle: &tauri::AppHandle, error: impl ToString) {
         let error = error.to_string();
+        {
+            let mut state = self.state.lock().unwrap();
+            let id = state.next();
+            state.problem = Some(Problem {
+                id,
+                message: error.clone(),
+            });
+        }
         self.core.log(
             None,
             "error",
             "桌面操作未完成",
             Some(json!({"error":error})),
         );
-        let _ = handle.emit("core-desktop-error", error);
+        Self::changed(handle);
     }
     pub fn install(&self, handle: &tauri::AppHandle) -> Result<(), String> {
         let show = MenuItem::with_id(handle, "desktop.show", "显示主窗口", true, None::<&str>)
@@ -242,6 +272,24 @@ impl DesktopShell {
         self.refresh_messages();
         Ok(())
     }
+
+    pub fn tray_available(&self) -> bool {
+        self.tray.lock().unwrap().is_some()
+    }
+
+    pub fn start_background(&self, handle: &tauri::AppHandle) -> Result<(), String> {
+        presentation::on_main(handle, |handle| {
+            let shell = handle.state::<Self>();
+            if shell.handed_off() || shell.core.is_closing() {
+                return Err("应用正在退出".into());
+            }
+            handle
+                .state::<DesktopWindows>()
+                .ensure_main_display(handle)?;
+            shell.background_on_main(handle)
+        })
+    }
+
     pub fn menu(handle: &tauri::AppHandle, id: &str) {
         let shell = handle.state::<Self>();
         let result = match id {
@@ -527,25 +575,7 @@ impl DesktopShell {
             Self::changed(handle);
             return Err("窗口当前需要处理交互，已取消收起".into());
         }
-        let window = handle.get_webview_window("main").ok_or("主窗口不存在")?;
-        let result = if cfg!(target_os = "linux") {
-            window.minimize()
-        } else if self.tray.lock().unwrap().is_some() {
-            window.hide()
-        } else {
-            return Err("系统托盘不可用，窗口保持可见".into());
-        };
-        if let Err(error) = result {
-            Self::changed(handle);
-            return Err(error.to_string());
-        }
-        if let Err(error) = self.apply_background_policy(handle) {
-            let recovery = self.present(handle, "main", true);
-            Self::changed(handle);
-            return Err(format!("收起未完成：{error}；窗口恢复：{recovery:?}"));
-        }
-        self.state.lock().unwrap().main_backgrounded = true;
-        Self::changed(handle);
+        self.background_on_main(handle)?;
         if !self.core.desktop_preferences().1 {
             if let Err(error) = self.core.set_desktop_preferences(None, true) {
                 self.report(handle, error);
@@ -643,14 +673,19 @@ impl DesktopShell {
                     }
                     Target::Application { action } => {
                         let shell = native.state::<Self>();
+                        if let Some(startup) =
+                            native.try_state::<Arc<crate::login_startup::Service>>()
+                        {
+                            startup.settle();
+                        }
+                        crate::desktop_files::shutdown(&native)?;
+                        shell.updates.stop();
                         if action == Action::InstallAndRestart {
                             if let Err(error) = shell.updates.updater.install() {
                                 shell.core.failed_core_install(error.clone());
                                 return Err(error);
                             }
                         }
-                        crate::desktop_files::shutdown(&native)?;
-                        shell.updates.stop();
                         shell.handoff();
                         if action == Action::Exit {
                             native.exit(0);

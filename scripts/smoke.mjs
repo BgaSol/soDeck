@@ -18,6 +18,8 @@ function launch(persisted = false) {
   const networkReport = path.join(directory, "network-smoke-result.json");
   fs.rmSync(networkReport, { force: true });
   const extra = ["--smoke-test", "--test-data-dir", directory];
+  if(process.env.SODECK_TEST_LOGIN_START==='1'||process.env.SODECK_TEST_LOGIN_RESTART==='1')extra.push('--login-start');
+  if(process.env.SODECK_TEST_LOGIN_RESTART==='1')extra.push('--startup-restart-test');
   if (process.env.SODECK_PACKAGE_ONLY === "1") extra.push("--package-only");
   if (process.env.SODECK_TEST_CLIPBOARD === "1") extra.push("--clipboard-test");
   if (process.env.SODECK_TEST_DESKTOP_FILES) extra.push("--desktop-files-test", path.resolve(process.env.SODECK_TEST_DESKTOP_FILES));
@@ -30,6 +32,7 @@ function launch(persisted = false) {
     ...(process.platform === 'win32' ? { env: { ...process.env, WEBVIEW2_USER_DATA_FOLDER: path.join(directory, 'webview2') } } : {}),
     timeout: process.env.SODECK_TEST_NETWORK_PLUGIN ? 120_000 : process.env.SODECK_TEST_TERMINAL_PLUGIN ? 90_000 : 30_000,
   });
+  if(process.env.SODECK_TEST_LOGIN_RESTART==='1'&&result.status===0){const deadline=Date.now()+30000;while(!fs.existsSync(report)&&!fs.existsSync(failure)&&Date.now()<deadline)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,100);}
   if (fs.existsSync(failure)) {
     const log = path.join(directory, 'logs/current.jsonl');
     if (fs.existsSync(log)) {
@@ -60,6 +63,12 @@ function launch(persisted = false) {
       "Packaged application did not complete the current smoke-test protocol",
     );
   const actual = JSON.parse(fs.readFileSync(report, "utf8"));
+  if(process.env.SODECK_TEST_LOGIN_RESTART==='1'&&Number.isInteger(actual.pid)){
+    const deadline=Date.now()+10000;let running=true;
+    while(running&&Date.now()<deadline){try{process.kill(actual.pid,0);Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,50);}catch(error){if(error.code==='ESRCH')running=false;else throw error;}}
+    if(running)throw Error('Replacement smoke process reported before completing exit');
+  }
+  if(process.env.SODECK_TEST_LOGIN_RESTART==='1'&&(!actual.desktopStartupNative||!actual.loginRegistrationIoNative||!actual.loginRestartNative))throw Error('Login startup, registration IO or replacement restart validation missing');
   if(process.env.SODECK_REQUIRE_DESKTOP_SHELL==='1' && !actual.desktopShellNative) throw new Error('Native tray/background package validation missing');
   if(process.env.SODECK_REQUIRE_DESKTOP_SHELL==='1' && actual.target==='aarch64-apple-darwin' && !actual.macosApplicationPolicyNative) throw new Error('Native macOS application policy validation missing');
   if(process.env.SODECK_PACKAGE_ONLY==='1' && !actual.pluginIconsNative) throw new Error('Native plugin icon package validation missing');

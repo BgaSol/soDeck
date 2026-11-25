@@ -20,6 +20,8 @@
 
 系统托盘使用 Tauri 原生 AppIndicator 后端；Linux 构建安装 `libayatana-appindicator3-dev`，实际包运行验收安装 `libayatana-appindicator3-1`。DEB/AppImage 继续由标准 Tauri 打包器处理依赖，不通过开发机手工复制库。图标是否显示仍受桌面环境影响，窗口回退见[桌面行为](features/settings.md#托盘与后台运行)。
 
+登录启动的安装位置和清理限制见[桌面设置](features/settings.md#登录后自动启动)。Windows 的标准 [NSIS hook](../src-tauri/installer-hooks.nsh)只清理当前用户中与本安装路径匹配的 `com.bgasol.sodeck` Run 值，`/UPDATE` 保留登记；不提升为全机自启。macOS/DEB 解包烟测不将临时运行目录登记为真实登录项，AppImage 登记必须使用外层文件。
+
 正式核心更新包使用 [tauri.release.conf.json](../src-tauri/tauri.release.conf.json) 和固定的 Tauri 官方 updater 签名。公钥提交到 Tauri 配置，私钥保存在维护者用户目录 .sodeck-signing/updater.key，并配置为 Actions 的 TAURI_SIGNING_PRIVATE_KEY Secret，绝不提交私钥；密码使用 TAURI_SIGNING_PRIVATE_KEY_PASSWORD，初始无密码密钥留空。必须备份原私钥，更换公钥会影响旧客户端升级。此签名与商业代码签名或插件授权无关，本地普通构建无需私钥。
 
 发行清单始终保存原始 GitHub Release URL、版本、平台和哈希/签名；客户端备用传输地址不改变发行来源。核心下载、安装和已准备包的离线验签恢复继续使用官方 updater。插件使用归档 SHA-256 和基本清单检查，不增加插件签名信任链。
@@ -94,7 +96,7 @@ Windows 插件在自身工程目录运行 Cargo，以应用静态运行库配置
 | 层次 | 实际范围与限制 |
 | --- | --- |
 | 源码与浏览器 | 格式、类型、脚本、Rust 及相关真实业务；正式前端产物回归不能替代原生 WebView、系统指针/IME/DPI |
-| 核心实际包 | 五原生目标构建、签名，安装/解包 EXE、DEB、DMG 后启动包内程序，AppImage 和 macOS updater tar 另验启动退出；Windows 分别验证当前用户/所有用户安装的默认目录、登记、启动及卸载；保存资料、重开和退出；不运行 SSH/工作台/默认应用业务 |
+| 核心实际包 | 五原生目标构建、签名，安装/解包 EXE、DEB、DMG 后启动包内程序，AppImage 和 macOS updater tar 另验启动退出；Windows 分别验证当前用户/所有用户安装的默认目录、登记、启动及卸载；保存资料、重开和退出；登录来源后台、第二进程激活、真实关闭协调器重启及隔离系统登记 IO；不运行 SSH/工作台/默认应用业务，也不等同真实注销登录 |
 | 独立插件包 | 每个插件五平台原生产物及其包内程序启动、生命周期、资源和退出；系统状态/Docker 的进程验收不等于所有真实远端系统或 Engine 验收 |
 | 远程实际包组合 | Verify native remote plugins 核验明确来源的核心、终端、文件及可选网络包，在原生 WebView/Channel 下验证 PTY、读写下载、网络、移窗与重开退出 |
 | 升级 | Verify published release upgrade 使用明确旧/新正式版本，验证生产更新服务、官方 updater、实际安装字节和资料保留；Linux 另验 DEB 系统升级，不代替完整桌面操作 |

@@ -18,7 +18,7 @@ pub struct Store {
     pub preferences: Preferences,
     pub errors: [Option<String>; 4],
     pub recent: VecDeque<LogRecord>,
-    _lock: File,
+    _lease: crate::app_data::Lease,
     blocked: [bool; 3],
 }
 
@@ -55,23 +55,15 @@ pub fn write_json(path: &Path, value: &impl Serialize) -> Result<(), String> {
 }
 
 impl Store {
+    #[cfg(test)]
     pub fn open(root: PathBuf) -> Result<Self, String> {
-        fs::create_dir_all(&root).map_err(|error| format!("无法创建应用数据目录：{error}"))?;
-        let lock = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(root.join("app.lock"))
-            .map_err(|error| format!("无法打开应用数据锁：{error}"))?;
-        // Tauri spawns the replacement just before the old process exits during restart.
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        while lock.try_lock().is_err() {
-            if std::time::Instant::now() >= deadline {
-                return Err("应用数据正在被另一个 SoDeck 实例使用，请先关闭它。".into());
-            }
-            std::thread::sleep(std::time::Duration::from_millis(25));
-        }
+        let lease = crate::app_data::Lease::acquire(&root)
+            .map_err(|e| format!("无法取得应用数据锁：{e}"))?;
+        Self::open_locked(lease)
+    }
+
+    pub fn open_locked(lease: crate::app_data::Lease) -> Result<Self, String> {
+        let root = lease.root.clone();
         let (plugins, plugin_error) = read_json(&root.join("plugins.json"));
         let (messages, message_error) = read_json(&root.join("messages.json"));
         let (preferences, preference_error) = read_json(&root.join("preferences.json"));
@@ -87,7 +79,7 @@ impl Store {
             preferences,
             errors: [plugin_error, message_error, preference_error, None],
             recent: VecDeque::new(),
-            _lock: lock,
+            _lease: lease,
             blocked,
         };
         if let Err(error) = fs::create_dir_all(store.root.join("logs")) {

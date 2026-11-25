@@ -41,8 +41,8 @@ export function settingsNavigation(section:SettingsSection|null, componentNaviga
   const nav = (id:SettingsSection, label:string, symbol:string) => `<li>${b("section",`<span>${label}</span>`,symbol,"console-settings-item",`id="settings-nav-${id}" data-id="${id}" aria-current="${id === section ? "page" : "false"}"`)}</li>`;
   return nav("appearance","外观","sun")+componentNavigation+nav("about","应用与数据","info");
 }
-export function settings(s:Snapshot, section:SettingsSection) {
-  return `<section class="settings-page" data-scroll="settings" data-settings-section="${section}" ${section === "components" ? 'id="component-settings-page"' : ""}>${section === "components" ? "" : section === "appearance" ? appearance(s) : about(s)}</section>`;
+export function settings(s:Snapshot, section:SettingsSection, applicationSettings = "") {
+  return `<section class="settings-page" data-scroll="settings" data-settings-section="${section}" ${section === "components" ? 'id="component-settings-page"' : ""}>${section === "components" ? "" : section === "appearance" ? appearance(s) : about(s, applicationSettings)}</section>`;
 }
 export function maintenance(s:Snapshot, v:ViewState, page:"plugins"|"updates") {
   return `<div class="maintenance-main"><section class="maintenance-page" data-scroll="${page}">${page === "plugins" ? pluginsPage(s,v) : updatesPage(s,v)}</section>${pendingUpdates(s,v)}</div>`;
@@ -55,8 +55,8 @@ function appearance(s: Snapshot) {
     )
     .join("")}</div><p class="hint">立即生效，重新打开应用后保留。</p>`;
 }
-function about(s: Snapshot) {
-  return `<div class="section-heading"><div><h2>应用与数据</h2><p>应用信息和本地数据位置。</p></div></div><h3 class="field-title">窗口行为</h3><div class="setting-row"><label class="setting-label" for="close-behavior">关闭主窗口时</label><select id="close-behavior"><option value="background" ${s.preferences.closeBehavior!=='exit'?'selected':''}>在后台继续运行（推荐）</option><option value="exit" ${s.preferences.closeBehavior==='exit'?'selected':''}>退出应用</option></select></div><p class="hint">${s.os==='linux'?'关闭后最小化，保留窗口切换入口。':s.os==='macos'?'关闭后保留连接和任务；没有其他工作窗口时，仅在屏幕顶部菜单栏保留入口。可从菜单栏重新打开或退出。':'关闭后隐藏到托盘，已有连接和任务继续运行。'} 从托盘菜单选择“退出 SoDeck”可结束应用。选择后立即保存。</p><div class="about-brand"><div class="brand-mark">S</div><div><h3>SoDeck</h3><p>面向运维的远程服务器工作台</p></div></div><dl>${pair("应用版本", s.version)}${pair("构建目标", s.target)}${pair("数据目录", s.dataDirectory)}${pair("日志目录", s.logDirectory)}</dl><div class="actions">${b("usage-help", "使用帮助", "info")}${b("copy-data", "复制数据路径", "copy")}${b("copy-logs", "复制日志路径", "copy", "quiet")}</div><p class="hint">插件文件保留在你选择的外部目录。卸载或覆盖安装核心不会主动清理这些数据。</p>`;
+function about(s: Snapshot, applicationSettings: string) {
+  return `<div class="section-heading"><div><h2>应用与数据</h2><p>应用信息和本地数据位置。</p></div></div><h3 class="field-title">启动与窗口</h3>${applicationSettings}<h3 class="field-title">窗口行为</h3><div class="setting-row"><label class="setting-label" for="close-behavior">关闭主窗口时</label><select id="close-behavior"><option value="background" ${s.preferences.closeBehavior !== "exit" ? "selected" : ""}>在后台继续运行（推荐）</option><option value="exit" ${s.preferences.closeBehavior === "exit" ? "selected" : ""}>退出应用</option></select></div><p class="hint">${s.os === "linux" ? "关闭后最小化，保留窗口切换入口。" : s.os === "macos" ? "关闭后保留连接和任务；没有其他工作窗口时，仅在屏幕顶部菜单栏保留入口。可从菜单栏重新打开或退出。" : "关闭后隐藏到托盘，已有连接和任务继续运行。"} 从托盘菜单选择“退出 SoDeck”可结束应用。选择后立即保存。</p><div class="about-brand"><div class="brand-mark">S</div><div><h3>SoDeck</h3><p>面向运维的远程服务器工作台</p></div></div><dl>${pair("应用版本", s.version)}${pair("构建目标", s.target)}${pair("数据目录", s.dataDirectory)}${pair("日志目录", s.logDirectory)}</dl><div class="actions">${b("usage-help", "使用帮助", "info")}${b("copy-data", "复制数据路径", "copy")}${b("copy-logs", "复制日志路径", "copy", "quiet")}</div><p class="hint">插件文件保留在你选择的外部目录。卸载或覆盖安装核心不会主动清理这些数据。</p>`;
 }
 
 export function logs(s: Snapshot, v: ViewState) {

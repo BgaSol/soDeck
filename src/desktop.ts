@@ -10,6 +10,7 @@ interface DesktopState {
   trayAvailable?:boolean;
   navigation:{id:number;target:'messages'|'settings'}|null;
   background:{id:number;generation:number}|null;
+  problem?:{id:number;message:string}|null;
 }
 
 /** Native state is recoverable; events only wake this reader. */
@@ -21,6 +22,7 @@ export class DesktopUi {
   private state?:DesktopState;
   private background=0;
   private navigation=0;
+  private problem=0;
   constructor(private win:Window, private shell:Shell, private navigate:(target:'messages'|'settings')=>void, private prepare:()=>Promise<boolean>,private notify:(message:string)=>void){}
   async listen() {
     this.listeners.push(await listen('desktop-state-changed',()=>void this.refresh().catch(e=>this.notify(String(e)))));
@@ -32,8 +34,9 @@ export class DesktopUi {
     if(state.trayAvailable===false)this.notify(this.shell.snapshot?.os==='linux'?'系统托盘不可用，可通过任务栏或窗口切换返回。':'系统托盘不可用，关闭主窗口将退出应用。');
     await this.refresh();
   }
+  async initialize(){this.apply(await invoke<DesktopState>('desktop_state'));}
   private visibility=()=>{if(this.state)this.shell.setWindowVisible(this.state.visible&&document.visibilityState!=='hidden');};
-  private apply(state:DesktopState){this.state=state;this.visibility();}
+  private apply(state:DesktopState){this.state=state;this.visibility();if(state.visible&&state.problem&&this.problem!==state.problem.id){this.problem=state.problem.id;this.notify(state.problem.message);}}
   refresh():Promise<void> {
     if(this.reading){this.again=true;return this.reading;}
     this.reading=(async()=>{do{

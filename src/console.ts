@@ -2,6 +2,7 @@ import { enterMotion, exitMotion, captureMotion, settleMotion } from './motion.j
 import { listen, type UnlistenFn, type EventCallback } from "@tauri-apps/api/event";
 import type { Window } from "@tauri-apps/api/window";
 import {DesktopUi, chooseLocalPath} from "./desktop";
+import {ApplicationSettings} from './application-settings';
 import { invoke } from "@tauri-apps/api/core";
 import { Workspaces, type DropPreview } from "./workspaces";
 import { core, type Snapshot, type Message } from "./core";
@@ -28,6 +29,7 @@ async function restart(install: boolean) {
 }
 const pageHost = shell.page;
 const componentSettings = new ComponentSettings(() => { if (["settings","plugins","updates"].includes(currentPage)) renderPage(); });
+const applicationSettings=new ApplicationSettings(()=>{if(currentPage==='settings'&&settingsSection==='about')renderPage();},refresh);
 workspaces.setCloseParticipants(async (decision,operationId)=>{await hostDrafts.flushInputs();return [...await (servers?.closeInputs(decision)??Promise.resolve([])),...await componentSettings.closeInputs(decision,operationId),...await hostDrafts.closeInputs(decision)];},blocked=>servers?.setCloseBlocked(blocked));
 let snapshot: Snapshot | undefined;
 let currentPage:ConsolePage = 'connections';
@@ -90,12 +92,13 @@ function content() {
   if (!snapshot)
     return `<div class="error-box">无法读取应用状态：${e(lastError)}<br>${b("refresh", "重新读取")}</div>`;
   if (currentPage === "status") return views.status(pausedStatus ?? snapshot, statusView);
-  if (currentPage === "settings") return views.settings(snapshot, settingsSection);
+  if (currentPage === "settings") return views.settings(snapshot, settingsSection,applicationSettings.render(snapshot.os));
   if (currentPage === "plugins" || currentPage === "updates") return views.maintenance(snapshot, state, currentPage);
   if (currentPage === "logs") return views.logs(snapshot, state);
   return views.messages(state);
 }
 function renderPage(navigating = false) {
+  applicationSettings.mount(currentPage==='settings'&&settingsSection==='about');
   shell.updateSettingsNavigation(views.settingsNavigation(currentPage === "settings" ? settingsSection : null,componentSettings.navigation(currentPage === "settings" && settingsSection === "components")));
   const error = document.querySelector<HTMLElement>("#layer-error");
   if (error) { error.textContent = lastError ? `${lastError}；保留上次读取结果。` : ""; error.hidden = !lastError || !snapshot; }
@@ -493,6 +496,9 @@ root.addEventListener("click", (event) => {
       case "copy-data":
         if (snapshot) await copy(snapshot.dataDirectory);
         break;
+      case "login-startup-retry":
+        await applicationSettings.refresh();
+        break;
       case "copy-logs":
         if (snapshot) await copy(snapshot.logDirectory);
         break;
@@ -514,10 +520,7 @@ root.addEventListener("click", (event) => {
 let queryTimer: ReturnType<typeof setTimeout>;
 root.addEventListener("input", (event) => {
   const input = event.target as HTMLInputElement;
-  if(input.id==='close-behavior'&&snapshot){
-    const behavior=input.value;if(behavior!=='background'&&behavior!=='exit')return;
-    void action(async()=>{input.disabled=true;try{await core.closeBehavior(behavior);if(snapshot)snapshot.preferences.closeBehavior=behavior;}finally{input.disabled=false;await refresh();renderPage();}});return;
-  }
+  if(input.id==='close-behavior'&&applicationSettings.input(input))return;
   if (snapshot && networkInput(input, snapshot, state)) { if (!(event as InputEvent).isComposing) renderPage(); return; }
   if (input.dataset.source && state.plugin) {
     hostDrafts.input(state.plugin, input.dataset.source, input.value);
@@ -535,6 +538,7 @@ root.addEventListener("change", (event) => {
   if (snapshot && networkInput(input, snapshot, state)) { renderPage(); return; }
   if (input.dataset.updateSelect) { input.checked ? state.excludedUpdates.delete(input.dataset.updateSelect) : state.excludedUpdates.add(input.dataset.updateSelect); renderPage(); return; }
   if (input.id === "automatic-updates") { void action(() => core.automaticUpdates(input.checked)); return; }
+  if(input.id==='login-startup'&&applicationSettings.input(input))return;
   if (input.id === "log-source") state.filter.pluginId = input.value;
   else if (input.id === "log-level") state.filter.level = input.value;
   else if (input.id === "log-since")
@@ -553,9 +557,10 @@ async function subscribe<T>(name:string,callback:EventCallback<T>) {
   const unlisten=await listen<T>(name,callback);
   if(hostDisposed)unlisten();else hostListeners.push(unlisten);
 }
-window.addEventListener("pagehide",()=>{hostDisposed=true;desktop.dispose();clearTimeout(refreshTimer);clearTimeout(queryTimer);servers?.dispose();componentSettings.dispose();hostDrafts.dispose();clearInterval(statusTimer);hostListeners.forEach(fn=>fn());picker?.dispose();workspaces.dispose();shell.dispose();},{once:true});
+window.addEventListener("pagehide",()=>{hostDisposed=true;applicationSettings.dispose();desktop.dispose();clearTimeout(refreshTimer);clearTimeout(queryTimer);servers?.dispose();componentSettings.dispose();hostDrafts.dispose();clearInterval(statusTimer);hostListeners.forEach(fn=>fn());picker?.dispose();workspaces.dispose();shell.dispose();},{once:true});
 async function start() {
   await desktop.listen();
+  await desktop.initialize();
   await subscribe("core-changed", scheduleRefresh);
   await subscribe<SettingsSnapshot>("core-settings-changed", event => componentSettings.changed(event.payload));
   await subscribe<Parameters<ComponentSettings["applied"]>[0]>("core-settings-application", event => componentSettings.applied(event.payload));
@@ -569,7 +574,7 @@ async function start() {
     toast(event.payload.title, event.payload);
     scheduleRefresh();
   });
-  await subscribe<string>("core-desktop-error", event => toast(event.payload,undefined,true));
+  await subscribe("login-startup-changed",()=>{if(currentPage==='settings'&&settingsSection==='about')void applicationSettings.refresh();});
   await subscribe<string>("core-exit-error", (event) =>
     toast(`退出未完成：${event.payload}`, undefined, true),
   );

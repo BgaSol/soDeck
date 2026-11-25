@@ -99,6 +99,31 @@ pub(crate) struct StagedWindow {
 }
 
 impl DesktopShell {
+    pub(super) fn background_on_main(&self, handle: &tauri::AppHandle) -> Result<(), String> {
+        let window = handle.get_webview_window("main").ok_or("主窗口不存在")?;
+        let result: Result<(), String> = (|| {
+            if cfg!(target_os = "linux") {
+                if !window.is_visible().map_err(|e| e.to_string())? {
+                    window.show().map_err(|e| e.to_string())?;
+                }
+                window.minimize().map_err(|e| e.to_string())?;
+            } else if self.tray_available() {
+                window.hide().map_err(|e| e.to_string())?;
+            } else {
+                return Err("系统托盘不可用，窗口保持可见".into());
+            }
+            self.apply_background_policy(handle)?;
+            self.state.lock().unwrap().main_backgrounded = true;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            let recovery = self.present_on_main(handle, "main", false);
+            return Err(format!("收起未完成：{error}；窗口恢复：{recovery:?}"));
+        }
+        Self::changed(handle);
+        Ok(())
+    }
+
     pub fn present(
         &self,
         handle: &tauri::AppHandle,

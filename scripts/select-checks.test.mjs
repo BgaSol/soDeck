@@ -298,3 +298,11 @@ test('directory model and action tests select their frontend consumer without un
 test('Docker session fixtures select real Docker business checks',()=>{for(const file of ['scripts/docker-logs-fixture.mjs','scripts/test-docker-logs-process.mjs']){const plan=selectChecks([file]);assert(plan.scripts);assert(plan.integration.some(t=>t.docker));}});
 
 test('native desktop shell selects core targets and browser regression without plugin releases',()=>{const p=selectChecks(['src-tauri/src/desktop_shell.rs','src-tauri/src/desktop_shell/presentation.rs']);assert.equal(p.native.length,5);assert(p.native.every(r=>r.core));assert(p.browser);assert.deepEqual(p.plugins,[]);});
+
+test('login startup ownership, native IPC and setting UI retain their required checks',()=>{
+  for(const file of ['src-tauri/src/app_data.rs','src-tauri/src/desktop_startup.rs','src-tauri/src/desktop_startup/instance.rs','src-tauri/src/login_startup.rs']){
+    const p=selectChecks([file]);assert.equal(p.native.length,5);assert(p.native.every(r=>r.core));assert(p.browser);
+  }
+  assert(selectChecks(['scripts/test-application-settings-ui.mjs']).web);
+  assert(JSON.parse(fs.readFileSync('package.json','utf8')).scripts['ui:test'].includes('test-application-settings-ui.mjs'));
+});

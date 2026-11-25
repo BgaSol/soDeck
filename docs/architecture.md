@@ -24,6 +24,10 @@
 
 [plugin-client](../crates/plugin-client/src/lib.rs) 提供 RPC、命令票据、设置、共享状态和文件编辑生命周期客户端，不保存连接凭据，也不封装插件之间的直接调用。文件编辑的标准 UI 在 [packages/file-editor](../packages/file-editor/)，随使用组件独立打包；[接入与职责](features/file-editor.md)由通用编辑功能说明维护。
 
+桌面[启动准入](../src-tauri/src/desktop_startup.rs)在事件循环与业务 setup 前解析当前用户数据目录，先取得唯一[数据锁凭据](../src-tauri/src/app_data.rs)，再把凭据连续移交给 Store 和 AppCore。配置主窗口保留为隐藏创建模板，由 DesktopWindows 同时负责首次与异常恢复创建；第二实例不打开核心、不启动插件和 streams 清理。已有实例激活只传固定显示请求，Windows 通过当前用户 ACL 命名管道并核对服务进程用户，Unix 通过私有目录 socket 与对端用户检查；不扩展为业务 RPC。替换重启有限等待旧锁释放，不向即将结束的旧进程转交打开请求。
+
+启动上下文消费一次性登录来源，向 Tauri 提供统一归一化 Env，普通重启及 Windows updater 共用该参数来源。登录后台与用户关闭共用呈现层原生动作；关闭的首次说明和前端预检仍只属于关闭流程。桌面错误保留可读快照，前端首次挂载前先取得实际可见性。独立[登录项适配](../src-tauri/src/login_startup.rs)读取系统事实、串行修改与退出前收束，不写入核心偏好 JSON；[应用设置界面](../src/application-settings.ts)按页面和焦点读取，与组件设置分工。原生 finalizer 在官方 updater 可能直接退出前完成必要清理，保留原数据锁和关闭协调器的失败事实；具体行为见[登录启动](features/settings.md#登录后自动启动)。
+
 短命令、命令捕获和终端通过 [remote_execution.rs](../src-tauri/src/remote_execution.rs) 共用通道启动、读写、退出和取消循环；[execution_output.rs](../src-tauri/src/execution_output.rs) 只包含既有内存结果、Capture 和 Replay 三种输出。各服务仍管理自己的接纳、额度与持久结果，不设第四张全局资源表。[session_process.rs](../src-tauri/src/session_process.rs) 替代原命令流资源表，提供原进程的有界顺序输入；正文订阅、固定阅读与 ACK 位于 session_process/output。MCP 管理调查任务、调用端输入身份与本地证据；提示解释和输入内容由客户端决定。
 
 进程正文由[session_process/output.rs](../src-tauri/src/session_process/output.rs)复用核心会话，[capture.rs](../src-tauri/src/streams/capture.rs)管理有界原始字节与固定阅读范围；[content_export.rs](../src-tauri/src/content_export.rs)只负责用户选择的本地字节导出。契约统一见[插件API](plugin-api.md)。Docker命令、原字节解析、源时间、级别、有界记录、历史覆盖、查询、冻结导出与任务代次属于插件进程的日志会话；Docker UI通过有界只读查询呈现投影、测量折行与保存阅读锚点。Surface不是日志任务所有者，重挂载不重开命令。核心不保存容器日志索引，不导入Docker正文样式；颜色和基础控件继续复用packages/ui。

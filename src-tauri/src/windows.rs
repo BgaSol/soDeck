@@ -491,7 +491,7 @@ impl DesktopWindows {
             native_moves: Mutex::new(Default::default()),
         }
     }
-    pub(crate) fn ensure_main_display(&self, handle: &tauri::AppHandle) -> Result<(), String> {
+    pub fn ensure_main_display(&self, handle: &tauri::AppHandle) -> Result<(), String> {
         if handle.get_webview_window("main").is_some() || self.core.is_closing() {
             return Ok(());
         }
@@ -502,7 +502,7 @@ impl DesktopWindows {
             .first()
             .ok_or("主窗口配置缺失")?;
         let result = tauri::WebviewWindowBuilder::from_config(handle, config)
-            .and_then(|builder| builder.visible(false).build());
+            .and_then(|builder| builder.visible(false).focused(false).build());
         if let Err(error) = result {
             self.core.log(
                 None,
