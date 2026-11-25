@@ -12,15 +12,19 @@ const env={...process.env,SODECK_TEST_DATA_DIR:data,SODECK_PACKAGE_ONLY:'1',SODE
 const child=spawn(process.execPath,['scripts/smoke.mjs',binary],{env,stdio:'inherit'});
 const completed=new Promise(resolve=>{child.once('error',error=>resolve({error}));child.once('exit',(code,signal)=>resolve({code,signal}));});
 const deadline=Date.now()+90000;
-let inspected=false;
+let inspected=false,captureError;
 while(Date.now()<deadline){
   if(fs.existsSync(path.join(data,'macos-login-enabled.json'))){
+    try{
     const btm=spawnSync('/usr/bin/sfltool',['dumpbtm'],{encoding:'utf8',timeout:10000});
     fs.writeFileSync(path.join(output,'login-items.txt'),btm.stdout??'');
-    const settings=spawnSync('/usr/bin/osascript',['-e','tell application "System Settings" to reveal pane id "com.apple.LoginItems-Settings.extension"'],{encoding:'utf8',timeout:10000});
-    await new Promise(resolve=>setTimeout(resolve,2000));
+    assert.equal(btm.status,0,btm.stderr);
+    assert(btm.stdout.includes(app),'System background-task record does not identify the installed SoDeck.app');
+    const settings=spawnSync('/usr/bin/open',['x-apple.systempreferences:com.apple.LoginItems-Settings.extension'],{encoding:'utf8',timeout:10000});
+    await new Promise(resolve=>setTimeout(resolve,5000));
     const screenshot=spawnSync('/usr/sbin/screencapture',['-x',path.join(output,'login-items.png')],{encoding:'utf8',timeout:5000});
     fs.writeFileSync(path.join(data,'macos-login-inspected.json'),JSON.stringify({btm:btm.status,settings:settings.status,screenshot:screenshot.status}));
+    }catch(error){captureError=error;fs.writeFileSync(path.join(data,'macos-login-inspected.json'),JSON.stringify({error:String(error)}));}
     inspected=true;break;
   }
   const result=await Promise.race([completed,new Promise(resolve=>setTimeout(()=>resolve(null),100))]);
@@ -28,6 +32,7 @@ while(Date.now()<deadline){
 }
 assert(inspected,'Main application login registration was not observed');
 const result=await completed;assert.equal(result.code,0,JSON.stringify(result));
+if(captureError)throw captureError;
 const receipt=JSON.parse(fs.readFileSync(path.join(data,'macos-login-service.json'),'utf8'));
 assert(receipt.enabled&&receipt.migrated&&receipt.disabled&&receipt.processContinued);
 const launcher=path.join(output,'login-event');

@@ -89,15 +89,28 @@ pub fn set(enabled: bool) -> Result<(), String> {
         );
     }
     if let Some(entry) = old {
-        if let Err(error) = legacy::remove(&entry) {
-            // Never bootout: the legacy job may own this application's current process.
-            let rollback = if before != State::Enabled {
-                native::set(false)
-            } else {
-                Ok(())
-            };
-            return Err(match rollback { Ok(()) => error, Err(rollback) => format!("{error}；新登记回退也未完成：{rollback}。请检查系统登录项，当前可能存在两份登记。") });
-        }
+        // Never bootout: the legacy job may own this application's current process.
+        finish_migration(
+            before != State::Enabled,
+            || legacy::remove(&entry),
+            || native::set(false),
+        )?;
+    }
+    Ok(())
+}
+
+fn finish_migration(
+    created: bool,
+    remove: impl FnOnce() -> Result<(), String>,
+    undo: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    if let Err(error) = remove() {
+        return Err(match if created { undo() } else { Ok(()) } {
+            Ok(()) => error,
+            Err(rollback) => format!(
+                "{error}；新登记回退也未完成：{rollback}。请检查系统登录项，当前可能存在两份登记。"
+            ),
+        });
     }
     Ok(())
 }
@@ -171,6 +184,44 @@ pub fn launched_at_login() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn failed_cleanup_only_rolls_back_a_new_registration_and_reports_both_failures() {
+        use std::cell::Cell;
+        let called = Cell::new(false);
+        let result = finish_migration(
+            true,
+            || Err("旧文件只读".into()),
+            || {
+                called.set(true);
+                Ok(())
+            },
+        );
+        assert!(called.get());
+        assert_eq!(result.unwrap_err(), "旧文件只读");
+        assert!(finish_migration(
+            false,
+            || Err("旧文件只读".into()),
+            || panic!("Must retain pre-existing native registration")
+        )
+        .is_err());
+        let error = finish_migration(
+            true,
+            || Err("旧文件只读".into()),
+            || Err("系统拒绝撤销".into()),
+        )
+        .unwrap_err();
+        assert!(
+            error.contains("旧文件只读")
+                && error.contains("系统拒绝撤销")
+                && error.contains("两份登记")
+        );
+        assert!(finish_migration(
+            true,
+            || Ok(()),
+            || panic!("Successful migration must retain new registration")
+        )
+        .is_ok());
+    }
     #[test]
     fn old_and_new_registration_facts_are_not_conflated() {
         for (current, old, enabled, state) in [
