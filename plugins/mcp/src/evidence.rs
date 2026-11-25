@@ -42,13 +42,15 @@ pub fn task_metadata(task: &Task, r: &Record) -> Value {
     value
 }
 pub fn metadata(directory: &Path, value: &Value) -> Result<(), String> {
-    let temporary = directory.join("metadata.tmp");
-    let mut file = File::create(&temporary).map_err(|e| e.to_string())?;
+    let directory = fs::canonicalize(directory).map_err(|e| e.to_string())?;
+    let mut file = tempfile::NamedTempFile::new_in(&directory).map_err(|e| e.to_string())?;
     serde_json::to_writer(&mut file, value).map_err(|e| e.to_string())?;
     file.write_all(b"\n")
-        .and_then(|_| file.sync_all())
+        .and_then(|_| file.as_file().sync_all())
         .map_err(|e| e.to_string())?;
-    fs::rename(temporary, directory.join("metadata.json")).map_err(|e| e.to_string())
+    file.persist(directory.join("metadata.json"))
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 pub struct Output {
     file: File,
@@ -242,6 +244,31 @@ pub fn tail(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn metadata_replaces_existing_records_and_cleans_failed_staging() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = fs::canonicalize(root.path())
+            .unwrap()
+            .join("data".repeat(30))
+            .join("data".repeat(30));
+        fs::create_dir_all(&directory).unwrap();
+        metadata(&directory, &json!({"revision":1})).unwrap();
+        metadata(&directory, &json!({"revision":2})).unwrap();
+        let target = directory.join("metadata.json");
+        assert_eq!(
+            serde_json::from_slice::<Value>(&fs::read(&target).unwrap()).unwrap()["revision"],
+            2
+        );
+        fs::rename(&target, directory.join("previous.json")).unwrap();
+        fs::create_dir(&target).unwrap();
+        assert!(metadata(&directory, &json!({"revision":3})).is_err());
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 2);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&fs::read(directory.join("previous.json")).unwrap())
+                .unwrap()["revision"],
+            2
+        );
+    }
     use serde_json::json;
     #[test]
     fn metadata_v3_owns_its_schema_and_serializes_the_given_record() {

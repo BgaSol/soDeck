@@ -8,6 +8,7 @@ mod input;
 mod mcp;
 mod query;
 mod response;
+mod schema;
 mod servers;
 mod targets;
 mod task;

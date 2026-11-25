@@ -1,3 +1,4 @@
+import {blockTarget,restoreTarget} from './write-failure-fixture.mjs';
 import {withProcessFacts,processFacts} from './process-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -12,6 +13,8 @@ import {setTimeout as delay} from 'node:timers/promises';
 const root=testPluginDirectory('mcp'),manifest=JSON.parse(fs.readFileSync(path.join(root,'plugin.json')));
 assert.deepEqual(manifest.ui.views.map(({id,container})=>({id,container})),[{id:'status',container:'sidebar'}],'MCP contributes only its existing sidebar');
 assert.equal(manifest.name,'Agent MCP');assert.equal(manifest.ui.views[0].title,'Agent MCP');assert.equal(manifest.settings.pages[0].title,'Agent MCP');
+const blockMetadata=directory=>blockTarget(path.join(directory,'metadata.json'));
+const restoreMetadata=directory=>restoreTarget(path.join(directory,'metadata.json'));
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-mcp-process-'));
 const socket=net.createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r));
 const contexts=Object.fromEntries(['a','b','c'].map(view=>[view,{workspaceId:view,serverId:'server-'+view,connectionId:'connection-'+view,generation:1}]));
@@ -86,7 +89,7 @@ peer=pluginPeer(path.join(root,manifest.entry),withProcessFacts((method,p)=>{
     if(p.action==='lookup') {const found=[...files].find(([,v])=>v.requestId===p.requestId);if(found)return {id:found[0],state:'running'};throw new Error('not found');}
     if(p.action==='poll') {const request=files.get(p.operationId);if(request.operation.destination.path==='/upload-unknown')return {id:p.operationId,state:'unknown',transfer:{commitState:'unknown',commitAttempted:true,temporaryPath:'/tmp/unresolved'},error:{code:'unknown',message:'lost commit ack'}};
       if(request.operation.destination.path==='/upload-cancel')return {id:p.operationId,state:request.cancelled?'cancelled':'running',transfer:{commitState:request.cancelled?'notCommitted':'pending',commitAttempted:false}};
-      if(request.operation.destination.path==='/upload-record-fail'){const location=path.join(directory,'evidence',path.basename(directory));const taskDirectory=fs.readdirSync(path.join(directory,'evidence')).flatMap(run=>{const root=path.join(directory,'evidence',run);return fs.readdirSync(root).filter(task=>task===request.batchId).map(task=>path.join(root,task));})[0];fs.mkdirSync(path.join(taskDirectory,'metadata.tmp'),{recursive:true});}
+      if(request.operation.destination.path==='/upload-record-fail'){const location=path.join(directory,'evidence',path.basename(directory));const taskDirectory=fs.readdirSync(path.join(directory,'evidence')).flatMap(run=>{const root=path.join(directory,'evidence',run);return fs.readdirSync(root).filter(task=>task===request.batchId).map(task=>path.join(root,task));})[0];blockMetadata(taskDirectory);}
       if(request.operation.source.side==='localPath')return {id:p.operationId,state:'completed',received:'3',total:'3',transfer:{commitState:'committed',commitAttempted:true,sourceVersion:'source-1'},result:{size:'3'}};return {id:p.operationId,state:'completed',result:{size:String(bytes.length)}};}
     if(p.action==='release'){const request=files.get(p.operationId);files.delete(p.operationId);if(request.operation.source.path==='/cleanup-failure')throw new Error('release failed');return {};}
     if(p.action==='cancel'){files.get(p.operationId).cancelled=true;return {};}
@@ -318,13 +321,13 @@ try{
     const result=await until(async()=>(await tool('sodeck_task_get',{taskId:uploaded.taskId,detail:true})).value,s=>s.done);
     assert.equal(result.file.commitState,destination==='/upload-unknown'?'unknown':destination==='/upload-cancel'?'notCommitted':'committed');
     assert.equal(result.evidence.complete,false);assert.equal((await tool('sodeck_file_upload',params)).value.taskId,uploaded.taskId);
-    if(destination==='/upload-record-fail'){assert.equal(result.resourceReleased,false);assert.equal(result.evidence.state,'failed');fs.rmdirSync(path.join(result.directory,'metadata.tmp'));}
+    if(destination==='/upload-record-fail'){assert.equal(result.resourceReleased,false);assert.equal(result.evidence.state,'failed');restoreMetadata(result.directory);}
   }
   const failing=(await tool('sodeck_exec_start',{...input,requestId:'final-save-fail',command:'final-save-fail',waitMs:0})).value;await until(async()=>typeof releaseGate==='function',Boolean);
   const finalizing=(await tool('sodeck_task_get',{taskId:failing.taskId,detail:true,outputMode:'none'})).value;assert.equal(finalizing.phase,'finalizing');assert.equal(finalizing.done,false);assert.equal(finalizing.evidence.complete,false);
   assert.equal((await tool('sodeck_task_cancel',{taskId:failing.taskId})).value.cancelRequested,false);
-  fs.mkdirSync(path.join(finalizing.directory,'metadata.tmp'));releaseGate({releaseRequested:true,resourceReleased:true,status:processFacts({workerFinished:true,state:'completed'})});const failed=await until(async()=>(await tool('sodeck_task_get',{taskId:failing.taskId,outputMode:'none'})).value,s=>s.done);assert.equal(failed.evidence.state,'failed');assert.equal(failed.evidence.complete,false);assert.equal(failed.resourceReleased,true);
-  fs.rmdirSync(path.join(finalizing.directory,'metadata.tmp'));assert.deepEqual((await tool('sodeck_task_get',{taskId:failing.taskId,outputMode:'none'})).value,failed);assert.equal(JSON.parse(fs.readFileSync(path.join(finalizing.directory,'metadata.json'))).phase,'finalizing','failed final save leaves last valid disk facts');
+  blockMetadata(finalizing.directory);releaseGate({releaseRequested:true,resourceReleased:true,status:processFacts({workerFinished:true,state:'completed'})});const failed=await until(async()=>(await tool('sodeck_task_get',{taskId:failing.taskId,outputMode:'none'})).value,s=>s.done);assert.equal(failed.evidence.state,'failed');assert.equal(failed.evidence.complete,false);assert.equal(failed.resourceReleased,true);
+  restoreMetadata(finalizing.directory);assert.deepEqual((await tool('sodeck_task_get',{taskId:failing.taskId,outputMode:'none'})).value,failed);assert.equal(JSON.parse(fs.readFileSync(path.join(finalizing.directory,'metadata.json'))).phase,'finalizing','failed final save leaves last valid disk facts');
   const huge=(await tool('sodeck_exec_start',{...input,requestId:'large-error',command:'large-error '+ '\\'.repeat(16000)})).value;
   const hugeResult=await until(async()=>(await tool('sodeck_task_get',{taskId:huge.taskId})).value,s=>s.done);assert.equal(hugeResult.native.error.detailsAvailable,true);assert.equal(hugeResult.native.error.code,-32000);
   const hugeDetail=await tool('sodeck_task_get',{taskId:huge.taskId,detail:true,outputMode:'none'});assert.equal(hugeDetail.error,true);assert.equal(hugeDetail.value.error.code,'resourceLimit');assert.equal(hugeDetail.value.error.taskId,huge.taskId);

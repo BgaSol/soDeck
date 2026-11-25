@@ -28,28 +28,6 @@ fn limit() -> usize {
     20
 }
 
-pub fn patch_schema() -> Value {
-    let string = json!({"type":"string","minLength":1,"maxLength":256});
-    let route = json!({"type":"array","items":{"oneOf":[
-        {"type":"object","properties":{"kind":{"const":"ssh"},"serverId":string},"required":["kind","serverId"],"additionalProperties":false},
-        {"type":"object","properties":{"kind":{"const":"socks5"},"proxyId":string},"required":["kind","proxyId"],"additionalProperties":false}
-    ]}});
-    let secret = json!({"oneOf":[
-        {"type":"object","properties":{"action":{"const":"keep"},"remember":{"type":"boolean"}},"required":["action","remember"],"additionalProperties":false},
-        {"type":"object","properties":{"action":{"const":"replace"},"value":{"type":"string"},"remember":{"type":"boolean"}},"required":["action","value","remember"],"additionalProperties":false},
-        {"type":"object","properties":{"action":{"const":"clear"}},"required":["action"],"additionalProperties":false}
-    ]});
-    json!({"type":"object","minProperties":1,"properties":{
-        "name":string,"host":string,"port":{"type":"integer","minimum":1,"maximum":65535},"username":string,
-        "tagIds":{"type":"array","items":string},"route":route,
-        "authentication":{"type":"object","properties":{"type":{"type":"string","enum":["password","privateKey"]},"privateKeyPath":{"type":"string","minLength":1,"maxLength":4096},"secret":secret},"required":["type"],"additionalProperties":false}
-    },"additionalProperties":false})
-}
-pub fn node_schema() -> Value {
-    let mut schema = patch_schema();
-    schema["required"] = json!(["host", "username"]);
-    schema
-}
 pub async fn write(
     app: Arc<App>,
     name: &str,

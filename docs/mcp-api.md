@@ -1,10 +1,12 @@
 # MCP API
 
-本文定义Agent MCP插件 0.11.x 的客户端契约。接入、页面操作和限制见[功能说明](features/mcp.md)；核心通用 RPC 见[插件 API](plugin-api.md)，发行证据见插件 [CHANGELOG](../plugins/mcp/CHANGELOG.md)。客户端先进行 MCP initialize 和 tools/list；新增能力以工具发现结果为准。
+本文定义Agent MCP插件 0.13.x 的客户端契约。接入、页面操作和限制见[功能说明](features/mcp.md)；核心通用 RPC 见[插件 API](plugin-api.md)，发行证据见插件 [CHANGELOG](../plugins/mcp/CHANGELOG.md)。客户端先进行 MCP initialize 和 tools/list；新增能力以工具发现结果为准。
 
 ## 传输与调用
 
 服务为带 Bearer Token 的回环 Streamable HTTP，端点 `http://127.0.0.1:<port>/mcp`。MCP 请求正文最多 32 KiB，总并发最多 32。Host 与可选 Origin 需匹配该回环地址。HTTP 401/403 为接入失败，429 为容量限制。字符串参数按 UTF-8 字节限制；未知参数或工具返回 MCP 协议 invalid_params。认证资料由核心管理。
+
+工具 schema 由参数类型生成，服务器补丁保留与核心省略/null 规则一致的显式结构。schema 与校验器在进程内各编译一次，先校验类型、范围和嵌套未知字段，再检查 UTF-8 字节预算、跨字段组合和资源状态。schema 的字符长度不能代替字节预算。顶层未知参数/未知工具保持协议 invalid_params；已知字段的形状错误返回业务 invalidParams，游标和输入序号错误保留 invalidCursor/invalidSequence。默认值由处理器实际应用，schema 校验不修改输入。
 
 十五个工具的成功与业务错误均只返回一个 JSON TextContent，缺席 structuredContent，不同时附原文副本或 outputSchema；客户端只解析一次 text。业务错误使用 isError=true 与 `{"error":{...}}`，取得任务时另以顶层 task 附一份该次事实。工具声明的只读/破坏性提示不能替代实际远端操作判断。
 
