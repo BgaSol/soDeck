@@ -22,6 +22,9 @@ pub struct Launch {
 }
 
 impl Launch {
+    pub fn starts_background(&self, native_login: bool, user_activation: bool) -> bool {
+        !self.restart && !user_activation && (self.login || native_login)
+    }
     pub fn parse(args: &[OsString]) -> Result<Self, String> {
         let login = args.iter().any(|a| a == "--login-start");
         let restart = args.iter().any(|a| a == "--restart-from");
@@ -182,7 +185,8 @@ pub fn verify_native(handle: &tauri::AppHandle, core: &crate::AppCore) -> Result
     if marker != Some(&std::process::id().to_string().into()) {
         return Err("重启参数未保留当前进程交接来源".into());
     }
-    let login = std::env::args_os().any(|arg| arg == "--login-start");
+    let login = std::env::args_os().any(|arg| arg == "--login-start")
+        || std::env::var("SODECK_EXPECT_NATIVE_LOGIN").as_deref() == Ok("1");
     let window = handle
         .get_webview_window("main")
         .ok_or("启动主窗口不存在")?;
@@ -245,6 +249,16 @@ pub fn verify_native(handle: &tauri::AppHandle, core: &crate::AppCore) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_login_never_overrides_restart_or_user_activation() {
+        let normal = Launch::parse(&["sodeck".into()]).unwrap();
+        assert!(!normal.starts_background(false, false));
+        assert!(normal.starts_background(true, false));
+        assert!(!normal.starts_background(true, true));
+        let restarted =
+            Launch::parse(&["sodeck".into(), "--restart-from".into(), "42".into()]).unwrap();
+        assert!(!restarted.starts_background(true, false));
+    }
     #[test]
     fn login_intent_is_consumed_but_isolated_paths_survive_restart() {
         let args: Vec<OsString> = [

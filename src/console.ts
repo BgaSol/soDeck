@@ -499,6 +499,9 @@ root.addEventListener("click", (event) => {
       case "login-startup-retry":
         await applicationSettings.refresh();
         break;
+      case "login-startup-update":
+        applicationSettings.updateLoginStartup();
+        break;
       case "copy-logs":
         if (snapshot) await copy(snapshot.logDirectory);
         break;

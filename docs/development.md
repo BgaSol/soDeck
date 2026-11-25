@@ -177,6 +177,8 @@ npm run plugin:build -- --plugin mcp
 
 ## 版本与持续集成
 
+macOS 登录项包专项为 `scripts/test-macos-login-package.mjs`，仅在干净原生 CI 用户的 Applications 安装中执行；实际包入口自动调用。它核验主应用登记/取消、2.5.0 文件迁移、幂等和进程存续，采集系统登记及可用的系统设置截图，并通过 `NSWorkspace` 传递登录 Apple Event。普通包烟测只读 Service Management 与校验隔离 plist，不修改真实登录项；真实注销登录、旧 macOS 和用户机器的系统 UI 仍须另记专项结果。
+
 核心包烟测在原程序中覆盖登录来源后台、同目录第二进程激活、原数据锁连续持有和从登录来源经关闭协调器替换重启；`SODECK_TEST_LOGIN_RESTART=1` 交给 `scripts/smoke.mjs` 开启，该脚本等待替换进程的新报告。系统登记 IO 使用非自启动测试注册表键或临时 desktop/plist 文件，开发和隔离验收程序禁止写真实用户登录项。它证明已执行断言，不证明真实系统注销/登录、全部系统禁用策略或实际鼠标入口；这些需单独记录。设置交互回归 `scripts/test-application-settings-ui.mjs` 已包含在 `npm run ui:test`。
 
 核心版本只修改 [src-tauri/tauri.conf.json](../src-tauri/tauri.conf.json)，插件版本只修改各自的 `plugins/<名称>/Cargo.toml`。核心与插件使用独立标签、独立 Release；发布步骤、更新清单和签名配置统一维护在 [分发文档](distribution.md)。

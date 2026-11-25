@@ -235,6 +235,18 @@ pub fn verify_native(directory: &std::path::Path) -> Result<(), String> {
     platform::verify(directory)
 }
 
+/// One-shot native event, read on the UI thread during application startup.
+pub fn native_login_launch() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        platform::launched_at_login()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
 #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 mod platform {
     use super::Status;

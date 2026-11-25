@@ -84,7 +84,7 @@ windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Stor
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "=0.6.5"
-objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSArray", "NSString", "NSURL", "NSGeometry"] }
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSArray", "NSString", "NSURL", "NSGeometry", "NSBundle", "NSError", "NSAppleEventManager", "NSAppleEventDescriptor"] }
 objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSApplication", "NSRunningApplication", "NSPasteboard", "NSPasteboardItem", "NSWorkspace", "NSWindow", "NSView", "NSButton", "NSControl", "NSResponder"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

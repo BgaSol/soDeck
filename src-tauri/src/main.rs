@@ -902,6 +902,10 @@ fn run() -> Result<(), String> {
             }
         })
         .setup(move |app| {
+            let native_login = sodeck::login_startup::native_login_launch();
+            if std::env::var("SODECK_EXPECT_NATIVE_LOGIN").as_deref() == Ok("1") && !native_login {
+                return Err("原生登录启动事件未在 setup 中识别".into());
+            }
             let lease = app.state::<sodeck::desktop_startup::Prepared>().0.lock().unwrap().take().ok_or("应用启动资格已被消费")?;
             let core = AppCore::open_locked(lease, sodeck::app_version())?;
             let login_startup = Arc::new(sodeck::login_startup::Service::new(smoke || interactive_test));
@@ -930,8 +934,7 @@ fn run() -> Result<(), String> {
                 app.state::<DesktopShell>().report(app.handle(), format!("系统托盘创建失败：{error}"));
             }
             app.state::<DesktopWindows>().ensure_main_display(app.handle())?;
-            if setup_launch.login
-                && !app.state::<sodeck::desktop_startup::Activation>().take_pending()
+            if setup_launch.starts_background(native_login, app.state::<sodeck::desktop_startup::Activation>().take_pending())
                 && (cfg!(target_os = "linux") || app.state::<DesktopShell>().tray_available())
             {
                 if let Err(error) = app.state::<DesktopShell>().start_background(app.handle()) {
@@ -1062,9 +1065,8 @@ fn run() -> Result<(), String> {
         }
     }
     #[cfg(target_os = "macos")]
-    if launch.login {
-        app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-    }
+    // Defer activation until setup resolves the native login event and presents a window.
+    app.set_activation_policy(tauri::ActivationPolicy::Accessory);
     app.run(|handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
             handle.state::<Application>().core.detach_host();

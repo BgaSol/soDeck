@@ -22,6 +22,8 @@
 
 登录启动的安装位置和清理限制见[桌面设置](features/settings.md#登录后自动启动)。Windows 的标准 [NSIS hook](../src-tauri/installer-hooks.nsh)只清理当前用户中与本安装路径匹配的 `com.bgasol.sodeck` Run 值，`/UPDATE` 保留登记；不提升为全机自启。macOS/DEB 解包烟测不将临时运行目录登记为真实登录项，AppImage 登记必须使用外层文件。
 
+macOS 实际包额外核对主 bundle 的名称、标识、可执行文件、图标字节与代码签名。干净 macOS CI 用户在自己的 Applications 目录安装同一包后，专项验证原生主应用登记、旧文件迁移、重复开关、关闭不结束当前进程以及原生 Apple Event 传递；专项显式临时登记并在结束时取消，不放开普通开发/隔离设置接口。系统设置截图、系统登记记录与 API 收据分开保存，合成 Apple Event 不等于真实注销登录。
+
 正式核心更新包使用 [tauri.release.conf.json](../src-tauri/tauri.release.conf.json) 和固定的 Tauri 官方 updater 签名。公钥提交到 Tauri 配置，私钥保存在维护者用户目录 .sodeck-signing/updater.key，并配置为 Actions 的 TAURI_SIGNING_PRIVATE_KEY Secret，绝不提交私钥；密码使用 TAURI_SIGNING_PRIVATE_KEY_PASSWORD，初始无密码密钥留空。必须备份原私钥，更换公钥会影响旧客户端升级。此签名与商业代码签名或插件授权无关，本地普通构建无需私钥。
 
 发行清单始终保存原始 GitHub Release URL、版本、平台和哈希/签名；客户端备用传输地址不改变发行来源。核心下载、安装和已准备包的离线验签恢复继续使用官方 updater。插件使用归档 SHA-256 和基本清单检查，不增加插件签名信任链。

@@ -1,168 +1,190 @@
 use super::{command_path, Status};
-use std::{
-    fs,
-    io::Read,
-    path::{Path, PathBuf},
-    process::{Command, Stdio},
-    time::{Duration, Instant},
-};
+use std::path::Path;
+#[path = "macos/legacy.rs"]
+mod legacy;
+#[path = "macos/native.rs"]
+mod native;
+use native::State;
 
-fn path() -> Result<PathBuf, String> {
-    Ok(
-        PathBuf::from(std::env::var_os("HOME").ok_or("无法确定当前用户的主目录")?)
-            .join("Library/LaunchAgents/com.bgasol.sodeck.plist"),
-    )
-}
-fn xml(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
-fn output(mut command: Command) -> Result<String, String> {
-    let mut child = command
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    let stdout = child.stdout.take().ok_or("无法读取系统查询结果")?;
-    let reader = std::thread::spawn(move || {
-        let mut text = String::new();
-        stdout.take(65537).read_to_string(&mut text).map(|_| text)
-    });
-    let deadline = Instant::now() + Duration::from_secs(2);
-    let status = loop {
-        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
-            break status;
-        }
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            let _ = reader.join();
-            return Err("读取 macOS 登录项状态超时，请重新读取".into());
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    };
-    let text = reader
-        .join()
-        .map_err(|_| "系统查询未完成")?
-        .map_err(|e| e.to_string())?;
-    if !status.success() || text.len() > 65536 {
-        return Err("macOS 未能返回有效的登录项状态，请重新读取".into());
+fn status(enabled: bool, state: &str, reason: &str) -> Status {
+    Status {
+        enabled,
+        state: state.into(),
+        reason: (!reason.is_empty()).then(|| reason.into()),
     }
-    Ok(text)
 }
 
-fn plist(path: &Path) -> Result<serde_json::Value, String> {
-    let mut command = Command::new("/usr/bin/plutil");
-    command
-        .args(["-convert", "json", "-o", "-", "--"])
-        .arg(path);
-    serde_json::from_str(&output(command)?).map_err(|e| format!("登录项 plist 格式无效：{e}"))
-}
-
-fn content(executable: &Path) -> Result<String, String> {
-    let executable = executable.to_str().ok_or("启动路径不是有效 Unicode")?;
-    if executable.contains(['\0', '\n', '\r']) {
-        return Err("启动路径包含无法登记的字符".into());
+fn combined(current: State, old_enabled: Option<bool>) -> Status {
+    match (current, old_enabled) {
+        (State::Enabled, Some(_)) => status(true, "stale", "主应用登录项已开启，旧登记尚待清理，请更新登录项。"),
+        (State::Enabled, None) => status(true, "enabled", ""),
+        (_, Some(true)) => status(true, "stale", "旧版登录项仍开启。请更新登录项，使系统使用 SoDeck 应用名称和图标；如需系统允许，请在登录项中确认。"),
+        (State::RequiresApproval, _) | (_, Some(false)) => status(false, "blocked", "登录项已被系统限制或旧项已关闭。请在系统设置 → 通用 → 登录项与扩展中允许 SoDeck；应用不会自动重新开启。"),
+        (State::NotRegistered, None) => Status::disabled(),
+        (State::NotFound, None) => status(false, "unknown", "系统未找到 SoDeck 主应用登录项，请确认应用安装位置并重新读取。"),
     }
-    Ok(format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\"><dict><key>Label</key><string>com.bgasol.sodeck</string><key>ProgramArguments</key><array><string>{}</string><string>--login-start</string></array><key>RunAtLoad</key><true/><key>LimitLoadToSessionType</key><string>Aqua</string><key>AssociatedBundleIdentifiers</key><array><string>com.bgasol.sodeck</string></array></dict></plist>\n",xml(executable)))
+}
+
+fn old_enabled(entry: &legacy::Entry) -> Result<bool, String> {
+    if !entry.enabled {
+        return Ok(false);
+    }
+    if native::available() {
+        match native::legacy_status(&entry.path)? {
+            State::Enabled => Ok(true),
+            State::RequiresApproval => Ok(false),
+            _ => Err("系统无法确认旧登录项授权状态，原文件已保留；请检查系统登录项。".into()),
+        }
+    } else {
+        Ok(true)
+    }
 }
 
 pub fn read() -> Result<Status, String> {
-    let path = path()?;
-    if !path.try_exists().map_err(|e| e.to_string())? {
-        return Ok(Status::disabled());
+    let bundle = native::bundle(&command_path()?, false)?;
+    let old = legacy::inspect(&bundle.executable)?;
+    let old = old.as_ref().map(old_enabled).transpose()?;
+    if native::available() {
+        Ok(combined(native::status()?, old))
+    } else {
+        Ok(match old {
+            Some(true) => status(true, "enabled", ""),
+            Some(false) => status(false, "blocked", "登录项已被关闭。"),
+            None => Status::disabled(),
+        })
     }
-    let value = plist(&path)?;
-    if value["Label"] != "com.bgasol.sodeck" {
-        return Err("登录项身份不匹配，原文件已保留".into());
-    }
-    if value["RunAtLoad"] != true {
-        return Ok(Status {
-            enabled: false,
-            state: "blocked".into(),
-            reason: Some("登录项已被关闭。".into()),
-        });
-    }
-    let mut command = Command::new("/bin/launchctl");
-    command
-        .arg("print-disabled")
-        .arg(format!("gui/{}", unsafe { libc::geteuid() }));
-    let disabled = output(command)?
-        .lines()
-        .any(|line| line.contains("\"com.bgasol.sodeck\"") && line.contains("=> true"));
-    if disabled {
-        return Ok(Status {
-            enabled: false,
-            state: "blocked".into(),
-            reason: Some(
-                "已被 macOS 禁用。请在系统设置 → 通用 → 登录项与扩展中允许 SoDeck。".into(),
-            ),
-        });
-    }
-    if value["ProgramArguments"] != serde_json::json!([command_path()?, "--login-start"]) {
-        return Ok(Status {
-            enabled: true,
-            state: "stale".into(),
-            reason: Some("登录项指向旧程序位置。关闭后重新开启可登记当前位置。".into()),
-        });
-    }
-    Ok(Status {
-        enabled: true,
-        state: "enabled".into(),
-        reason: None,
-    })
 }
 
 pub fn set(enabled: bool) -> Result<(), String> {
-    let path = path()?;
-    if !enabled {
-        return fs::remove_file(path)
-            .or_else(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    Ok(())
-                } else {
-                    Err(e)
-                }
-            })
-            .map_err(|e| format!("无法关闭 macOS 登录项：{e}"));
+    let bundle = native::bundle(&command_path()?, enabled)?;
+    // Validate ownership before any registration or removal, including disabling.
+    let old = legacy::inspect(&bundle.executable)?;
+    if !native::available() {
+        return if enabled {
+            native::register_bundle(&bundle)?;
+            legacy::write(&bundle.executable)
+        } else if let Some(entry) = old {
+            legacy::remove(&entry)
+        } else {
+            Ok(())
+        };
     }
-    let content = content(&command_path()?)?;
-    fs::create_dir_all(path.parent().ok_or("登录项路径无效")?).map_err(|e| e.to_string())?;
-    let temporary = path.with_extension("plist.tmp");
-    fs::write(&temporary, content).map_err(|e| e.to_string())?;
-    fs::rename(temporary, path).map_err(|e| format!("无法提交 macOS 登录项：{e}"))
+    let before = native::status()?;
+    if !enabled {
+        if before != State::NotRegistered {
+            native::set(false)?;
+        }
+        if let Some(entry) = old {
+            legacy::remove(&entry)?;
+        }
+        return Ok(());
+    }
+    native::register_bundle(&bundle)?;
+    if before != State::Enabled {
+        native::set(true)?;
+    }
+    if native::status()? != State::Enabled {
+        return Err(
+            "主应用登录项尚未获得系统允许，旧项已保留；请在系统登录项中确认后重试。".into(),
+        );
+    }
+    if let Some(entry) = old {
+        if let Err(error) = legacy::remove(&entry) {
+            // Never bootout: the legacy job may own this application's current process.
+            let rollback = if before != State::Enabled {
+                native::set(false)
+            } else {
+                Ok(())
+            };
+            return Err(match rollback { Ok(()) => error, Err(rollback) => format!("{error}；新登记回退也未完成：{rollback}。请检查系统登录项，当前可能存在两份登记。") });
+        }
+    }
+    Ok(())
 }
 
 pub fn installed(executable: &Path) -> Result<(), String> {
-    if executable
-        .to_string_lossy()
-        .contains(".app/Contents/MacOS/")
-        && !executable.starts_with("/Volumes")
-        && !executable.starts_with(std::env::temp_dir())
-    {
-        Ok(())
-    } else {
-        Err("请先将 SoDeck.app 安装到本机，再开启登录启动。".into())
-    }
+    native::bundle(executable, true).map(|_| ())
 }
 
 pub(super) fn verify(directory: &Path) -> Result<(), String> {
-    let file = directory.join("login-test.plist");
-    let executable = directory.join("中文 space &/SoDeck.app/Contents/MacOS/sodeck");
-    fs::write(&file, content(&executable)?).map_err(|e| e.to_string())?;
-    let result = plist(&file);
-    fs::remove_file(file).map_err(|e| e.to_string())?;
-    let value = result?;
-    if value["ProgramArguments"] != serde_json::json!([executable, "--login-start"])
-        || value["RunAtLoad"] != true
-        || value.get("KeepAlive").is_some()
-        || value["LimitLoadToSessionType"] != "Aqua"
-    {
-        return Err("登录项参数、会话或守护策略错误".into());
+    native::bundle(&command_path()?, false)?;
+    if native::available() {
+        let _ = native::status()?;
+    }
+    legacy::verify(directory)?;
+    if std::env::var("SODECK_TEST_MACOS_LOGIN").as_deref() == Ok("1") {
+        verify_registration(directory)?;
     }
     Ok(())
+}
+
+fn verify_registration(directory: &Path) -> Result<(), String> {
+    let bundle = native::bundle(&command_path()?, true)?;
+    let home = std::path::PathBuf::from(std::env::var_os("HOME").ok_or("无法确定测试用户")?);
+    let old = legacy::path()?;
+    if std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
+        || !bundle.path.starts_with(home.join("Applications"))
+        || old.try_exists().map_err(|e| e.to_string())?
+        || native::status()? != State::NotRegistered
+    {
+        return Err("真实登录项验收仅允许在干净 CI 用户的 Applications 安装中运行".into());
+    }
+    let result = (|| {
+        // Reproduce the exact 2.5.0 disk registration, without bootstrapping the running app.
+        legacy::write(&bundle.executable)?;
+        set(true)?;
+        if old.exists() || read()?.state != "enabled" {
+            return Err("旧登录项未完成迁移".into());
+        }
+        set(true)?;
+        std::fs::write(directory.join("macos-login-enabled.json"), serde_json::json!({"pid":std::process::id(),"bundle":bundle.path,"state":"enabled","migration":true}).to_string()).map_err(|e|e.to_string())?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !directory.join("macos-login-inspected.json").exists() {
+            if std::time::Instant::now() >= deadline {
+                return Err("登录项系统证据采集未完成".into());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        set(false)?;
+        set(false)?;
+        if read()?.state != "disabled" {
+            return Err("取消主应用登录项未生效".into());
+        }
+        std::fs::write(directory.join("macos-login-service.json"), serde_json::json!({"enabled":true,"migrated":true,"disabled":true,"processContinued":true,"bundle":bundle.path}).to_string()).map_err(|e|e.to_string())?;
+        Ok(())
+    })();
+    let cleanup = if native::status()? != State::NotRegistered {
+        native::set(false)
+    } else {
+        Ok(())
+    };
+    if let Some(entry) = legacy::inspect(&bundle.executable)? {
+        legacy::remove(&entry)?;
+    }
+    result.and(cleanup)
+}
+
+pub fn launched_at_login() -> bool {
+    native::launched_at_login()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn old_and_new_registration_facts_are_not_conflated() {
+        for (current, old, enabled, state) in [
+            (State::NotRegistered, None, false, "disabled"),
+            (State::Enabled, None, true, "enabled"),
+            (State::RequiresApproval, None, false, "blocked"),
+            (State::NotFound, None, false, "unknown"),
+            (State::RequiresApproval, Some(true), true, "stale"),
+            (State::NotRegistered, Some(false), false, "blocked"),
+            (State::Enabled, Some(false), true, "stale"),
+            (State::Enabled, Some(true), true, "stale"),
+        ] {
+            let result = combined(current, old);
+            assert_eq!((result.enabled, result.state.as_str()), (enabled, state));
+        }
+    }
 }

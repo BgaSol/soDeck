@@ -30,7 +30,7 @@ export class ApplicationSettings {
     const disabled=this.reading||this.saving||!this.state||['unknown','unavailable'].includes(this.state.state);
     const text=this.saving?'正在保存启动设置…':this.reading?'正在读取启动设置…':this.error||this.state?.reason||this.feedback||'';
     const description=os==='linux'?'登录系统后自动最小化运行，可从任务栏或窗口切换返回。':os==='macos'?'登录系统后自动在菜单栏运行，不打开主窗口。':'登录系统后自动在托盘运行，不打开主窗口。';
-    return `<div class="setting-row" data-setting-type="boolean"><div><label for="login-startup">开机启动并驻留托盘</label><p id="login-startup-description">${description}</p></div><label class="setting-switch"><input id="login-startup" type="checkbox" role="switch" aria-describedby="login-startup-description login-startup-feedback" ${(this.saving?this.requested:this.state?.enabled)?'checked':''} ${disabled?'disabled':''}><span aria-hidden="true"></span></label></div><div id="login-startup-feedback" role="status" aria-live="polite" class="hint ${this.error?'error-text':''}">${e(text)} ${!this.reading&&!this.saving&&(this.error||this.state?.state==='unknown')?b('login-startup-retry','重新读取',undefined,'quiet'):''}</div>`;
+    return `<div class="setting-row" data-setting-type="boolean"><div><label for="login-startup">开机启动并驻留托盘</label><p id="login-startup-description">${description}</p></div><label class="setting-switch"><input id="login-startup" type="checkbox" role="switch" aria-describedby="login-startup-description login-startup-feedback" ${(this.saving?this.requested:this.state?.enabled)?'checked':''} ${disabled?'disabled':''}><span aria-hidden="true"></span></label></div><div id="login-startup-feedback" role="status" aria-live="polite" class="hint ${this.error?'error-text':''}">${e(text)} ${!this.reading&&!this.saving&&(this.error||this.state?.state==='unknown')?b('login-startup-retry','重新读取',undefined,'quiet'):''} ${os==='macos'&&!this.reading&&!this.saving&&this.state?.state==='stale'?b('login-startup-update','更新登录项',undefined,'quiet'):''}</div>`;
   }
   input(input:HTMLInputElement):boolean{
     if(input.id==='close-behavior'){
@@ -41,14 +41,18 @@ export class ApplicationSettings {
       return true;
     }
     if(input.id!=='login-startup')return false;
-    if(this.saving||this.reading)return true;
-    const enabled=input.checked;this.requested=enabled;this.saving=true;this.error='';this.feedback='';++this.revision;this.changed();
+    this.save(input.checked);
+    return true;
+  }
+  updateLoginStartup(){if(this.state?.state==='stale')this.save(true);}
+  private save(enabled:boolean){
+    if(this.disposed||this.saving||this.reading)return;
+    this.requested=enabled;this.saving=true;this.error='';this.feedback='';++this.revision;this.changed();
     void (async()=>{
       try{this.state=await invoke<StartupState>('set_login_startup',{enabled});this.feedback=this.state.state==='enabled'?'已开启，下次登录系统时生效。':this.state.state==='disabled'?'已关闭，不影响当前运行。':'';}
       catch(error){this.error=String(error);try{this.state=await invoke<StartupState>('login_startup_state');}catch{this.state=undefined;}}
       finally{this.saving=false;if(!this.disposed)this.changed();}
     })();
-    return true;
   }
   dispose(){this.disposed=true;++this.revision;window.removeEventListener('focus',this.focus);}
 }

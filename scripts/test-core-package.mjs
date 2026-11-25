@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { validateCoreArtifacts, coreNames, cleanupWindowsUninstaller } from "./core-artifacts.mjs";
 import { verifyBinary } from "./verify-binary.mjs";
 
@@ -66,13 +67,30 @@ try {
     smoke(path.join(directory, "usr/bin/sodeck"));
     fs.chmodSync(bundle, 0o755); smoke(bundle, true);
   } else {
+    function identity(app) {
+      const result=spawnSync('plutil',['-convert','json','-o','-',path.join(app,'Contents/Info.plist')],{encoding:'utf8'});
+      assert.equal(result.status,0,result.stderr);const info=JSON.parse(result.stdout);
+      assert.equal(info.CFBundleIdentifier,'com.bgasol.sodeck');assert.equal(info.CFBundleDisplayName,'SoDeck');assert.equal(info.CFBundleExecutable,'sodeck');assert.equal(info.CFBundleIconFile,'icon.icns');
+      const digest=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+      assert.equal(digest(path.join(app,'Contents/Resources/icon.icns')),digest('src-tauri/icons/icon.icns'));
+      run('codesign',['--verify','--deep','--strict',app]);
+    }
     const mount = path.join(directory, "mounted");
     run("hdiutil", ["attach", file(names.dmg[0]), "-nobrowse", "-readonly", "-mountpoint", mount]);
-    try { smoke(path.join(mount, "SoDeck.app/Contents/MacOS/sodeck")); }
+    try { identity(path.join(mount,'SoDeck.app')); smoke(path.join(mount, "SoDeck.app/Contents/MacOS/sodeck")); }
     finally { run("hdiutil", ["detach", mount]); }
     const update = path.join(directory, "update"); fs.mkdirSync(update);
     run("tar", ["-xzf", bundle, "-C", update]);
+    identity(path.join(update,'SoDeck.app'));
     smoke(path.join(update, "SoDeck.app/Contents/MacOS/sodeck"));
+    if(process.env.GITHUB_ACTIONS==='true'){
+      const installed=path.join(os.homedir(),'Applications/SoDeck.app');
+      assert(!fs.existsSync(installed),'Use a clean macOS runner without an installed SoDeck');
+      fs.mkdirSync(path.dirname(installed),{recursive:true});fs.cpSync(path.join(update,'SoDeck.app'),installed,{recursive:true});
+      try{run(process.execPath,['scripts/test-macos-login-package.mjs',installed,path.resolve('artifacts/verification/macos-login')]);report.macosLoginServiceNative=true;}
+      finally{assert.equal(installed,path.join(os.homedir(),'Applications/SoDeck.app'));fs.rmSync(installed,{recursive:true,force:true});}
+    }
+    report.macosBundleIdentityNative=true;
   }
   validateCoreArtifacts(input, metadata, commit);
   report.passed = true;

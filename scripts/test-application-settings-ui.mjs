@@ -11,7 +11,7 @@ import {ApplicationSettings} from '/application-settings.ts';
 window.calls=[];window.state={enabled:false,state:'disabled',reason:null};window.os='windows';window.pending=null;window.fail=false;
 window.__TAURI_INTERNALS__={invoke:async(command,args)=>{calls.push({command,args});if(command==='login_startup_state')return structuredClone(state);if(command==='set_close_behavior')return;if(command==='set_login_startup'){await new Promise(resolve=>pending=resolve);if(fail){fail=false;throw Error('系统拒绝修改');}state={enabled:args.enabled,state:args.enabled?'enabled':'disabled',reason:null};return structuredClone(state);}throw Error(command);}};
 window.settings=new ApplicationSettings(()=>document.querySelector('#settings').innerHTML='<h2>应用与数据</h2>'+settings.render(os),async()=>{});
-document.addEventListener('change',event=>settings.input(event.target));document.addEventListener('click',event=>{if(event.target.closest('[data-action="login-startup-retry"]'))void settings.refresh();});
+document.addEventListener('change',event=>settings.input(event.target));document.addEventListener('click',event=>{if(event.target.closest('[data-action="login-startup-retry"]'))void settings.refresh();if(event.target.closest('[data-action="login-startup-update"]'))settings.updateLoginStartup();});
 settings.mount(true);window.ready=true;
 </script></body></html>`}));
 try{
@@ -21,6 +21,14 @@ try{
   await page.evaluate(()=>{pending();pending=null;});await page.getByText('已开启，下次登录系统时生效。').waitFor();assert.equal(await toggle.isChecked(),true);
   await page.evaluate(()=>fail=true);await toggle.uncheck();await page.evaluate(()=>{pending();pending=null;});await page.getByText(/系统拒绝修改/).waitFor();assert.equal(await toggle.isChecked(),true,'Failed write reads back actual OS state');
   await page.evaluate(()=>{state={enabled:false,state:'blocked',reason:'已被系统禁用'};window.dispatchEvent(new Event('focus'));});await page.getByText('已被系统禁用').waitFor();assert.equal(await toggle.isChecked(),false);
+  await page.evaluate(()=>{window.os='macos';state={enabled:true,state:'stale',reason:'旧版登录项仍开启'};window.dispatchEvent(new Event('focus'));});
+  const update=page.getByRole('button',{name:'更新登录项'});await update.waitFor();
+  const before=await page.evaluate(()=>calls.filter(x=>x.command==='set_login_startup').length);
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await update.waitFor();
+  assert.equal(await page.evaluate(()=>calls.filter(x=>x.command==='set_login_startup').length),before,'Refresh never migrates or re-enables login items');
+  await update.click();assert.equal(await toggle.isDisabled(),true);assert.equal(await update.count(),0);
+  await page.evaluate(()=>{pending();pending=null;});await page.getByText('已开启，下次登录系统时生效。').waitFor();assert.equal(await toggle.isChecked(),true);assert.equal(await update.count(),0);
+  await page.evaluate(()=>{state={enabled:false,state:'blocked',reason:'需要用户在系统登录项中允许'};window.dispatchEvent(new Event('focus'));});await page.getByText('需要用户在系统登录项中允许').waitFor();assert.equal(await toggle.isChecked(),false);assert.equal(await update.count(),0);
   for(const theme of ['light','dark','dopamine']){await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);await toggle.focus();assert.equal(await toggle.evaluate(n=>n===document.activeElement),true);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);fs.mkdirSync('artifacts/application-settings',{recursive:true});await page.screenshot({path:`artifacts/application-settings/${theme}.png`});}
   await page.evaluate(()=>{settings.mount(false);window.before=calls.length;window.dispatchEvent(new Event('focus'));});assert.equal(await page.evaluate(()=>calls.length),await page.evaluate(()=>before),'Leaving settings stops OS queries on focus');
   await page.evaluate(()=>settings.dispose());assert.deepEqual(errors,[]);
