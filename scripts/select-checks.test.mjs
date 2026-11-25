@@ -305,4 +305,7 @@ test('login startup ownership, native IPC and setting UI retain their required c
   }
   assert(selectChecks(['scripts/test-application-settings-ui.mjs']).web);
   assert(JSON.parse(fs.readFileSync('package.json','utf8')).scripts['ui:test'].includes('test-application-settings-ui.mjs'));
+  const workflow=fs.readFileSync('.github/workflows/build.yml','utf8');
+  assert.match(workflow,/libfuse2 openbox x11-utils/);
+  assert(fs.readFileSync('scripts/test-core-package.mjs','utf8').includes('scripts/linux-package-desktop.sh'));
 });
