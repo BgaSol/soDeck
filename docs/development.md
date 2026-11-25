@@ -254,6 +254,21 @@ CI 的 npm 下载缓存按任务实际使用的锁文件配置；核心打包只
 
 MCP 的真实 OpenSSH 入口继续为 `npm run mcp:test`，覆盖多轮 pipe、跨块输入、EOF 和 PTY；Linux 额外创建一次性账号与 sudoers，用真实 sudo 验证错误密码后同任务继续。该 Linux 测试要求 openssh-server、sudo、useradd/chpasswd/visudo 及无交互 sudo 夹具管理能力，退出清理账号、配置与测试副作用。其余平台验证通用输入；不把 Linux sudo 专项推定为全部远端系统验证。
 
+## 解析依赖与性能基准
+
+MCP 使用已在 rmcp 链中的 schemars 1.2.3 生成参数结构、jsonschema 0.63.1 校验本地 schema；关闭后者默认远程引用、HTTP 和 TLS 功能。Docker 使用 chrono 0.4.45 的 std 功能处理时间、vte 0.15.0 的无 std 固定容量状态机清理控制序列，避免无界 OSC 缓冲。核心及配置写入插件使用 tempfile 3.27.0；核心使用既有 SSH 链的 ssh-encoding 0.3.0 和 dunce 1.0.5。均固定版本并提交各自锁文件。schema、日历、终端控制和平台临时文件的替代方案是继续维护手工实现；已确认边界较多的部分采用库，POSIX 单引号编码和 Monaco 搜索适配继续保留。
+
+这些库的上游分别为 [schemars](https://github.com/GREsau/schemars)、[jsonschema](https://github.com/Stranger6667/jsonschema)、[chrono](https://github.com/chronotope/chrono)、[vte](https://github.com/alacritty/vte)、[tempfile](https://github.com/Stebalien/tempfile)、[RustCrypto SSH](https://github.com/RustCrypto/SSH)、[dunce](https://gitlab.com/kornelski/dunce)。本轮核对各库发布和 API；dunce 属于低频维护的小型路径库，其余仍有近期发行。升级仍需运行对应边界回归，不依据下载量替代兼容验证。
+
+局部性能基准使用锁定 Node/Chromium：
+
+```sh
+node scripts/benchmark-boundaries.mjs --report artifacts/boundaries.json
+node scripts/benchmark-boundaries.mjs --process --report artifacts/boundaries-process.json
+```
+
+第二条需要准备当前 Docker 测试插件。每场景预热 2 次、采样 30 次，记录 P50/P95/最大值和样本；文件树测已加载行的重复刷新，核心日志测 500 条短/长正文的 DOM 更新加布局，Docker 的 5 万/20 万投影测合成布局与绘制，process 场景另测真实插件 RPC 的 1 万条布局分页。合成场景的 900-ID 页只是固定对照，不代表当前后端页大小。结果不包含磁盘扫描、原生 WebView 或远端 IO，也不作为跨机器 CI 耗时断言。先分解实际瓶颈，再决定是否引入虚拟化库。
+
 ## 文档与开发收束
 
 正式文档描述当前检出的代码，功能迭代持续修改同一份说明。开始改动前阅读对应功能、相关源码与回归，写清用户可验收行为；代码与既定要求不一致时，先确定缺陷、文档过时还是已确认的需求变化。
