@@ -1,0 +1,143 @@
+{
+  "packageSource": "70606263ebd4cded8e23524459e89ae5fa5d60f1",
+  "checks": [
+    {
+      "id": 45647202156,
+      "html_url": "https://github.com/BgaSol/soDeck/actions/runs/45647202156",
+      "head_sha": "70606263ebd4cded8e23524459e89ae5fa5d60f1",
+      "status": "completed",
+      "conclusion": "success",
+      "run_attempt": 1,
+      "jobs": [
+        {
+          "id": 139321265170,
+          "name": "select",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T15:37:12Z",
+          "completed_at": "2026-11-25T15:37:31Z"
+        },
+        {
+          "id": 139321515300,
+          "name": "integration-business-linux-x86_64",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T15:37:34Z",
+          "completed_at": "2026-11-25T15:50:00Z"
+        },
+        {
+          "id": 139321515338,
+          "name": "integration-network-linux-aarch64",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T15:37:36Z",
+          "completed_at": "2026-11-25T15:42:38Z"
+        },
+        {
+          "id": 139321515360,
+          "name": "integration-network-linux-x86_64",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T15:37:34Z",
+          "completed_at": "2026-11-25T15:42:22Z"
+        },
+        {
+          "id": 139321515451,
+          "name": "checks",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T15:37:34Z",
+          "completed_at": "2026-11-25T15:38:15Z"
+        },
+        {
+          "id": 139321515474,
+          "name": "native-linux-aarch64",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T15:37:37Z",
+          "completed_at": "2026-11-25T15:43:59Z"
+        },
+        {
+          "id": 139321515487,
+          "name": "browser",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T15:37:34Z",
+          "completed_at": "2026-11-25T15:46:34Z"
+        },
+        {
+          "id": 139321515514,
+          "name": "native-windows-aarch64",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T15:37:34Z",
+          "completed_at": "2026-11-25T15:47:51Z"
+        },
+        {
+          "id": 139321515565,
+          "name": "native-linux-x86_64",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T15:37:35Z",
+          "completed_at": "2026-11-25T15:43:03Z"
+        },
+        {
+          "id": 139321515636,
+          "name": "native-windows-x86_64",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T15:37:35Z",
+          "completed_at": "2026-11-25T15:46:11Z"
+        },
+        {
+          "id": 139321515784,
+          "name": "desktop",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T15:37:35Z",
+          "completed_at": "2026-11-25T15:41:17Z"
+        },
+        {
+          "id": 139321516085,
+          "name": "native-macos-aarch64",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T15:37:35Z",
+          "completed_at": "2026-11-25T15:43:52Z"
+        },
+        {
+          "id": 139321518190,
+          "name": "netem",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T15:37:32Z",
+          "completed_at": "2026-11-25T15:37:31Z"
+        },
+        {
+          "id": 139328173029,
+          "name": "format",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T15:50:02Z",
+          "completed_at": "2026-11-25T15:50:12Z"
+        }
+      ]
+    }
+  ],
+  "releaseRecovery": {
+    "packageRun": 45647246699,
+    "metadataJob": 139328906763,
+    "packageAndVerifyPassed": true,
+    "metadataFailed": "GitHub POST /releases returned HTTP 500",
+    "retryAttempts": "Failed-jobs and job-specific REST reruns, workflow dispatch and authenticated web failed-job rerun returned server errors; no new attempt was created.",
+    "statusPage": "https://www.githubstatus.com/",
+    "statusAt": "2026-11-25T16:09:30Z",
+    "status": "Partial System Outage",
+    "latestStill": "v2.4.0"
+  },
+  "skipped": [
+    "netem was not selected",
+    "Physical tray/Dock mouse, fixed/recent shortcuts, full-screen/Spaces, IME/screen-reader/DPI and OS session termination remain outside automated policy assertions.",
+    "The new five-platform native remote plugin combination was not dispatched because GitHub workflow dispatch failed with HTTP 500."
+  ]
+}

@@ -1,0 +1,152 @@
+{
+  "version": "2.4.1",
+  "source": "70606263ebd4cded8e23524459e89ae5fa5d60f1",
+  "recordedAt": "2026-11-25T15:40:17.912Z",
+  "platform": "windows-x86_64",
+  "checks": {
+    "typeFormat": true,
+    "scripts": {
+      "passed": 217,
+      "failed": 0
+    },
+    "core": {
+      "passed": 343,
+      "failed": 0,
+      "ignored": 17,
+      "suites": [
+        {
+          "passed": 134,
+          "failed": 0,
+          "ignored": 1
+        },
+        {
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 11,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 56,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 34,
+          "failed": 0,
+          "ignored": 14
+        },
+        {
+          "passed": 11,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 17,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 13,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 37,
+          "failed": 0,
+          "ignored": 2
+        },
+        {
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 12,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    },
+    "browser": {
+      "completeUiSuite": true,
+      "production": true,
+      "settings": true,
+      "desktopPolicy": true,
+      "layout": true,
+      "desktopShellNativeFailureVisibility": true
+    },
+    "native": {
+      "build": true,
+      "executableSha256": "c80a194d741246e1e85b826ce3fc68b4ddaf532542a3eab186e579522274a7e4",
+      "packageOnlySmoke": true,
+      "business": {
+        "completed": true,
+        "platform": "win32",
+        "trayOnly": true,
+        "checks": [
+          "titlebar: background kept original views, unsaved editor and actual tunnel bytes; restored original window",
+          "titlebar: cancel kept original views/draft, PTY and forwarding; discard stopped four plugins, drained SSH/forwarding, released the port and exited",
+          "native: background kept original views, unsaved editor and actual tunnel bytes; restored original window",
+          "native: cancel kept original views/draft, PTY and forwarding; discard stopped four plugins, drained SSH/forwarding, released the port and exited"
+        ],
+        "plugins": [
+          {
+            "id": "sodeck.terminal",
+            "version": "0.11.1"
+          },
+          {
+            "id": "sodeck.files",
+            "version": "0.12.0"
+          },
+          {
+            "id": "sodeck.network-proxy",
+            "version": "0.6.0"
+          },
+          {
+            "id": "sodeck.system-status",
+            "version": "0.5.0"
+          }
+        ]
+      }
+    }
+  },
+  "earlyFailures": [
+    "The initial script run lacked Cargo on PATH; rerun with the declared toolchain path passed 217 tests.",
+    "An early core test binary was compiled before the concurrent version bump and compared 2.4.0 against 2.4.1. The final fixed-source full run passed.",
+    "The first native business invocations omitted explicit independent-plugin and native-pointer fixture paths; supplied existing fixture paths and reran successfully."
+  ],
+  "skipped": [
+    "macOS native system policy and five-target package results are recorded separately after CI.",
+    "Physical tray/Dock mouse, fixed/recent shortcuts, full-screen/Spaces, IME/screen reader/mixed DPI and OS session termination are not proven by Windows/browser checks.",
+    "The existing Windows pointer tear-out scenario remains outside tray-only business validation."
+  ]
+}

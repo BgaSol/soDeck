@@ -1,0 +1,181 @@
+{
+  "component": "core",
+  "version": "2.4.1",
+  "source": "70606263ebd4cded8e23524459e89ae5fa5d60f1",
+  "packageRun": 45647246699,
+  "nativePackageReports": [
+    {
+      "id": "sodeck.core",
+      "version": "2.4.1",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "70606263ebd4cded8e23524459e89ae5fa5d60f1",
+      "files": [
+        {
+          "name": "SoDeck_2.4.1_arm64.deb",
+          "size": 10801400,
+          "sha256": "f58b90063fccc82cc1f800b1679edb4678cb3d7247cee13d980b95b7fad709e5"
+        },
+        {
+          "name": "SoDeck_2.4.1_arm64.deb.sig",
+          "size": 428,
+          "sha256": "2d447ea03311ed5cd717c97ff991f37546f7cbde577608d72746b754ad80446b"
+        },
+        {
+          "name": "SoDeck_2.4.1_aarch64.AppImage",
+          "size": 86493704,
+          "sha256": "fa7368d0e3318bca4cd213f4a7afbd127c71fd9f16990850a7277234d9fd3df5"
+        },
+        {
+          "name": "SoDeck_2.4.1_aarch64.AppImage.sig",
+          "size": 440,
+          "sha256": "262455bf15c26694b84f5f4e5417752df7363fff8333cdf987d642ce9255959e"
+        }
+      ],
+      "toolCommit": "70606263ebd4cded8e23524459e89ae5fa5d60f1",
+      "passed": true,
+      "pluginIconsNative": true,
+      "desktopShellNative": true
+    },
+    {
+      "id": "sodeck.core",
+      "version": "2.4.1",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "70606263ebd4cded8e23524459e89ae5fa5d60f1",
+      "files": [
+        {
+          "name": "SoDeck_2.4.1_amd64.deb",
+          "size": 11600146,
+          "sha256": "763c9706d08bd90ef4b117986905ad24b9e8c28f57d2e68cb4aeda8e4dd3daf1"
+        },
+        {
+          "name": "SoDeck_2.4.1_amd64.deb.sig",
+          "size": 428,
+          "sha256": "1ef7cd22d40e950d6e36469e4a62740fd81480b37d02b32ec13856d49120d7d7"
+        },
+        {
+          "name": "SoDeck_2.4.1_amd64.AppImage",
+          "size": 89180664,
+          "sha256": "618bd1f6e571a8e05195c21cd3a0b9db4f2ecb1c4077f5333f8a02a097fe7ca5"
+        },
+        {
+          "name": "SoDeck_2.4.1_amd64.AppImage.sig",
+          "size": 436,
+          "sha256": "04b14d92badc6f8707674f9c1e4ed0af9d644b75221c902bc124164c753b64f6"
+        }
+      ],
+      "toolCommit": "70606263ebd4cded8e23524459e89ae5fa5d60f1",
+      "passed": true,
+      "pluginIconsNative": true,
+      "desktopShellNative": true
+    },
+    {
+      "id": "sodeck.core",
+      "version": "2.4.1",
+      "target": "aarch64-apple-darwin",
+      "commit": "70606263ebd4cded8e23524459e89ae5fa5d60f1",
+      "files": [
+        {
+          "name": "SoDeck_2.4.1_aarch64.dmg",
+          "size": 10352065,
+          "sha256": "1fc75a06b8967a39b736e89bcb452ed2e83df29a9d4ecdee2ed6ed3df48ff502"
+        },
+        {
+          "name": "SoDeck_2.4.1_aarch64.app.tar.gz",
+          "size": 10621626,
+          "sha256": "fb530709506137c5762ff6d74137010bc48c7c88f6fd1f83c9ddfcea03e49cef"
+        },
+        {
+          "name": "SoDeck_2.4.1_aarch64.app.tar.gz.sig",
+          "size": 424,
+          "sha256": "a432fccef8190ece0e1511dc0687f1ff12a191ad33bf091a70730b1dcc4b097d"
+        }
+      ],
+      "toolCommit": "70606263ebd4cded8e23524459e89ae5fa5d60f1",
+      "passed": true,
+      "pluginIconsNative": true,
+      "desktopShellNative": true,
+      "macosApplicationPolicyNative": true
+    },
+    {
+      "id": "sodeck.core",
+      "version": "2.4.1",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "70606263ebd4cded8e23524459e89ae5fa5d60f1",
+      "files": [
+        {
+          "name": "SoDeck_2.4.1_arm64-setup.exe",
+          "size": 6892424,
+          "sha256": "1a9bc823e2f83da2bd7b6f129522a3d33282f8afd53fc5789d1bd5842dc74759"
+        },
+        {
+          "name": "SoDeck_2.4.1_arm64-setup.exe.sig",
+          "size": 436,
+          "sha256": "9d07aeecb677b6d0c9c1ec6e4010bbaf5dbe1b095f488b279862df2fab1c555a"
+        }
+      ],
+      "toolCommit": "70606263ebd4cded8e23524459e89ae5fa5d60f1",
+      "passed": true,
+      "windowsInstallModes": [
+        {
+          "mode": "CurrentUser",
+          "hive": "HKCU",
+          "install": "C:\\Users\\runneradmin\\AppData\\Local\\Programs\\SoDeck",
+          "passed": true
+        },
+        {
+          "mode": "AllUsers",
+          "hive": "HKLM",
+          "install": "C:\\Program Files\\SoDeck",
+          "passed": true
+        }
+      ],
+      "pluginIconsNative": true,
+      "desktopShellNative": true
+    },
+    {
+      "id": "sodeck.core",
+      "version": "2.4.1",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "70606263ebd4cded8e23524459e89ae5fa5d60f1",
+      "files": [
+        {
+          "name": "SoDeck_2.4.1_x64-setup.exe",
+          "size": 7948761,
+          "sha256": "6702b9ad45f1b8466fd8f2057be96450329477a43780a6437005c8e1f74aad3b"
+        },
+        {
+          "name": "SoDeck_2.4.1_x64-setup.exe.sig",
+          "size": 436,
+          "sha256": "e7389aa5e6c20902c77ba8a9807854ab6923186d8f7f58e253278a9c1d65425d"
+        }
+      ],
+      "toolCommit": "70606263ebd4cded8e23524459e89ae5fa5d60f1",
+      "passed": true,
+      "windowsInstallModes": [
+        {
+          "mode": "CurrentUser",
+          "hive": "HKCU",
+          "install": "C:\\Users\\runneradmin\\AppData\\Local\\Programs\\SoDeck",
+          "passed": true
+        },
+        {
+          "mode": "AllUsers",
+          "hive": "HKLM",
+          "install": "C:\\Program Files\\SoDeck",
+          "passed": true
+        }
+      ],
+      "pluginIconsNative": true,
+      "desktopShellNative": true
+    }
+  ],
+  "originalPackageBytesVerified": true,
+  "release": null,
+  "completed": false,
+  "blocker": {
+    "stage": "metadata",
+    "error": "GitHub POST /releases returned HTTP 500; failed-job rerun, job-specific rerun, workflow dispatch and authenticated web retry also failed during the GitHub incident.",
+    "statusUrl": "https://www.githubstatus.com/",
+    "observedAt": "2026-11-25T16:07:32.679Z"
+  }
+}
