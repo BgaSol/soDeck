@@ -1,0 +1,170 @@
+{
+  "version": "2.5.0",
+  "source": "d1ccdc9c95724fd0eb9da34b07f848072ec830cf",
+  "recordedAt": "2026-11-25T19:15:30.095Z",
+  "platform": "windows-x86_64",
+  "checks": {
+    "typeFormat": true,
+    "scripts": {
+      "passed": 218,
+      "failed": 0
+    },
+    "core": {
+      "passed": 349,
+      "failed": 0,
+      "ignored": 17,
+      "suites": [
+        {
+          "passed": 140,
+          "failed": 0,
+          "ignored": 1
+        },
+        {
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 11,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 56,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 34,
+          "failed": 0,
+          "ignored": 14
+        },
+        {
+          "passed": 11,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 17,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 13,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 37,
+          "failed": 0,
+          "ignored": 2
+        },
+        {
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 12,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    },
+    "browser": {
+      "fullUi": true,
+      "applicationSettings": true,
+      "desktopShell": true
+    },
+    "nativeStartup": {
+      "clipboardNative": false,
+      "completed": true,
+      "desktopFilesNative": false,
+      "desktopOpenNative": false,
+      "desktopShellNative": true,
+      "desktopStartupNative": true,
+      "loginRegistrationIoNative": true,
+      "loginRestartNative": true,
+      "macosApplicationPolicyNative": false,
+      "packageNative": true,
+      "pid": 9024,
+      "pluginIconsNative": true,
+      "sshNative": false,
+      "target": "x86_64-pc-windows-msvc",
+      "version": "2.5.0",
+      "workspaceNative": false
+    },
+    "nativeClose": {
+      "completed": true,
+      "platform": "win32",
+      "trayOnly": true,
+      "checks": [
+        "titlebar: background kept original views, unsaved editor and actual tunnel bytes; restored original window",
+        "titlebar: cancel kept original views/draft, PTY and forwarding; discard stopped four plugins, drained SSH/forwarding, released the port and exited",
+        "native: background kept original views, unsaved editor and actual tunnel bytes; restored original window",
+        "native: cancel kept original views/draft, PTY and forwarding; discard stopped four plugins, drained SSH/forwarding, released the port and exited"
+      ],
+      "plugins": [
+        {
+          "id": "sodeck.terminal",
+          "version": "0.11.1"
+        },
+        {
+          "id": "sodeck.files",
+          "version": "0.12.0"
+        },
+        {
+          "id": "sodeck.network-proxy",
+          "version": "0.6.0"
+        },
+        {
+          "id": "sodeck.system-status",
+          "version": "0.5.0"
+        }
+      ],
+      "executable": "C:\\Users\\bgaso\\Documents\\works\\soDeck\\src-tauri\\target\\release\\sodeck.exe"
+    }
+  },
+  "program": {
+    "sha256": "dec5973a6ac5420ad795a736e1887dfd7af961705aa987bcdfdd10f80a93a6d4"
+  },
+  "fixesAndRetries": [
+    "Windows canonicalization initially exposed a verbatim path to existing plugin clients; normalized at the core path boundary and reran plugin/core regressions.",
+    "Headless reopen retains a bounded wait for the last worker reference after shutdown; the real update-source switch/rollback regression and complete core suite passed.",
+    "The browser test fixture now declares UTF-8 so Chinese failure messages are asserted correctly.",
+    "The replacement-process smoke waits for the reported process to exit before the next persisted-data launch; final native two-launch test passed.",
+    "A concurrent browser test held catalog-fixture.exe during an earlier full-core rebuild; reran after browser completion.",
+    "First deep native run omitted the native-pointer helper environment; retried with the same-architecture helper and passed."
+  ],
+  "unverified": [
+    "Real OS logout/login and all system startup-manager policy variants.",
+    "Physical tray/menu mouse, macOS Dock/Spaces, Linux real no-tray desktops, OS session termination, IME/screen reader/mixed DPI.",
+    "Existing native close test uses tray-only mode; OS pointer page tear-out is outside this run.",
+    "This local build is not the five-platform release package acceptance or a production upgrade."
+  ]
+}

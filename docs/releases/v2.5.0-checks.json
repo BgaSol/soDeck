@@ -1,0 +1,282 @@
+{
+  "version": "2.5.0",
+  "source": "d1ccdc9c95724fd0eb9da34b07f848072ec830cf",
+  "checkRun": {
+    "conclusion": "success",
+    "createdAt": "2026-11-25T19:07:43Z",
+    "databaseId": 45682072110,
+    "headSha": "d1ccdc9c95724fd0eb9da34b07f848072ec830cf",
+    "jobs": [
+      {
+        "id": 139444925109,
+        "name": "select",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45682072110/job/139444925109",
+        "conclusion": "success",
+        "startedAt": "2026-11-25T19:07:47Z",
+        "completedAt": "2026-11-25T19:08:02Z"
+      },
+      {
+        "id": 139445105666,
+        "name": "integration-network-linux-aarch64",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45682072110/job/139445105666",
+        "conclusion": "success",
+        "startedAt": "2026-11-25T19:08:08Z",
+        "completedAt": "2026-11-25T19:13:24Z"
+      },
+      {
+        "id": 139445105699,
+        "name": "desktop",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45682072110/job/139445105699",
+        "conclusion": "success",
+        "startedAt": "2026-11-25T19:08:05Z",
+        "completedAt": "2026-11-25T19:12:29Z"
+      },
+      {
+        "id": 139445105747,
+        "name": "integration-business-linux-x86_64",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45682072110/job/139445105747",
+        "conclusion": "success",
+        "startedAt": "2026-11-25T19:08:05Z",
+        "completedAt": "2026-11-25T19:20:19Z"
+      },
+      {
+        "id": 139445105755,
+        "name": "browser",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45682072110/job/139445105755",
+        "conclusion": "success",
+        "startedAt": "2026-11-25T19:08:05Z",
+        "completedAt": "2026-11-25T19:17:12Z"
+      },
+      {
+        "id": 139445105765,
+        "name": "integration-network-linux-x86_64",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45682072110/job/139445105765",
+        "conclusion": "success",
+        "startedAt": "2026-11-25T19:08:05Z",
+        "completedAt": "2026-11-25T19:12:45Z"
+      },
+      {
+        "id": 139445105782,
+        "name": "checks",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45682072110/job/139445105782",
+        "conclusion": "success",
+        "startedAt": "2026-11-25T19:08:05Z",
+        "completedAt": "2026-11-25T19:08:47Z"
+      },
+      {
+        "id": 139445105809,
+        "name": "native-linux-aarch64",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45682072110/job/139445105809",
+        "conclusion": "success",
+        "startedAt": "2026-11-25T19:08:08Z",
+        "completedAt": "2026-11-25T19:14:47Z"
+      },
+      {
+        "id": 139445105844,
+        "name": "native-linux-x86_64",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45682072110/job/139445105844",
+        "conclusion": "success",
+        "startedAt": "2026-11-25T19:08:05Z",
+        "completedAt": "2026-11-25T19:13:21Z"
+      },
+      {
+        "id": 139445105922,
+        "name": "native-windows-aarch64",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45682072110/job/139445105922",
+        "conclusion": "success",
+        "startedAt": "2026-11-25T19:08:05Z",
+        "completedAt": "2026-11-25T19:18:09Z"
+      },
+      {
+        "id": 139445105937,
+        "name": "native-macos-aarch64",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45682072110/job/139445105937",
+        "conclusion": "success",
+        "startedAt": "2026-11-25T19:08:06Z",
+        "completedAt": "2026-11-25T19:14:04Z"
+      },
+      {
+        "id": 139445106015,
+        "name": "native-windows-x86_64",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45682072110/job/139445106015",
+        "conclusion": "success",
+        "startedAt": "2026-11-25T19:08:05Z",
+        "completedAt": "2026-11-25T19:16:50Z"
+      },
+      {
+        "id": 139445109136,
+        "name": "netem",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45682072110/job/139445109136",
+        "conclusion": "skipped",
+        "startedAt": "2026-11-25T19:08:03Z",
+        "completedAt": "2026-11-25T19:08:03Z"
+      },
+      {
+        "id": 139452304452,
+        "name": "format",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45682072110/job/139452304452",
+        "conclusion": "success",
+        "startedAt": "2026-11-25T19:20:22Z",
+        "completedAt": "2026-11-25T19:20:35Z"
+      }
+    ],
+    "status": "completed",
+    "updatedAt": "2026-11-25T19:20:35Z",
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45682072110"
+  },
+  "scope": "Five native core/source targets; selected browser, Windows desktop/OpenSSH, Linux network on both architectures and selected business/plugin checks. Netem was intentionally skipped.",
+  "harnessFollowup": {
+    "source": "4ee8bc2e561b758397bac6934a9d18f5da31e6e1",
+    "run": 45687338558,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45687338558",
+    "scope": "Harness-only follow-up; product sources equal the released package source. Netem skipped.",
+    "firstAttempt": {
+      "conclusion": "failure",
+      "failures": [
+        {
+          "id": 139463545643,
+          "name": "integration-business-linux-x86_64",
+          "url": "https://github.com/BgaSol/soDeck/actions/runs/45687338558/job/139463545643",
+          "startedAt": "2026-11-25T19:39:53Z",
+          "completedAt": "2026-11-25T19:50:16Z",
+          "failedSteps": [
+            "Docker UI and source process regression"
+          ]
+        },
+        {
+          "id": 139469455182,
+          "name": "format",
+          "url": "https://github.com/BgaSol/soDeck/actions/runs/45687338558/job/139469455182",
+          "startedAt": "2026-11-25T19:50:19Z",
+          "completedAt": "2026-11-25T19:50:29Z",
+          "failedSteps": [
+            "Report executed and skipped checks; reject failed or missing selected jobs"
+          ]
+        }
+      ],
+      "reason": "Docker log process fixture timed out waiting for plugin state at scripts/test-docker-logs-process.mjs:8 through scripts/docker-process.mjs:8. Docker sources were unchanged. Dependent summary failed because of this job."
+    },
+    "retry": {
+      "requestedJobId": 139463545643,
+      "attempt": 2,
+      "status": "completed",
+      "scope": "Only the failed Linux business job and its dependent summary were rerun; successful jobs were retained.",
+      "conclusion": "success",
+      "updatedAt": "2026-11-25T20:02:46Z",
+      "jobs": [
+        {
+          "id": 139470549057,
+          "name": "integration-business-linux-x86_64",
+          "url": "https://github.com/BgaSol/soDeck/actions/runs/45687338558/job/139470549057",
+          "conclusion": "success",
+          "startedAt": "2026-11-25T19:52:16Z",
+          "completedAt": "2026-11-25T20:02:33Z"
+        },
+        {
+          "id": 139470550844,
+          "name": "desktop",
+          "url": "https://github.com/BgaSol/soDeck/actions/runs/45687338558/job/139470550844",
+          "conclusion": "success",
+          "startedAt": "2026-11-25T19:39:54Z",
+          "completedAt": "2026-11-25T19:42:54Z"
+        },
+        {
+          "id": 139470551741,
+          "name": "native-windows-x86_64",
+          "url": "https://github.com/BgaSol/soDeck/actions/runs/45687338558/job/139470551741",
+          "conclusion": "success",
+          "startedAt": "2026-11-25T19:39:55Z",
+          "completedAt": "2026-11-25T19:47:17Z"
+        },
+        {
+          "id": 139470551881,
+          "name": "netem",
+          "url": "https://github.com/BgaSol/soDeck/actions/runs/45687338558/job/139470551881",
+          "conclusion": "skipped",
+          "startedAt": "2026-11-25T19:52:14Z",
+          "completedAt": "2026-11-25T19:39:51Z"
+        },
+        {
+          "id": 139470552730,
+          "name": "browser",
+          "url": "https://github.com/BgaSol/soDeck/actions/runs/45687338558/job/139470552730",
+          "conclusion": "success",
+          "startedAt": "2026-11-25T19:39:53Z",
+          "completedAt": "2026-11-25T19:48:45Z"
+        },
+        {
+          "id": 139470553517,
+          "name": "integration-network-linux-aarch64",
+          "url": "https://github.com/BgaSol/soDeck/actions/runs/45687338558/job/139470553517",
+          "conclusion": "success",
+          "startedAt": "2026-11-25T19:39:56Z",
+          "completedAt": "2026-11-25T19:44:53Z"
+        },
+        {
+          "id": 139470618838,
+          "name": "select",
+          "url": "https://github.com/BgaSol/soDeck/actions/runs/45687338558/job/139470618838",
+          "conclusion": "success",
+          "startedAt": "2026-11-25T19:39:38Z",
+          "completedAt": "2026-11-25T19:39:50Z"
+        },
+        {
+          "id": 139470620519,
+          "name": "native-windows-aarch64",
+          "url": "https://github.com/BgaSol/soDeck/actions/runs/45687338558/job/139470620519",
+          "conclusion": "success",
+          "startedAt": "2026-11-25T19:39:53Z",
+          "completedAt": "2026-11-25T19:48:32Z"
+        },
+        {
+          "id": 139470621727,
+          "name": "native-linux-aarch64",
+          "url": "https://github.com/BgaSol/soDeck/actions/runs/45687338558/job/139470621727",
+          "conclusion": "success",
+          "startedAt": "2026-11-25T19:39:56Z",
+          "completedAt": "2026-11-25T19:45:35Z"
+        },
+        {
+          "id": 139470622585,
+          "name": "native-macos-aarch64",
+          "url": "https://github.com/BgaSol/soDeck/actions/runs/45687338558/job/139470622585",
+          "conclusion": "success",
+          "startedAt": "2026-11-25T19:39:55Z",
+          "completedAt": "2026-11-25T19:45:41Z"
+        },
+        {
+          "id": 139470639637,
+          "name": "integration-network-linux-x86_64",
+          "url": "https://github.com/BgaSol/soDeck/actions/runs/45687338558/job/139470639637",
+          "conclusion": "success",
+          "startedAt": "2026-11-25T19:39:54Z",
+          "completedAt": "2026-11-25T19:45:30Z"
+        },
+        {
+          "id": 139470647063,
+          "name": "checks",
+          "url": "https://github.com/BgaSol/soDeck/actions/runs/45687338558/job/139470647063",
+          "conclusion": "success",
+          "startedAt": "2026-11-25T19:39:53Z",
+          "completedAt": "2026-11-25T19:40:33Z"
+        },
+        {
+          "id": 139470655198,
+          "name": "native-linux-x86_64",
+          "url": "https://github.com/BgaSol/soDeck/actions/runs/45687338558/job/139470655198",
+          "conclusion": "success",
+          "startedAt": "2026-11-25T19:39:54Z",
+          "completedAt": "2026-11-25T19:45:32Z"
+        },
+        {
+          "id": 139476363555,
+          "name": "format",
+          "url": "https://github.com/BgaSol/soDeck/actions/runs/45687338558/job/139476363555",
+          "conclusion": "success",
+          "startedAt": "2026-11-25T20:02:36Z",
+          "completedAt": "2026-11-25T20:02:46Z"
+        }
+      ]
+    }
+  }
+}
