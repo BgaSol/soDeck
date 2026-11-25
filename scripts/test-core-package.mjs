@@ -25,8 +25,8 @@ try {
   const env = { SODECK_PACKAGE_ONLY: "1", SODECK_TEST_LOGIN_RESTART:"1", SODECK_REQUIRE_DESKTOP_SHELL: "1", SODECK_EXPECT_TARGET: target, SODECK_EXPECT_CORE_VERSION: metadata.version, SODECK_TEST_UPDATE_BUNDLE: bundle, WEBKIT_DISABLE_DMABUF_RENDERER: "1", APPIMAGE_EXTRACT_AND_RUN: "1" };
   function smoke(executable, appimage = false) {
     if (!appimage) verifyBinary(executable, target);
-    const launch = process.platform === "linux" ? ["dbus-run-session", "--", "xvfb-run", "-a", "sh", "scripts/linux-package-desktop.sh", executable] : [executable];
-    run(process.execPath, ["scripts/smoke.mjs", ...launch], env);
+    if(process.platform==='linux') run('dbus-run-session',['--','xvfb-run','-a','sh','scripts/linux-package-desktop.sh',process.execPath,'scripts/smoke.mjs',executable],env);
+    else run(process.execPath,['scripts/smoke.mjs',executable],env);
   }
   if (process.platform === "win32") {
     const modes = [

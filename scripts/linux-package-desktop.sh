@@ -1,6 +1,7 @@
 #!/bin/sh
 # Xvfb supplies pixels; a window manager must acknowledge minimize/unminimize.
 set -eu
+dbus-update-activation-environment DISPLAY
 openbox --sm-disable >/dev/null 2>&1 &
 desktop_pid=$!
 trap 'kill "$desktop_pid" 2>/dev/null || true' EXIT INT TERM
