@@ -25,6 +25,7 @@ int main(int argc, const char **argv) {
     while ((!finished || (running && !running.terminated)) && deadline.timeIntervalSinceNow > 0)
       [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
     if (failure) { fprintf(stderr, "%s\n", failure.localizedDescription.UTF8String); return 1; }
+    fprintf(stderr, "Native login event launch: pid=%d completed=%d terminated=%d\n", running.processIdentifier, finished, running.terminated);
     return finished && running && running.terminated ? 0 : 1;
   }
 }
