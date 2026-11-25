@@ -1,10 +1,5 @@
 use serde_json::{json, Value};
-use std::{
-    fs::{self, File},
-    io::Write,
-    net::IpAddr,
-    path::PathBuf,
-};
+use std::{fs, io::Write, net::IpAddr, path::PathBuf};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Bind {
@@ -185,14 +180,15 @@ impl Rules {
         if bytes.len() > 512 * 1024 {
             return Err("规则容量超过上限".into());
         }
-        let temp = self.path.with_extension("json.tmp");
         let write = || -> std::io::Result<()> {
             fs::create_dir_all(self.path.parent().unwrap())?;
-            let mut f = File::create(&temp)?;
+            let parent = fs::canonicalize(self.path.parent().unwrap())?;
+            let mut f = tempfile::NamedTempFile::new_in(&parent)?;
             f.write_all(&bytes)?;
-            f.sync_all()?;
-            drop(f);
-            fs::rename(&temp, &self.path)
+            f.as_file().sync_all()?;
+            f.persist(parent.join(self.path.file_name().unwrap()))
+                .map_err(|e| e.error)?;
+            Ok(())
         };
         write().map_err(|e| format!("规则保存失败：{e}"))?;
         self.items = items;
@@ -240,7 +236,11 @@ mod tests {
     use super::*;
     #[test]
     fn writes_conflicts_and_corruption_preserves_file() {
-        let dir = std::env::temp_dir().join(format!("sodeck-rules-{}", std::process::id()));
+        let root = tempfile::tempdir().unwrap();
+        let dir = fs::canonicalize(root.path())
+            .unwrap()
+            .join("data".repeat(30))
+            .join("data".repeat(30));
         fs::create_dir_all(&dir).unwrap();
         let mut s = Rules::open(dir.clone());
         let r = json!({"id":"a","serverId":"s","revision":0,"name":"","type":"socks5","bind":{"host":"127.0.0.1","port":0}});

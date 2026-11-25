@@ -1,3 +1,4 @@
+import {blockTarget,restoreTarget} from './write-failure-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -75,7 +76,7 @@ export async function verifyNetworkCommands(executable){
     const revealed=await peer.request('commands.handle',{name:'network.rule.reveal.v1',commandId:'reveal',context,payload:{version:1,ruleId:'manual-second'}});assert.equal(revealed.viewId,'manager');assert.equal((await request('ui.getView','manager')).data.navigation.selected,'manual-second');
     await assert.rejects(ensure({host:'localhost',port:80}),/invalidParams/);
     const count=(await catalog()).total;
-    const blocked=path.join(directory,'network-rules.json.tmp');fs.mkdirSync(blocked);await assert.rejects(ensure({host:'127.0.0.1',port:7070}),/storageUnavailable/);fs.rmdirSync(blocked);assert.equal((await catalog()).total,count);
+    const blocked=path.join(directory,'network-rules.json');blockTarget(blocked);await assert.rejects(ensure({host:'127.0.0.1',port:7070}),/storageUnavailable/);restoreTarget(blocked);assert.equal((await catalog()).total,count);
     await request('ui.disposeView','manager');await until(async()=>[...listeners.values()].every(e=>e.closed),Boolean);
     await peer.close();assert.equal(peer.child.exitCode,0);
     console.log('Network commands: background ownership, target reuse/concurrency, lost create/put, configuration revisions, selection, reveal, checks, storage failure and actual listener cleanup passed.');

@@ -1,6 +1,6 @@
 [package]
 name = "sodeck-network-proxy"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 publish = false
 
@@ -8,6 +8,7 @@ publish = false
 sodeck-plugin-client = { path = "../../crates/plugin-client" }
 serde_json = "=1.0.154"
 socker = "=1.0.0"
+tempfile = "=3.27.0"
 
 [profile.release]
 strip = true

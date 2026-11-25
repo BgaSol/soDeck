@@ -1,3 +1,4 @@
+import {blockTarget,restoreTarget} from './write-failure-fixture.mjs';
 import {verifyNetworkCommands} from './test-network-commands.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -63,10 +64,10 @@ try{
   await assert.rejects(event({action:'delete',id:'rule',revision:1}),/清理|确认/);
   failRelease=false;await until(row,r=>r.run?.canStart===true);
   const replacement=net.createServer();await new Promise(resolve=>replacement.listen(port,'127.0.0.1',resolve));await new Promise(resolve=>replacement.close(resolve));
-  const blockedWrite=path.join(directory,'network-rules.json.tmp');fs.mkdirSync(blockedWrite);
+  const blockedWrite=path.join(directory,'network-rules.json');blockTarget(blockedWrite);
   await assert.rejects(event({action:'delete',id:'rule',revision:1}),/保存失败/);
   assert.equal((await row()).run.canStart,true,'Failed deletion must preserve the stopped run');assert.equal(createCount,1);
-  fs.rmdirSync(blockedWrite);
+  restoreTarget(blockedWrite);
   await event({action:'delete',id:'rule',revision:1});assert.equal(createCount,1);
   console.log('Network process: query failure, unlocked stop, explicit save/start/delete, and actual port cleanup passed.');
   await peer.close();
