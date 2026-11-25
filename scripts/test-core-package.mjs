@@ -35,7 +35,7 @@ try {
       { mode: "AllUsers", hive: "HKLM", install: path.join(process.env.ProgramW6432 ?? process.env.ProgramFiles, "SoDeck") },
     ];
     function registration(hive) {
-      const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `$key = '${hive}:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SoDeck'; $item = Get-ItemProperty -LiteralPath $key -ErrorAction SilentlyContinue; if ($null -ne $item) { $item | ConvertTo-Json -Compress }`], { encoding: "utf8", windowsHide: true });
+      const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `$key = '${hive}:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SoDeck'; try { Get-ItemProperty -LiteralPath $key -ErrorAction Stop | ConvertTo-Json -Compress } catch [System.Management.Automation.ItemNotFoundException] {} catch { Write-Error $_; exit 1 }; exit 0`], { encoding: "utf8", windowsHide: true });
       assert.equal(result.status, 0, result.stderr);
       return result.stdout.trim() ? JSON.parse(result.stdout) : null;
     }
