@@ -1,0 +1,43 @@
+{
+  "version": "2.5.1",
+  "source": "a2a13db93ab6d82ffe503652867ea6c97328214c",
+  "packageRun": 45707456360,
+  "captureRun": 45707456360,
+  "service": {
+    "bundle": "/Users/runner/Applications/SoDeck.app",
+    "disabled": true,
+    "enabled": true,
+    "migrated": true,
+    "processContinued": true
+  },
+  "diagnostics": {
+    "status": 0,
+    "error": null,
+    "identified": true
+  },
+  "visualInspection": {
+    "performed": true,
+    "name": "SoDeck",
+    "section": "Open at Login",
+    "kind": "Application",
+    "icon": "Matches the repository icon.png green terminal monitor with pink base",
+    "screenshot": "v2.5.1-login-items.png",
+    "screenshotSha256": "3c3612a3d5a183bd12f0153bb49b5e45b9060a82004a1f25c8d5234fc79889d3",
+    "sourceIcnsSha256": "6741d4bc756c13264ede3a55a7d74a875a08283adc828427fa0caeba14fe1482"
+  },
+  "scopeLimitations": [
+    "This capture proves the main application registration and displayed identity on this macOS runner, not actual logout/login or every system version.",
+    "The capture run completed registration/migration/cancellation; its separate synthetic-event smoke later failed and was retried with the same packages."
+  ],
+  "finalVerificationRun": 45710948218,
+  "finalNativeReceipt": {
+    "bundle": "/Users/runner/Applications/SoDeck.app",
+    "disabled": true,
+    "enabled": true,
+    "migrated": true,
+    "processContinued": true,
+    "syntheticNativeEvent": true,
+    "realLogoutLogin": false,
+    "visualInspection": false
+  }
+}

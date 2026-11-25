@@ -52,7 +52,7 @@ JetBrains Mono、Source Code Pro、IBM Plex Mono 字体随相关插件独立打�
 
 开关读取系统当前登记，不保存第二份开启偏好；进入本页、返回应用或本应用修改结束后刷新，不在每秒状态刷新中反复查询系统。保存期间禁止重复操作，失败就地显示原因并读回实际状态，可重新读取；无法确认时不显示虚假成功。能够识别的系统禁用会提示 Windows 启动设置或 macOS 登录项中的操作位置，SoDeck 不在刷新、启动或更新时重新开启系统禁用项。Linux 识别本应用自启动文件的 Hidden 与 GNOME 禁用标记；第三方管理工具和桌面特定策略不承诺全部可查询。
 
-Windows 使用当前用户 Run 登记，Linux 使用 XDG autostart。核心 2.5.1 起，macOS 13+ 使用系统主应用登录项 `SMAppService.mainApp`，将登记关联到完整 SoDeck.app 的名称与图标；macOS 11/12 保留 LaunchAgent（RunAtLoad，无 KeepAlive）。新行为待发行，见[2.5.1](../releases/v2.5.1.md)。开启需要稳定的正式程序位置：Windows 已安装目录、Linux DEB 的安装位置或固定目录中的 AppImage、已移出 DMG/临时目录及 App Translocation 的 macOS 应用。AppImage 登记外层文件，不引用临时挂载中的程序。移动程序后按系统实际登记反馈，不扫描磁盘寻找副本。开发和普通隔离验收模式禁止修改真实用户登录项。
+Windows 使用当前用户 Run 登记，Linux 使用 XDG autostart。核心 2.5.1 起，macOS 13+ 使用系统主应用登录项 `SMAppService.mainApp`，将登记关联到完整 SoDeck.app 的名称与图标；macOS 11/12 保留 LaunchAgent（RunAtLoad，无 KeepAlive），实际验证范围见[2.5.1](../releases/v2.5.1.md)。开启需要稳定的正式程序位置：Windows 已安装目录、Linux DEB 的安装位置或固定目录中的 AppImage、已移出 DMG/临时目录及 App Translocation 的 macOS 应用。AppImage 登记外层文件，不引用临时挂载中的程序。移动程序后按系统实际登记反馈，不扫描磁盘寻找副本。开发和普通隔离验收模式禁止修改真实用户登录项。
 
 macOS 13+ 检测到仍开启的旧 SoDeck 登记时，设置提示“更新登录项”；点击后确认新主应用登记有效，再移除属于当前安装的旧文件。页面刷新和升级启动不自动迁移或重新启用系统禁用项。需要系统允许、旧文件归属不明或清理失败时显示具体原因；失败保留旧项，必要时撤销本次新登记，不声称迁移完成。迁移和关闭登录项均不结束当前进程或已有会话。系统可能保留历史记录及缓存，应用不清空系统登录项数据库。
 
