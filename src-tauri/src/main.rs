@@ -222,8 +222,7 @@ async fn component_data(
         if request["action"] == "begin" {
             use tauri_plugin_dialog::DialogExt;
             let desktop = window.state::<DesktopShell>();
-            desktop.present(window.app_handle(), window.label(), true)?;
-            let dialog_guard = desktop.modal(window.app_handle(), window.label());
+            let dialog_guard = desktop.present_modal(window.app_handle(), window.label())?;
             let started = app
                 .core
                 .content_export_begin(window.label(), &surface_id, &request)?;
@@ -311,8 +310,7 @@ async fn component_data(
         if action == "input.chooseUpload" || action == "input.chooseDownload" {
             use tauri_plugin_dialog::DialogExt;
             let desktop = window.state::<DesktopShell>();
-            desktop.present(window.app_handle(), window.label(), true)?;
-            let dialog_guard = desktop.modal(window.app_handle(), window.label());
+            let dialog_guard = desktop.present_modal(window.app_handle(), window.label())?;
             let started = app.core.files_begin_input(
                 window.label(),
                 &surface_id,
@@ -359,8 +357,7 @@ async fn component_data(
         if request["action"] == "export.start" {
             use tauri_plugin_dialog::DialogExt;
             let desktop = window.state::<DesktopShell>();
-            desktop.present(window.app_handle(), window.label(), true)?;
-            let dialog_guard = desktop.modal(window.app_handle(), window.label());
+            let dialog_guard = desktop.present_modal(window.app_handle(), window.label())?;
             let (receipt, task) =
                 app.core
                     .files_export_begin(window.label(), &surface_id, &request)?;
@@ -743,7 +740,7 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
         let result = validation.and(stopped);
         if result.is_ok() {
             let status = core.snapshot();
-            let report = serde_json::json!({"completed":true,"workspaceNative":!package_only,"packageNative":true,"pluginIconsNative":package_only,"desktopShellNative":package_only,"sshNative":ssh_test_requested,"clipboardNative":clipboard_test_requested,"desktopFilesNative":desktop_files_requested,"desktopOpenNative":desktop_open_requested,"version":status.version,"target":status.target});
+            let report = serde_json::json!({"completed":true,"workspaceNative":!package_only,"packageNative":true,"pluginIconsNative":package_only,"desktopShellNative":package_only,"macosApplicationPolicyNative":package_only && cfg!(target_os = "macos"),"sshNative":ssh_test_requested,"clipboardNative":clipboard_test_requested,"desktopFilesNative":desktop_files_requested,"desktopOpenNative":desktop_open_requested,"version":status.version,"target":status.target});
             let _ = std::fs::write(
                 status.data_directory.join("smoke-result.json"),
                 report.to_string(),
@@ -872,8 +869,11 @@ fn main() {
                 desktop.core.close_host_lost(window.label()); desktop.remove_surface(window.label()); desktop.core.workspace_changed();
                 if window.label() == "main" && !desktop.core.is_closing() && !shell.handed_off() {
                     let native = window.app_handle().clone(); let recreate = native.clone();
-                    let _ = native.run_on_main_thread(move || { let _ = recreate.state::<DesktopWindows>().restore_main_display(&recreate); });
+                    let _ = native.run_on_main_thread(move || {
+                        if let Err(error) = recreate.state::<DesktopShell>().recover_main(&recreate) { recreate.state::<DesktopShell>().report(&recreate, error); }
+                    });
                 }
+                shell.reconcile(window.app_handle());
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -955,9 +955,7 @@ fn main() {
             if handle.get_webview_window("main").is_none()
                 && !handle.state::<Application>().core.is_closing()
             {
-                let _ = handle
-                    .state::<DesktopWindows>()
-                    .restore_main_display(handle);
+                let _ = handle.state::<DesktopShell>().recover_main(handle);
             } else {
                 DesktopShell::request_exit(handle);
             }

@@ -20,7 +20,7 @@
 
 共享 [plugin-protocol](../crates/plugin-protocol/src/lib.rs) 定义 API 版本、Context、请求和错误，核心与插件客户端使用同一契约。[页面 SDK](../packages/plugin-sdk/src/index.js) 随每个插件独立打包，负责 Surface 身份、等待请求与清理。
 
-原生桌面壳统一托盘、关闭/收起分流、应用收尾、必要交互显示和主文档导航交接；DesktopWindows 保留工作台移窗、坐标与显示原语。主文档代次拒绝旧回执，待导航只保留最新目标，事件用于唤醒而快照用于恢复。原生模态框按窗口保留实际存续保护，取消请求不提前解除。前端 [desktop.ts](../src/desktop.ts) 将原生可见性与 Shell 路由组合，再沿原 `visibilityChanged` 更新插件显示，不改变资源生命周期。消息成功提交释放存储锁后独立通知托盘未读投影，通用日志刷新不触发该投影。具体行为见[桌面设置](features/settings.md#托盘与后台运行)。
+原生桌面壳统一托盘、关闭/收起分流、应用收尾、必要交互显示和主文档导航交接；其内部[呈现模块](../src-tauri/src/desktop_shell/presentation.rs)在主线程统一窗口显示与 macOS 应用身份，并读取实际系统策略确认结果。DesktopWindows 保留窗口创建、工作台移窗、坐标与销毁，迁移先取得临时显示回执再提交，失败只回退本次未被新意图接管的显示。主窗口收起意图与准备中的请求分开，文档重载不丢失已完成意图；工作窗口和退出状态复用核心登记，不另存 Dock 配置。主文档代次拒绝旧回执，待导航只保留最新目标，事件用于唤醒而快照用于恢复。原生模态框按窗口保留实际存续保护，取消请求不提前解除。前端 [desktop.ts](../src/desktop.ts) 将原生可见性与 Shell 路由组合，再沿原 `visibilityChanged` 更新插件显示，不改变资源生命周期。消息成功提交释放存储锁后独立通知托盘未读投影，通用日志刷新不触发该投影。具体行为见[桌面设置](features/settings.md#托盘与后台运行)。
 
 [plugin-client](../crates/plugin-client/src/lib.rs) 提供 RPC、命令票据、设置、共享状态和文件编辑生命周期客户端，不保存连接凭据，也不封装插件之间的直接调用。文件编辑的标准 UI 在 [packages/file-editor](../packages/file-editor/)，随使用组件独立打包；[接入与职责](features/file-editor.md)由通用编辑功能说明维护。
 

@@ -22,6 +22,8 @@ use tauri::{
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
+mod presentation;
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Navigation {
@@ -48,6 +50,8 @@ struct State {
     navigation: Option<Navigation>,
     background: Option<Background>,
     modals: HashMap<u64, String>,
+    main_backgrounded: bool,
+    presentation: u64,
 }
 impl State {
     fn next(&mut self) -> u64 {
@@ -58,6 +62,11 @@ impl State {
         self.generation += 1;
         self.ready = false;
         self.background = None;
+    }
+    fn begin_presentation(&mut self) -> u64 {
+        self.background = None;
+        self.presentation = self.next();
+        self.presentation
     }
     fn acknowledge_navigation(&mut self, generation: u64, id: u64) {
         if self.generation == generation && self.navigation.as_ref().is_some_and(|n| n.id == id) {
@@ -102,11 +111,6 @@ impl DesktopShell {
     }
     pub fn handoff(&self) {
         self.exit_handoff.store(true, Ordering::Release);
-    }
-    pub fn cancel_pending_background(&self, label: &str) {
-        if label == "main" {
-            self.state.lock().unwrap().background = None;
-        }
     }
     pub fn page_started(&self, label: &str) {
         if label == "main" {
@@ -254,27 +258,6 @@ impl DesktopShell {
             shell.report(handle, error);
         }
     }
-    pub fn present(
-        &self,
-        handle: &tauri::AppHandle,
-        label: &str,
-        focus: bool,
-    ) -> Result<(), String> {
-        if self.handed_off() {
-            return Err("应用已交接退出".into());
-        }
-        if label == "main" {
-            self.cancel_pending_background(label);
-            handle
-                .state::<DesktopWindows>()
-                .restore_main_display(handle)?;
-        }
-        handle
-            .state::<DesktopWindows>()
-            .present_window(handle, label, focus)?;
-        Self::changed(handle);
-        Ok(())
-    }
     fn navigate(&self, handle: &tauri::AppHandle, target: Destination) -> Result<(), String> {
         {
             let mut state = self.state.lock().unwrap();
@@ -321,6 +304,7 @@ impl DesktopShell {
                         }
                     }
                 }
+                shell.reconcile(&handle2);
                 Self::changed(&handle2);
             } else if let (Some(window), Some(attempt), Some(question)) = (
                 value["windowId"].as_str(),
@@ -420,6 +404,7 @@ impl DesktopShell {
                 return;
             }
             let id = state.next();
+            state.presentation = id;
             let b = Background {
                 id,
                 generation: state.generation,
@@ -439,6 +424,8 @@ impl DesktopShell {
         // The first explanation is a user decision, so it has no machine timeout.
         let detail = if cfg!(target_os = "linux") {
             "关闭主窗口后将最小化并继续运行。可通过任务栏、窗口切换或托盘菜单返回。"
+        } else if cfg!(target_os = "macos") {
+            "关闭主窗口后，连接和任务继续运行。没有其他工作窗口时，SoDeck 将仅保留在屏幕顶部菜单栏。请从菜单栏重新打开，或选择“退出 SoDeck”结束应用。"
         } else {
             "关闭主窗口后将隐藏到托盘，已有连接和任务继续运行。可从托盘打开主窗口，选择“退出 SoDeck”结束应用。"
         };
@@ -498,6 +485,19 @@ impl DesktopShell {
         id: u64,
         allow: bool,
     ) -> Result<(), String> {
+        presentation::on_main(handle, move |handle| {
+            handle
+                .state::<Self>()
+                .finish_background_on_main(handle, generation, id, allow)
+        })
+    }
+    fn finish_background_on_main(
+        &self,
+        handle: &tauri::AppHandle,
+        generation: u64,
+        id: u64,
+        allow: bool,
+    ) -> Result<(), String> {
         {
             let state = self.state.lock().unwrap();
             if state.generation != generation
@@ -539,6 +539,12 @@ impl DesktopShell {
             Self::changed(handle);
             return Err(error.to_string());
         }
+        if let Err(error) = self.apply_background_policy(handle) {
+            let recovery = self.present(handle, "main", true);
+            Self::changed(handle);
+            return Err(format!("收起未完成：{error}；窗口恢复：{recovery:?}"));
+        }
+        self.state.lock().unwrap().main_backgrounded = true;
         Self::changed(handle);
         if !self.core.desktop_preferences().1 {
             if let Err(error) = self.core.set_desktop_preferences(None, true) {
@@ -558,16 +564,10 @@ impl DesktopShell {
     }
     /// Runs in the packaged process, using the same tray/menu and background paths.
     pub fn verify_native(handle: &tauri::AppHandle) -> Result<(), String> {
-        let (reply, result) = std::sync::mpsc::channel();
-        let native = handle.clone();
-        handle
-            .run_on_main_thread(move || {
-                let _ = reply.send(Self::verify_on_main(&native));
-            })
-            .map_err(|e| e.to_string())?;
-        result
-            .recv_timeout(std::time::Duration::from_secs(8))
-            .map_err(|e| e.to_string())?
+        presentation::on_main(handle, Self::verify_on_main)?;
+        #[cfg(target_os = "macos")]
+        presentation::verify_native(handle)?;
+        Ok(())
     }
     fn verify_on_main(handle: &tauri::AppHandle) -> Result<(), String> {
         let shell = handle.state::<Self>();
@@ -752,18 +752,21 @@ pub fn desktop_present(
     attempt_id: Option<String>,
     question_id: Option<String>,
 ) -> Result<(), String> {
-    let shell = handle.state::<DesktopShell>();
-    if let (Some(attempt), Some(question)) = (&attempt_id, &question_id) {
-        if !shell
-            .core
-            .connection_question_current(window.label(), attempt, question)
-        {
-            return Err("连接问题已失效".into());
+    let label = window.label().to_owned();
+    presentation::on_main(&handle, move |handle| {
+        let shell = handle.state::<DesktopShell>();
+        if let (Some(attempt), Some(question)) = (&attempt_id, &question_id) {
+            if !shell
+                .core
+                .connection_question_current(&label, attempt, question)
+            {
+                return Err("连接问题已失效".into());
+            }
+        } else if attempt_id.is_some() || question_id.is_some() {
+            return Err("连接问题身份不完整".into());
         }
-    } else if attempt_id.is_some() || question_id.is_some() {
-        return Err("连接问题身份不完整".into());
-    }
-    shell.present(&handle, window.label(), true)
+        shell.present(handle, &label, true)
+    })
 }
 #[tauri::command]
 pub async fn choose_local_path(
@@ -775,8 +778,7 @@ pub async fn choose_local_path(
         return Err("未知文件选择用途".into());
     }
     let shell = handle.state::<DesktopShell>();
-    shell.present(&handle, window.label(), true)?;
-    let guard = shell.modal(&handle, window.label());
+    let guard = shell.present_modal(&handle, window.label())?;
     let dialog = handle.dialog().file().set_parent(&window);
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = guard;
@@ -820,6 +822,34 @@ mod tests {
         assert!(state.background.is_none());
         assert_eq!(state.generation, 1);
         assert_eq!(state.navigation.unwrap().id, 2);
+    }
+    #[test]
+    fn document_reload_keeps_completed_background_intent() {
+        let mut state = State {
+            main_backgrounded: true,
+            ..State::default()
+        };
+        state.reset_document();
+        assert!(state.main_backgrounded);
+    }
+    #[test]
+    fn new_presentation_invalidates_pending_background_without_reviving_old_receipts() {
+        let mut state = State::default();
+        let first = state.begin_presentation();
+        state.background = Some(Background {
+            id: first,
+            generation: 0,
+            preparing: true,
+        });
+        state.main_backgrounded = true;
+        let second = state.begin_presentation();
+        assert!(state.background.is_none());
+        assert!(second > first);
+        assert_eq!(state.presentation, second);
+        assert!(
+            state.main_backgrounded,
+            "Showing a secondary/candidate must not forget the main intent"
+        );
     }
     #[test]
     fn message_labels_include_only_unread_counts() {

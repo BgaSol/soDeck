@@ -1,5 +1,5 @@
 //! Native window coordination and physical screen-coordinate tab hit testing.
-use crate::{workspaces::Projection, AppCore};
+use crate::{desktop_shell::DesktopShell, workspaces::Projection, AppCore};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -406,7 +406,9 @@ impl DesktopWindows {
                         }
                         std::thread::sleep(Duration::from_millis(20));
                     }
-                    self.present_window(handle, &target, false)?;
+                    handle
+                        .state::<DesktopShell>()
+                        .present(handle, &target, false)?;
                     Ok(())
                 })();
                 if let Err(error) = display {
@@ -465,6 +467,7 @@ impl DesktopWindows {
         })();
         self.core.ui_state().restoring_layout = false;
         self.core.workspace_changed();
+        handle.state::<DesktopShell>().reconcile(handle);
         result
     }
     pub fn accept_session(
@@ -473,7 +476,9 @@ impl DesktopWindows {
         session: crate::workspaces::ConnectedSession,
     ) -> Result<crate::workspaces::Workspace, String> {
         let workspace = self.core.accept_connected(session)?;
-        self.present_window(handle, &workspace.window_id, true)?;
+        handle
+            .state::<DesktopShell>()
+            .present(handle, &workspace.window_id, true)?;
         Ok(workspace)
     }
     pub fn new(core: Arc<AppCore>) -> Self {
@@ -486,7 +491,7 @@ impl DesktopWindows {
             native_moves: Mutex::new(Default::default()),
         }
     }
-    pub fn restore_main_display(&self, handle: &tauri::AppHandle) -> Result<(), String> {
+    pub(crate) fn ensure_main_display(&self, handle: &tauri::AppHandle) -> Result<(), String> {
         if handle.get_webview_window("main").is_some() || self.core.is_closing() {
             return Ok(());
         }
@@ -497,7 +502,7 @@ impl DesktopWindows {
             .first()
             .ok_or("主窗口配置缺失")?;
         let result = tauri::WebviewWindowBuilder::from_config(handle, config)
-            .and_then(|builder| builder.build());
+            .and_then(|builder| builder.visible(false).build());
         if let Err(error) = result {
             self.core.log(
                 None,
@@ -506,33 +511,6 @@ impl DesktopWindows {
                 Some(serde_json::json!({"error":error.to_string()})),
             );
             return Err(error.to_string());
-        }
-        Ok(())
-    }
-    pub fn present_window(
-        &self,
-        handle: &tauri::AppHandle,
-        label: &str,
-        focus: bool,
-    ) -> Result<(), String> {
-        if focus {
-            if let Some(shell) = handle.try_state::<crate::desktop_shell::DesktopShell>() {
-                shell.cancel_pending_background(label);
-            }
-        }
-        let window = handle.get_webview_window(label).ok_or("目标窗口不存在")?;
-        window.show().map_err(|e| e.to_string())?;
-        if window.is_minimized().map_err(|e| e.to_string())? {
-            window.unminimize().map_err(|e| e.to_string())?;
-        }
-        if focus {
-            window.set_focus().map_err(|e| e.to_string())?;
-        }
-        if handle
-            .try_state::<crate::desktop_shell::DesktopShell>()
-            .is_some()
-        {
-            crate::desktop_shell::DesktopShell::changed(handle);
         }
         Ok(())
     }
@@ -555,7 +533,9 @@ impl DesktopWindows {
             crate::lifecycle::Target::Window { id: window.into() },
         )?;
         self.core.close_unhosted(&op.id);
-        self.present_window(handle, window, true)?;
+        handle
+            .state::<DesktopShell>()
+            .present(handle, window, true)?;
         Ok(())
     }
     pub fn finish_window(&self, handle: &tauri::AppHandle, window: &str) -> Result<(), String> {
@@ -572,6 +552,7 @@ impl DesktopWindows {
             std::thread::sleep(Duration::from_millis(10));
         }
         self.core.workspace_changed();
+        handle.state::<DesktopShell>().reconcile(handle);
         Ok(())
     }
     fn cleanup_empty(&self, handle: &tauri::AppHandle, window: &str) {
@@ -751,6 +732,7 @@ impl DesktopWindows {
         self.core
             .log(None, "info", "工作台迁移准备", Some(fields.clone()));
         self.core.workspace_changed();
+        let mut presented = None;
         let result = (|| {
             if new_window {
                 self.create_display(handle, &target, initial_bounds.as_ref(), position)?;
@@ -803,7 +785,11 @@ impl DesktopWindows {
                 }
             }
             let window = handle.get_webview_window(&target).ok_or("目标窗口已关闭")?;
-            self.present_window(handle, &target, false)?;
+            presented = Some(
+                handle
+                    .state::<DesktopShell>()
+                    .show_for_commit(handle, &target)?,
+            );
             if full {
                 self.core.commit_workbench_move(&m)?;
             } else {
@@ -813,12 +799,21 @@ impl DesktopWindows {
             self.core
                 .log(None, "info", "工作台迁移提交", Some(fields.clone()));
             self.core.workspace_changed();
-            let _ = self.present_window(handle, &target, true);
+            if let Some(receipt) = presented.take() {
+                handle
+                    .state::<DesktopShell>()
+                    .finish_staged(handle, receipt, true);
+            }
             Ok(())
         })();
         if result.is_err() {
             self.core.log(None, "warn", "工作台迁移取消", Some(fields));
             self.core.cancel_workbench_move(&m);
+            if let Some(receipt) = presented.take() {
+                handle
+                    .state::<DesktopShell>()
+                    .finish_staged(handle, receipt, false);
+            }
             if new_window {
                 self.cleanup_empty(handle, &target);
             }
@@ -839,6 +834,7 @@ impl DesktopWindows {
         }
         let movements = self.core.prepare_window_return(source, token)?;
         self.core.workspace_changed();
+        let mut presented = None;
         let result = (|| {
             let started = Instant::now();
             while !movements.iter().all(|m| self.core.transfer_prepared(m)) {
@@ -858,15 +854,28 @@ impl DesktopWindows {
                 std::thread::sleep(Duration::from_millis(20));
             }
             handle.get_webview_window("main").ok_or("主窗口已关闭")?;
-            self.present_window(handle, "main", false)?;
+            presented = Some(
+                handle
+                    .state::<DesktopShell>()
+                    .show_for_commit(handle, "main")?,
+            );
             self.core.commit_workbench_moves(&movements)?;
             self.core.workspace_changed();
-            let _ = self.present_window(handle, "main", true);
+            if let Some(receipt) = presented.take() {
+                handle
+                    .state::<DesktopShell>()
+                    .finish_staged(handle, receipt, true);
+            }
             Ok(())
         })();
         if result.is_err() {
             for m in &movements {
                 self.core.cancel_workbench_move(m);
+            }
+            if let Some(receipt) = presented.take() {
+                handle
+                    .state::<DesktopShell>()
+                    .finish_staged(handle, receipt, false);
             }
         } else {
             self.cleanup_empty(handle, source);
@@ -1197,7 +1206,9 @@ pub fn workbench_locate_view(
         .activate(&target, Some(&context.workspace_id))?;
     desktop.core.workspace_changed();
     let target_window = handle.get_webview_window(&target).ok_or("目标窗口已消失")?;
-    desktop.present_window(&handle, &target, true)?;
+    handle
+        .state::<DesktopShell>()
+        .present(&handle, &target, true)?;
     target_window
         .emit(
             "workbench-locate-view",

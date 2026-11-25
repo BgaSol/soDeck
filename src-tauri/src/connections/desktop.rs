@@ -1,5 +1,5 @@
 use super::{Answer, View};
-use crate::{windows::DesktopWindows, workspaces::Context};
+use crate::{desktop_shell::DesktopShell, windows::DesktopWindows, workspaces::Context};
 use serde::Deserialize;
 use tauri::{Manager, State, WebviewWindow};
 
@@ -63,7 +63,9 @@ pub async fn connection(
         let owner = state.owner(&context.workspace_id).ok_or("工作区已关闭")?;
         state.activate(&owner, Some(&context.workspace_id))?;
         drop(state);
-        desktop.present_window(window.app_handle(), &owner, true)?;
+        window
+            .state::<DesktopShell>()
+            .present(window.app_handle(), &owner, true)?;
         core.workspace_changed();
     }
     Ok(core.connection_views())

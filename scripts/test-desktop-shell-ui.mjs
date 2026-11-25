@@ -19,7 +19,7 @@ window.__TAURI_INTERNALS__={transformCallback:callback=>{const id=++sequence;cal
  if(command==='desktop_navigation_done'){
    if(state.generation===args.generation&&state.navigation?.id===args.id)state.navigation=null;return;
  }
- if(command==='desktop_background_done'){if(state.background?.id===args.id){state.background=null;if(args.allow)state.visible=false;}return;}
+ if(command==='desktop_background_done'){if(window.failNative){window.failNative=false;throw Error('macOS presentation rejected');}if(state.background?.id===args.id){state.background=null;if(args.allow)state.visible=false;}return;}
  throw Error(command);
 }};
 window.ui=new DesktopUi({label:'main'},{setWindowVisible:v=>visibility.push(v)},target=>{navigations.push(target);if(window.replaceDuringNavigation){state.navigation={id:3,target:'messages'};window.replaceDuringNavigation=false;}},async()=>allow,message=>notices.push(message));
@@ -41,6 +41,9 @@ try {
   assert.equal(await page.evaluate(()=>state.visible),true,'Blocked modal leaves the native window visible');
   assert.equal(await page.evaluate(()=>visibility.at(-1)),true);
   assert.equal(await page.evaluate(()=>notices.length),1);
+  await page.evaluate(async()=>{state.visible=true;state.background={id:6,generation:1};allow=true;window.failNative=true;await ui.refresh();});
+  assert.equal(await page.evaluate(()=>visibility.at(-1)),true,'Native failure restores actual plugin visibility after preflight');
+  assert.equal(await page.evaluate(()=>notices.at(-1)), 'Error: macOS presentation rejected');
   await page.evaluate(()=>ui.dispose());
   assert.deepEqual(errors,[]);
   console.log('Desktop shell UI: startup navigation, close priority, late acknowledgement, background visibility and modal refusal passed.');

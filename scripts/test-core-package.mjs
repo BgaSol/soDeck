@@ -78,6 +78,7 @@ try {
   report.passed = true;
   report.pluginIconsNative = true;
   report.desktopShellNative = true;
+  if (target === 'aarch64-apple-darwin') report.macosApplicationPolicyNative = true;
 } catch (error) { report.error = String(error.stack ?? error); throw error; }
 finally {
   fs.mkdirSync("artifacts/verification", { recursive: true });

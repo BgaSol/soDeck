@@ -61,6 +61,7 @@ function launch(persisted = false) {
     );
   const actual = JSON.parse(fs.readFileSync(report, "utf8"));
   if(process.env.SODECK_REQUIRE_DESKTOP_SHELL==='1' && !actual.desktopShellNative) throw new Error('Native tray/background package validation missing');
+  if(process.env.SODECK_REQUIRE_DESKTOP_SHELL==='1' && actual.target==='aarch64-apple-darwin' && !actual.macosApplicationPolicyNative) throw new Error('Native macOS application policy validation missing');
   if(process.env.SODECK_PACKAGE_ONLY==='1' && !actual.pluginIconsNative) throw new Error('Native plugin icon package validation missing');
   if ((process.env.SODECK_EXPECT_CORE_VERSION && actual.version !== process.env.SODECK_EXPECT_CORE_VERSION)
       || (process.env.SODECK_EXPECT_TARGET && actual.target !== process.env.SODECK_EXPECT_TARGET))

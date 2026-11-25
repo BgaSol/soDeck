@@ -143,6 +143,22 @@ impl Default for Runtime {
 }
 
 impl Runtime {
+    #[cfg(target_os = "macos")]
+    pub(crate) fn has_pending_moves(&self) -> bool {
+        !self.pending.is_empty()
+    }
+    #[cfg(target_os = "macos")]
+    pub(crate) fn desktop_entry_windows(&self) -> Vec<String> {
+        self.windows
+            .values()
+            .filter(|w| {
+                w.id != "main"
+                    && (!w.workspace_ids.is_empty()
+                        || !self.pending.values().any(|m| m.target == w.id))
+            })
+            .map(|w| w.id.clone())
+            .collect()
+    }
     pub fn ids(&self) -> Vec<String> {
         self.workspaces.keys().cloned().collect()
     }
