@@ -1,0 +1,169 @@
+{
+  "component": "sodeck.core",
+  "version": "2.7.0",
+  "sourceCommit": "843dcc079a0dec1f4c63c9799beea1ff28d9cf57",
+  "packageRun": "https://github.com/BgaSol/soDeck/actions/runs/45732171058",
+  "sourceCheck": "https://github.com/BgaSol/soDeck/actions/runs/45732149556",
+  "release": "https://github.com/BgaSol/soDeck/releases/tag/v2.7.0",
+  "publishedAt": "2026-11-26T01:10:39Z",
+  "platforms": [
+    {
+      "target": "aarch64-unknown-linux-gnu",
+      "passed": true,
+      "pluginIconsNative": true,
+      "desktopShellNative": true,
+      "desktopStartupNative": true,
+      "loginRegistrationIoNative": true,
+      "loginRestartNative": true
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "passed": true,
+      "pluginIconsNative": true,
+      "desktopShellNative": true,
+      "desktopStartupNative": true,
+      "loginRegistrationIoNative": true,
+      "loginRestartNative": true
+    },
+    {
+      "target": "aarch64-apple-darwin",
+      "passed": true,
+      "macosLoginServiceNative": true,
+      "macosBundleIdentityNative": true,
+      "pluginIconsNative": true,
+      "desktopShellNative": true,
+      "desktopStartupNative": true,
+      "loginRegistrationIoNative": true,
+      "loginRestartNative": true,
+      "macosApplicationPolicyNative": true
+    },
+    {
+      "target": "aarch64-pc-windows-msvc",
+      "passed": true,
+      "windowsInstallModes": [
+        {
+          "mode": "CurrentUser",
+          "hive": "HKCU",
+          "install": "C:\\Users\\runneradmin\\AppData\\Local\\Programs\\SoDeck",
+          "passed": true
+        },
+        {
+          "mode": "AllUsers",
+          "hive": "HKLM",
+          "install": "C:\\Program Files\\SoDeck",
+          "passed": true
+        }
+      ],
+      "pluginIconsNative": true,
+      "desktopShellNative": true,
+      "desktopStartupNative": true,
+      "loginRegistrationIoNative": true,
+      "loginRestartNative": true
+    },
+    {
+      "target": "x86_64-pc-windows-msvc",
+      "passed": true,
+      "windowsInstallModes": [
+        {
+          "mode": "CurrentUser",
+          "hive": "HKCU",
+          "install": "C:\\Users\\runneradmin\\AppData\\Local\\Programs\\SoDeck",
+          "passed": true
+        },
+        {
+          "mode": "AllUsers",
+          "hive": "HKLM",
+          "install": "C:\\Program Files\\SoDeck",
+          "passed": true
+        }
+      ],
+      "pluginIconsNative": true,
+      "desktopShellNative": true,
+      "desktopStartupNative": true,
+      "loginRegistrationIoNative": true,
+      "loginRestartNative": true
+    }
+  ],
+  "assets": [
+    {
+      "name": "core-update.json",
+      "size": 6585,
+      "sha256": "831c34f777a8c2ce2e87cacb74f513146738359f4117257adf1907c3e21afa6a"
+    },
+    {
+      "name": "SoDeck_2.7.0_aarch64.app.tar.gz",
+      "size": 10726432,
+      "sha256": "2101c9124fa206d3aaea870712aa75f132bd3ac93b8612115dfae4c392a666f6"
+    },
+    {
+      "name": "SoDeck_2.7.0_aarch64.app.tar.gz.sig",
+      "size": 424,
+      "sha256": "95210c8deb6e985dbf8d6a7b55869c5c815c6503d0deee53862b66c0d489053e"
+    },
+    {
+      "name": "SoDeck_2.7.0_aarch64.AppImage",
+      "size": 86559240,
+      "sha256": "7ad564b348692aa0e53f6eb0da7d52c9fb0a6eae770baf30e7b392bd496a934b"
+    },
+    {
+      "name": "SoDeck_2.7.0_aarch64.AppImage.sig",
+      "size": 440,
+      "sha256": "2cd967544e0d4e49cefd71e256601e8658c5ecf7f596641d6cf19015cbc888b8"
+    },
+    {
+      "name": "SoDeck_2.7.0_aarch64.dmg",
+      "size": 10454642,
+      "sha256": "687ee8cd80c2f4b086efcd6bda6a419d6f35c522fa70374d7880557b25ecbd21"
+    },
+    {
+      "name": "SoDeck_2.7.0_amd64.AppImage",
+      "size": 89250296,
+      "sha256": "0a55d5930e13bac0f95cc2ebf1db4a9033ff7b1647176fdd2f466a30e42c6901"
+    },
+    {
+      "name": "SoDeck_2.7.0_amd64.AppImage.sig",
+      "size": 436,
+      "sha256": "1180578ed5e1bf61fd547757a9106fe6fc017e47a55406c2d4db77a52471382d"
+    },
+    {
+      "name": "SoDeck_2.7.0_amd64.deb",
+      "size": 11682656,
+      "sha256": "e55336d784a5b405ee6abce76d1ef48dfc322520f0520b4ed41e3fc2b7e728cb"
+    },
+    {
+      "name": "SoDeck_2.7.0_amd64.deb.sig",
+      "size": 428,
+      "sha256": "a992b9b38a3afc58389f43b39072bd35568fe06587a7570ee4c4800c5be2aa2d"
+    },
+    {
+      "name": "SoDeck_2.7.0_arm64-setup.exe",
+      "size": 6961000,
+      "sha256": "574346b3f39772fff6442a648da5e78496bb2a67f3fdd60f90b84b2215bae2d1"
+    },
+    {
+      "name": "SoDeck_2.7.0_arm64-setup.exe.sig",
+      "size": 436,
+      "sha256": "24e32ea4cd9bac9d6b1998a7877777a79b35d45961991e92865b8dc9d8b36ab6"
+    },
+    {
+      "name": "SoDeck_2.7.0_arm64.deb",
+      "size": 10891236,
+      "sha256": "86c73cb82cc72822a58fc7c5e978dc5579587ff53645f8fcd5f661145ade4b9e"
+    },
+    {
+      "name": "SoDeck_2.7.0_arm64.deb.sig",
+      "size": 428,
+      "sha256": "59184920c4b1c6f6fea57a4e1a7bb102821bdb5062e936337ce255f5240f6058"
+    },
+    {
+      "name": "SoDeck_2.7.0_x64-setup.exe",
+      "size": 7955712,
+      "sha256": "0b518249eee068ae704b014a7a2ece00ab79a4369e54f673bfdabb0dd75afb96"
+    },
+    {
+      "name": "SoDeck_2.7.0_x64-setup.exe.sig",
+      "size": 436,
+      "sha256": "2d82fb12f02a777d198813e0de3c5cf0b636feaf9118818a8a053d4e15afcf99"
+    }
+  ]
+}
