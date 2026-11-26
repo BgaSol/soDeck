@@ -4,7 +4,7 @@
 - 通道独立的有界 ANSI 状态机修复 DCS 载荷、字符集残片与跨记录控制序列；原字节仍用于证据。
 - 日志布局按字节预算分页，减少串行读取；连接配置改用同目录独占临时文件，保留原目标和首次备份，兼容长路径。
 
-待发行；本次五平台源码/实际包和相关业务通过后补齐。长期/设备/吞吐专项仍见[剩余范围](../../docs/plans/docker-log-viewer.md)。
+已发布为 [Docker 0.12.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.12.0)，保持非 Latest。包来源提交为 [`22694e2`](https://github.com/BgaSol/soDeck/commit/22694e2530a1ebe622e312f602183292f31473d1)，[五平台原生打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/45724536590)全部通过。长期/设备/吞吐专项仍见[剩余范围](../../docs/plans/docker-log-viewer.md)。
 
 # 0.11.1
 

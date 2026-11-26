@@ -3,7 +3,7 @@
 - 保存规则使用同目录独占临时文件，同步后原子替换，兼容 Windows 长路径。
 - 写入失败保留配置和原有运行/回执；损坏配置仍禁止覆盖。
 
-待发行；本次五平台源码/实际包和规则失败/清理验收后补齐。
+已发布为 [network-proxy 0.6.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-network-proxy-v0.6.1)，保持非 Latest。包来源提交为 [`22694e2`](https://github.com/BgaSol/soDeck/commit/22694e2530a1ebe622e312f602183292f31473d1)，[五平台原生打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/45724546631)全部通过。
 
 # 0.6.0
 

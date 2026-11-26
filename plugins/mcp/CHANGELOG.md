@@ -3,7 +3,7 @@
 - 工具入口统一使用缓存的 JSON Schema 校验，由参数类型生成声明；补丁省略/null、嵌套未知字段、字节预算、任务身份和等待继续遵循核心与处理器契约。默认值不由校验器改写。
 - 任务元数据使用同目录独占临时文件，失败保留上一份事实，兼容 Windows 长路径。
 
-待发行；本次源码、五平台原生包与实际验证范围完成后补齐。
+已发布为 [mcp 0.13.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.13.0)，保持非 Latest。包来源提交为 [`22694e2`](https://github.com/BgaSol/soDeck/commit/22694e2530a1ebe622e312f602183292f31473d1)，[五平台原生打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/45724531424)全部通过。
 
 # 0.12.1
 

@@ -3,7 +3,7 @@
 - 文件树刷新保留未变化行及子节点，只协调实际变化和排序，降低大目录重绘成本。
 - 保留菜单、滚动、选择、ARIA、分页与拖拽，不新增虚拟化依赖。
 
-待发行；本次五平台源码/实际包和目录交互验收后补齐。
+已发布为 [files 0.12.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.12.1)，保持非 Latest。包来源提交为 [`22694e2`](https://github.com/BgaSol/soDeck/commit/22694e2530a1ebe622e312f602183292f31473d1)，[五平台原生打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/45724541774)全部通过。
 
 # 0.12.0
 
