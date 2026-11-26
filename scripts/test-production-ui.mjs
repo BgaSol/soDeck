@@ -465,7 +465,8 @@ try {
   assert.equal(await appearanceNav.evaluate(el => el === document.activeElement), true, 'Changed settings pages retain navigation focus');
   await page.locator('[data-action="theme"][data-id="light"]').click();
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'light');
-  assert.equal(await page.locator('[data-action="theme"][data-id="light"]').evaluate(el => el === document.activeElement), true, 'Theme changes retain focus');
+  await page.waitForFunction(() => !document.querySelector('[data-action="theme"][data-id="light"]').disabled);
+  assert.equal(await page.locator('[data-action="theme"][data-id="light"]').evaluate(el => el === document.activeElement), true, 'Completed theme changes retain focus');
   const contrasts = await page.locator('.nav-item.active,.theme-option.selected').evaluateAll(nodes => {
     const luminance = color => { const c = color.match(/[\d.]+/g).slice(0,3).map(Number).map(v => v / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4); return c[0] * .2126 + c[1] * .7152 + c[2] * .0722; };
     return nodes.map(node => { const s = getComputedStyle(node), a = luminance(s.color), b = luminance(s.backgroundColor); return (Math.max(a,b) + .05) / (Math.min(a,b) + .05); });
