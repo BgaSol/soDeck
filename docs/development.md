@@ -316,3 +316,9 @@ node scripts/benchmark-boundaries.mjs --process --report artifacts/boundaries-pr
 纯文档改动运行文档链接/格式检查与 diff 检查，不为此构建产品；若同时变更代码，按上面的实际范围检查。文档检查脚本默认读取 Git 已跟踪文件；未暂存删除与新增并存时，可调用其导出的 checkMarkdown 检查当前实际文件集合，不能漏掉新文档或把删除文件读失败当成有效验收。
 
 返回 [项目首页](../README.md) · [文档索引](README.md)
+
+## 服务器连接分享回归
+
+`npm run test` 中 `tests/server_sharing.rs` 验证独立数据目录往返、凭据/密钥、范围映射、冲突、回滚及备份清理；`tests/connections.rs` 的分享专项复用真实 SSH/SOCKS5 夹具验证导入后的加密私钥认证。`npm run ssh:test` 的 OpenSSH 路径也通过实际导入的私钥建立连接。`node scripts/test-server-ui.mjs` 验证真实核心与目录、三主题窄窗及导入期间的关闭忙状态。
+
+实际核心包烟测增加 `serverSharingNative`，覆盖分享按钮、原生剪贴板、超过 256 KiB 的右键粘贴预览、受管私钥落盘与重开，不连接用户服务器。使用公开的合成测试私钥，剪贴板测试恢复原文本。沿现有五平台 package/verify 执行，不以浏览器夹具替代原生包结果。

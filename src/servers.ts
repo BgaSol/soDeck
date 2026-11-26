@@ -1,9 +1,11 @@
+import {enterMotion} from './motion.js';
+import {ServerDialogs} from './server-dialogs';
+import {ServerSharing} from './server-sharing';
 import {connectionTree, filterTree, routeTo, targetPath, ancestors, visibleNodes, type ConnectionTree} from './connection-tree';
 import {chooseLocalPath} from "./desktop";
 import { commitTagInput, newDraft, newCopyDraft, newViaDraft, referenced, serverApi, toInput, type Catalog, type Change, type Draft, type ServerApi } from "./server-api";
 import { action, editor, page, type PageState } from "./server-views";
 import { escape as e } from "./ui";
-import { enterMotion, exitMotion } from './motion.js';
 import { updateDOM } from "./dom-update";
 import type { ConnectionView } from "./connections";
 import {type MenuReference} from './menu-position.js';
@@ -30,6 +32,9 @@ export class ServerManager {
   private menu=new ServerMenu((command,source)=>{void this.execute(command,source).catch(error=>this.notify(String(error)));});
   private state: PageState = { query: "", tags: [], selected: "", collapsed: new Set(), detailOpen: false };
   private frames: Frame[] = [];
+  private dialogs = new ServerDialogs();
+  private importedTargets: string[] = [];
+  private sharing = new ServerSharing(this.dialogs, () => this.catalog, (catalog, ids) => {this.generation++; this.acceptCatalog(catalog); this.importedTargets = ids; this.selectRecord(ids[0]); this.render();}, text => this.notify(text));
   private busy = false;
   private generation = 0;
   private disposed = false;
@@ -89,7 +94,7 @@ export class ServerManager {
     if(catalog.error){this.readError=catalog.error;this.catalog=this.catalog?{...this.catalog,error:catalog.error,canRecover:catalog.canRecover}:catalog;return;}
     if(this.catalog&&catalog.revision<this.catalog.revision)return;
     const previous=this.tree?.index.get(this.state.selected);
-    this.catalog=catalog;this.tree=connectionTree(catalog);this.readError='';
+    this.catalog=catalog;this.tree=connectionTree(catalog);this.readError='';this.sharing.catalogChanged();
     const tree=this.tree!,used=new Set(catalog.servers.flatMap(server=>server.tagIds));
     this.state.tags=this.state.tags.filter(id=>used.has(id));
     if(this.state.selected&&!tree.index.has(this.state.selected)){this.state.selected=previous?this.recordPath(previous.recordId):'';if(!this.state.selected){this.state.detailOpen=false;this.notify('所选资料已不存在');}}
@@ -139,7 +144,7 @@ export class ServerManager {
   }
   private render(motion=false) {
     if (this.disposed) return;
-    updateDOM(this.host, this.catalog ? page({...this.catalog,error:this.readError||this.catalog.error}, this.state, this.connections,this.tree) : this.readError ? `<div class="error-box" role="alert">${e(this.readError)} ${action("reload", "重试")}</div>` : "", motion);
+    updateDOM(this.host, this.catalog ? page({...this.catalog,error:this.readError||this.catalog.error}, this.state, this.connections,this.tree,this.importedTargets) : this.readError ? `<div class="error-box" role="alert">${e(this.readError)} ${action("reload", "重试")}</div>` : "", motion);
     const tree=this.host.querySelector<HTMLElement>('.connection-tree')??undefined;
     if(this.linesTree!==tree){if(this.linesTree)this.linesObserver.unobserve(this.linesTree);this.linesTree=tree;if(tree)this.linesObserver.observe(tree);}
     const route = this.host.querySelector('.catalog-detail .route-preview') ?? undefined;
@@ -147,16 +152,12 @@ export class ServerManager {
     this.updateMenu();
     this.scheduleLines();
   }
-  dispose() { this.menu.dispose();this.linesObserver.disconnect();this.routeObserver.disconnect();this.routeEvents.abort();this.host.classList.add('route-motion-paused');if(this.linesFrame!==undefined)cancelAnimationFrame(this.linesFrame);this.disposed = true; this.generation++; clearTimeout(this.selectionTimer); while(this.frames.length)this.dismiss(this.frames[this.frames.length-1]); }
+  dispose() { this.sharing.close(true);this.menu.dispose();this.linesObserver.disconnect();this.routeObserver.disconnect();this.routeEvents.abort();this.host.classList.add('route-motion-paused');if(this.linesFrame!==undefined)cancelAnimationFrame(this.linesFrame);this.disposed = true; this.generation++; clearTimeout(this.selectionTimer); while(this.frames.length)this.dismiss(this.frames[this.frames.length-1]);this.dialogs.dispose(); }
   private top() { return this.frames.at(-1); }
   private frame(kind: Frame["kind"]): Frame {
     this.menu.close('immediate');
-    const dialog = document.createElement("dialog");
-    dialog.id = `catalog-dialog-${crypto.randomUUID()}`;
-    dialog.className = `catalog-dialog ${kind === "editor" ? "endpoint-dialog" : "small-dialog"}`;
-    dialog.setAttribute("aria-label", kind === "editor" ? "编辑资料" : "确认操作");
+    const dialog = this.dialogs.create(kind === "editor" ? "编辑资料" : "确认操作", kind === "editor" ? "endpoint-dialog" : "small-dialog", () => {void this.cancel(frame);});
     const frame: Frame = { dialog, kind, revision: this.catalog!.revision, busy: false, error: "" };
-    dialog.addEventListener("cancel", event => { event.preventDefault(); void this.cancel(frame); });
     dialog.addEventListener("click", event => {
       if (frame !== this.top()) return;
       const button = (event.target as Element).closest<HTMLButtonElement>("[data-server-action]");
@@ -169,12 +170,12 @@ export class ServerManager {
       if(input.dataset.field==='tagInput'&&event.key==='Enter'&&!event.isComposing){event.preventDefault();if(frame.draft&&!frame.busy){commitTagInput(frame.draft,this.catalog!);this.renderEditor(frame);}}
     });
     dialog.addEventListener("submit", event => { event.preventDefault(); void this.save(frame); });
-    this.frames.push(frame); document.body.append(dialog);
+    this.frames.push(frame);
     return frame;
   }
   private dismiss(f: Frame) {
     if (f !== this.top()) return;
-    exitMotion(f.dialog);f.dialog.close(); f.dialog.remove(); this.frames.pop();
+    this.dialogs.dismiss(f.dialog, false);this.frames.pop();
     if (f.draft) f.draft.password = "";
     if(f.returnPath)this.focusPath(f.returnPath);
     else if (f.returnFocus?.isConnected) f.returnFocus.focus({preventScroll:true});
@@ -197,7 +198,7 @@ export class ServerManager {
     if(intent.kind==='new-proxy'&&intent.parent){f.parent=intent.parent;f.revision=intent.parent.revision;}
     if(intent.kind==='new-server'&&intent.path)f.notice=`已带入经「${this.tree!.index.get(intent.path)!.record!.name}」的访问路径，可调整。`;
     if(copy)f.dialog.setAttribute('aria-label','复制服务器');
-    f.initial=JSON.stringify(draft);this.renderEditor(f);f.dialog.showModal();enterMotion(f.dialog);
+    f.initial=JSON.stringify(draft);this.renderEditor(f);this.dialogs.show(f.dialog);
     const host=f.dialog.querySelector<HTMLInputElement>('[data-field="host"]');host?.focus();if(copy)host?.select();
   }
   private editField(f: Frame, input: HTMLInputElement) {
@@ -235,19 +236,20 @@ export class ServerManager {
         if (name === "confirm-yes") finish(true); else if (name === "confirm-no") finish(false);
       });
       f.dialog.addEventListener("cancel", () => finish(false), { once: true });
-      f.dialog.showModal();enterMotion(f.dialog); f.dialog.querySelector<HTMLElement>("button")?.focus();
+      this.dialogs.show(f.dialog); f.dialog.querySelector<HTMLElement>("button")?.focus();
     });
   }
   private async cancel(f: Frame) {
     if (f.busy || f.kind === "confirm") return;
     if (!this.dirty(f) || await this.confirm("放弃未保存的修改？", "当前表单的修改尚未保存。已经单独保存的代理会保留；未保存的标签会随表单丢弃。", "放弃修改")) this.dismiss(f);
   }
-  setCloseBlocked(blocked:boolean) {if(blocked)this.menu.close('immediate');for(const frame of this.frames)frame.dialog.inert=blocked;}
+  setCloseBlocked(blocked:boolean) {if(blocked)this.menu.close('immediate');this.dialogs.block(blocked);}
   async closeInputs(decision:"collect"|"save"|"discard") {
-    if(decision!=="collect"&&(this.busy||this.frames.some(f=>f.busy)))throw new Error("服务器资料正在保存，请等待原操作结束");
+    if(decision!=="collect"&&(this.busy||this.sharing.submitting||this.frames.some(f=>f.busy)))throw new Error("服务器资料正在保存，请等待原操作结束");
     const drafts=this.frames.filter(f=>this.dirty(f)||f.busy).map((f,index)=>({id:`server:${index}`,title:"服务器资料表单",dirty:this.dirty(f),busy:f.busy}));
+    if(this.sharing.submitting)drafts.push({id:"server:import",title:"导入服务器连接",dirty:false,busy:true});
     if(decision==="save"&&drafts.length)throw new Error("请返回服务器资料表单保存，然后重新关闭");
-    if(decision==="discard")while(this.frames.length)this.dismiss(this.frames[this.frames.length-1]);
+    if(decision==="discard"){this.sharing.close();while(this.frames.length)this.dismiss(this.frames[this.frames.length-1]);}
     return decision==="discard"?[]:drafts;
   }
   private async mutate(change: Change, revision = this.catalog!.revision) {
@@ -285,7 +287,7 @@ export class ServerManager {
   private focusPath(path:string){
     if(this.disposed)return;
     const visible=(node:HTMLElement)=>node.isConnected&&!node.matches(':disabled')&&!node.closest('[hidden],[inert]')&&node.getClientRects().length>0&&getComputedStyle(node).visibility!=='hidden';
-    const selector=path==='@root'?'#tree-origin':path==='@new'?'#catalog-new-menu':`[data-path="${CSS.escape(path)}"]`;
+    const selector=path==='@root'?'#tree-origin':path==='@new'?'#catalog-new-menu':path==='@sharing'?'#catalog-share-menu':`[data-path="${CSS.escape(path)}"]`;
     const choices=[this.host.querySelector<HTMLElement>(selector),...this.host.querySelectorAll<HTMLElement>('.connection-node[tabindex="0"],.connection-node,#tree-origin,#catalog-query')];
     choices.find((node):node is HTMLElement=>!!node&&visible(node))?.focus({preventScroll:true});
   }
@@ -296,7 +298,7 @@ export class ServerManager {
       return [key,node.target,r?.host,r?.port,r&&'username'in r?r.username:undefined,r?.authentication.type,r?.authentication.privateKeyPath,r?.authentication.username];
     }));
   }
-  private actions(path?:string){return serverActions(path?this.tree?.index.get(path):undefined,this.tree!,this.connections.find(v=>v.serverId===this.tree?.index.get(path??'')?.recordId),this.unavailable());}
+  private actions(path?:string){return serverActions(path?this.tree?.index.get(path):undefined,this.tree!,this.connections.find(v=>v.serverId===this.tree?.index.get(path??'')?.recordId),this.unavailable()).map(a=>a.command.kind==='share-all'?{...a,disabled:a.disabled||(!this.catalog?.servers.length?'暂无可分享的服务器':'')}:a);}
   private contextMenu(event:MouseEvent){
     const anchor=(event.target as Element).closest<HTMLElement>('.connection-node,.tree-origin');if(!anchor||!this.catalog)return;
     event.preventDefault();this.openNodeMenu(anchor,{x:event.clientX,y:event.clientY,contextElement:anchor});
@@ -309,12 +311,12 @@ export class ServerManager {
     clearTimeout(this.selectionTimer);const path=anchor.dataset.path;
     if(path){this.onSelection?.();this.state.selected=path;this.render();anchor=this.host.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"]`)!;}
     const source:MenuSource=path?{kind:'node',path,role:this.tree!.index.get(path)!.target,stamp:this.pathStamp(path)}:{kind:'root'};
-    this.menu.show({source,title:this.menuTitle(source),actions:this.actions(path),anchor,reference,
+    this.menu.show({source,title:this.menuTitle(source),actions:this.actions(path).filter(a=>path||a.command.kind!=='share-all'),anchor,reference,
       scrollElement:this.host.querySelector<HTMLElement>('.catalog-list')??undefined,
       restore:()=>this.focusPath(path??'@root'),valid:()=>this.menuSourceValid(source)});
   }
   private menuTitle(source:MenuSource){
-    if(source.kind==='toolbar')return '新增资料';if(source.kind==='root')return '本机';
+    if(source.kind==='toolbar')return source.menu==='sharing'?'连接分享':'新增资料';if(source.kind==='root')return '本机';
     const node=this.tree!.index.get(source.path)!;
     return `${node.record?.name??'资料已不存在'} · ${node.kind==='ssh'?'SSH':'SOCKS5'}`;
   }
@@ -324,16 +326,24 @@ export class ServerManager {
     this.menu.show({source,title:this.menuTitle(source),actions:this.actions().filter(a=>a.group==='create'),anchor,reference:anchor,
       restore:()=>this.focusPath('@new'),valid:()=>this.menuSourceValid(source)});
   }
+  private openShareMenu(anchor:HTMLElement){
+    if(this.menu.source?.kind==='toolbar'&&this.menu.source.menu==='sharing'){this.menu.close('cancel');return;}
+    const source:MenuSource={kind:'toolbar',menu:'sharing'};
+    this.menu.show({source,title:'连接分享',actions:[{command:{kind:'share-all'},label:'分享全部服务器',group:'record',disabled:this.unavailable()||(!this.catalog?.servers.length?'暂无可分享的服务器':'')}],anchor,reference:anchor,restore:()=>this.focusPath('@sharing'),valid:()=>this.menuSourceValid(source)});
+  }
   private updateMenu(){
     const source=this.menu.source;if(!source)return;
     if(!this.menuSourceValid(source)){this.menu.close('immediate');if(source.kind==='node')this.notify('节点位置已变化，请重新打开菜单');return;}
-    this.menu.update(this.actions(source.kind==='node'?source.path:undefined).filter(a=>source.kind!=='toolbar'||a.group==='create'),this.menuTitle(source));
+    this.menu.update(this.actions(source.kind==='node'?source.path:undefined).filter(a=>source.kind==='root'?a.command.kind!=='share-all':source.kind!=='toolbar'||(source.menu==='sharing'?a.command.kind==='share-all':a.group==='create')),this.menuTitle(source));
   }
   private async handleButton(button:HTMLElement){
     if(button.dataset.serverCommand){await this.execute(JSON.parse(button.dataset.serverCommand) as ServerCommand);return;}
     const {serverAction:name,id='',path,index}=button.dataset;
+    if(name==='share'){await this.execute({kind:'share',id,path});return;}
+    if(name==='share-menu'){this.openShareMenu(button);return;}
+    if(name==='import-results'){this.state.query='';this.state.tags=[];this.selectRecord(id||this.importedTargets[0]);this.render();return;}
     if(['edit','copy','delete'].includes(name!)){await this.execute({kind:name as 'edit'|'copy'|'delete',id,path});return;}
-    if(['new-server','new-proxy','reload'].includes(name!)){await this.execute({kind:name as 'new-server'|'new-proxy'|'reload'});return;}
+    if(['new-server','new-proxy','reload','share-all','import-share'].includes(name!)){await this.execute({kind:name as 'new-server'|'new-proxy'|'reload'|'share-all'|'import-share'});return;}
     await this.perform({name:name!,id,path,index});
   }
   private async execute(command:ServerCommand,source?:MenuSource){
@@ -343,11 +353,14 @@ export class ServerManager {
     if(path&&!this.tree?.index.has(path))throw new Error('节点位置已变化，请重新打开菜单');
     const item=this.actions(path).find(a=>a.command.kind===command.kind&&(!('id'in command)||'id'in a.command&&a.command.id===command.id));
     if(item?.disabled)throw new Error(item.disabled);
-    if(['edit','copy','delete','new-server','new-proxy','new-via','connect'].includes(command.kind)&&this.unavailable())throw new Error(this.unavailable());
+    if(['share','share-all','import-share','edit','copy','delete','new-server','new-proxy','new-via','connect'].includes(command.kind)&&this.unavailable())throw new Error(this.unavailable());
     const origin=source?.kind==='node'?source.path:source?.kind==='root'?'@root':source?.kind==='toolbar'?'@new':undefined;
     const id='id'in command?command.id:'',record=[...(this.catalog?.servers??[]),...(this.catalog?.proxies??[])].find(r=>r.id===id);
-    if(['edit','copy','delete','locate-target'].includes(command.kind)&&!record)throw new Error('资料已不存在，请刷新目录');
+    if(['share','edit','copy','delete','locate-target'].includes(command.kind)&&!record)throw new Error('资料已不存在，请刷新目录');
     switch(command.kind){
+      case 'share':this.menu.close('immediate');this.onSelection?.();await this.sharing.export(id);break;
+      case 'share-all':this.menu.close('immediate');this.onSelection?.();await this.sharing.export();break;
+      case 'import-share':this.menu.close('immediate');this.onSelection?.();this.sharing.import();break;
       case 'reload':await this.start();break;
       case 'new-server':this.openEditor({kind:'new-server'},origin);break;
       case 'new-proxy':this.openEditor({kind:'new-proxy'},origin);break;

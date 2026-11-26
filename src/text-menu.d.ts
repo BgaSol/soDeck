@@ -5,8 +5,8 @@ export interface TextMenu {
 declare global {
   interface Window {
     installTextMenu(options: {
-      read: (valid: () => boolean) => Promise<string | null>;
-      write: (text: string, valid: () => boolean) => Promise<boolean | void>;
+      read: (valid: () => boolean, source?: Element) => Promise<string | null>;
+      write: (text: string, valid: () => boolean, source?: Element) => Promise<boolean | void>;
       notify: (error: string) => void;
     }): TextMenu;
   }

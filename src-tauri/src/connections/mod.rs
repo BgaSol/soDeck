@@ -1,5 +1,6 @@
 //! Core-owned connection attempts. Registry locks never span network or user waits.
 mod admission;
+pub(crate) mod private_key;
 pub(crate) mod registry;
 pub(crate) mod rpc;
 use registry::{Binding, OpenInput, OpenRequest, RequestKey};

@@ -1,4 +1,5 @@
-//! Checks run only by the packaged-application smoke-test entry point.
+mod server_sharing;
+// Checks run only by the packaged-application smoke-test entry point.
 mod desktop_files;
 mod desktop_open;
 mod logs_messages;
@@ -446,4 +447,12 @@ pub fn core_update_bundle(handle: &tauri::AppHandle, bundle: &Path) -> Result<()
         return Err("更新器错误地接受了修改过的发行包".into());
     }
     Ok(())
+}
+
+pub fn server_sharing_roundtrip(
+    handle: &tauri::AppHandle,
+    core: &Arc<AppCore>,
+    persisted: bool,
+) -> Result<(), String> {
+    server_sharing::verify(handle, core, persisted)
 }

@@ -361,6 +361,21 @@ fn main() {
                 };
                 result.map(|_| json!(core.connection_views()))
             }
+            "export_server_share" => core
+                .export_server_share(
+                    args["revision"].as_u64().unwrap(),
+                    args["serverId"].as_str().map(str::to_owned),
+                )
+                .map_err(|e| e.message),
+            "preview_server_share" => core
+                .preview_server_share(args["code"].as_str().unwrap())
+                .map_err(|e| e.message),
+            "import_server_share" => core
+                .import_server_share(
+                    args["revision"].as_u64().unwrap(),
+                    args["code"].as_str().unwrap(),
+                )
+                .map_err(|e| e.message),
             "server_catalog" => Ok(core.server_catalog()),
             "component_ui" => sodeck::component_ui::dispatch(
                 &core,

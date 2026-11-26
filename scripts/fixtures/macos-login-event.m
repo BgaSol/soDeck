@@ -17,6 +17,12 @@ int main(int argc, const char **argv) {
     NSAppleEventDescriptor *event = [NSAppleEventDescriptor appleEventWithEventClass:kCoreEventClass eventID:kAEOpenApplication targetDescriptor:nil returnID:kAutoGenerateReturnID transactionID:kAnyTransactionID];
     [event setParamDescriptor:[NSAppleEventDescriptor descriptorWithEnumCode:keyAELaunchedAsLogInItem] forKeyword:keyAEPropData];
     config.appleEvent = event;
+    const char *dataPath = getenv("SODECK_TEST_DATA_DIR");
+    if (dataPath) {
+      NSString *directory = [NSString stringWithUTF8String:dataPath];
+      freopen([[directory stringByAppendingPathComponent:@"native-launch.stdout.log"] fileSystemRepresentation], "a", stdout);
+      freopen([[directory stringByAppendingPathComponent:@"native-launch.stderr.log"] fileSystemRepresentation], "a", stderr);
+    }
     __block BOOL finished = NO;
     __block NSRunningApplication *running = nil;
     __block NSError *failure = nil;

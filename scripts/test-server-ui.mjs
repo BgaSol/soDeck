@@ -36,16 +36,20 @@ const browser = await chromium.launch({ headless: true, ...(process.env.SODECK_B
 const page = await browser.newPage({ viewport: { width: 1100, height: 720 } });
 const finishTrace = await recordTrace(page.context(), 'server');
 const errors = [];
+let clipboardText = "";
+let holdImport=false,importHeld=false,releaseImport;
 let failCatalogRead = false, holdCatalogRead = false, catalogReadHeld = false, releaseCatalogRead;
 page.on("pageerror", error => errors.push(String(error)));
 page.on("request", request => { assert.equal(new URL(request.url()).hostname, "127.0.0.1", "Unexpected network request"); });
 await page.exposeBinding("catalogInvoke", async (_, command, args) => {
+  if(command === "clipboard_text"){if(args.operation === "write")clipboardText=args.text;return args.operation === "read"?clipboardText:null;}
   if (command === "server_catalog" && failCatalogRead) throw new Error("隔离测试：目录暂时不可读");
   const result = await bridge.call(command, args);
   if (command === "server_catalog" && holdCatalogRead) {
     holdCatalogRead = false; catalogReadHeld = true;
     await new Promise(resolve => releaseCatalogRead = resolve);
   }
+  if(command === "import_server_share"&&holdImport){holdImport=false;importHeld=true;await new Promise(resolve=>releaseImport=resolve);}
   // Disk completion may precede the UI callback. Keep this race reproducible.
   if (["deleteTag", "deleteServer", "deleteProxy"].includes(args?.change?.op)) await new Promise(resolve => setTimeout(resolve, 150));
   return result;
@@ -495,6 +499,36 @@ try {
   await sourceRow.click({button:'right'});await menu.locator('[data-menu-action="new-via"]').click();await expectDialogs(1);await page.keyboard.press('Escape');await expectDialogs(0);
   checks.push('右键与键盘菜单、完整路径继承、无凭据复制、冲突保留、取消无残留、三主题边缘定位、窄窗、删除确认和销毁重建');
 
+
+  await page.setViewportSize({width:1100,height:720});
+  await action('share-menu',work()).click();await page.locator('[data-menu-action="share-all"]').click();await expectDialogs(1);
+  await dialogs().locator('[data-share-action="copy"]:not([disabled])').waitFor();await dialogs().locator('[data-share-action="copy"]').click();
+  assert(clipboardText.startsWith('SODECK1:'));const shareCode=clipboardText;
+  await dialogs().locator('[data-share-action="close"]').first().click();await expectDialogs(0);
+  await action('import-share',work()).click();await dialogs().locator('textarea').fill('broken');await dialogs().locator('.error-box').waitFor();
+  assert.equal(await dialogs().locator('[data-share-action="import"]').isDisabled(),true);
+  await dialogs().locator('textarea').fill(shareCode);await dialogs().locator('[data-share-action="import"]:not([disabled])').waitFor();
+  const preImport=await read();assert.equal((await read()).revision,preImport.revision);
+  for(const theme of ['light','dark','dopamine']){
+    await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+    for(const width of [1100,420]){
+      await page.setViewportSize({width,height:720});
+      assert.equal(await dialogs().evaluate(d=>d.scrollWidth<=d.clientWidth+1&&d.querySelector('.catalog-dialog-footer').getBoundingClientRect().bottom<=d.getBoundingClientRect().bottom+1),true);
+      fs.mkdirSync('artifacts/server-sharing',{recursive:true});await dialogs().screenshot({path:'artifacts/server-sharing/'+theme+'-'+width+'.png'});
+    }
+  }
+  await page.setViewportSize({width:1100,height:720});
+  await dialogs().locator('[data-share-action="import"]').click();await expectDialogs(0);await work().locator('.catalog-import-results').waitFor();
+  const afterImport=await read();assert.equal(afterImport.revision,preImport.revision+1);assert.equal(afterImport.servers.length,preImport.servers.length*2);
+  await action('import-share',work()).click();await dialogs().locator('textarea').fill(shareCode);await dialogs().locator('[data-share-action="import"]:not([disabled])').waitFor();
+  await dialogs().locator('[data-share-action="close"]').first().click();assert.equal((await read()).revision,afterImport.revision);
+  await action('import-share',work()).click();await dialogs().locator('textarea').fill(shareCode);await dialogs().locator('[data-share-action="import"]:not([disabled])').waitFor();
+  holdImport=true;await dialogs().locator('[data-share-action="import"]').click();
+  while(!importHeld)await new Promise(r=>setTimeout(r,20));
+  assert.equal(await dialogs().locator('[data-share-action="close"]').first().isDisabled(),true);
+  assert((await page.evaluate(()=>manager.closeInputs('collect'))).some(d=>d.busy));
+  await assert.rejects(page.evaluate(()=>manager.closeInputs('discard')),/正在保存/);releaseImport();await expectDialogs(0);
+  checks.push('完整分享码复制、非法输入、预览不落盘、整批导入单次修订、取消、三主题与窄窗');
   await bridge.stop(); bridge = startBridge(); await load(); catalog = await read();
   assert.equal(catalog.servers.find(s => s.id === gateway).authentication.hasSavedSecret, true);
   assert(catalog.servers.every(s => !s.authentication.hasSessionSecret));

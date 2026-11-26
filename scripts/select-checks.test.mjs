@@ -314,3 +314,7 @@ test('login startup ownership, native IPC and setting UI retain their required c
   assert.match(workflow,/libfuse2 openbox x11-utils/);
   assert(fs.readFileSync('scripts/test-core-package.mjs','utf8').includes("'scripts/linux-package-desktop.sh',process.execPath,'scripts/smoke.mjs',executable"),'The desktop session must outlive the original process and its replacement');
 });
+
+test("sharing platform adapters and native probes select five core targets without plugin releases",()=>{
+ for(const file of ["src-tauri/src/platform/private_files.rs","src-tauri/src/validation/server_sharing.js","src-tauri/src/servers/sharing.rs","src-tauri/tests/server_sharing.rs"]){const p=selectChecks([file]);assert.equal(p.native.filter(row=>row.core).length,5);assert.equal(p.plugins.length,0);}
+});

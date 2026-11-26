@@ -172,14 +172,8 @@ async fn load_key(node: &Node) -> Result<russh::keys::PrivateKey, Error> {
         .ok_or_else(|| Error::new("keyPath", "请选择私钥文件"))?;
     let passphrase = passphrase.clone();
     tokio::task::spawn_blocking(move || {
-        use std::io::Read;
-        let mut bytes = String::new();
-        std::fs::File::open(path)
-            .and_then(|f| f.take(1024 * 1024 + 1).read_to_string(&mut bytes))
-            .map_err(|_| Error::new("keyRead", "无法读取私钥文件"))?;
-        if bytes.len() > 1024 * 1024 {
-            return Err(Error::new("keyRead", "私钥文件超过 1 MiB"));
-        }
+        let bytes = super::private_key::read(std::path::Path::new(&path))
+            .map_err(|_| Error::new("keyRead", "无法读取私钥文件或文件超过 1 MiB"))?;
         let encrypted =
             russh::keys::PrivateKey::from_openssh(&bytes).is_ok_and(|k| k.is_encrypted());
         if passphrase.as_ref().is_none_or(|p| p.is_empty()) && encrypted {

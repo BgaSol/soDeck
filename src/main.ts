@@ -14,7 +14,7 @@ const win=getCurrentWindow();
 document.body.classList.toggle('secondary-window',win.label!=='main');
 await invoke('close_register_host');
 const notify=(message:string)=>{const node=document.createElement('div');node.className='toast toast-error';node.textContent=message;document.querySelector('#toasts')?.append(node);setTimeout(()=>node.remove(),5000);};
-window.installTextMenu({read:async valid=>{const text=await invoke<string>('clipboard_text',{operation:'read'});return valid()?text:null;},write:async(text,valid)=>{if(!valid())return false;await invoke('clipboard_text',{operation:'write',text});return valid();},notify});
+window.installTextMenu({read:async(valid,source)=>{const text=await invoke<string>('clipboard_text',{operation:'read',purpose:source?.matches('[data-server-share-code]')?'serverShare':null});return valid()?text:null;},write:async(text,valid,source)=>{if(!valid())return false;await invoke('clipboard_text',{operation:'write',text,purpose:source?.matches('[data-server-share-code]')?'serverShare':null});return valid();},notify});
 const shell=new Shell(document.querySelector('#app')!,win.label==='main');
 const servers=win.label==='main'?new ServerManager(shell.catalog,notify):undefined;
 if(servers)servers.onSelection=()=>shell.selectionChanged();
