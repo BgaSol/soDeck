@@ -46,6 +46,8 @@ const compile=spawnSync('clang',['-fobjc-arc','-framework','AppKit','-framework'
 // Ordinary package smoke independently verifies fresh-data navigation and icon rendering.
 const eventData=path.join(output,'native-event');
 fs.cpSync(data,eventData,{recursive:true,filter:source=>!['app.lock','smoke-result.json','smoke-error.txt'].includes(path.basename(source))});
-const event=spawnSync(process.execPath,['scripts/smoke.mjs',launcher,binary],{env:{...env,SODECK_TEST_DATA_DIR:eventData,SODECK_VERIFY_PERSISTED:'1',SODECK_TEST_MACOS_LOGIN:'0',SODECK_EXPECT_NATIVE_LOGIN:'1'},stdio:'inherit',timeout:120000});assert.equal(event.status,0);
+const event=spawnSync(process.execPath,['scripts/smoke.mjs',launcher,binary],{env:{...env,SODECK_TEST_DATA_DIR:eventData,SODECK_VERIFY_PERSISTED:'1',SODECK_TEST_MACOS_LOGIN:'0',SODECK_EXPECT_NATIVE_LOGIN:'1'},stdio:'inherit',timeout:120000});
+if(event.status!==0)for(const name of ['native-launch.stderr.log','native-launch.stdout.log','smoke-error.txt']){const file=path.join(eventData,name);if(fs.existsSync(file))console.error(name+'\n'+fs.readFileSync(file,'utf8'));}
+assert.equal(event.status,0);
 fs.writeFileSync(path.join(output,'macos-login-result.json'),JSON.stringify({...receipt,syntheticNativeEvent:true,realLogoutLogin:false,visualInspection:false},null,2)+'\n');
 console.log('Main-app registration, old-file migration, idempotence, running-process preservation and native login Apple Event passed.');
