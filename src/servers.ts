@@ -34,6 +34,7 @@ export class ServerManager {
   private frames: Frame[] = [];
   private dialogs = new ServerDialogs();
   private importedTargets: string[] = [];
+  private copyingAll = false;
   private sharing = new ServerSharing(this.dialogs, () => this.catalog, (catalog, ids) => {this.generation++; this.acceptCatalog(catalog); this.importedTargets = ids; this.selectRecord(ids[0]); this.render();}, text => this.notify(text));
   private busy = false;
   private generation = 0;
@@ -144,7 +145,7 @@ export class ServerManager {
   }
   private render(motion=false) {
     if (this.disposed) return;
-    updateDOM(this.host, this.catalog ? page({...this.catalog,error:this.readError||this.catalog.error}, this.state, this.connections,this.tree,this.importedTargets) : this.readError ? `<div class="error-box" role="alert">${e(this.readError)} ${action("reload", "重试")}</div>` : "", motion);
+    updateDOM(this.host, this.catalog ? page({...this.catalog,error:this.readError||this.catalog.error}, this.state, this.connections,this.tree,this.importedTargets,this.copyingAll) : this.readError ? `<div class="error-box" role="alert">${e(this.readError)} ${action("reload", "重试")}</div>` : "", motion);
     const tree=this.host.querySelector<HTMLElement>('.connection-tree')??undefined;
     if(this.linesTree!==tree){if(this.linesTree)this.linesObserver.unobserve(this.linesTree);this.linesTree=tree;if(tree)this.linesObserver.observe(tree);}
     const route = this.host.querySelector('.catalog-detail .route-preview') ?? undefined;
@@ -287,7 +288,7 @@ export class ServerManager {
   private focusPath(path:string){
     if(this.disposed)return;
     const visible=(node:HTMLElement)=>node.isConnected&&!node.matches(':disabled')&&!node.closest('[hidden],[inert]')&&node.getClientRects().length>0&&getComputedStyle(node).visibility!=='hidden';
-    const selector=path==='@root'?'#tree-origin':path==='@new'?'#catalog-new-menu':path==='@sharing'?'#catalog-share-menu':`[data-path="${CSS.escape(path)}"]`;
+    const selector=path==='@root'?'#tree-origin':path==='@new'?'#catalog-new-menu':`[data-path="${CSS.escape(path)}"]`;
     const choices=[this.host.querySelector<HTMLElement>(selector),...this.host.querySelectorAll<HTMLElement>('.connection-node[tabindex="0"],.connection-node,#tree-origin,#catalog-query')];
     choices.find((node):node is HTMLElement=>!!node&&visible(node))?.focus({preventScroll:true});
   }
@@ -298,7 +299,7 @@ export class ServerManager {
       return [key,node.target,r?.host,r?.port,r&&'username'in r?r.username:undefined,r?.authentication.type,r?.authentication.privateKeyPath,r?.authentication.username];
     }));
   }
-  private actions(path?:string){return serverActions(path?this.tree?.index.get(path):undefined,this.tree!,this.connections.find(v=>v.serverId===this.tree?.index.get(path??'')?.recordId),this.unavailable()).map(a=>a.command.kind==='share-all'?{...a,disabled:a.disabled||(!this.catalog?.servers.length?'暂无可分享的服务器':'')}:a);}
+  private actions(path?:string){return serverActions(path?this.tree?.index.get(path):undefined,this.tree!,this.connections.find(v=>v.serverId===this.tree?.index.get(path??'')?.recordId),this.unavailable()).map(a=>a.command.kind==='copy-all'?{...a,disabled:a.disabled||(!this.catalog?.servers.length?'暂无可分享的服务器':'')}:a);}
   private contextMenu(event:MouseEvent){
     const anchor=(event.target as Element).closest<HTMLElement>('.connection-node,.tree-origin');if(!anchor||!this.catalog)return;
     event.preventDefault();this.openNodeMenu(anchor,{x:event.clientX,y:event.clientY,contextElement:anchor});
@@ -311,12 +312,12 @@ export class ServerManager {
     clearTimeout(this.selectionTimer);const path=anchor.dataset.path;
     if(path){this.onSelection?.();this.state.selected=path;this.render();anchor=this.host.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"]`)!;}
     const source:MenuSource=path?{kind:'node',path,role:this.tree!.index.get(path)!.target,stamp:this.pathStamp(path)}:{kind:'root'};
-    this.menu.show({source,title:this.menuTitle(source),actions:this.actions(path).filter(a=>path||a.command.kind!=='share-all'),anchor,reference,
+    this.menu.show({source,title:this.menuTitle(source),actions:this.actions(path).filter(a=>path||a.command.kind!=='copy-all'),anchor,reference,
       scrollElement:this.host.querySelector<HTMLElement>('.catalog-list')??undefined,
       restore:()=>this.focusPath(path??'@root'),valid:()=>this.menuSourceValid(source)});
   }
   private menuTitle(source:MenuSource){
-    if(source.kind==='toolbar')return source.menu==='sharing'?'连接分享':'新增资料';if(source.kind==='root')return '本机';
+    if(source.kind==='toolbar')return '新增资料';if(source.kind==='root')return '本机';
     const node=this.tree!.index.get(source.path)!;
     return `${node.record?.name??'资料已不存在'} · ${node.kind==='ssh'?'SSH':'SOCKS5'}`;
   }
@@ -326,24 +327,18 @@ export class ServerManager {
     this.menu.show({source,title:this.menuTitle(source),actions:this.actions().filter(a=>a.group==='create'),anchor,reference:anchor,
       restore:()=>this.focusPath('@new'),valid:()=>this.menuSourceValid(source)});
   }
-  private openShareMenu(anchor:HTMLElement){
-    if(this.menu.source?.kind==='toolbar'&&this.menu.source.menu==='sharing'){this.menu.close('cancel');return;}
-    const source:MenuSource={kind:'toolbar',menu:'sharing'};
-    this.menu.show({source,title:'连接分享',actions:[{command:{kind:'share-all'},label:'分享全部服务器',group:'record',disabled:this.unavailable()||(!this.catalog?.servers.length?'暂无可分享的服务器':'')}],anchor,reference:anchor,restore:()=>this.focusPath('@sharing'),valid:()=>this.menuSourceValid(source)});
-  }
   private updateMenu(){
     const source=this.menu.source;if(!source)return;
     if(!this.menuSourceValid(source)){this.menu.close('immediate');if(source.kind==='node')this.notify('节点位置已变化，请重新打开菜单');return;}
-    this.menu.update(this.actions(source.kind==='node'?source.path:undefined).filter(a=>source.kind==='root'?a.command.kind!=='share-all':source.kind!=='toolbar'||(source.menu==='sharing'?a.command.kind==='share-all':a.group==='create')),this.menuTitle(source));
+    this.menu.update(this.actions(source.kind==='node'?source.path:undefined).filter(a=>source.kind==='root'?a.command.kind!=='copy-all':source.kind!=='toolbar'||a.group==='create'),this.menuTitle(source));
   }
   private async handleButton(button:HTMLElement){
     if(button.dataset.serverCommand){await this.execute(JSON.parse(button.dataset.serverCommand) as ServerCommand);return;}
     const {serverAction:name,id='',path,index}=button.dataset;
     if(name==='share'){await this.execute({kind:'share',id,path});return;}
-    if(name==='share-menu'){this.openShareMenu(button);return;}
     if(name==='import-results'){this.state.query='';this.state.tags=[];this.selectRecord(id||this.importedTargets[0]);this.render();return;}
     if(['edit','copy','delete'].includes(name!)){await this.execute({kind:name as 'edit'|'copy'|'delete',id,path});return;}
-    if(['new-server','new-proxy','reload','share-all','import-share'].includes(name!)){await this.execute({kind:name as 'new-server'|'new-proxy'|'reload'|'share-all'|'import-share'});return;}
+    if(['new-server','new-proxy','reload','copy-all','import-share'].includes(name!)){await this.execute({kind:name as 'new-server'|'new-proxy'|'reload'|'copy-all'|'import-share'});return;}
     await this.perform({name:name!,id,path,index});
   }
   private async execute(command:ServerCommand,source?:MenuSource){
@@ -353,13 +348,17 @@ export class ServerManager {
     if(path&&!this.tree?.index.has(path))throw new Error('节点位置已变化，请重新打开菜单');
     const item=this.actions(path).find(a=>a.command.kind===command.kind&&(!('id'in command)||'id'in a.command&&a.command.id===command.id));
     if(item?.disabled)throw new Error(item.disabled);
-    if(['share','share-all','import-share','edit','copy','delete','new-server','new-proxy','new-via','connect'].includes(command.kind)&&this.unavailable())throw new Error(this.unavailable());
+    if(['share','copy-all','import-share','edit','copy','delete','new-server','new-proxy','new-via','connect'].includes(command.kind)&&this.unavailable())throw new Error(this.unavailable());
     const origin=source?.kind==='node'?source.path:source?.kind==='root'?'@root':source?.kind==='toolbar'?'@new':undefined;
     const id='id'in command?command.id:'',record=[...(this.catalog?.servers??[]),...(this.catalog?.proxies??[])].find(r=>r.id===id);
     if(['share','edit','copy','delete','locate-target'].includes(command.kind)&&!record)throw new Error('资料已不存在，请刷新目录');
     switch(command.kind){
       case 'share':this.menu.close('immediate');this.onSelection?.();await this.sharing.export(id);break;
-      case 'share-all':this.menu.close('immediate');this.onSelection?.();await this.sharing.export();break;
+      case 'copy-all':
+        if(this.copyingAll)return;
+        this.menu.close('immediate');this.copyingAll=true;this.render();
+        try{await this.sharing.copyAll();}finally{this.copyingAll=false;this.render();}
+        break;
       case 'import-share':this.menu.close('immediate');this.onSelection?.();this.sharing.import();break;
       case 'reload':await this.start();break;
       case 'new-server':this.openEditor({kind:'new-server'},origin);break;

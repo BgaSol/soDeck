@@ -3,7 +3,7 @@ import {routeTo, type ConnectionNode, type ConnectionTree} from './connection-tr
 
 export type ConnectionActions=Pick<ConnectionsUi,'connect'|'cancelAttempt'|'continueAttempt'|'focusWorkspace'>;
 export type ServerCommand=
-  | {kind:'new-server'|'new-proxy'|'reload'|'share-all'|'import-share'}
+  | {kind:'new-server'|'new-proxy'|'reload'|'copy-all'|'import-share'}
   | {kind:'new-via';path:string}
   | {kind:'edit'|'copy'|'delete'|'locate-target'|'share';id:string;path?:string}
   | {kind:'connect';id:string;path:string}
@@ -16,7 +16,7 @@ export function serverActions(node:ConnectionNode|undefined,tree:ConnectionTree,
     {command:{kind:'new-server'},label:'新增 SSH 服务器',group:'create',disabled:unavailable},
     {command:{kind:'new-proxy'},label:'新增 SOCKS5 代理',group:'create',disabled:unavailable},
     {command:{kind:'reload'},label:'刷新目录',group:'record'},
-    {command:{kind:'share-all'},label:'分享全部服务器',group:'record',disabled:unavailable},
+    {command:{kind:'copy-all'},label:'复制全部',group:'record',disabled:unavailable},
   ];
   if(!node.record)return [{command:{kind:'reload'},label:'刷新目录',group:'record'}];
   const id=node.recordId,path=node.key,actions:ServerAction[]=[];

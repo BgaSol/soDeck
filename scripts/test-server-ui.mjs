@@ -37,14 +37,16 @@ const page = await browser.newPage({ viewport: { width: 1100, height: 720 } });
 const finishTrace = await recordTrace(page.context(), 'server');
 const errors = [];
 let clipboardText = "";
+let failClipboard = false, holdExport = false, exportHeld = false, releaseExport;
 let holdImport=false,importHeld=false,releaseImport;
 let failCatalogRead = false, holdCatalogRead = false, catalogReadHeld = false, releaseCatalogRead;
 page.on("pageerror", error => errors.push(String(error)));
 page.on("request", request => { assert.equal(new URL(request.url()).hostname, "127.0.0.1", "Unexpected network request"); });
 await page.exposeBinding("catalogInvoke", async (_, command, args) => {
-  if(command === "clipboard_text"){if(args.operation === "write")clipboardText=args.text;return args.operation === "read"?clipboardText:null;}
+  if(command === "clipboard_text"){if(args.operation === "write"){if(failClipboard)throw new Error('隔离测试：剪贴板不可写');clipboardText=args.text;}return args.operation === "read"?clipboardText:null;}
   if (command === "server_catalog" && failCatalogRead) throw new Error("隔离测试：目录暂时不可读");
   const result = await bridge.call(command, args);
+  if(command === "export_server_share"&&holdExport){holdExport=false;exportHeld=true;await new Promise(resolve=>releaseExport=resolve);}
   if (command === "server_catalog" && holdCatalogRead) {
     holdCatalogRead = false; catalogReadHeld = true;
     await new Promise(resolve => releaseCatalogRead = resolve);
@@ -78,6 +80,8 @@ try {
   await work().locator('.error-box').waitFor({state:'detached'});
   assert.equal(await work().locator('.catalog-page').count(),1,'An initial read failure can be retried without a catalog snapshot');
   await load();
+  assert.equal(await action('copy-all',work()).isDisabled(),true,'Empty catalogs cannot be copied');
+  assert.equal(await action('share-menu',work()).count(),0);
   const search=work().locator('#catalog-query');await search.focus();
   await search.evaluate(input=>{window.searchInput=input;window.searchDisconnects=0;const ancestors=new Set();for(let n=input;n&&n!==document.body;n=n.parentNode)ancestors.add(n);new MutationObserver(records=>{for(const r of records)for(const n of r.removedNodes)if(ancestors.has(n))searchDisconnects++;}).observe(document.body,{childList:true,subtree:true});});
   const ime=await page.context().newCDPSession(page);
@@ -501,10 +505,38 @@ try {
 
 
   await page.setViewportSize({width:1100,height:720});
-  await action('share-menu',work()).click();await page.locator('[data-menu-action="share-all"]').click();await expectDialogs(1);
-  await dialogs().locator('[data-share-action="copy"]:not([disabled])').waitFor();await dialogs().locator('[data-share-action="copy"]').click();
+  await search.fill('没有匹配的服务器');
+  holdExport=true;await action('copy-all',work()).click();
+  await page.waitForFunction(()=>document.querySelector('[data-server-action="copy-all"]')?.disabled);
+  while(!exportHeld)await new Promise(r=>setTimeout(r,20));
+  assert.match(await action('copy-all',work()).innerText(),/正在复制/);
+  assert.equal(await page.locator('.catalog-action-menu,dialog[open]').count(),0);
+  releaseExport();await page.waitForFunction(()=>document.querySelector('#test-notice').textContent.startsWith('已复制全部'));
   assert(clipboardText.startsWith('SODECK1:'));const shareCode=clipboardText;
+  const shared=await bridge.call('preview_server_share',{code:shareCode});assert.equal(shared.targetCount,(await read()).servers.length);
+  assert.equal(await search.inputValue(),'没有匹配的服务器');
+  assert.equal(await page.locator('.catalog-action-menu,dialog[open]').count(),0);
+  await search.fill('');
+  failClipboard=true;await action('copy-all',work()).click();await expectDialogs(1);
+  assert.match(await dialogs().locator('.error-box').innerText(),/剪贴板不可写/);
+  assert((await dialogs().locator('textarea').inputValue()).startsWith('SODECK1:'));
+  failClipboard=false;await dialogs().locator('[data-share-action="copy"]').click();
+  await page.waitForFunction(()=>document.querySelector('[data-share-action="copy"]')?.textContent==='已复制');
   await dialogs().locator('[data-share-action="close"]').first().click();await expectDialogs(0);
+  checks.push('工具栏一键复制全部、空目录禁用、生成中禁用、筛选不缩减范围、剪贴板失败保留分享码并可重试');
+  for(const theme of ['light','dark','dopamine']){
+    await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+    for(const width of [1100,720,420]){
+      await page.setViewportSize({width,height:720});
+      if(await action('back',work()).isVisible())await action('back',work()).click();
+      assert.equal(await action('copy-all',work()).isVisible(),true);
+      assert(await work().locator('.catalog-toolbar').evaluate(toolbar=>{
+        const bounds=toolbar.getBoundingClientRect();return toolbar.scrollWidth<=toolbar.clientWidth+1&&[...toolbar.querySelectorAll('button')].every(button=>{const box=button.getBoundingClientRect();return box.left>=bounds.left&&box.right<=bounds.right+1;});
+      }),`${theme}/${width} copy all toolbar stays in bounds`);
+      fs.mkdirSync('artifacts/server-copy-all',{recursive:true});await work().locator('.catalog-toolbar').screenshot({path:`artifacts/server-copy-all/${theme}-${width}.png`});
+    }
+  }
+  await page.setViewportSize({width:1100,height:720});
   await action('import-share',work()).click();await dialogs().locator('textarea').fill('broken');await dialogs().locator('.error-box').waitFor();
   assert.equal(await dialogs().locator('[data-share-action="import"]').isDisabled(),true);
   await dialogs().locator('textarea').fill(shareCode);await dialogs().locator('[data-share-action="import"]:not([disabled])').waitFor();
@@ -536,6 +568,7 @@ try {
 
   await bridge.stop(); fs.writeFileSync(path.join(directory, "servers.json"), "{bad-json"); bridge = startBridge(); await load();
   await work().locator(".error-box").waitFor(); assert.equal(await action("new-server", work()).isDisabled(), true);
+  assert.equal(await action('copy-all',work()).isDisabled(),true);
   await action("recover", work()).click(); await action("confirm-yes").click(); await expectDialogs(0);
   await page.waitForFunction(() => !document.querySelector(".catalog-page > .error-box"));
   assert(fs.readdirSync(directory).some(f => f.startsWith("servers.corrupt-")));

@@ -9,6 +9,7 @@ const errorMessage = (error: unknown) => typeof error === 'object' && error && '
 interface Session {dialog: HTMLDialogElement; importing: boolean; code: string; summary?: ShareSummary; busy: string; error: string; copied: boolean; generation: number; timer?: ReturnType<typeof setTimeout>}
 export class ServerSharing {
   private current?: Session;
+  private copyGeneration = 0;
   constructor(private dialogs: ServerDialogs, private catalog: () => Catalog | undefined, private imported: (catalog: Catalog, ids: string[]) => void, private notify: (text: string) => void, private api = sharingApi) {}
   get submitting() {return this.current?.busy === 'import';}
   private render(s: Session) {if (this.current === s) updateDOM(s.dialog, sharingView(s.importing, s.code, s.summary, s.busy, s.error, s.copied));}
@@ -36,6 +37,23 @@ export class ServerSharing {
     return s;
   }
   import() {this.open(true);}
+  async copyAll() {
+    const catalog = this.catalog(); if (!catalog) return;
+    const generation = ++this.copyGeneration;
+    const result = await this.api.export(catalog.revision);
+    if (generation !== this.copyGeneration) return;
+    try {
+      await this.api.copy(result.code);
+      if (generation !== this.copyGeneration) return;
+      this.notify(`已复制全部 ${result.summary.targetCount} 台服务器的分享码，包含可用凭据和私钥`);
+    } catch (error) {
+      if (generation !== this.copyGeneration) return;
+      const s = this.open(false);
+      s.code = result.code; s.summary = result.summary;
+      s.error = `${errorMessage(error)}。可重试或全选分享码后手动复制。`;
+      this.render(s);
+    }
+  }
   async export(serverId?: string) {
     const catalog = this.catalog(); if (!catalog) return;
     const s = this.open(false); s.busy = 'export'; this.render(s);
@@ -80,7 +98,9 @@ export class ServerSharing {
     finally {s.busy = ''; this.render(s);}
   }
   close(force = false) {
-    const s = this.current; if (!s || this.submitting && !force) return;
+    if (this.submitting && !force) return;
+    ++this.copyGeneration;
+    const s = this.current; if (!s) return;
     this.current = undefined; ++s.generation; clearTimeout(s.timer); s.code = ''; s.summary = undefined;
     this.dialogs.dismiss(s.dialog);
   }
