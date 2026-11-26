@@ -41,7 +41,7 @@ try{
  const reconnected=await connect(saved.selectedId);context=reconnected.context;assert.notDeepEqual(context,oldContext);await ui('detach',{surfaceId:surface});
  view=await wait(async()=>{const s=await ui('snapshot');return s.workspaces[context.workspaceId]?.views.find(v=>v.pluginId==='sodeck.system-status');},'reconnected view');
  const reattach=await ui('attach',{viewId:view.id});surface=reattach.surfaceId;await ui('ready',{surfaceId:surface});
- await wait(async()=>{const s=await snapshot();return s.connected&&s.data.memory.state==='ok'&&s.disk.rates?.state==='ok';},'reconnected real metrics');report.checks.push('disconnect keeps last values, new Context reconnect warms fresh counters');
+ await wait(async()=>{const s=await snapshot();report.lastSnapshot=s;return s.connected&&s.data.memory.state==='ok'&&s.disk.rates?.state==='ok';},'reconnected real metrics');report.checks.push('disconnect keeps last values, new Context reconnect warms fresh counters');
  report.lastSnapshot=await snapshot();report.passed=true;
 }catch(e){report.error=e.stack;throw e;}finally{
  child.stdin.end();const end=await Promise.race([exited,delay(10000).then(()=>null)]);if(!end){child.kill();await exited;}report.coreExit=end;report.finishedAt=new Date().toISOString();fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output,JSON.stringify(report,null,2)+'\n');assert.equal(path.dirname(directory),os.tmpdir());fs.rmSync(directory,{recursive:true,force:true});

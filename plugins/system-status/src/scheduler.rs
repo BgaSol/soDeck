@@ -48,6 +48,7 @@ pub struct Point {
     value: Option<f64>,
 }
 struct Ticket {
+    epoch: u64,
     id: Option<String>,
     params: Value,
     nonce: String,
@@ -130,6 +131,22 @@ impl App {
         }
     }
     pub fn mount(&mut self, id: &str, context: &Value) -> std::result::Result<(), String> {
+        if let Some(v) = self.views.get_mut(id).filter(|v| v.context != *context) {
+            // Reconnection reuses the logical view; target.describe requires the new exact Context.
+            v.context = context.clone();
+            v.epoch += 1;
+            v.connected = false;
+            v.family = None;
+            v.probe = 0;
+            v.data = crate::model::StatusState::default();
+            v.groups = groups();
+            v.baseline.clear();
+            v.history.clear();
+            v.publisher = crate::shared_state::Publisher::default();
+            v.state_due = Instant::now();
+            v.capacity_page = 0;
+            v.revision += 1;
+        }
         if !self.views.contains_key(id) {
             if self.views.len() >= 128 {
                 return Err("系统状态工作区已达上限".into());
@@ -376,6 +393,29 @@ impl App {
                     params,
                 }
             };
+            if v.ticket
+                .as_ref()
+                .is_some_and(|t| t.params["expectedContext"] != v.context)
+            {
+                let t = v.ticket.as_ref().unwrap();
+                if let Some(task) = t.id.clone() {
+                    v.ticket = None;
+                    return Some(make(
+                        v,
+                        Kind::Cancel,
+                        "session.exec.release",
+                        json!({"taskId":task}),
+                    ));
+                }
+                if t.poll_due > now {
+                    continue;
+                }
+                let epoch = t.epoch;
+                let params = t.params.clone();
+                let mut work = make(v, Kind::Start, "session.exec.start", params);
+                work.epoch = epoch;
+                return Some(work);
+            }
             if v.paused && !v.manual && v.ticket.as_ref().is_some_and(|t| t.id.is_some()) {
                 let t = v.ticket.take().unwrap();
                 if let Some(task) = t.id {
@@ -497,6 +537,7 @@ impl App {
             };
             let params = json!({"viewId":id,"expectedContext":v.context,"operationId":nonce,"sequence":v.sequence.to_string(),"command":command,"timeoutMs":if group==3 {20000}else if group==5 || group==4 {5000}else{10000},"maxOutputBytes":262144});
             v.ticket = Some(Ticket {
+                epoch: v.epoch,
                 id: None,
                 params: params.clone(),
                 nonce,
@@ -534,6 +575,17 @@ impl App {
             // Resolve an ambiguous start with its original ticket before releasing it.
             if v.ticket.as_ref().is_some_and(|t| t.id.is_some())
                 || (matches!(work.kind, Kind::Start) && result.is_ok())
+                || result.as_ref().is_err_and(|e| {
+                    matches!(
+                        e.data["code"].as_str(),
+                        Some(
+                            "staleContext"
+                                | "taskExpired"
+                                | "operationExpired"
+                                | "workspaceClosing"
+                        )
+                    )
+                })
             {
                 if let Some(t) = v.ticket.take() {
                     if let Some(id) = t.id {
@@ -1117,6 +1169,38 @@ mod tests {
             selected_device(&rows, Some("removed"), true)["removed"],
             true
         );
+    }
+    #[test]
+    fn reconnect_rebinds_existing_view_before_exact_target_queries_and_clears_old_samples() {
+        let mut a = App::new(5);
+        let first = json!({"workspaceId":"w","connectionId":"c","generation":1});
+        let next = json!({"workspaceId":"w","connectionId":"c2","generation":2});
+        a.mount("v", &first).unwrap();
+        let v = a.views.get_mut("v").unwrap();
+        v.connected = true;
+        v.family = Some(Family::Darwin);
+        v.data.cpu.apply(
+            crate::model::Read::Value(crate::model::Gauge {
+                value: 20.0,
+                source: "old".into(),
+                window_ms: None,
+            }),
+            1,
+        );
+        v.history.insert(
+            "cpu".into(),
+            VecDeque::from([Point {
+                at: 1,
+                value: Some(20.0),
+            }]),
+        );
+        a.mount("v", &next).unwrap();
+        assert!(a.views["v"].data.cpu.value.is_none());
+        assert!(a.views["v"].history.is_empty());
+        assert_eq!(a.views.len(), 1);
+        let work = a.take_work().unwrap();
+        assert_eq!(work.method, "session.target.describe");
+        assert_eq!(work.params["expectedContext"], next);
     }
     #[test]
     fn dynamic_setting_does_not_speed_up_slow_groups() {
