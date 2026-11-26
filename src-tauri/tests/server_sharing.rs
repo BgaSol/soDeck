@@ -63,6 +63,14 @@ fn make_key(path: &Path) {
     .unwrap();
 }
 
+fn assert_no_keys(root: &Path) {
+    match fs::read_dir(root.join("server-keys")) {
+        Ok(mut entries) => assert!(entries.next().is_none()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+        Err(error) => panic!("unable to inspect rollback: {error}"),
+    }
+}
+
 #[test]
 fn single_shares_only_explicit_route_and_all_preserves_saved_routes() {
     let a = tempfile::tempdir().unwrap();
@@ -240,10 +248,7 @@ fn final_write_failure_rolls_back_key_files_and_catalog() {
     );
     drop(block);
     assert_eq!(before, target.server_catalog());
-    assert!(fs::read_dir(b.path().join("server-keys"))
-        .unwrap()
-        .next()
-        .is_none());
+    assert_no_keys(b.path());
     let result = import(&target, &share);
     assert_eq!(result["catalog"]["servers"].as_array().unwrap().len(), 3);
 }
@@ -391,8 +396,5 @@ fn key_directory_and_backup_write_failures_preserve_existing_directory() {
         .is_err());
     drop(block);
     assert_eq!(before, target.server_catalog());
-    assert!(fs::read_dir(b.path().join("server-keys"))
-        .unwrap()
-        .next()
-        .is_none());
+    assert_no_keys(b.path());
 }
