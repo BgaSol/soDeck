@@ -437,7 +437,7 @@ try {
   snapshot.data.identity.hostname = 'new-connection-host'; snapshot.groups.find(g => g.name === 'identity').observedAt = Date.now(); snapshot.revision++;
   await frame.locator('#host-name').filter({ hasText: 'new-connection-host' }).waitFor();
   assert.equal(await frame.locator('#host-architecture').innerText(), 'x86_64');
-  assert.equal(await frame.locator('#cpu').innerText(), '采样中');
+  assert.equal(await frame.locator('#cpu').innerText(), '正在读取');
   snapshot.groups.forEach(g => g.observedAt = Date.now()); snapshot.revision++;
   await frame.locator('#cpu').filter({ hasText: '23.4%' }).waitFor();
   await frame.locator('.filesystem').first().waitFor();
