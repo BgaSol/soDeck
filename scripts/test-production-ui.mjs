@@ -156,8 +156,12 @@ let failCatalog = false, testWindow = "main", heldLogReply, releaseLogReply, cho
 let holdLocalNetwork = false, localNetworkReached, releaseLocalNetwork;
 let holdPickerCatalog = false, releasePickerCatalog, pickerConnects = 0;
 let statusSnapshot, statusNetwork;
+let desktopState, startupReads=0;
 page.on("pageerror", error => errors.push(String(error)));
 await page.exposeBinding("desktopInvoke", async (_, command, args) => {
+  if(command==='login_startup_state')startupReads++;
+  if(command==='desktop_state'&&desktopState)return structuredClone(desktopState);
+  if(command==='desktop_navigation_done'&&desktopState){assert.equal(args.id,desktopState.navigation.id);desktopState.navigation=null;return;}
   if (command === 'read_logs') logFilters.push(args.filter);
   if (command === 'choose_local_path') return chosenPluginDirectory;
   if (command === 'server_catalog' && failCatalog) throw new Error('隔离测试：目录暂时不可读');
@@ -250,9 +254,10 @@ async function checkTitlebarPosition(state) {
   const original = await page.evaluate(() => ({ theme: document.documentElement.dataset.theme, macos: document.documentElement.classList.contains('macos') }));
   for (const theme of ['light', 'dark', 'dopamine']) for (const width of [1100, 720]) for (const macos of [false, true]) {
     await page.setViewportSize({ width, height: 720 });
-    const layout = await page.evaluate(({ theme, macos }) => {
+    const layout = await page.evaluate(async ({ theme, macos }) => {
       document.documentElement.dataset.theme = theme;
       document.documentElement.classList.toggle('macos', macos);
+      await Promise.all(document.querySelector('.topbar').getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{})));
       const strip = document.querySelector('#server-tabs').getBoundingClientRect();
       const last = (document.querySelector('.server-tab:last-child') || document.querySelector('#catalog-tab')).getBoundingClientRect();
       const plus = document.querySelector('#new-workspace').getBoundingClientRect();
@@ -450,12 +455,12 @@ try {
   });
   try{
     await page.locator('#settings-button').click();
-    await page.locator('#settings-nav-appearance').waitFor({state:'visible'});
+    await page.locator('#settings-nav-general').waitFor({state:'visible'});
     assert.deepEqual(await page.evaluate(()=>navigationMotion),['console-page'],'One management navigation animates exactly one owned container');
   }finally{await page.evaluate(()=>{Element.prototype.animate=navigationAnimate;delete window.navigationAnimate;delete window.navigationMotion;});}
-  assert.equal(await page.locator('#settings-nav-appearance').getAttribute('aria-current'), 'page', 'Settings initially opens preferences');
+  assert.equal(await page.locator('#settings-nav-general').getAttribute('aria-current'), 'page', 'Settings initially opens preferences');
   assert.equal(await page.locator('[data-console-page=settings]').getAttribute('aria-expanded'),'true');
-  const appearanceNav = page.locator('[data-action="section"][data-id="appearance"]');
+  const appearanceNav = page.locator('[data-action="section"][data-id="general"]');
   await appearanceNav.focus(); await page.keyboard.press('Enter');
   assert.equal(await appearanceNav.evaluate(el => el === document.activeElement), true, 'Changed settings pages retain navigation focus');
   await page.locator('[data-action="theme"][data-id="light"]').click();
@@ -475,6 +480,10 @@ try {
   await page.getByRole('status').filter({hasText:'正在从官方仓库获取插件'}).waitFor();
   await page.locator('#settings-button').click();await page.locator('[data-action="section"][data-id="about"]').click();
   assert.equal(await page.getByRole('heading',{name:'应用与数据',exact:true}).count(),1,'A pending catalog request does not block settings navigation');
+  assert.equal(await page.locator('#login-startup,#close-behavior,[data-action="theme"]').count(),0,'Application information contains no general preferences');
+  const readsOutsideGeneral=startupReads;
+  await page.evaluate(()=>{window.dispatchEvent(new Event('focus'));emitTestEvent('login-startup-changed');});
+  assert.equal(startupReads,readsOutsideGeneral,'Application information does not read OS login registration');
   for(let i=0;!releaseCatalog&&i<50;i++)await page.waitForTimeout(20);
   assert(releaseCatalog);holdCatalog=false;releaseCatalog();
   await page.getByRole('button',{name:'使用帮助',exact:true}).focus();await page.keyboard.press('Enter');
@@ -483,6 +492,14 @@ try {
   assert.equal(await page.evaluate(()=>!!document.activeElement.closest('[role="dialog"]')),false,'Full management pages do not trap Tab');
   await page.locator('#catalog-tab').click();
   assert.equal(await page.locator('#settings-nav-about').getAttribute('aria-current'),'page','SoDeck keeps the current management page');
+  desktopState={generation:1,visible:true,blocked:false,navigation:{id:100,target:'settings'},background:null};
+  await page.evaluate(()=>emitTestEvent('desktop-state-changed'));
+  await page.getByRole('heading',{name:'通用',exact:true}).waitFor();
+  await page.waitForFunction(()=>document.querySelector('#settings-nav-general').getAttribute('aria-current')==='page');
+  assert.equal(desktopState.navigation,null,'Tray settings is acknowledged after opening General');
+  assert(startupReads>readsOutsideGeneral,'General reads the OS registration after the tray navigation');
+  desktopState=undefined;
+  await page.locator('#settings-nav-about').click();
   await page.locator('#settings-button').click();await page.locator('[data-console-page="plugins"]').click();
   assert.equal(await page.locator('#plugins-official').getAttribute('aria-pressed'),'true','An empty installation opens official plugins directly');
   await page.locator('#plugins-installed').focus();await page.keyboard.press('Enter');
@@ -544,7 +561,7 @@ try {
   assert.equal(await terminal.locator('[data-action="select-plugin"]').evaluate(el=>el===document.activeElement),true,'Back restores focus to the plugin');
   await page.locator('.toast-error').last().waitFor({state:'hidden'});
   for (const theme of ['light','dark','dopamine']) {
-    await page.locator('#settings-button').click();await page.locator('#settings-nav-appearance').click();
+    await page.locator('#settings-button').click();await page.locator('#settings-nav-general').click();
     await page.locator(`#theme-${theme}`).click();
     await page.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);
     await page.locator('[data-console-page="plugins"]').click();
@@ -703,7 +720,7 @@ try {
   await page.locator('details[data-persist="source-test.update-one"] summary').click();
   const sourceBefore=(await call('snapshot')).plugins.find(p=>p.manifest.id==='test.update-one').manifest.updateSource;
   await page.locator('#update-repository').fill('test/close-draft');
-  await page.locator('[data-console-page="settings"]').click();await page.locator('#settings-nav-appearance').click();
+  await page.locator('[data-console-page="settings"]').click();await page.locator('#settings-nav-general').click();
   const requestClose=async()=>{
     const op=await call('close_prepare',{requestId:crypto.randomUUID(),target:{kind:'application',action:'restart'}});
     await page.evaluate(op=>emitTestEvent('core-close-inputs',op),op);
@@ -801,7 +818,7 @@ try {
   assert.equal(await page.locator('details[data-persist="source-test.update-one"]').getAttribute('open'),'');
   await page.locator('[data-action="back-plugins"]').click();
   for (const theme of ['light','dark','dopamine']) {
-    await page.locator('#settings-button').click();await page.locator('[data-action="section"][data-id="appearance"]').click();
+    await page.locator('#settings-button').click();await page.locator('[data-action="section"][data-id="general"]').click();
     await page.locator(`[data-action="theme"][data-id="${theme}"]`).click();
     await page.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);
     await page.locator('.console-nav').evaluate(async nav=>{await Promise.allSettled(nav.getAnimations({subtree:true}).map(animation=>animation.finished));});
@@ -909,8 +926,8 @@ try {
   await page.locator('#return-workbench').click();await page.locator('#catalog-tab').click();assert.equal(await preference.inputValue(),'17');
   await page.locator('#component-settings-page').getByRole('button',{name:'保存',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.settings-feedback')?.textContent.includes('设置已保存'));
   const preferenceValue=await call('settings_page',{pluginId:uiMetadata.id,pageId:'display'});assert.equal(preferenceValue.values.fontSize,17);
-  for (const destination of ['appearance','plugins','updates']) {
-    await page.locator(destination==='appearance'?'#settings-nav-appearance':`[data-console-page="${destination}"]`).click();
+  for (const destination of ['general','plugins','updates']) {
+    await page.locator(destination==='general'?'#settings-nav-general':`[data-console-page="${destination}"]`).click();
     assert.equal(await page.locator('.console-nav [aria-current="page"]').count(),1,'Only the current management page is selected');
 
     await page.locator('#settings-button').click();await page.locator('.console-settings-nav').getByRole('button',{name:'显示偏好验收',exact:true}).click();
@@ -986,7 +1003,7 @@ try {
   assert.equal(await page.getByRole('button',{name:'查看插件',exact:true}).count(),0,'Recovered plugin failures remove their actions');
   await page.screenshot({path:'artifacts/production-ui/status-empty.png',fullPage:true});
   statusSnapshot=undefined;statusNetwork=undefined;await refreshStatus();
-  await page.locator('.status-side [data-action="status-about"]').click();
+  await page.locator('#settings-button').click();await page.locator('#settings-nav-general').click();
   await page.locator('#close-behavior').selectOption('exit');
   for(let i=0;(await call('snapshot')).preferences.closeBehavior!=='exit';i++){assert(i<50,'Desktop close preference did not persist');await page.waitForTimeout(50);}
   await page.locator('#close-behavior').selectOption('background');

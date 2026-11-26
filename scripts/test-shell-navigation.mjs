@@ -7,14 +7,15 @@ const browser=await chromium.launch({headless:true}),page=await browser.newPage(
 const url=server.resolvedUrls.local[0];
 const errors=[];page.on('pageerror',e=>errors.push(String(e)));
 await page.route(url,route=>route.fulfill({contentType:'text/html',body:`<html><body><div id="app"></div><script type="module">
-import {Shell} from '/shell.ts';import {ConnectionsUi} from '/connections.ts';import {settingsNavigation} from '/views.ts';import '/style.css';
+import {Shell} from '/shell.ts';import {ConnectionsUi} from '/connections.ts';import {settingsNavigation} from '/settings-views.ts';import '/style.css';
 let views=[],gate;window.focuses=[];window.hidden=[];
 const context={workspaceId:'w',serverId:'s',connectionId:'a',generation:1};
 let state={window:{id:'main',role:'main',activeWorkspace:null},workspaces:[{context,name:'test',endpoint:'ops@test',connected:true}]};
 window.__TAURI_INTERNALS__={invoke:async(command,args)=>{if(args.command?.op==='focus'){focuses.push(args.command.context);state.window.activeWorkspace='w';return views;}if(args.command?.op==='snapshot')return structuredClone(views);if(args.command?.op==='start')return await new Promise(resolve=>gate=resolve);throw new Error(command);}};
 const workspaces={setHostCallbacks(changed,selected){this.changed=changed;this.selected=selected;changed(state);},setHostVisible(v){hidden.push(!v);},async refresh(){this.changed(state);}};
 window.shell=new Shell(document.querySelector('#app'),true);window.connection=new ConnectionsUi('main',()=>{},e=>errors.push(e));shell.attach(workspaces,connection);
-shell.onPage=page=>shell.updateSettingsNavigation(settingsNavigation(page==='settings'?'appearance':null,''));
+shell.onPage=page=>shell.updateSettingsNavigation(settingsNavigation(page==='settings'?'general':null,''));
+window.presentations=[];shell.onConsoleVisibility=page=>presentations.push(page);
 window.gated=()=>!!gate;window.finish=()=>{views=[{attemptId:'a',serverId:'s',windowId:'main',state:'connected',context}];const finish=gate;gate=undefined;finish?.(structuredClone(views));};
 window.clear=()=>{views=[];focuses.length=0;};window.passive=async()=>{views=[{attemptId:'a',serverId:'s',windowId:'main',state:'connecting'}];await connection.refresh();views=[{attemptId:'a',serverId:'s',windowId:'main',state:'connected',context}];await connection.refresh();};
 window.ready=true;
@@ -40,7 +41,7 @@ try {
    await page.locator(`[data-console-page=${destination}]`).focus();await page.keyboard.press('Enter');
    if(destination==='settings'){
     assert.equal(await page.locator('[data-console-page="settings"]').getAttribute('aria-expanded'),'true');
-    assert.equal(await page.locator('.console-nav [aria-current="page"]').getAttribute('data-id'),'appearance');
+    assert.equal(await page.locator('.console-nav [aria-current="page"]').getAttribute('data-id'),'general');
     assert.equal(await page.locator('#console-settings-nav').evaluate(el=>el.parentElement.className),'console-nav');
    }else{
     assert.equal(await page.locator('.console-nav [aria-current="page"]').getAttribute('data-console-page'),destination);
@@ -54,9 +55,12 @@ try {
   }
  }
  await page.setViewportSize({width:1100,height:720});await page.locator('[data-console-page=connections]').click();
+ await page.evaluate(()=>{shell.navigate('settings');shell.setWindowVisible(false);shell.setWindowVisible(true);shell.showWorkbench();shell.navigate('connections');});
+ assert.deepEqual(await page.evaluate(()=>presentations.slice(-4)),['settings',null,'settings','connections'],'Settings activity follows actual page and window visibility');
  await page.evaluate(()=>{window.connecting=connection.connect('s');});await page.waitForFunction(()=>gated());
  await page.evaluate(()=>finish());await page.evaluate(()=>connecting);
  await page.waitForFunction(()=>shell.route.kind==='workbench');
+ assert.equal(await page.evaluate(()=>presentations.at(-1)),null,'Showing an active workbench deactivates management page controllers');
  assert.equal(await page.evaluate(()=>focuses.length),1,'Immediate success without an observed connecting snapshot activates once');
  await page.evaluate(()=>connection.refresh());assert.equal(await page.evaluate(()=>focuses.length),1,'Repeated snapshots do not activate twice');
  for(const width of [1100,720,600]){

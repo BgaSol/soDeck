@@ -1,6 +1,10 @@
 @layer components {
   .settings-page { flex: 1; min-width: 0; min-height: 0; width: 100%; padding: 0 28px; overflow-y: auto; scroll-padding-block: 12px 132px; }
   .settings-page > * { max-width: 680px; }
+  .general-settings-group + .general-settings-group { margin-top: 28px; }
+  .general-settings-group > .field-title { margin: 0 0 12px; }
+  .settings-field-feedback { margin-block: 8px 12px; overflow-wrap: anywhere; }
+  .settings-field-feedback:empty { margin: 0; }
   .settings-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; }
   .settings-title .hint { font-size: 11px; }
   .component-settings-form { min-width: 0; }

@@ -339,7 +339,7 @@ good、warning、error 分别辅助成功、需关注和错误文字。success-b
 
 普通字段高（34px），panel 底、text 字、core-control 圆角、内边距（6px 10px）。目录搜索字段高（32px），左侧图标占位让左内边距增为（31px）。字段字号继承父级，目录搜索继承 label（12px）。输入光标使用 accent，占位文字使用 muted；焦点、required 和数值范围继续使用现有字段规则，不新增虚构的错误字段样式。来源为 [shell.css](src/shell.css)、[console.css](src/console.css)、[servers.css](src/servers.css) 与 [server-views.ts](src/server-views.ts)。
 
-设置正文最大宽（680px），标题、字段和提交区同宽。非布尔字段采用标签在上、控件在下；普通控件最大宽（320px），数值与单位（180px），字体选择与预览（380px）。布尔字段保留左右排列，原生 checkbox 提供键盘及表单行为，外观轨道为（34 × 20px），高对比模式显示原生控件。字段间使用（1px）分隔线和（16px）上下间距。提交区在文档流中距字段（18px），长表单使用 sticky 保持底部可达，短表单紧随字段；正文独立滚动并为焦点字段预留提交区空间。样式见 [settings.css](src/settings.css)，行为见[设置](docs/features/settings.md)。
+设置正文最大宽（680px），标题、字段和提交区同宽。非布尔字段采用标签在上、控件在下；普通控件最大宽（320px），数值与单位（180px），字体选择与预览（380px）。布尔字段保留左右排列，原生 checkbox 提供键盘及表单行为，外观轨道为（34 × 20px），高对比模式显示原生控件。字段间使用（1px）分隔线和（16px）上下间距。提交区在文档流中距字段（18px），长表单使用 sticky 保持底部可达，短表单紧随字段；正文独立滚动并为焦点字段预留提交区空间。通用页将外观与启动/窗口分为两组，组间距（28px），组标题下方（12px），即时保存反馈紧邻对应项；组件提交区保持原规则。样式见 [settings.css](src/settings.css)，行为见[设置](docs/features/settings.md)。
 
 ### Navigation
 

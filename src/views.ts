@@ -1,4 +1,3 @@
-import { themes } from './theme';
 import type { Snapshot, Log, Message, Filter, Update, UpdateOverview, Manifest, OfficialPlugin, OfficialPreparation, UpdateNetwork, MirrorDiagnostic } from "./core";
 import { updatesPage, pendingUpdates } from "./updates";
 import { pluginsPage } from "./plugin-settings";
@@ -34,31 +33,10 @@ export interface ViewState {
   networkResults?: { endpoint: string; results: MirrorDiagnostic[] };
   networkGeneration?: number;
 }
-const pair = (name: string, value: unknown) =>
-  `<div class="pair"><dt>${name}</dt><dd>${e(value)}</dd></div>`;
-export type SettingsSection = "appearance" | "components" | "about";
-export function settingsNavigation(section:SettingsSection|null, componentNavigation:string) {
-  const nav = (id:SettingsSection, label:string, symbol:string) => `<li>${b("section",`<span>${label}</span>`,symbol,"console-settings-item",`id="settings-nav-${id}" data-id="${id}" aria-current="${id === section ? "page" : "false"}"`)}</li>`;
-  return nav("appearance","外观","sun")+componentNavigation+nav("about","应用与数据","info");
-}
-export function settings(s:Snapshot, section:SettingsSection, applicationSettings = "") {
-  return `<section class="settings-page" data-scroll="settings" data-settings-section="${section}" ${section === "components" ? 'id="component-settings-page"' : ""}>${section === "components" ? "" : section === "appearance" ? appearance(s) : about(s, applicationSettings)}</section>`;
-}
+const pair = (name: string, value: unknown) => `<div class="pair"><dt>${name}</dt><dd>${e(value)}</dd></div>`;
 export function maintenance(s:Snapshot, v:ViewState, page:"plugins"|"updates") {
   return `<div class="maintenance-main"><section class="maintenance-page" data-scroll="${page}">${page === "plugins" ? pluginsPage(s,v) : updatesPage(s,v)}</section>${pendingUpdates(s,v)}</div>`;
 }
-function appearance(s: Snapshot) {
-  return `<div class="section-heading"><div><h2>外观</h2><p>选择适合当前环境的显示主题。</p></div></div><h3 class="field-title">应用主题</h3><div class="themes">${[["system", "跟随系统"], ...themes.map(t => [t.id, t.name])]
-    .map(
-      ([id, label]) =>
-        `<button id="theme-${id}" data-action="theme" data-id="${id}" aria-pressed="${s.preferences.theme === id}" class="theme-option ${s.preferences.theme === id ? "selected" : ""}"><div class="theme-preview ${id}"><i></i><div><span></span><span></span></div></div><span>${label}</span>${s.preferences.theme === id ? icon("check") : ""}</button>`,
-    )
-    .join("")}</div><p class="hint">立即生效，重新打开应用后保留。</p>`;
-}
-function about(s: Snapshot, applicationSettings: string) {
-  return `<div class="section-heading"><div><h2>应用与数据</h2><p>应用信息和本地数据位置。</p></div></div><h3 class="field-title">启动与窗口</h3>${applicationSettings}<h3 class="field-title">窗口行为</h3><div class="setting-row"><label class="setting-label" for="close-behavior">关闭主窗口时</label><select id="close-behavior"><option value="background" ${s.preferences.closeBehavior !== "exit" ? "selected" : ""}>在后台继续运行（推荐）</option><option value="exit" ${s.preferences.closeBehavior === "exit" ? "selected" : ""}>退出应用</option></select></div><p class="hint">${s.os === "linux" ? "关闭后最小化，保留窗口切换入口。" : s.os === "macos" ? "关闭后保留连接和任务；没有其他工作窗口时，仅在屏幕顶部菜单栏保留入口。可从菜单栏重新打开或退出。" : "关闭后隐藏到托盘，已有连接和任务继续运行。"} 从托盘菜单选择“退出 SoDeck”可结束应用。选择后立即保存。</p><div class="about-brand"><div class="brand-mark">S</div><div><h3>SoDeck</h3><p>面向运维的远程服务器工作台</p></div></div><dl>${pair("应用版本", s.version)}${pair("构建目标", s.target)}${pair("数据目录", s.dataDirectory)}${pair("日志目录", s.logDirectory)}</dl><div class="actions">${b("usage-help", "使用帮助", "info")}${b("copy-data", "复制数据路径", "copy")}${b("copy-logs", "复制日志路径", "copy", "quiet")}</div><p class="hint">插件文件保留在你选择的外部目录。卸载或覆盖安装核心不会主动清理这些数据。</p>`;
-}
-
 export function logs(s: Snapshot, v: ViewState) {
   return `<div class="log-toolbar"><label>来源<select id="log-source"><option value="">全部来源</option><option value="core" ${v.filter.pluginId === "core" ? "selected" : ""}>核心</option>${s.plugins.map((p) => `<option value="${e(p.manifest.id)}" ${v.filter.pluginId === p.manifest.id ? "selected" : ""}>${e(p.manifest.name)}</option>`).join("")}${v.filter.pluginId && v.filter.pluginId !== "core" && !s.plugins.some((p) => p.manifest.id === v.filter.pluginId) ? `<option selected value="${e(v.filter.pluginId)}">${e(v.filter.pluginId)}</option>` : ""}</select></label><label>级别<select id="log-level"><option value="">全部级别</option>${["debug", "info", "warn", "error"].map((l) => `<option ${v.filter.level === l ? "selected" : ""}>${l}</option>`).join("")}</select></label><label class="search-label">搜索<input id="log-query" type="search" placeholder="搜索日志正文" value="${e(v.filter.query)}"></label>${b("clear-log-filters", "清除筛选", undefined, "quiet", 'id="clear-log-filters"')}${b("pause-logs", v.paused ? "继续显示" : "暂停显示", undefined, "quiet")}${b("copy-logs-content", "复制记录", "copy", "quiet")}</div><div class="log-times"><label>开始 <input id="log-since" type="datetime-local" value="${localTime(v.filter.since)}"></label><label>结束 <input id="log-until" type="datetime-local" value="${localTime(v.filter.until)}"></label><span class="hint">最近 500 条 · ${v.paused ? "显示已暂停，后台继续记录" : "实时更新"}</span></div><div id="log-results" class="log-results" data-scroll="logs">${logResults(v.logs)}</div>`;
 }

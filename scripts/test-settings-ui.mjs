@@ -26,7 +26,7 @@ await page.route(url+'fonts/**',async route=>{
   catch(e){await route.fulfill({status:404,body:String(e)});}
 });
 const harness=`<!doctype html><html lang="zh-CN" data-theme="dopamine"><head><meta charset="utf-8"></head><body><div id="app"></div><script type="module">
-import '/style.css';import {Shell} from '/shell.ts';import {settings,settingsNavigation} from '/views.ts';import {ComponentSettings} from '/settings.ts';
+import '/style.css';import {Shell} from '/shell.ts';import {settings,settingsNavigation} from '/settings-views.ts';import {ComponentSettings} from '/settings.ts';
 window.__TAURI_INTERNALS__={invoke:window.settingsInvoke,convertFileSrc:p=>new URL('/fonts/'+p,location.href).href};
 const shell=window.settingsShell=new Shell(document.querySelector('#app'),true),snapshot=await settingsInvoke('snapshot'),body=document.querySelector('#layer-content');const app=window.settingsApp=new ComponentSettings(render);
 function render(){const visible=shell.route.kind==='console'&&shell.route.page==='settings';shell.updateSettingsNavigation(settingsNavigation(visible?'components':null,app.navigation(visible)));if(!visible){app.mount(null,false);return;}if(body.dataset.entity!==app.selected){app.mount(null,false);body.innerHTML=settings(snapshot,'components');body.dataset.entity=app.selected;}app.mount(body.querySelector('#component-settings-page'),true);}

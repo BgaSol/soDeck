@@ -26,7 +26,7 @@
 | 让本机 Codex 发现并连接保存的服务器、采集日志并补充调查 | [Agent MCP](features/mcp.md) |
 | 安装、启停或移除插件 | [插件管理](features/plugins.md) |
 | 更新核心/插件、管理下载备用地址 | [在线更新](features/updates.md) |
-| 外观、字体、组件偏好及系统打开 | [设置](features/settings.md) |
+| 通用偏好、字体、组件设置及系统打开 | [设置](features/settings.md) |
 | 关闭、取消、保存失败或重启 | [生命周期](features/lifecycle.md) |
 | 查看错误来源、日志和消息 | [日志与重要消息](features/logs-messages.md) |
 

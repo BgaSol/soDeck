@@ -30,6 +30,7 @@ export class Shell {
   private connections?: ConnectionsUi;
   private consolePage: ConsolePage = 'connections';
   onPage?: (page: ConsolePage) => void;
+  onConsoleVisibility?: (page: ConsolePage | null) => void;
   readonly catalog: HTMLElement;
   readonly content: HTMLElement;
   readonly tabs: HTMLElement;
@@ -69,7 +70,7 @@ export class Shell {
   navigate(page:ConsolePage) {
     if(!this.main)return;
     const changed=this.route.kind!=='console'||this.route.page!==page;
-    this.revision++;this.consolePage=page;this.route={kind:'console',page};this.workspaces?.setHostVisible(false);this.paint();this.onPage?.(page);
+    this.revision++;this.consolePage=page;this.route={kind:'console',page};this.paint();this.onPage?.(page);this.syncVisibility();
     if(changed)enterMotion(page==='connections'?this.catalog:this.page,'x');
   }
   selectionChanged(){this.revision++;}
@@ -78,7 +79,9 @@ export class Shell {
     if(!visible)this.revision++;
     this.windowVisible=visible;this.syncVisibility();
   }
-  private syncVisibility(){this.workspaces?.setHostVisible(this.windowVisible&&this.route.kind==='workbench');}
+  get navigationRevision() { return this.revision; }
+  get visibleConsolePage(): ConsolePage | null { return this.windowVisible && this.route.kind === 'console' ? this.route.page : null; }
+  private syncVisibility(){this.workspaces?.setHostVisible(this.windowVisible&&this.route.kind==='workbench');this.onConsoleVisibility?.(this.visibleConsolePage);}
   takeStartupPage(snapshot: Snapshot): ConsolePage | null {
     if (this.startupApplied) return null;
     this.startupApplied = true;

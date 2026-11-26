@@ -17,7 +17,7 @@
 | [状态总览](features/status.md) | 整体健康、服务器网络、插件运行与暂停显示 |
 | [生命周期](features/lifecycle.md) | 保存、取消、关闭、退出和重启 |
 | [在线更新](features/updates.md) | 核心/插件更新、缓存、校验与下载网络 |
-| [设置](features/settings.md) | 外观、组件偏好、字体和桌面行为 |
+| [设置](features/settings.md) | 通用偏好、组件设置、字体和桌面行为 |
 | [日志与重要消息](features/logs-messages.md) | 来源、查询、消息、未读及通知 |
 
 ## 插件功能
@@ -65,5 +65,7 @@
 - [核心 2.2.5](releases/v2.2.5.md)：恢复原有核心标签条配色和焦点样式，保留终端插件整理。
 
 - [核心 2.6.0](releases/v2.6.0.md)：原子提交、Windows 路径和 SSH 编码；相关插件独立发行。
+
+- [核心 2.7.0](releases/v2.7.0.md)：通用设置分区、独立保存反馈与可见页面读取。
 
 返回[项目首页](../README.md)。

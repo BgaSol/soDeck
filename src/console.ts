@@ -2,7 +2,8 @@ import { enterMotion, exitMotion, captureMotion, settleMotion } from './motion.j
 import { listen, type UnlistenFn, type EventCallback } from "@tauri-apps/api/event";
 import type { Window } from "@tauri-apps/api/window";
 import {DesktopUi, chooseLocalPath} from "./desktop";
-import {ApplicationSettings} from './application-settings';
+import {GeneralSettings} from './general-settings';
+import * as settingsViews from './settings-views';
 import { invoke } from "@tauri-apps/api/core";
 import { Workspaces, type DropPreview } from "./workspaces";
 import { core, type Snapshot, type Message } from "./core";
@@ -29,11 +30,11 @@ async function restart(install: boolean) {
 }
 const pageHost = shell.page;
 const componentSettings = new ComponentSettings(() => { if (["settings","plugins","updates"].includes(currentPage)) renderPage(); });
-const applicationSettings=new ApplicationSettings(()=>{if(currentPage==='settings'&&settingsSection==='about')renderPage();},refresh);
+const generalSettings=new GeneralSettings(()=>{if(shell.visibleConsolePage==='settings'&&settingsSection==='general')renderPage();},refresh);
 workspaces.setCloseParticipants(async (decision,operationId)=>{await hostDrafts.flushInputs();return [...await (servers?.closeInputs(decision)??Promise.resolve([])),...await componentSettings.closeInputs(decision,operationId),...await hostDrafts.closeInputs(decision)];},blocked=>servers?.setCloseBlocked(blocked));
 let snapshot: Snapshot | undefined;
 let currentPage:ConsolePage = 'connections';
-let settingsSection:views.SettingsSection = 'appearance';
+let settingsSection:settingsViews.SettingsSection = 'general';
 let lastError = "";
 let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 let refreshing = false;
@@ -92,14 +93,14 @@ function content() {
   if (!snapshot)
     return `<div class="error-box">无法读取应用状态：${e(lastError)}<br>${b("refresh", "重新读取")}</div>`;
   if (currentPage === "status") return views.status(pausedStatus ?? snapshot, statusView);
-  if (currentPage === "settings") return views.settings(snapshot, settingsSection,applicationSettings.render(snapshot.os));
+  if (currentPage === "settings") return settingsViews.settings(snapshot, settingsSection,generalSettings.state);
   if (currentPage === "plugins" || currentPage === "updates") return views.maintenance(snapshot, state, currentPage);
   if (currentPage === "logs") return views.logs(snapshot, state);
   return views.messages(state);
 }
+function syncSettingsActivity() { generalSettings.mount(shell.visibleConsolePage==='settings'&&settingsSection==='general'); }
 function renderPage(navigating = false) {
-  applicationSettings.mount(currentPage==='settings'&&settingsSection==='about');
-  shell.updateSettingsNavigation(views.settingsNavigation(currentPage === "settings" ? settingsSection : null,componentSettings.navigation(currentPage === "settings" && settingsSection === "components")));
+  shell.updateSettingsNavigation(settingsViews.settingsNavigation(currentPage === "settings" ? settingsSection : null,componentSettings.navigation(currentPage === "settings" && settingsSection === "components")));
   const error = document.querySelector<HTMLElement>("#layer-error");
   if (error) { error.textContent = lastError ? `${lastError}；保留上次读取结果。` : ""; error.hidden = !lastError || !snapshot; }
   const target = document.querySelector<HTMLElement>("#layer-content");
@@ -119,6 +120,7 @@ function renderPage(navigating = false) {
       target.querySelector<HTMLElement>("#back-plugins")?.focus({preventScroll: true});
     componentSettings.mount(target.querySelector("#component-settings-page"), currentPage === "settings" && settingsSection === "components");
   }
+  syncSettingsActivity();
 }
 async function showPage(next: ConsolePage) {
   shell.navigate(next);
@@ -136,10 +138,15 @@ async function enterPage(next: ConsolePage) {
   scheduleRefresh();
 }
 shell.onPage=page=>void action(()=>enterPage(page));
+shell.onConsoleVisibility=syncSettingsActivity;
+function openSettings(section:settingsViews.SettingsSection) {
+  settingsSection=section;
+  shell.navigate('settings');
+}
 function openComponentSettings(key:string) {
   settingsSection="components";
   componentSettings.select(key);
-  if(currentPage!=="settings")shell.navigate("settings");
+  openSettings('components');
 }
 function toast(text: string, message?: Message, error = false) {
   const holder = document.querySelector("#toasts")!;
@@ -325,8 +332,7 @@ root.addEventListener("click", (event) => {
         document.getElementById("status-errors")?.focus();
         break;
       case "status-about":
-        settingsSection = "about";
-        await showPage("settings");
+        openSettings('about');
         break;
       case "connections":
         await showPage("connections");
@@ -335,9 +341,7 @@ root.addEventListener("click", (event) => {
         await refresh();
         break;
       case "section":
-        if(id!=="appearance"&&id!=="about")break;
-        settingsSection = id;
-        renderPage();
+        if(settingsViews.isBuiltinSettingsSection(id))openSettings(id);
         break;
       case "manage-plugins":
         state.plugin = "";
@@ -347,7 +351,9 @@ root.addEventListener("click", (event) => {
         openComponentSettings(id);
         break;
       case "plugin-component-settings": {
+        const revision=shell.navigationRevision;
         await componentSettings.catalog();
+        if(revision!==shell.navigationRevision)break;
         const entry = componentSettings.entries.find(p => p.pluginId === id);
         if (entry) openComponentSettings(`${entry.pluginId}/${entry.pageId}`);
         break;
@@ -461,7 +467,7 @@ root.addEventListener("click", (event) => {
         await showPage("plugins");
         break;
       case "theme":
-        await core.theme(id);
+        await generalSettings.setTheme(id);
         break;
       case "pause-logs":
         state.paused = !state.paused;
@@ -497,10 +503,10 @@ root.addEventListener("click", (event) => {
         if (snapshot) await copy(snapshot.dataDirectory);
         break;
       case "login-startup-retry":
-        await applicationSettings.refresh();
+        await generalSettings.retry();
         break;
       case "login-startup-update":
-        applicationSettings.updateLoginStartup();
+        await generalSettings.updateLoginStartup();
         break;
       case "copy-logs":
         if (snapshot) await copy(snapshot.logDirectory);
@@ -523,7 +529,6 @@ root.addEventListener("click", (event) => {
 let queryTimer: ReturnType<typeof setTimeout>;
 root.addEventListener("input", (event) => {
   const input = event.target as HTMLInputElement;
-  if(input.id==='close-behavior'&&applicationSettings.input(input))return;
   if (snapshot && networkInput(input, snapshot, state)) { if (!(event as InputEvent).isComposing) renderPage(); return; }
   if (input.dataset.source && state.plugin) {
     hostDrafts.input(state.plugin, input.dataset.source, input.value);
@@ -541,7 +546,8 @@ root.addEventListener("change", (event) => {
   if (snapshot && networkInput(input, snapshot, state)) { renderPage(); return; }
   if (input.dataset.updateSelect) { input.checked ? state.excludedUpdates.delete(input.dataset.updateSelect) : state.excludedUpdates.add(input.dataset.updateSelect); renderPage(); return; }
   if (input.id === "automatic-updates") { void action(() => core.automaticUpdates(input.checked)); return; }
-  if(input.id==='login-startup'&&applicationSettings.input(input))return;
+  if(input.id==='login-startup'){void action(()=>generalSettings.setLoginStartup(input.checked));return;}
+  if(input.id==='close-behavior'){void action(()=>generalSettings.setCloseBehavior(input.value));return;}
   if (input.id === "log-source") state.filter.pluginId = input.value;
   else if (input.id === "log-level") state.filter.level = input.value;
   else if (input.id === "log-since")
@@ -554,13 +560,13 @@ root.addEventListener("change", (event) => {
 });
 let hostDisposed=false;
 let statusTimer:ReturnType<typeof setInterval>|undefined;
-const desktop=new DesktopUi(win,shell,target=>{if(target==='settings')settingsSection='about';shell.navigate(target);},async()=>{await hostDrafts.flushInputs();return workspaces.canBackground();},message=>toast(message,undefined,true));
+const desktop=new DesktopUi(win,shell,target=>{if(target==='settings')openSettings('general');else shell.navigate(target);},async()=>{await hostDrafts.flushInputs();return workspaces.canBackground();},message=>toast(message,undefined,true));
 const hostListeners:UnlistenFn[]=[];
 async function subscribe<T>(name:string,callback:EventCallback<T>) {
   const unlisten=await listen<T>(name,callback);
   if(hostDisposed)unlisten();else hostListeners.push(unlisten);
 }
-window.addEventListener("pagehide",()=>{hostDisposed=true;applicationSettings.dispose();desktop.dispose();clearTimeout(refreshTimer);clearTimeout(queryTimer);servers?.dispose();componentSettings.dispose();hostDrafts.dispose();clearInterval(statusTimer);hostListeners.forEach(fn=>fn());picker?.dispose();workspaces.dispose();shell.dispose();},{once:true});
+window.addEventListener("pagehide",()=>{hostDisposed=true;generalSettings.dispose();desktop.dispose();clearTimeout(refreshTimer);clearTimeout(queryTimer);servers?.dispose();componentSettings.dispose();hostDrafts.dispose();clearInterval(statusTimer);hostListeners.forEach(fn=>fn());picker?.dispose();workspaces.dispose();shell.dispose();},{once:true});
 async function start() {
   await desktop.listen();
   await desktop.initialize();
@@ -577,7 +583,7 @@ async function start() {
     toast(event.payload.title, event.payload);
     scheduleRefresh();
   });
-  await subscribe("login-startup-changed",()=>{if(currentPage==='settings'&&settingsSection==='about')void applicationSettings.refresh();});
+  await subscribe("login-startup-changed",()=>{void generalSettings.refresh();});
   await subscribe<string>("core-exit-error", (event) =>
     toast(`退出未完成：${event.payload}`, undefined, true),
   );
