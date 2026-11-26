@@ -65,12 +65,19 @@ export class GeneralSettings {
   }
   private async savePreference<T extends string>(field: PreferenceChange<T>, value: T, write: () => Promise<void>) {
     if (this.disposed || !this.active || field.saving) return;
+    const source = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
+    const focusId = source?.matches('[data-action="theme"],#close-behavior') ? source.id : '';
     field.saving = true; field.requested = value; field.error = ''; this.notify();
     try { await write(); }
     catch (error) { field.error = String(error); }
     finally {
       try { if (!this.disposed) await this.refreshApplication(); }
-      finally { field.saving = false; delete field.requested; this.notify(); }
+      finally {
+        field.saving = false; delete field.requested; this.notify();
+        if (!this.disposed && this.active && focusId && document.activeElement === document.body) {
+          document.getElementById(focusId)?.focus({preventScroll:true});
+        }
+      }
     }
   }
   updateLoginStartup() { return this.state.startup.status?.state === 'stale' ? this.setLoginStartup(true) : Promise.resolve(); }
