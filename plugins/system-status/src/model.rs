@@ -228,7 +228,16 @@ impl StatusState {
     }
     pub fn rate(&self, key: &str) -> Value {
         let Some(v) = self.rates.get(key) else {
-            return json!({"state":"warmingUp"});
+            let source = if key.starts_with("net:") {
+                &self.network_source
+            } else {
+                &self.disk_source
+            };
+            return if source.state == "ok" {
+                json!({"state":"warmingUp"})
+            } else {
+                source.meta()
+            };
         };
         let mut out = v.meta();
         if let Some(r) = &v.value {
