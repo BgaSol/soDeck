@@ -1,7 +1,14 @@
 //! Checks run only by the packaged-application smoke-test entry point.
 mod desktop_files;
 mod desktop_open;
+mod logs_messages;
 mod plugin_icons;
+pub fn logs_messages_roundtrip(
+    handle: &tauri::AppHandle,
+    core: &Arc<AppCore>,
+) -> Result<(), String> {
+    logs_messages::verify(handle, core)
+}
 pub fn plugin_icons_roundtrip(
     handle: &tauri::AppHandle,
     core: &Arc<AppCore>,

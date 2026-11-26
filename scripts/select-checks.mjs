@@ -163,7 +163,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
       if (/^scripts\/(terminal-reading\.test|test-terminal-reading-ui)\.mjs$/.test(file)) { plan.scripts = plan.terminalInput = true; continue; }
       if (/^scripts\/test-terminal-powershell(?:-pty)?\.mjs$/.test(file)) { plan.scripts = true; plugin('terminal');plan.desktop=plan.ssh=true;continue; }
       if (/^scripts\/(test-terminal-(history|search-ui)|benchmark-terminal-history|terminal-history\.test)\.mjs$/.test(file)) { plan.scripts = plan.terminalInput = true; continue; }
-      if (/^scripts\/test-(plugin-icons-ui|theme-ui|connection-ui|desktop-ui|desktop-shell-ui|application-settings-ui|production-ui|server-ui|settings-ui|workspace-ui|workbench-interactions|workbench-layout)\.mjs$/.test(file)) { ui(); continue; }
+      if (/^scripts\/test-(logs-messages-ui|plugin-icons-ui|theme-ui|connection-ui|desktop-ui|desktop-shell-ui|application-settings-ui|production-ui|server-ui|settings-ui|workspace-ui|workbench-interactions|workbench-layout)\.mjs$/.test(file)) { ui(); continue; }
       plan.reasons.push(`Shared build input or unmapped path: ${file.replace(/[\r\n|`]/g, ' ')}`);
       full();
     }

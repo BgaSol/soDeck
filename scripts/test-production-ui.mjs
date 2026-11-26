@@ -1020,7 +1020,7 @@ try {
   for(let i=0;!heldLogReply&&i<50;i++)await page.waitForTimeout(20);assert(heldLogReply);
   await page.locator('[data-action="pause-logs"]').click();
   await page.locator('#log-source').selectOption('core');await page.locator('#log-level').selectOption('error');
-  await page.locator('#log-since').fill('2020-01-01T00:00');await page.locator('#log-until').fill('2020-01-02T00:00');
+  await page.locator('.log-period summary').click();await page.locator('#log-since').fill('2020-01-01T00:00');await page.locator('#log-until').fill('2020-01-02T00:00');
   await page.getByRole('button',{name:'清除筛选',exact:true}).click();
   assert.deepEqual(await page.locator('#log-source,#log-level,#log-query,#log-since,#log-until').evaluateAll(nodes=>nodes.map(n=>n.value)),['','','','','']);
   releaseLogReply();await page.waitForTimeout(100);assert.equal(await page.locator('#log-results').textContent(),currentLogs,'Paused clear keeps records and rejects stale response');
@@ -1030,12 +1030,12 @@ try {
   assert.equal(await page.getByRole('button',{name:'继续显示',exact:true}).count(),1,'Page navigation preserves log pause');
   assert.equal(await page.locator('#log-results').textContent(),currentLogs,'Returning to paused logs retains the displayed records');
   await page.getByRole('button',{name:'继续显示',exact:true}).click();await page.locator('.log-row').first().waitFor();
-  assert.equal(await page.locator('.log-meta').first().evaluate(el=>getComputedStyle(el).fontSize),'12px');
+  assert.equal(await page.locator('.log-source').first().evaluate(el=>getComputedStyle(el).fontSize),'12px');
   const localDates = await page.evaluate(() => {
     const zero = new Date(0);
     return { zero: new Date(-zero.getTimezoneOffset()*60000).toISOString().slice(0,16), until: new Date('2024-02-29T12:34').getTime() };
   });
-  await page.locator('#log-since').fill(localDates.zero);await page.locator('#log-since').blur();
+  await page.locator('.log-period summary').click();await page.locator('#log-since').fill(localDates.zero);await page.locator('#log-since').blur();
   for(let i=0;!logFilters.some(filter=>filter.since===0)&&i<50;i++)await page.waitForTimeout(20);
   assert(logFilters.some(filter=>filter.since===0),'The local epoch filter is submitted as zero milliseconds');
   await page.locator('#log-until').fill('2024-02-29T12:34');await page.locator('#log-until').blur();
@@ -1064,18 +1064,19 @@ try {
   await page.locator('.message-row.selected').waitFor();
   await page.locator('.message-row.selected').evaluate(async node=>{await Promise.allSettled(node.getAnimations({subtree:true}).map(animation=>animation.finished));});
   const messageContrasts=await page.locator('.message-row.selected').evaluate(row=>{
-    const luminance=color=>{const c=color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=1;const paint=canvas.getContext('2d',{willReadFrequently:true});
+    const luminance=color=>{paint.fillStyle=color;paint.fillRect(0,0,1,1);const c=[...paint.getImageData(0,0,1,1).data].slice(0,3).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};
     const background=luminance(getComputedStyle(row).backgroundColor);
     return [...row.querySelectorAll('time,p,small')].map(node=>{const foreground=luminance(getComputedStyle(node).color);return (Math.max(foreground,background)+.05)/(Math.min(foreground,background)+.05);});
   });
   assert(messageContrasts.length&&messageContrasts.every(ratio=>ratio>=4.5),`Selected message small text contrast: ${messageContrasts}`);
   assert.equal(await page.locator('.message-row.selected').evaluate(el=>el===document.activeElement),true,'Reading a message retains row focus');
-  await page.locator('.message-row').filter({hasText:'test.messages'}).first().click();
+  const publishedMessage=(await call('read_messages')).find(message=>message.pluginId==='test.messages');await page.locator('[data-action="select-message"][data-id="'+publishedMessage.id+'"]').click();
   await page.locator('.message-detail [data-action="locate-plugin"]').click();
   assert.equal(await page.locator('.console-nav [aria-current="page"]').getAttribute('data-console-page'),'plugins','View plugin opens plugin management');
   assert.equal(await page.locator('#layer-content').getAttribute('data-page'),'plugins:test.messages','View plugin locates the exact source plugin');
   await page.locator('#messages-button').click();
-  assert.match(await page.locator('.message-row.selected').textContent(),/test.messages/,'Returning to messages preserves selection');
+  assert.equal(await page.locator('.message-row.selected').getAttribute('data-id'),publishedMessage.id,'Returning to messages preserves selection');
   await page.keyboard.press('Escape');
   checks.push('Messages: real fixture publication, accessible filter selection and keyboard focus, selected-row contrast and focus after marking read');
   for (let index = 0; index < 7; index++) {

@@ -95,6 +95,7 @@ try {
   validateCoreArtifacts(input, metadata, commit);
   report.passed = true;
   report.pluginIconsNative = true;
+  report.logsMessagesNative = true;
   report.desktopShellNative = true;
   report.desktopStartupNative = true;
   report.loginRegistrationIoNative = true;

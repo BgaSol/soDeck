@@ -5,6 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { changedFiles, selectChecks, checkResults, targets, selectionSummary } from './select-checks.mjs';
+
+test('logs and messages browser regression stays in the browser scope',()=>{
+  const result=selectChecks(['scripts/test-logs-messages-ui.mjs']);
+  assert(result.browser&&result.scripts);assert(!result.core&&!result.ssh);assert.deepEqual(result.plugins,[]);
+});
 test('target facts select the existing connection and RPC consumers',()=>{
   const p=selectChecks(['src-tauri/src/session_target.rs']);assert(p.core&&p.ssh&&p.sharedClient);assert.equal(p.native.length,5);assert(p.integration.some(row=>row.mcp));assert(p.browser);assert(!p.netem);
 });

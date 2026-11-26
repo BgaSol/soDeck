@@ -38,15 +38,15 @@ try{
  await logs.close();
  const buildDirectory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-boundary-bench-'));
  try {
-  const entry=path.join(buildDirectory,'core.ts');fs.writeFileSync(entry,'import {logResults} from '+JSON.stringify(path.join(repo,'src/views.ts').replaceAll('\\','/'))+';\nimport {updateDOM} from '+JSON.stringify(path.join(repo,'src/dom-update.ts').replaceAll('\\','/'))+';\nexport function patch(root:HTMLElement,logs:any[]){updateDOM(root,logResults(logs));}');
+  const entry=path.join(buildDirectory,'core.ts');fs.writeFileSync(entry,'import {logsFrame,logRows,logDetail} from '+JSON.stringify(path.join(repo,'src/logs-views.ts').replaceAll('\\','/'))+';\nimport {updateDOM} from '+JSON.stringify(path.join(repo,'src/dom-update.ts').replaceAll('\\','/'))+';\nexport function patch(root:HTMLElement,logs:any[]){if(!root.querySelector("#log-results"))root.innerHTML=logsFrame();const context={storageErrors:[]},state={records:logs,selectedId:logs.at(-1).id};updateDOM(root.querySelector("#log-results")!,logRows(logs,state.selectedId,context),false);updateDOM(root.querySelector(".log-detail")!,logDetail(state as any,context),false);}');
   const built=await build({root:repo,configFile:false,logLevel:'silent',build:{write:false,minify:false,lib:{entry,name:'CoreLogProbe',formats:['iife']}}});
   const code=(Array.isArray(built)?built[0]:built).output.find(item=>item.type==='chunk').code;
   const page=await browser.newPage({viewport:{width:1000,height:780},reducedMotion:'reduce'});
-  await page.goto(base);await page.addScriptTag({content:code});await page.addStyleTag({path:path.join(repo,'src/console.css')});
+  await page.goto(base);await page.addScriptTag({content:code});await page.addStyleTag({path:path.join(repo,'packages/ui/themes.css')});await page.addStyleTag({path:path.join(repo,'src/console.css')});await page.addStyleTag({path:path.join(repo,'src/logs.css')});
   for(const size of [120,8192]){
    emit(await page.evaluate(({size})=>{
-    document.body.innerHTML='<div id="log-results" class="log-results" style="width:960px;height:740px;overflow:auto"></div>';
-    const root=document.querySelector('#log-results'),message='message '.repeat(Math.ceil(size/8)).slice(0,size),records=Array.from({length:532},(_,i)=>({id:String(i),receivedAt:1795478400000+i*1000,source:'plugin',pluginId:'sodeck.docker',instanceId:'probe',level:'info',message:i+' '+message,fields:{sequence:i}})),samples=[];
+    document.body.innerHTML='<div id="probe" style="width:960px;height:740px;display:flex"></div>';
+    const root=document.querySelector('#probe'),message='message '.repeat(Math.ceil(size/8)).slice(0,size),records=Array.from({length:532},(_,i)=>({id:String(i),receivedAt:1795478400000+i*1000,source:'plugin',pluginId:'sodeck.docker',instanceId:'probe',level:'info',message:i+' '+message,fields:{sequence:i}})),samples=[];
     for(let i=0;i<32;i++){const start=performance.now();CoreLogProbe.patch(root,records.slice(i,i+500));void root.scrollHeight;const elapsed=performance.now()-start;if(i>=2)samples.push(elapsed);}
     samples.sort((a,b)=>a-b);return {kind:'core-logs',records:500,messageBytes:size,domRows:root.querySelectorAll('.log-row').length,p50Ms:samples[14],p95Ms:samples[28],maxMs:samples.at(-1),samplesMs:samples};
    },{size}));

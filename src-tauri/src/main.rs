@@ -783,6 +783,7 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
                     std::thread::sleep(std::time::Duration::from_millis(10));
                 }
                 sodeck::validation::plugin_icons_roundtrip(&handle, &core)?;
+                sodeck::validation::logs_messages_roundtrip(&handle, &core)?;
             }
             if clipboard_test_requested {
                 tauri::async_runtime::block_on(clipboard_roundtrip(handle.clone()))?;
@@ -817,7 +818,7 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
         let result = validation.and(stopped);
         if result.is_ok() {
             let status = core.snapshot();
-            let report = serde_json::json!({"completed":true,"pid":std::process::id(),"workspaceNative":!package_only,"packageNative":true,"pluginIconsNative":package_only,"desktopShellNative":package_only,"desktopStartupNative":package_only,"loginRegistrationIoNative":package_only,"loginRestartNative":restart_probe,"macosApplicationPolicyNative":package_only && cfg!(target_os = "macos"),"sshNative":ssh_test_requested,"clipboardNative":clipboard_test_requested,"desktopFilesNative":desktop_files_requested,"desktopOpenNative":desktop_open_requested,"version":status.version,"target":status.target});
+            let report = serde_json::json!({"completed":true,"pid":std::process::id(),"workspaceNative":!package_only,"packageNative":true,"pluginIconsNative":package_only,"logsMessagesNative":package_only,"desktopShellNative":package_only,"desktopStartupNative":package_only,"loginRegistrationIoNative":package_only,"loginRestartNative":restart_probe,"macosApplicationPolicyNative":package_only && cfg!(target_os = "macos"),"sshNative":ssh_test_requested,"clipboardNative":clipboard_test_requested,"desktopFilesNative":desktop_files_requested,"desktopOpenNative":desktop_open_requested,"version":status.version,"target":status.target});
             let _ = std::fs::write(
                 status.data_directory.join("smoke-result.json"),
                 report.to_string(),

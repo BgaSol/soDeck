@@ -12,7 +12,8 @@ import { selectedUpdates, updateNotice } from "./update-model";
 import { networkAction, networkInput } from "./update-network";
 import { button as b, escape as e, icon } from "./ui";
 import { updateDOM } from "./dom-update";
-import { parseLocalTime } from "./datetime";
+import { LogsPage } from './logs';
+import { MessagesPage } from './messages';
 import type { StatusViewState } from "./status";
 
 
@@ -39,7 +40,6 @@ let lastError = "";
 let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 let refreshing = false;
 let refreshAgain = false;
-let logGeneration = 0;
 const statusView: StatusViewState = { paused: false, onlyErrors: false, updatedAt: 0, networkStale: false };
 let pausedStatus: Snapshot | undefined;
 const state: views.ViewState = {
@@ -48,12 +48,6 @@ const state: views.ViewState = {
   officialLoading: false,
   officialError: "",
   plugin: "",
-  messages: [],
-  unread: false,
-  selectedMessage: "",
-  logs: [],
-  filter: { pluginId: "", level: "", query: "" },
-  paused: false,
   error: "",
   busy: new Set(),
   updates: {},
@@ -64,6 +58,10 @@ const state: views.ViewState = {
 };
 
 const hostDrafts = new HostDrafts(() => snapshot, state, renderPage);
+const logsPage = new LogsPage();
+const messagesPage = new MessagesPage(id => {
+  state.plugin=id;state.pluginTab='installed';shell.navigate('plugins');
+},scheduleRefresh);
 
 
 function renderTop() {
@@ -95,16 +93,26 @@ function content() {
   if (currentPage === "status") return views.status(pausedStatus ?? snapshot, statusView);
   if (currentPage === "settings") return settingsViews.settings(snapshot, settingsSection,generalSettings.state);
   if (currentPage === "plugins" || currentPage === "updates") return views.maintenance(snapshot, state, currentPage);
-  if (currentPage === "logs") return views.logs(snapshot, state);
-  return views.messages(state);
+  return '';
 }
-function syncSettingsActivity() { generalSettings.mount(shell.visibleConsolePage==='settings'&&settingsSection==='general'); }
+function syncSettingsActivity() {
+  generalSettings.mount(shell.visibleConsolePage==='settings'&&settingsSection==='general');
+  logsPage.setActive(shell.visibleConsolePage==='logs');messagesPage.setActive(shell.visibleConsolePage==='messages');
+}
 function renderPage(navigating = false) {
   shell.updateSettingsNavigation(settingsViews.settingsNavigation(currentPage === "settings" ? settingsSection : null,componentSettings.navigation(currentPage === "settings" && settingsSection === "components")));
   const error = document.querySelector<HTMLElement>("#layer-error");
   if (error) { error.textContent = lastError ? `${lastError}；保留上次读取结果。` : ""; error.hidden = !lastError || !snapshot; }
   const target = document.querySelector<HTMLElement>("#layer-content");
   if (target) {
+    const activity=currentPage==='logs'||currentPage==='messages';
+    if(activity){
+      componentSettings.mount(null,false);
+      if(target.dataset.page!==currentPage){logsPage.mount(null);messagesPage.mount(null);target.innerHTML='';target.dataset.page=currentPage;(currentPage==='logs'?logsPage:messagesPage).mount(target);}
+      const context={plugins:snapshot?.plugins,storageErrors:snapshot?.storageErrors??[]};
+      logsPage.setContext(context);messagesPage.setContext(context);syncSettingsActivity();return;
+    }
+    logsPage.mount(null);messagesPage.mount(null);
     const hadPluginDetails = !!target.querySelector("#back-plugins");
     if (["settings", "plugins", "updates"].includes(currentPage) && snapshot) {
       const component=currentPage === "settings" && settingsSection === "components";
@@ -127,12 +135,10 @@ async function showPage(next: ConsolePage) {
 }
 async function enterPage(next: ConsolePage) {
   const changed=currentPage!==next;currentPage=next;
-  if(next === 'connections') {componentSettings.mount(null,false);return;}
+  if(next === 'connections') {componentSettings.mount(null,false);logsPage.mount(null);messagesPage.mount(null);delete pageHost.querySelector<HTMLElement>('#layer-content')!.dataset.page;syncSettingsActivity();return;}
   const target=pageHost.querySelector<HTMLElement>('#layer-content')!;
   target.className='layer-content '+next+'-content';
   renderPage(changed);
-  if(next==='messages')await refreshMessages();
-  if(next==='logs'&&!state.paused)await refreshLogs();
   if(['settings','plugins','updates'].includes(next))void componentSettings.catalog();
   if(next==='plugins')void loadOfficialPlugins();
   scheduleRefresh();
@@ -156,11 +162,7 @@ function toast(text: string, message?: Message, error = false) {
   node.textContent = text;
   if (message)
     node.addEventListener("click", () => {
-      state.selectedMessage = message.id;
-      void action(async () => {
-        await core.markRead(message.id);
-        await showPage("messages");
-      });
+      messagesPage.open(message.id);shell.navigate('messages');
       remove();
     });
   const remove=()=>{if(!node.isConnected)return;const before=captureMotion(holder);exitMotion(node);node.remove();settleMotion(holder,before);};
@@ -203,8 +205,6 @@ async function refresh() {
     renderTop();
     if (["settings","plugins","updates"].includes(currentPage)) void componentSettings.catalog();
     if (currentPage !== "connections") renderPage();
-    if (currentPage === "logs" && !state.paused) await refreshLogs();
-    if (currentPage === "messages") await refreshMessages();
   } catch (error) {
     lastError = String(error);
     renderTop();
@@ -221,24 +221,9 @@ function scheduleRefresh() {
   if (refreshTimer || hostDisposed) return;
   refreshTimer = setTimeout(() => {
     refreshTimer = undefined;
+    void logsPage.refresh();void messagesPage.refresh();
     void refresh();
   }, 200);
-}
-async function refreshLogs() {
-  const generation = ++logGeneration;
-  const logs = await core.logs({ ...state.filter });
-  if (hostDisposed || generation !== logGeneration) return;
-  state.logs = logs;
-  const results = document.querySelector<HTMLElement>("#log-results");
-  if (currentPage === "logs" && results) {
-    const top = results.scrollTop;
-    updateDOM(results, views.logResults(logs));
-    results.scrollTop = top;
-  }
-}
-async function refreshMessages() {
-  state.messages = await core.messages();
-  if (currentPage === "messages") renderPage();
 }
 async function action(run: () => Promise<unknown>) {
   try {
@@ -316,8 +301,7 @@ root.addEventListener("click", (event) => {
         await showPage(name);
         break;
       case "logs":
-        state.filter.pluginId = "";
-        state.paused = false;
+        logsPage.openSource('');
         await showPage("logs");
         break;
       case "pause-status":
@@ -457,8 +441,7 @@ root.addEventListener("click", (event) => {
         });
         break;
       case "plugin-logs":
-        state.filter.pluginId = id;
-        state.paused = false;
+        logsPage.openSource(id);
         await showPage("logs");
         break;
       case "locate-plugin":
@@ -468,36 +451,6 @@ root.addEventListener("click", (event) => {
         break;
       case "theme":
         await generalSettings.setTheme(id);
-        break;
-      case "pause-logs":
-        state.paused = !state.paused;
-        if (state.paused) ++logGeneration;
-        renderPage();
-        if (!state.paused) await refreshLogs();
-        break;
-      case "clear-log-filters":
-        clearTimeout(queryTimer);
-        ++logGeneration;
-        state.filter = { pluginId: "", level: "", query: "" };
-        renderPage();
-        if (!state.paused) await refreshLogs();
-        break;
-      case "copy-logs-content":
-        await copy(state.logs.map((l) => JSON.stringify(l)).join("\n"));
-        break;
-      case "all-messages":
-      case "unread-messages":
-        state.unread = name === "unread-messages";
-        renderPage();
-        break;
-      case "select-message":
-        state.selectedMessage = id;
-        await core.markRead(id);
-        await refreshMessages();
-        break;
-      case "read-all":
-        await core.markRead(null);
-        await refreshMessages();
         break;
       case "copy-data":
         if (snapshot) await copy(snapshot.dataDirectory);
@@ -526,7 +479,6 @@ root.addEventListener("click", (event) => {
     }
   });
 });
-let queryTimer: ReturnType<typeof setTimeout>;
 root.addEventListener("input", (event) => {
   const input = event.target as HTMLInputElement;
   if (snapshot && networkInput(input, snapshot, state)) { if (!(event as InputEvent).isComposing) renderPage(); return; }
@@ -534,11 +486,6 @@ root.addEventListener("input", (event) => {
     hostDrafts.input(state.plugin, input.dataset.source, input.value);
     return;
   }
-  if (input.id !== "log-query") return;
-  ++logGeneration;
-  state.filter.query = input.value;
-  clearTimeout(queryTimer);
-  queryTimer = setTimeout(() => { if (!state.paused) void action(refreshLogs); }, 250);
 });
 root.addEventListener("change", (event) => {
   const input = event.target as HTMLInputElement;
@@ -548,15 +495,6 @@ root.addEventListener("change", (event) => {
   if (input.id === "automatic-updates") { void action(() => core.automaticUpdates(input.checked)); return; }
   if(input.id==='login-startup'){void action(()=>generalSettings.setLoginStartup(input.checked));return;}
   if(input.id==='close-behavior'){void action(()=>generalSettings.setCloseBehavior(input.value));return;}
-  if (input.id === "log-source") state.filter.pluginId = input.value;
-  else if (input.id === "log-level") state.filter.level = input.value;
-  else if (input.id === "log-since")
-    state.filter.since = parseLocalTime(input.value);
-  else if (input.id === "log-until")
-    state.filter.until = parseLocalTime(input.value);
-  else return;
-  ++logGeneration;
-  if (!state.paused) void action(refreshLogs);
 });
 let hostDisposed=false;
 let statusTimer:ReturnType<typeof setInterval>|undefined;
@@ -566,11 +504,12 @@ async function subscribe<T>(name:string,callback:EventCallback<T>) {
   const unlisten=await listen<T>(name,callback);
   if(hostDisposed)unlisten();else hostListeners.push(unlisten);
 }
-window.addEventListener("pagehide",()=>{hostDisposed=true;generalSettings.dispose();desktop.dispose();clearTimeout(refreshTimer);clearTimeout(queryTimer);servers?.dispose();componentSettings.dispose();hostDrafts.dispose();clearInterval(statusTimer);hostListeners.forEach(fn=>fn());picker?.dispose();workspaces.dispose();shell.dispose();},{once:true});
+window.addEventListener("pagehide",()=>{hostDisposed=true;logsPage.dispose();messagesPage.dispose();generalSettings.dispose();desktop.dispose();clearTimeout(refreshTimer);servers?.dispose();componentSettings.dispose();hostDrafts.dispose();clearInterval(statusTimer);hostListeners.forEach(fn=>fn());picker?.dispose();workspaces.dispose();shell.dispose();},{once:true});
 async function start() {
   await desktop.listen();
   await desktop.initialize();
   await subscribe("core-changed", scheduleRefresh);
+  await subscribe("messages-changed", scheduleRefresh);
   await subscribe<SettingsSnapshot>("core-settings-changed", event => componentSettings.changed(event.payload));
   await subscribe<Parameters<ComponentSettings["applied"]>[0]>("core-settings-application", event => componentSettings.applied(event.payload));
   await subscribe("server-catalog-changed", () => { void servers?.start(); void picker?.refresh(); });

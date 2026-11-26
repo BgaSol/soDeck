@@ -637,208 +637,6 @@
     padding-top: 16px;
     margin-top: 18px;
   }
-  .logs-content {
-    display: flex;
-    flex-direction: column;
-    padding: 16px;
-  }
-  .log-toolbar {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-  }
-  .log-toolbar label {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 5px;
-  }
-  .log-toolbar .search-label {
-    flex: 1;
-  }
-  .search-label input {
-    width: 100%;
-  }
-  .log-toolbar > button {
-    align-self: flex-end;
-    font-size: 12px;
-  }
-  .log-times {
-    display: flex;
-    gap: 14px;
-    align-items: center;
-    margin: 14px 0;
-  }
-  .log-times input {
-    font-size: 11px;
-    height: 30px;
-    padding: 4px 6px;
-    max-width: 175px;
-  }
-  .log-times > .hint {
-    margin-left: auto;
-  }
-  .log-results {
-    border: var(--sd-stroke-control) solid var(--border);
-    border-radius: 7px;
-    overflow: auto;
-    flex: 1;
-    min-height: 0;
-    background: var(--subtle);
-  }
-  .log-row {
-    display: grid;
-    grid-template-columns: 136px 40px minmax(0, 1fr);
-    gap: 10px;
-    border-bottom: var(--sd-stroke-structure) solid var(--border);
-    padding: 12px;
-    font:
-      12px ui-monospace,
-      SFMono-Regular,
-      Consolas,
-      monospace;
-  }
-  .log-row time {
-    color: var(--muted);
-    line-height: 1.6;
-  }
-  .log-meta {
-    color: var(--muted);
-    font-size: 12px;
-    margin-bottom: 5px;
-    overflow-wrap: anywhere;
-  }
-  .log-row pre {
-    margin: 0;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    font: inherit;
-    line-height: 1.65;
-  }
-  .log-level {
-    color: var(--muted);
-    line-height: 1.6;
-  }
-  .log-level.error {
-    color: var(--error);
-  }
-  .log-level.warn {
-    color: var(--warning);
-  }
-  .messages-content {
-    display: flex;
-    flex-direction: column;
-  }
-  .messages-toolbar {
-    display: flex;
-    justify-content: space-between;
-    padding: 12px 18px;
-    border-bottom: var(--sd-stroke-structure) solid var(--border);
-  }
-  .segmented {
-    display: flex;
-    background: var(--subtle);
-    padding: 3px;
-    border-radius: 7px;
-  }
-  .segmented button {
-    border: 0;
-    background: transparent;
-    min-height: 26px;
-    padding: 4px 14px;
-    font-size: 12px;
-  }
-  .segmented button.selected {
-    background: var(--panel);
-    box-shadow: 0 1px 4px #0001;
-    color: var(--accent);
-  }
-  .messages-layout {
-    display: grid;
-    grid-template-columns: 42% minmax(0, 1fr);
-    min-height: 0;
-    flex: 1;
-  }
-  .message-list {
-    overflow: auto;
-    background: var(--subtle);
-    border-right: var(--sd-stroke-structure) solid var(--border);
-  }
-  .message-row {
-    border: 0;
-    border-bottom: var(--sd-stroke-structure) solid var(--border);
-    border-radius: 0;
-    display: block;
-    width: 100%;
-    text-align: left;
-    padding: 16px 20px;
-    background: transparent;
-    white-space: normal;
-    position: relative;
-  }
-  .message-row.selected {
-    background: var(--accent-bg);
-  }
-  .message-row.unread:before {
-    content: "";
-    position: absolute;
-    left: 8px;
-    top: 23px;
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--accent);
-  }
-  .message-row > div {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-  }
-  .message-row time {
-    color: var(--muted);
-    font-size: 10px;
-  }
-  .message-row h3 {
-    margin: 10px 0 5px;
-    font-size: 13px;
-  }
-  .message-row p {
-    color: var(--muted);
-    font-size: 12px;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    overflow-wrap: anywhere;
-  }
-  .message-row > small {
-    color: var(--muted);
-    display: block;
-    margin-top: 10px;
-  }
-  .message-detail {
-    overflow: auto;
-    padding: 28px;
-    min-width: 0;
-  }
-  .message-detail h2 {
-    font-size: 17px;
-    overflow-wrap: anywhere;
-  }
-  .message-detail > .hint {
-    margin-top: 10px;
-  }
-  .message-body {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    margin: 24px 0;
-    font-size: 13px;
-  }
-  .message-detail dl {
-    border-top: var(--sd-stroke-structure) solid var(--border);
-    padding-top: 20px;
-  }
   .toasts {
     position: fixed;
     bottom: 24px;
@@ -883,30 +681,11 @@
       display: inline-flex;
       margin-bottom: 16px;
     }
-    .log-toolbar {
-      flex-wrap: wrap;
-    }
-    .log-times {
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-    .log-times > .hint {
-      margin-left: 0;
-    }
     .theme-option {
       width: 125px;
     }
     .themes {
       gap: 10px;
-    }
-    .messages-layout {
-      grid-template-columns: 44% minmax(0, 1fr);
-    }
-    .message-detail {
-      padding: 20px;
-    }
-    .log-row {
-      grid-template-columns: 108px 34px minmax(0, 1fr);
     }
     .global-tools {
       padding-right: 4px;
@@ -957,7 +736,7 @@
   .welcome-emblem { background: var(--sd-tools); box-shadow: none; }
   .workspace { background: var(--canvas); }
   /* Existing forms use the same appearance parameters, without theme selectors. */
-  input, select, .layer, .plugin-layout, .plugin-symbol, .log-results, .toast,
+  input, select, .layer, .plugin-layout, .plugin-symbol, .toast,
   .restart-banner, .update-card, .catalog-layout, .catalog-dialog, .route-editor-step,
   .route-symbol, .endpoint-symbol, .component-close-dialog, .plugin-view-dialog { border-width: var(--sd-stroke-control); }
 }

@@ -47,6 +47,8 @@ npm run terminal:history:test
 
 `ui:test` 包含服务器、工作区、连接界面、正式前端产物、桌面一致性和组件设置回归。`terminal:input:test` 验证实际 xterm 输入与剪贴板桥，无需 OpenSSH。
 
+日志与消息的聚焦回归 `scripts/test-logs-messages-ui.mjs` 已接入 `ui:test`，加载实际页面控制器，在受控核心边界验证单在途、迟到回包、暂停、IME composition、筛选、已读队列、去重、淘汰、来源回退及三主题内容区。正式产物回归另用真实核心进程验证原入口。核心实际包烟测包含日志/字段/暂停、消息阅读与已读、三主题及返回筛选，并要求独立 `logsMessagesNative` 回执；它不证明真实 IME、读屏或鼠标输入。
+
 标签溢出回归在 `interactions:test` 验证可打断缓动、像素输入接管、边缘停留、减少动态与搜索输入保持；`ui:test` 使用真实核心覆盖 20 个服务器、单组 50 页、各分屏位置、关闭取消和 iframe 保留。设备专项仍需在原生包中验证鼠标/触控板、静止边缘拖动、跨窗松手后的最终落点与混合 DPI；浏览器合成 WheelEvent 不证明真实设备惯性。
 
 CI 使用 `npm run ci:test -- <现有测试命令>`，例如 `npm run ci:test -- ui:test`。该入口保留原命令的退出码，输出实时日志，并将 SHA、attempt、平台、耗时和结果写入 `artifacts/ci/<命令>/`；命令中的冒号转换为连字符。服务器、工作台和正式产物 UI 在该入口下记录 Playwright trace，失败时保存，成功时丢弃；本机直接运行原入口不记录 trace。

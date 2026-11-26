@@ -4,6 +4,8 @@
 
 核心独立安装和升级，业务插件全部外置。源码和发行包位于公开的 BgaSol/soDeck，使用 GitHub Actions 与普通 Releases。核心只依赖自身运行资源；插件分别版本化、构建和发行，不建立联动发布框架。
 
+2.8.0 起核心实际包验收同时执行日志与消息工作台的基础原生 WebView 流程，报告带 `logsMessagesNative`；仍使用原有 package/verify 入口，不改变插件验收要求。具体测试范围见[开发指南](development.md)。
+
 用户安装和首次使用见[使用指南](usage.md)，启停和移除见[插件管理](features/plugins.md)，更新操作及失败恢复见[在线更新](features/updates.md)。本文维护产物、发布流程和交付证据规则。
 
 ## 核心

@@ -12,6 +12,8 @@
 @import "../packages/ui/themes.css";
 @import "./console.css";
 @import "./status.css";
+@import "./logs.css";
+@import "./messages.css";
 .plugin-icon-image { opacity:0; }
 .plugin-icon[data-ready="true"] .plugin-icon-image { opacity:1; }
 .plugin-icon[data-ready="true"] .plugin-icon-fallback { display:none; }
