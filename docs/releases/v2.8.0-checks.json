@@ -1,0 +1,434 @@
+{
+  "component": "sodeck.core",
+  "version": "2.8.0",
+  "sourceCommit": "18073a970b213391bcc771875000babdc0a2a968",
+  "packageRun": "https://github.com/BgaSol/soDeck/actions/runs/45792277950",
+  "sourceCheck": "https://github.com/BgaSol/soDeck/actions/runs/45792273249",
+  "release": "https://github.com/BgaSol/soDeck/releases/tag/v2.8.0",
+  "publishedAt": "2026-11-26T09:47:27Z",
+  "recordedAt": "2026-11-26T09:47:54.690Z",
+  "workflows": {
+    "source": {
+      "id": 45792273249,
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45792273249",
+      "sourceCommit": "18073a970b213391bcc771875000babdc0a2a968",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "name": "select",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:28:24Z",
+          "completedAt": "2026-11-26T09:28:40Z"
+        },
+        {
+          "name": "checks",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:29:15Z",
+          "completedAt": "2026-11-26T09:29:52Z"
+        },
+        {
+          "name": "integration-network-linux-aarch64",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:28:45Z",
+          "completedAt": "2026-11-26T09:33:15Z"
+        },
+        {
+          "name": "browser",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:28:43Z",
+          "completedAt": "2026-11-26T09:38:45Z"
+        },
+        {
+          "name": "integration-business-linux-x86_64",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:31:53Z",
+          "completedAt": "2026-11-26T09:44:53Z"
+        },
+        {
+          "name": "native-linux-x86_64",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:31:39Z",
+          "completedAt": "2026-11-26T09:40:47Z"
+        },
+        {
+          "name": "native-linux-aarch64",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:28:45Z",
+          "completedAt": "2026-11-26T09:34:45Z"
+        },
+        {
+          "name": "native-windows-aarch64",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:31:29Z",
+          "completedAt": "2026-11-26T09:40:06Z"
+        },
+        {
+          "name": "desktop",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:31:33Z",
+          "completedAt": "2026-11-26T09:34:28Z"
+        },
+        {
+          "name": "integration-network-linux-x86_64",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:32:49Z",
+          "completedAt": "2026-11-26T09:38:33Z"
+        },
+        {
+          "name": "native-windows-x86_64",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:28:53Z",
+          "completedAt": "2026-11-26T09:36:21Z"
+        },
+        {
+          "name": "native-macos-aarch64",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:28:57Z",
+          "completedAt": "2026-11-26T09:33:51Z"
+        },
+        {
+          "name": "netem",
+          "conclusion": "skipped",
+          "startedAt": "2026-11-26T09:28:40Z",
+          "completedAt": "2026-11-26T09:28:40Z"
+        },
+        {
+          "name": "format",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:44:56Z",
+          "completedAt": "2026-11-26T09:45:05Z"
+        }
+      ]
+    },
+    "package": {
+      "id": 45792277950,
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45792277950",
+      "sourceCommit": "18073a970b213391bcc771875000babdc0a2a968",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "name": "preflight",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:28:31Z",
+          "completedAt": "2026-11-26T09:28:50Z"
+        },
+        {
+          "name": "windows-x86_64",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:32:46Z",
+          "completedAt": "2026-11-26T09:36:31Z"
+        },
+        {
+          "name": "linux-x86_64",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:31:38Z",
+          "completedAt": "2026-11-26T09:36:51Z"
+        },
+        {
+          "name": "linux-aarch64",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:31:30Z",
+          "completedAt": "2026-11-26T09:36:01Z"
+        },
+        {
+          "name": "macos-aarch64",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:29:13Z",
+          "completedAt": "2026-11-26T09:33:48Z"
+        },
+        {
+          "name": "windows-aarch64",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:31:37Z",
+          "completedAt": "2026-11-26T09:37:16Z"
+        },
+        {
+          "name": "verify-windows-x86_64",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:37:19Z",
+          "completedAt": "2026-11-26T09:38:06Z"
+        },
+        {
+          "name": "verify-linux-x86_64",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:38:09Z",
+          "completedAt": "2026-11-26T09:39:43Z"
+        },
+        {
+          "name": "verify-macos-aarch64",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:37:31Z",
+          "completedAt": "2026-11-26T09:39:20Z"
+        },
+        {
+          "name": "verify-windows-aarch64",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:38:35Z",
+          "completedAt": "2026-11-26T09:39:43Z"
+        },
+        {
+          "name": "verify-linux-aarch64",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:38:34Z",
+          "completedAt": "2026-11-26T09:39:59Z"
+        },
+        {
+          "name": "metadata",
+          "conclusion": "success",
+          "startedAt": "2026-11-26T09:40:03Z",
+          "completedAt": "2026-11-26T09:40:55Z"
+        }
+      ]
+    }
+  },
+  "local": {
+    "platform": "windows-x86_64",
+    "check": "passed",
+    "scripts": {
+      "passed": 219,
+      "failed": 0
+    },
+    "core": {
+      "passed": 355,
+      "ignored": 17,
+      "failed": 0
+    },
+    "uiTest": "passed full npm run ui:test",
+    "build": "passed release NSIS and MSI; local bytes not distributed",
+    "nativeWebView": {
+      "fields": true,
+      "logs": true,
+      "markRead": true,
+      "messages": true,
+      "ok": true,
+      "pause": true,
+      "plainText": true,
+      "themes": [
+        {
+          "background": "rgb(255, 255, 255)",
+          "color": "rgb(39, 40, 46)",
+          "theme": "light",
+          "width": 603
+        },
+        {
+          "background": "rgb(30, 31, 34)",
+          "color": "rgb(223, 225, 229)",
+          "theme": "dark",
+          "width": 603
+        },
+        {
+          "background": "rgb(251, 241, 232)",
+          "color": "rgb(32, 33, 31)",
+          "theme": "dopamine",
+          "width": 603
+        }
+      ]
+    }
+  },
+  "benchmarks": {
+    "render": {
+      "kind": "boundary-render-benchmark",
+      "platform": "win32",
+      "arch": "x64",
+      "node": "v24.22.0",
+      "environment": {
+        "scope": "synthetic Chromium render+forced layout; no native WebView, remote IO, or bridge latency",
+        "cpu": "Intel(R) Core(TM) Ultra 5 250K Plus",
+        "browser": "159.0.8154.6",
+        "repetitions": 30,
+        "warmups": 2
+      },
+      "measurements": [
+        {
+          "kind": "core-logs",
+          "records": 500,
+          "messageBytes": 120,
+          "domRows": 500,
+          "p50Ms": 32.5,
+          "p95Ms": 39.69999980926514,
+          "maxMs": 53.700000047683716,
+          "samplesMs": [
+            25.700000047683716,
+            26.09999990463257,
+            27.59999990463257,
+            28.200000047683716,
+            29.300000190734863,
+            29.799999952316284,
+            29.899999856948853,
+            30.299999952316284,
+            30.299999952316284,
+            30.5,
+            30.799999952316284,
+            31.899999856948853,
+            32.10000014305115,
+            32.299999952316284,
+            32.5,
+            32.60000014305115,
+            33.10000014305115,
+            33.700000047683716,
+            34.299999952316284,
+            35.40000009536743,
+            36.5,
+            37.200000047683716,
+            37.80000019073486,
+            38,
+            38.09999990463257,
+            38.799999952316284,
+            39.200000047683716,
+            39.5,
+            39.69999980926514,
+            53.700000047683716
+          ]
+        },
+        {
+          "kind": "core-logs",
+          "records": 500,
+          "messageBytes": 8192,
+          "domRows": 500,
+          "p50Ms": 27.100000143051147,
+          "p95Ms": 35.5,
+          "maxMs": 36.799999952316284,
+          "samplesMs": [
+            22.5,
+            23.299999952316284,
+            23.40000009536743,
+            23.899999856948853,
+            24.700000047683716,
+            24.700000047683716,
+            24.799999952316284,
+            25.200000047683716,
+            25.5,
+            25.5,
+            26,
+            26.200000047683716,
+            26.90000009536743,
+            27,
+            27.100000143051147,
+            27.5,
+            28.100000143051147,
+            28.700000047683716,
+            29.09999990463257,
+            29.40000009536743,
+            29.899999856948853,
+            30.199999809265137,
+            30.299999952316284,
+            31.799999952316284,
+            31.899999856948853,
+            32.5,
+            33.5,
+            34.700000047683716,
+            35.5,
+            36.799999952316284
+          ]
+        }
+      ]
+    },
+    "query": {
+      "scope": "actual Rust AppCore read_logs via isolated catalog-fixture JSONL pipe; includes disk parsing, filtering, serialization and Node pipe, excludes Tauri IPC and UI",
+      "platform": "win32",
+      "arch": "x64",
+      "cpu": "Intel(R) Core(TM) Ultra 5 250K Plus",
+      "files": 5,
+      "records": 30000,
+      "totalBytes": 41467780,
+      "warmups": 2,
+      "repetitions": 30,
+      "measurements": [
+        {
+          "query": "all",
+          "returned": 500,
+          "p50Ms": 258.1305000000002,
+          "p95Ms": 264.7082999999993,
+          "maxMs": 321.02440000000024,
+          "samplesMs": [
+            249.5627000000004,
+            249.73779999999988,
+            250.36479999999938,
+            250.4971000000005,
+            255.35499999999956,
+            255.8096000000005,
+            256.3813,
+            256.6157999999996,
+            257.08719999999994,
+            257.1876000000002,
+            257.27360000000044,
+            257.72050000000127,
+            257.8595000000005,
+            257.9499000000005,
+            258.1305000000002,
+            258.23179999999957,
+            258.90930000000026,
+            259.08689999999933,
+            259.1304,
+            259.3014999999996,
+            259.34759999999915,
+            259.39890000000014,
+            260.28569999999945,
+            260.7921000000006,
+            261.6162000000004,
+            261.8267999999989,
+            263.1843000000008,
+            264.02289999999994,
+            264.7082999999993,
+            321.02440000000024
+          ]
+        },
+        {
+          "query": "no-match",
+          "returned": 0,
+          "p50Ms": 262.5156999999999,
+          "p95Ms": 272.85339999999997,
+          "maxMs": 273.17259999999806,
+          "samplesMs": [
+            256.244200000001,
+            256.5576000000001,
+            257.73159999999916,
+            257.9866000000002,
+            258.47940000000017,
+            258.78579999999965,
+            258.9874999999993,
+            260.78350000000137,
+            260.9503999999997,
+            261.5577999999987,
+            261.80609999999797,
+            261.97279999999955,
+            261.9915000000001,
+            262.14700000000084,
+            262.5156999999999,
+            262.60339999999997,
+            263.40269999999873,
+            263.6153999999988,
+            263.6558999999979,
+            265.1053000000011,
+            265.3028999999988,
+            265.4399000000012,
+            266.1767,
+            267.35210000000006,
+            267.53350000000137,
+            267.86849999999686,
+            269.928899999999,
+            272.7622999999985,
+            272.85339999999997,
+            273.17259999999806
+          ]
+        }
+      ]
+    },
+    "limits": "Final local measurements only; no old-version speedup claim. Render excludes native WebView/IPC/disk; query includes disk/serialization/Node pipe and excludes Tauri IPC/UI. Not end-to-end latency or cross-machine thresholds."
+  },
+  "skipped": [
+    "netem",
+    "physical mouse/trackpad and real CJK IME",
+    "screen reader and native high contrast",
+    "mixed DPI/multi-monitor and 200% text scaling",
+    "one-hour soak",
+    "production servers",
+    "native remote release-package combination",
+    "old-version upgrade"
+  ],
+  "knownRisks": [
+    "Existing local WebView2 Chrome_WidgetWin_0 unregister warning 1412 remains; tested processes exited.",
+    "Disk queries still scan bounded JSONL history; no index/storage migration.",
+    "mark_read applies at core execution time without message-version CAS; persisted fields may already be cropped."
+  ]
+}
