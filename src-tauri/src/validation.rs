@@ -386,8 +386,10 @@ pub fn server_roundtrip(core: &AppCore, persisted: bool) -> Result<(), String> {
     let proxy = apply(
         json!({"op":"saveProxy","draft":{"id":null,"name":"Package proxy","host":"127.0.0.1","port":1080,"authentication":{"type":"none","secret":{"action":"clear"}}}}),
     )?;
+    let key = core.snapshot().data_directory.join("fixture-key");
+    std::fs::write(&key, include_str!("validation/share_key.txt")).map_err(|e| e.to_string())?;
     let target = apply(
-        json!({"op":"saveServer","draft":{"id":null,"name":"Package target","host":"db.internal","port":22,"username":"ops","tagIds":[tag],"authentication":{"type":"privateKey","privateKeyPath":"fixture-key","secret":{"action":"replace","value":"fixture-saved","remember":true}},"route":[{"id":"","kind":"ssh","serverId":gateway},{"id":"","kind":"socks5","proxyId":proxy},{"id":"","kind":"socks5","proxyId":proxy}]}}),
+        json!({"op":"saveServer","draft":{"id":null,"name":"Package target","host":"db.internal","port":22,"username":"ops","tagIds":[tag],"authentication":{"type":"privateKey","privateKeyPath":key,"secret":{"action":"replace","value":"fixture-saved","remember":true}},"route":[{"id":"","kind":"ssh","serverId":gateway},{"id":"","kind":"socks5","proxyId":proxy},{"id":"","kind":"socks5","proxyId":proxy}]}}),
     )?;
     let mut draft = core.server_catalog()["servers"]
         .as_array()

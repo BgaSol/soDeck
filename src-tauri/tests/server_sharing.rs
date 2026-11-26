@@ -72,6 +72,20 @@ fn assert_no_keys(root: &Path) {
 }
 
 #[test]
+fn package_fixture_shares_all_before_and_after_reopening() {
+    let directory = tempfile::tempdir().unwrap();
+    for persisted in [false, true] {
+        let core = open(directory.path());
+        sodeck::validation::server_roundtrip(&core, persisted).unwrap();
+        let shared = bundle(&code(&core, None));
+        assert_eq!(
+            shared["targets"].as_array().unwrap().len(),
+            core.server_catalog()["servers"].as_array().unwrap().len()
+        );
+    }
+}
+
+#[test]
 fn single_shares_only_explicit_route_and_all_preserves_saved_routes() {
     let a = tempfile::tempdir().unwrap();
     let b = tempfile::tempdir().unwrap();

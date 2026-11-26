@@ -20,7 +20,11 @@
     const copyAll=document.querySelector('[data-server-action="copy-all"]');
     if(!copyAll||copyAll.disabled)throw Error('copy all toolbar button unavailable');
     copyAll.click();
-    const allCode=await wait(async()=>await invoke('clipboard_text',{operation:'read',purpose:'serverShare'}));
+    const allCode=await wait(async()=>{
+      const code=await invoke('clipboard_text',{operation:'read',purpose:'serverShare'});
+      if(!code&&!document.querySelector('[data-server-action="copy-all"]').disabled)throw Error('copy all failed: '+document.body.innerText);
+      return code;
+    });
     const catalog=await invoke('server_catalog');
     const summary=await invoke('preview_server_share',{code:allCode});
     if(summary.targetCount!==catalog.servers.length)throw Error('copy all omitted servers');
