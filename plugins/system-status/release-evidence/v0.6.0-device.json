@@ -1,0 +1,40 @@
+{
+  "device": {
+    "architecture": "ARM64",
+    "cpu": "Apple M1",
+    "logicalCores": 8,
+    "totalMemoryBytes": "17179869184",
+    "os": "macOS 26.7.3"
+  },
+  "source": "actual Windows core and plugin over SSH to the user-designated Mac",
+  "durationSeconds": 300,
+  "distinctDynamicSamples": 60,
+  "observedSpanSeconds": 295.02,
+  "cpuPercent": {
+    "minimum": 8.530000000000001,
+    "maximum": 15.599999999999994
+  },
+  "memoryPercent": {
+    "minimum": 56.092166900634766,
+    "maximum": 56.565093994140625
+  },
+  "passed": [
+    "identity, CPU, memory, IPv4/IPv6, default interface, disk I/O, APFS metadata",
+    "continuous real metrics and memory history",
+    "hidden panel continues sampling",
+    "pause, exactly one refresh round, resume",
+    "manual interface selection"
+  ],
+  "initialReconnectFailure": "Reused view kept old Context; fixed in d34afbb with regression. Post-fix physical reconnect not rerun because the device became unavailable.",
+  "coreExit": {
+    "code": 0,
+    "signal": null
+  },
+  "skipped": [
+    "post-fix reconnect on the physical Mac",
+    "external and multiple disks",
+    "other macOS versions",
+    "physical UI, input method, DPI and screen reader"
+  ],
+  "temporaryAuthentication": "Remote temporary public key remains because the device became unavailable. Tool policy rejected deleting local temporary files; the private key was encrypted with a discarded 48-byte random passphrase and cannot be used unattended."
+}

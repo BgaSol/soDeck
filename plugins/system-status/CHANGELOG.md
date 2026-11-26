@@ -4,8 +4,15 @@
 - 显示 macOS 接口的 IPv4/IPv6 和链路状态；修复无硬件地址时网络计数错列、停用接口名称失配与默认接口误选。
 - 补齐 APFS 类型、只读属性和系统挂载分组，保留根卷/Data 与真实容量告警；负载统一为三项数值。
 - 平台解析、类型化采样与状态归并分离；各项失败保留旧值和成功时间，历史记录缺口。展示与文件插件容量共享使用同一挂载身份和关联结果。
+- 修复断线重连复用视图时仍绑定旧连接的问题，切换到新连接后清理旧历史和计数基线，重新采集。
 
-待发行：本版本正在完成当前源码、137 实际 Mac 远程业务与五平台原生插件包验收。发行后在此记录最终包来源、原始运行、Release 与实际通过/跳过范围。
+发行：[system-status 0.6.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-system-status-v0.6.0)，保持非 Latest；同轮核心 [2.9.0](https://github.com/BgaSol/soDeck/releases/tag/v2.9.0) 提供连接分享与导入。包来源 [3f3be9c89ba28022ecb89197a6067f90689e6bac](https://github.com/BgaSol/soDeck/commit/3f3be9c89ba28022ecb89197a6067f90689e6bac)；[原始独立打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/45842853647)；[来源 Check](https://github.com/BgaSol/soDeck/actions/runs/45842167835)。Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 五平台原生归档、架构/资源及包内程序启动、视图挂载/释放与退出均通过。发布同一草稿归档，六个公开附件的大小与 SHA-256 核对见[永久发行证据](release-evidence/v0.6.0-assets.json)。
+
+最终来源 Check 的五平台插件 Rust 测试、格式/类型/脚本、Linux 完整浏览器 UI、真实 SSH 状态采集与三插件通信通过。本地另通过 36 项 Rust 回归（2 项 Linux 容器专项按环境忽略）、Windows OpenSSH 实际采集、三主题七宽度 UI、失败旧值/历史缺口、连接代次重置、键盘和强制颜色回归。macOS 原生源码测试实际执行采集命令；未新增核心 API 或生产依赖。
+
+物理 Apple M1 / macOS 26.7.3 通过 Windows 核心经 SSH 连续采集五分钟，获得 60 轮不同样本，覆盖内存/CPU/网络/磁盘/APFS、隐藏采集、暂停后单轮刷新、恢复及手选接口。该轮重连暴露旧 Context 绑定问题，修复后确定性回归通过；设备随后不可用，修复后的物理重连未复测，不记为通过。[设备证据](release-evidence/v0.6.0-device.json)保留范围与结果。
+
+未执行其他 macOS 版本、外置/多磁盘和硬件移除、全部远端系统矩阵、人工 IME/DPI/读屏、netem 或正式旧版线上升级。macOS 可用内存仍为明确标注的可回收余量估算。临时测试公钥因设备不可用仍留在远端；本机文件删除被策略拒绝，临时私钥已用随机口令加密并丢弃口令，原有认证未改变。
 
 # 0.5.0
 
