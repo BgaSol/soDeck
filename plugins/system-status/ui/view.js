@@ -40,16 +40,29 @@ const stale = name => {
   return Boolean(g?.observedAt && Date.now() - g.observedAt > g.staleAfterMs);
 };
 
+const readingOld = data => data?.observedAt && (data.state !== 'ok' || Date.now() - data.observedAt > (snapshot?.intervalSeconds || 5) * 2000);
+const readingLabel = data => data?.state === 'unavailable' ? '读取失败' : data?.state === 'unsupported' ? '暂不可用' : data?.state === 'pending' ? '正在读取' : '采样中';
+function readingNote(id, data) {
+  const old = Boolean(readingOld(data));
+  $(id).classList.toggle('reading-old', old);
+  $(id).title = [data?.reason, data?.observedAt ? '最后成功 · ' + age(data.observedAt) : '', old ? '保留上次读数' : ''].filter(Boolean).join(' · ');
+  let note = $(id).nextElementSibling;
+  if (!note?.classList.contains('reading-note')) { note = document.createElement('small'); note.className = 'reading-note caption'; $(id).after(note); }
+  note.textContent = old ? '保留读数 · ' + age(data.observedAt) : data?.state === 'unavailable' ? (data.reason || '数据源读取失败') : '';
+  note.hidden = !note.textContent;
+}
 function metric(id, data) {
+  readingNote(id, data);
   const known = Number.isFinite(data?.value);
   $(id).classList.toggle('unavailable', !known);
   $(id).replaceChildren();
   if (known) {
     $(id).append(data.value.toFixed(1), Object.assign(document.createElement('span'), { className: 'unit', textContent: '%' }));
-  } else text(id, data?.state === 'unsupported' ? '暂不可用' : '采样中');
+  } else text(id, readingLabel(data));
 }
-function rateText(id, value, available = true) {
-  const label = value == null ? (available ? '采样中' : '暂不可用') : rate(value);
+function rateText(id, value, available = true, data) {
+  readingNote(id, data);
+  const label = value == null ? (available ? readingLabel(data) : '暂不可用') : rate(value);
   const split = label.indexOf(' ');
   $(id).replaceChildren();
   if (split < 0) { text(id, label); return; }
@@ -85,7 +98,9 @@ function freshness() {
   }
   const g = group('dynamic');
   const isStale = stale('dynamic');
-  const status = !snapshot.connected ? '已断线' : snapshot.paused ? '已暂停' : pollError || actionError ? '读取失败' : isStale ? '数据已过期' : snapshot.collecting ? '正在采集' : g?.observedAt ? '采集中' : '正在读取';
+  const sourceFailure = Object.values(snapshot.data.sourceErrors || {}).some(group => Object.keys(group).length);
+  for (const [id, data] of [['cpu', snapshot.data.cpu], ['memory', snapshot.data.memory], ['receive', snapshot.network?.rates], ['send', snapshot.network?.rates], ['read', snapshot.disk?.rates], ['write', snapshot.disk?.rates]]) readingNote(id, data);
+  const status = !snapshot.connected ? '已断线' : snapshot.paused ? '已暂停' : pollError || actionError ? '读取失败' : sourceFailure ? '部分指标读取失败' : isStale ? '数据已过期' : snapshot.collecting ? '正在采集' : g?.observedAt ? '采集中' : '正在读取';
   text('freshness', status);
   text('update-age', age(g?.observedAt));
   text('connection', snapshot.connected ? '已连接' : '已断开');
@@ -96,11 +111,11 @@ function freshness() {
   $('refresh').disabled = controlPending || !snapshot.connected;
   $('app').classList.toggle('stale', !snapshot.connected || snapshot.paused || isStale);
   $('app').classList.toggle('offline', !snapshot.connected);
-  const message = actionError || pollError || snapshot.data.collectionError || (!snapshot.connected ? '连接已断开，保留最后一次数据。请在工作台重新连接。' : snapshot.paused ? '采集已暂停，展示暂停前数据。刷新可读取一轮，之后保持暂停。' : isStale ? '动态数据已过期，保留最后一次读数。可刷新重试或查看采集详情。' : '');
+  const message = actionError || pollError || snapshot.data.collectionError || (sourceFailure ? '部分指标读取失败，保留最后成功读数。可刷新重试或展开采集详情。' : '') || (!snapshot.connected ? '连接已断开，保留最后一次数据。请在工作台重新连接。' : snapshot.paused ? '采集已暂停，展示暂停前数据。刷新可读取一轮，之后保持暂停。' : isStale ? '动态数据已过期，保留最后一次读数。可刷新重试或查看采集详情。' : '');
   text('notice', message);
   $('notice').hidden = !message;
-  $('notice').classList.toggle('error', Boolean(actionError || pollError || snapshot.data.collectionError));
-  const up = group('uptime')?.observedAt || group('dynamic')?.observedAt ? snapshot.data.uptime : null;
+  $('notice').classList.toggle('error', Boolean(actionError || pollError || snapshot.data.collectionError || sourceFailure));
+  const up = snapshot.data.uptime;
   if (up?.seconds != null) {
     const cal = up.observedAt || group('uptime')?.observedAt;
     const increment = !snapshot.paused && snapshot.connected && cal && Date.now() - cal < 120000 && !stale('uptime') && !isStale ? (Date.now() - cal) / 1000 : 0;
@@ -118,11 +133,19 @@ function freshness() {
   if (at - historyEnd > 5000) { historyEnd = at; renderHistory(); }
 }
 function render() {
+  if (!snapshot) {
+    metric('cpu', {}); metric('memory', {});
+    for (const id of ['cpu-caption','cpu-peak','memory-caption','memory-available','host-cores','host-memory']) text(id, '');
+    for (const id of ['host-cores','host-memory','memory-details']) $(id).hidden = true;
+    text('host-name', '服务器'); text('host-system', '识别系统中'); text('host-architecture', '架构待读取'); text('architecture', '正在读取'); text('uptime', '正在读取'); text('uptime-short', '运行时间待读取');
+    for (const id of ['receive','send','read','write']) rateText(id, null);
+    freshness(); return;
+  }
   const d = { ...snapshot?.data };
-  if (!group('identity')?.observedAt) { d.identity = {}; d.memoryTotal = null; }
-  if (!group('dynamic')?.observedAt) { d.cpu = {}; d.memory = {}; d.memoryDetails = ''; }
-  if (!group('topology')?.observedAt) { d.load = []; d.loadText = ''; }
-  if (!group('uptime')?.observedAt && !group('dynamic')?.observedAt) d.uptime = null;
+  d.identity ||= {};
+
+
+
   metric('cpu', d.cpu); metric('memory', d.memory);
   text('cpu-caption', d.cpu?.windowMs ? '本次观察 ' + (d.cpu.windowMs / 1000).toFixed(1) + ' 秒' : d.identity?.cores ? d.identity.cores + ' 个逻辑核心' : '');
   const total = d.memory?.total || d.memoryTotal;
@@ -140,13 +163,12 @@ function render() {
   $('host-cores').hidden = !d.identity?.cores;
   text('host-memory', total ? bytes(total) + ' 内存' : '');
   $('host-memory').hidden = !total;
-  const devicesKnown = group('topology')?.observedAt || group('dynamic')?.observedAt;
-  const net = devicesKnown ? snapshot.network : {}, disk = devicesKnown ? snapshot.disk : {};
-  const dynamic = Boolean(group('dynamic')?.observedAt);
-  rateText('receive', dynamic ? net.rates?.first : null, !dynamic || Boolean(net.device && !net.device.removed));
-  rateText('send', dynamic ? net.rates?.second : null, !dynamic || Boolean(net.device && !net.device.removed));
-  rateText('read', dynamic ? disk.rates?.first : null, !dynamic || Boolean(disk.device && !disk.device.removed));
-  rateText('write', dynamic ? disk.rates?.second : null, !dynamic || Boolean(disk.device && !disk.device.removed));
+  const net = snapshot.network || {}, disk = snapshot.disk || {};
+  const devicesKnown = snapshot.data.sources?.network?.attemptedAt || snapshot.data.sources?.interfaces?.attemptedAt || group('dynamic')?.observedAt;
+  rateText('receive', net.rates?.first, !devicesKnown || Boolean(net.device && !net.device.removed), net.rates || snapshot?.data?.sources?.network);
+  rateText('send', net.rates?.second, Boolean(net.device && !net.device.removed), net.rates || snapshot?.data?.sources?.network);
+  rateText('read', disk.rates?.first, !devicesKnown || Boolean(disk.device && !disk.device.removed), disk.rates || snapshot?.data?.sources?.disk);
+  rateText('write', disk.rates?.second, Boolean(disk.device && !disk.device.removed), disk.rates || snapshot?.data?.sources?.disk);
   text('disk-summary', disk.device?.name || '暂不可用');
   text('collection-note', (d.cacheLimited ? '缓存达到预算，部分历史或设备列表已缩短。' : '') + '隐藏侧栏继续采集。拓扑每 30 秒、容量和运行时间每 60 秒；设备信息按连接或刷新读取。');
   if (!d.uptime) { text('uptime', '正在读取'); text('uptime-short', '运行时间待读取'); }
@@ -249,9 +271,7 @@ async function allDevices(kind) {
 async function lists(localEpoch) {
   const [interfaces, disks] = await Promise.all([allDevices('interfaces'), allDevices('disks')]);
   if (localEpoch !== epoch || !visible) return;
-  const devicesKnown = group('topology')?.observedAt || group('dynamic')?.observedAt;
-  if (!devicesKnown) { interfaces.length = 0; disks.length = 0; }
-  interfaceOptions(interfaces, devicesKnown ? snapshot.network.device : null);
+  interfaceOptions(interfaces, snapshot.network.device);
   options($('disk'), disks, snapshot.disk.device);
   const summary = snapshot.filesystemSummary || {};
   text('filesystem-warnings', summary.warnings ? summary.warnings + ' 项空间偏紧' : '');
@@ -287,7 +307,7 @@ async function filesystemList(name, rootId, prefix, localEpoch) {
     if (localEpoch !== epoch || !visible) return;
   }
   state.revision = page.listRevision; state.total = page.total; state.next = page.nextOffset;
-  if (!group('capacity')?.observedAt) { page.items = []; page.total = 0; state.next = null; }
+
   $(prefix + 'previous').disabled = !state.previous.length;
   $(prefix + 'next').disabled = state.next == null;
   $(prefix + 'paging').hidden = !state.offset && state.next == null;
@@ -315,6 +335,8 @@ function reconcileFiles(root, items) {
     const meter = row.querySelector('.meter'); meter.hidden = !known;
     if (known) { meter.setAttribute('aria-label', label + ' 已用容量'); meter.setAttribute('aria-valuenow', f.percent.toFixed(1)); meter.firstElementChild.style.width = f.percent + '%'; }
     row.querySelector('.filesystem-warning').hidden = !f.spaceWarning;
+    row.classList.toggle('reading-old', f.state === 'unavailable');
+    row.title = f.state === 'unavailable' ? '容量读取失败：' + (f.reason || '') + ' · 保留上次读数' : '';
     put('.detail-path', label); put('.detail-free', bytes(f.available)); put('.detail-type', f.filesystemType || '未确认'); put('.detail-access', f.readOnly === true ? '只读' : f.readOnly === false ? '可写' : '未确认');
     for (const node of row.querySelectorAll('[data-observed-at]')) node.dataset.observedAt = f.observedAt || 0;
     return row;
@@ -328,7 +350,7 @@ function reconcileFiles(root, items) {
 }
 function renderHistory() {
   const end = historyEnd, gap = snapshot?.intervalSeconds * 3000 || 15000;
-  const resources = [{ points: histories.cpu, label: 'CPU', className: 'first' }, { points: histories.memory, label: '内存', className: 'second' }];
+  const resources = [{ points: histories.cpu, label: 'CPU', className: 'first' + (readingOld(snapshot?.data?.cpu) ? ' reading-old' : '') }, { points: histories.memory, label: '内存', className: 'second' + (readingOld(snapshot?.data?.memory) ? ' reading-old' : '') }];
   draw($('resource-chart'), resources, 100, gap, value => value.toFixed(1) + '%', end);
   const networkPoints = histories.receive.concat(histories.send).filter(p => p.at >= end - 300000 && p.at <= end && Number.isFinite(p.value));
   const peak = Math.max(0, ...networkPoints.map(p => p.value));

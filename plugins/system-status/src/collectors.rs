@@ -41,86 +41,53 @@ pub fn detect(text: &str) -> Option<Family> {
 pub fn quote(text: &str) -> String {
     format!("'{}'", text.replace('\'', "'\\''"))
 }
+
+mod bsd;
+pub(crate) mod common;
+mod linux;
+mod macos;
+mod windows;
+use crate::model::*;
+use crate::mounts::{Capacity, Mount, MountScan};
+type Sections = BTreeMap<String, Result<String, String>>;
+pub struct DecodeContext<'a> {
+    pub total: Option<u64>,
+    pub interfaces: &'a [Device],
+    pub paths: &'a [String],
+}
 pub fn command(family: Family, group: &str, nonce: &str, paths: &[String]) -> String {
     if family == Family::Windows {
-        return windows(group, nonce);
+        return windows::command(group, nonce);
     }
-    let body = match (family, group) {
-        (Family::Linux,"identity")=>"s system uname -srm; s architecture uname -m; s hostname cat /proc/sys/kernel/hostname; s os cat /etc/os-release; s cpuinfo cat /proc/cpuinfo; s model cat /sys/firmware/devicetree/base/model".into(),
-        (Family::Linux,"dynamic")=>"s cpu cat /proc/stat; s memory cat /proc/meminfo; s network cat /proc/net/dev; s disk cat /proc/diskstats; s uptime cat /proc/uptime; s boot cat /proc/sys/kernel/random/boot_id".into(),
-        (Family::Linux,"topology")=>"s load cat /proc/loadavg; s mounts cat /proc/self/mountinfo; s interfaces sh -c 'for p in /sys/class/net/*; do [ -d \"$p\" ] || continue; printf \"%s|\" \"${p##*/}\"; for f in ifindex address operstate; do tr -d \"\\n\" < \"$p/$f\"; printf \"|\"; done; printf \"\\n\"; done'; s addresses ip -o addr show".into(),
-        (Family::Linux,"uptime")=>"s uptime cat /proc/uptime; s boot cat /proc/sys/kernel/random/boot_id".into(),
-        (Family::Linux,"capacity")=>paths.iter().take(16).enumerate().map(|(i,p)|format!("s fs{i} df -Pk {}",quote(p))).collect::<Vec<_>>().join("; "),
-        (Family::Darwin,"identity")=>"s system uname -srm; s architecture uname -m; s arm64 sysctl -n hw.optional.arm64; s hostname hostname; s os sw_vers; s model sysctl -n machdep.cpu.brand_string; s cores sysctl -n hw.logicalcpu; s total sysctl -n hw.memsize".into(),
-        (Family::Darwin,"dynamic")=>"s cpu top -l 2 -s 1 -n 0; s memory vm_stat; s network netstat -ibn".into(),
-        (Family::FreeBsd,"identity")=>"s system uname -srm; s architecture uname -m; s hostname hostname; s model sysctl -n hw.model; s cores sysctl -n hw.ncpu; s total sysctl -n hw.physmem".into(),
-        (Family::FreeBsd,"dynamic")=>"s cpu sysctl -n kern.cp_time; s memory sysctl vm.stats.vm; s network netstat -ibn".into(),
-        (Family::OpenBsd,"identity")=>"s system uname -srm; s architecture uname -m; s hostname hostname; s model sysctl -n hw.model; s cores sysctl -n hw.ncpu; s total sysctl -n hw.physmem".into(),
-        (Family::NetBsd,"identity")=>"s system uname -srm; s architecture uname -m; s hostname hostname; s model sysctl -n machdep.cpu_brand; s cores sysctl -n hw.ncpu; s total sysctl -n hw.physmem64".into(),
-        (Family::OpenBsd|Family::NetBsd,"dynamic")=>"s cpu sysctl -n kern.cp_time; s network netstat -ibn".into(),
-        (_,"identity")=>"s system uname -srm; s architecture uname -m; s hostname hostname".into(),
-        (_,"topology")=>"s load uptime; s interfaces ifconfig -a; s filesystems df -Pkl".into(),
-        (_,"uptime")=>"s boottime sysctl -n kern.boottime; s now date +%s; s uptime uptime".into(),
-        (Family::Darwin|Family::FreeBsd|Family::OpenBsd|Family::NetBsd,"capacity")=>"s filesystems df -Pkl".into(),
-        _=>"s unsupported false".into(),
+    let body = match family {
+        Family::Linux => linux::command(group, paths),
+        Family::Darwin => macos::command(group),
+        _ => bsd::command(family, group),
     };
     let script=format!("LC_ALL=C; export LC_ALL\nn={}\ns() {{ k=$1; shift; printf '\\nSD1 %s BEGIN %s\\n' \"$n\" \"$k\"; \"$@\"; r=$?; printf '\\nSD1 %s END %s %s\\n' \"$n\" \"$k\" \"$r\"; }}\n{}\nprintf 'SD1 %s DONE\\n' \"$n\"",quote(nonce),body);
     format!("sh -c {}", quote(&script))
 }
-fn windows(group: &str, nonce: &str) -> String {
-    // OpenSSH may invoke cmd.exe, whose command line is limited to 8191 characters.
-    let mut script = String::new();
-    let mut in_switch = false;
-    let mut selected = false;
-    for line in include_str!("../scripts/windows.ps1").lines() {
-        if line.starts_with("switch (") {
-            in_switch = true;
-            continue;
-        }
-        if in_switch {
-            if line == " }" {
-                selected = false;
-                continue;
-            }
-            if line == "}" {
-                in_switch = false;
-                continue;
-            }
-            if line.starts_with(" '") {
-                selected = line.trim() == format!("'{group}' {{");
-                continue;
-            }
-            if !selected {
-                continue;
-            }
-        }
-        script.push_str(line);
-        script.push('\n');
+pub fn decode(
+    family: Family,
+    group: &str,
+    text: &str,
+    nonce: &str,
+    ctx: &DecodeContext,
+) -> Result<Sample, String> {
+    if family == Family::Windows {
+        return Ok(windows::decode(group, &windows_json(text, nonce)?, ctx));
     }
-    let script = script.replace("__NONCE__", nonce);
-    let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
-    format!(
-        "powershell.exe -NoProfile -NonInteractive -EncodedCommand {}",
-        sodeck_plugin_client::encoding::base64(&utf16)
-    )
+    let sections = envelope(text, nonce)?;
+    Ok(match family {
+        Family::Linux => linux::decode(group, &sections, ctx),
+        Family::Darwin => macos::decode(group, &sections),
+        _ => bsd::decode(group, &sections),
+    })
 }
 pub fn windows_probe() -> &'static str {
     "powershell.exe -NoProfile -NonInteractive -Command \"[Console]::WriteLine('SODECK_WINDOWS_1')\""
 }
-#[cfg(test)]
-mod command_tests {
-    use super::*;
-    #[test]
-    fn every_windows_group_fits_cmd_exe_command_limit() {
-        for group in ["identity", "dynamic", "topology", "capacity", "uptime"] {
-            assert!(
-                command(Family::Windows, group, &"n".repeat(128), &[]).len() < 8191,
-                "{group}"
-            );
-        }
-    }
-}
-pub fn sections(text: &str, nonce: &str) -> Result<BTreeMap<String, String>, String> {
+fn envelope(text: &str, nonce: &str) -> Result<Sections, String> {
     if text.len() > 1024 * 1024 || nonce.len() > 128 {
         return Err("采集输出过大".into());
     }
@@ -157,9 +124,14 @@ pub fn sections(text: &str, nonce: &str) -> Result<BTreeMap<String, String>, Str
                         return Err("采集段不匹配".into());
                     }
                     let code = code.parse::<u32>().map_err(|_| "采集退出码无效")?;
-                    if code == 0 {
-                        out.insert(key, data);
-                    }
+                    out.insert(
+                        key.clone(),
+                        if code == 0 {
+                            Ok(data)
+                        } else {
+                            Err(format!("{key} 来源退出码 {code}"))
+                        },
+                    );
                 }
                 _ => return Err("采集协议无效".into()),
             }
@@ -184,33 +156,104 @@ pub fn windows_json(text: &str, nonce: &str) -> Result<Value, String> {
     }
     Ok(v)
 }
+pub fn initial_capabilities(family: Family) -> Value {
+    json!({"family":family.name(),"diskIo":matches!(family,Family::Linux|Family::Windows|Family::Darwin),"memoryPercent":matches!(family,Family::Linux|Family::Windows|Family::Darwin),"load":family!=Family::Windows})
+}
+#[cfg(test)]
+pub fn sections(text: &str, nonce: &str) -> Result<BTreeMap<String, String>, String> {
+    Ok(envelope(text, nonce)?
+        .into_iter()
+        .filter_map(|(k, v)| v.ok().map(|v| (k, v)))
+        .collect())
+}
+#[cfg(test)]
 pub fn mount_paths(text: &str) -> Vec<String> {
-    text.lines()
-        .filter_map(|line| {
-            let (before, after) = line.split_once(" - ")?;
-            let fields: Vec<_> = before.split_whitespace().collect();
-            let kind = after.split_whitespace().next()?;
-            if ![
-                "ext2", "ext3", "ext4", "xfs", "btrfs", "f2fs", "jffs2", "ubifs", "overlay",
-                "squashfs", "tmpfs", "vfat", "exfat", "ntfs", "ntfs3", "zfs", "ufs", "ramfs",
-            ]
-            .contains(&kind)
-            {
-                return None;
-            }
-            let p = fields.get(4)?;
-            Some(
-                p.replace("\\040", " ")
-                    .replace("\\011", "\t")
-                    .replace("\\012", "\n")
-                    .replace("\\134", "\\"),
-            )
-        })
-        .take(512)
+    linux::mounts(text)
+        .rows
+        .into_iter()
+        .filter(|m| m.eligible)
+        .map(|m| m.path)
         .collect()
 }
-pub fn initial_capabilities(family: Family) -> Value {
-    json!({"family":family.name(),"diskIo":family==Family::Linux || family==Family::Windows,"memoryPercent":matches!(family,Family::Linux|Family::Windows|Family::FreeBsd),"load":family!=Family::Windows})
+#[cfg(test)]
+mod command_tests {
+    use super::*;
+    #[test]
+    fn every_windows_group_fits_cmd_exe_command_limit() {
+        for group in ["identity", "dynamic", "topology", "capacity", "uptime"] {
+            assert!(
+                command(Family::Windows, group, &"n".repeat(128), &[]).len() < 8191,
+                "{group}"
+            );
+        }
+    }
+    #[test]
+    fn every_posix_command_fits_core_budget_and_reports_failed_sections() {
+        for family in [
+            Family::Linux,
+            Family::Darwin,
+            Family::FreeBsd,
+            Family::OpenBsd,
+            Family::NetBsd,
+        ] {
+            for group in ["identity", "dynamic", "topology", "capacity", "uptime"] {
+                assert!(
+                    command(
+                        family,
+                        group,
+                        &"n".repeat(128),
+                        &["/path with ' spaces".into()]
+                    )
+                    .len()
+                        <= 16 * 1024
+                );
+            }
+        }
+        let source = envelope("SD1 n BEGIN memory\nSD1 n END memory 7\nSD1 n DONE\n", "n").unwrap();
+        assert!(source["memory"].as_ref().unwrap_err().contains('7'));
+    }
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn native_macos_sources_cover_real_dynamic_and_topology() {
+        let mut state = StatusState::default();
+        state.family = Some(Family::Darwin);
+        let mut base = crate::metrics::Baseline::default();
+        for group in ["identity", "topology", "dynamic", "capacity", "dynamic"] {
+            let targets = state.mounts.targets();
+            let paths: Vec<_> = targets.iter().map(|t| t.path.clone()).collect();
+            let output = std::process::Command::new("/bin/sh")
+                .args(["-c", &command(Family::Darwin, group, "native", &paths)])
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            let sample = decode(
+                Family::Darwin,
+                group,
+                &String::from_utf8(output.stdout).unwrap(),
+                "native",
+                &DecodeContext {
+                    total: state.identity.value.as_ref().and_then(|v| v.total),
+                    interfaces: state.interfaces.value.as_deref().unwrap_or(&[]),
+                    paths: &paths,
+                },
+            )
+            .unwrap();
+            let applied = crate::metrics::apply(
+                &mut state,
+                &mut base,
+                sample,
+                &targets,
+                crate::scheduler::timestamp(),
+                std::time::Instant::now(),
+                5,
+            );
+            assert!(applied.successes > 0, "{group}: {:?}", applied.failures);
+        }
+        assert_eq!(state.memory.state, "ok");
+        assert_eq!(state.cpu.state, "ok");
+        assert_eq!(state.disk_source.state, "ok");
+        assert!(!state.mounts.rows().is_empty());
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -243,4 +286,15 @@ mod tests {
         assert_eq!(mount_paths(m), ["/data disk"]);
         assert_eq!(quote("a'b"), "'a'\\''b'");
     }
+}
+
+#[cfg(test)]
+pub fn test_mounts(text: &str) -> Value {
+    let scan = linux::mounts(text);
+    json!({"coverage":if scan.complete{"complete"}else{"partial"},"mounts":scan.rows.iter().map(|m|json!({"identity":[m.identity],"path":m.path,"device":m.device,"filesystemType":m.kind,"readOnly":m.read_only})).collect::<Vec<_>>()})
+}
+
+#[cfg(test)]
+pub fn test_meminfo(s: &str) -> std::collections::HashMap<String, u64> {
+    linux::meminfo(s)
 }

@@ -2,6 +2,8 @@ use sodeck_plugin_client::protocol::requests as api;
 mod collectors;
 mod filesystem;
 mod metrics;
+mod model;
+mod mounts;
 mod scheduler;
 mod shared_state;
 use serde_json::{json, Value};

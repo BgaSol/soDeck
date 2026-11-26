@@ -65,7 +65,7 @@ const browser = await chromium.launch({ headless: true });
 const themes = await readTestThemeTokens(browser);
 const page = await browser.newPage({ viewport: { width: 320, height: 760 }, reducedMotion: 'reduce' });
 const errors = [];
-page.on('pageerror', e => errors.push(e.message));
+page.on('pageerror', e => errors.push(e.stack || e.message));
 await page.exposeFunction('statusRequest', params => {
   requests++; actions.push(params.action);
   if (params.action === 'pause') { snapshot.paused = true; snapshot.revision++; }
@@ -78,7 +78,8 @@ await page.exposeFunction('statusRequest', params => {
     return { accepted: true };
   }
   if (params.action === 'list') {
-    let rows = params.kind === 'interfaces' ? interfaces : params.kind === 'disks' ? [{ id: '8:0', name: 'nvme0n1' }, { id: '8:16', name: 'sda' }] : files.map(projected);
+    let rows = params.kind === 'interfaces' ? (snapshot.groups.some(g=>['dynamic','topology'].includes(g.name)&&g.observedAt)?interfaces:[]) : params.kind === 'disks' ? [{ id: '8:0', name: 'nvme0n1' }, { id: '8:16', name: 'sda' }] : files.map(projected);
+    if (params.kind === 'filesystems' && !snapshot.groups.find(g=>g.name==='capacity').observedAt) rows=[];
     if (params.kind === 'filesystems' && params.group) {
       if (params.group === 'overview') {
         const primary = rows.filter(f => f.displayGroup === 'primary');
@@ -108,7 +109,11 @@ await page.exposeFunction('statusRequest', params => {
   snapshot.filesystemSummary = Object.fromEntries(['primary', 'auxiliary', 'system'].map(name => [name, projectedFiles.filter(f => f.displayGroup === name).length]));
   snapshot.filesystemSummary.warnings = projectedFiles.filter(f => f.spaceWarning).length;
   historyAt = Date.now();
-  return params.knownRevision === snapshot.revision ? { revision: snapshot.revision, unchanged: true } : structuredClone(snapshot);
+  const result=structuredClone(snapshot);
+  if(!result.groups.find(g=>g.name==='identity').observedAt) {result.data.identity={};delete result.data.memoryTotal;}
+  if(!result.groups.find(g=>g.name==='dynamic').observedAt) {result.data.cpu={state:'pending'};result.data.memory={state:'pending'};result.network={device:null,rates:null};result.disk={device:null,rates:null};}
+  if(!result.groups.some(g=>['dynamic','uptime'].includes(g.name)&&g.observedAt)) delete result.data.uptime;
+  return params.knownRevision === snapshot.revision ? {revision:snapshot.revision,unchanged:true}:result;
 });
 await page.addInitScript(() => {
   if (window !== top) return;
@@ -419,8 +424,8 @@ try {
   assert.equal(await frame.locator('#host-name').innerText(), '服务器', 'Old-context response restored the previous host');
   snapshot.context = newContext; snapshot.groups.forEach(g => g.observedAt = null); snapshot.revision++;
   await frame.locator('#connection').filter({ hasText: '已连接' }).waitFor();
-  assert.equal(await frame.locator('#cpu').innerText(), '采样中');
-  assert.equal(await frame.locator('#memory').innerText(), '采样中');
+  assert.equal(await frame.locator('#cpu').innerText(), '正在读取');
+  assert.equal(await frame.locator('#memory').innerText(), '正在读取');
   assert.equal(await frame.locator('#receive').innerText(), '采样中');
   assert.equal(await frame.locator('#interface').isDisabled(), true);
   assert.doesNotMatch(await frame.locator('#interface').innerText(), /enp0s31f6|10\.0\.0\.8|192\.168\.10\.12/);
@@ -481,6 +486,18 @@ try {
   await page.emulateMedia({ forcedColors: 'active' });
   assert.notEqual(await frame.locator('#resource-chart .series.first').evaluate(e => getComputedStyle(e).strokeDasharray), await frame.locator('#resource-chart .series.second').evaluate(e => getComputedStyle(e).strokeDasharray), 'Both series remain distinct without color');
   await page.emulateMedia({ forcedColors: 'none' });
+  snapshot = structuredClone(base); snapshot.revision += 350; snapshot.family = 'macOS';
+  snapshot.data.memory = { ...base.data.memory, state: 'unavailable', observedAt: Date.now() - 25000, attemptedAt: Date.now(), reason: 'vm_stat 退出码 1', estimated: true };
+  snapshot.data.sourceErrors = { dynamic: { memory: 'vm_stat 退出码 1' } };
+  await refresh();
+  await frame.locator('#freshness').filter({hasText:'部分指标读取失败'}).waitFor();
+  assert.equal(await frame.locator('#memory').innerText(), '62.1%');
+  assert.match(await frame.locator('#memory + .reading-note').innerText(), /保留读数/);
+  assert(await frame.locator('#resource-chart .series.second.reading-old').count());
+  assert.match(await frame.locator('#notice').innerText(), /部分指标读取失败/);
+  await page.screenshot({path:'artifacts/system-status-ui/macos-memory-failed-light.png'});
+  snapshot.data.memory = { ...base.data.memory, state: 'ok', observedAt: Date.now() }; snapshot.data.sourceErrors = {}; snapshot.revision++; await refresh();
+  assert.equal(await frame.locator('#memory + .reading-note').isVisible(), false);
   snapshot = structuredClone(base); snapshot.groups.forEach(g => g.observedAt = Date.now()); snapshot.revision += 400; failSnapshots = true;
   await page.reload();
   await frame.locator('#notice').filter({ hasText: '首次读取失败' }).waitFor();
