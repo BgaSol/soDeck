@@ -231,7 +231,7 @@ mod platform {
 #[path = "login_startup/macos.rs"]
 mod platform;
 
-/// Exercises real platform IO in a disposable location, never a system login entry.
+/// Exercises isolated platform IO; macOS registration additionally requires an explicit clean-CI probe.
 pub fn verify_native(directory: &std::path::Path) -> Result<(), String> {
     platform::verify(directory)
 }

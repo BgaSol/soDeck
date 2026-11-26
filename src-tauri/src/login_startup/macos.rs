@@ -144,6 +144,7 @@ fn verify_registration(directory: &Path) -> Result<(), String> {
             home.display()
         ));
     }
+    let service = super::Service::new(false);
     let result = (|| {
         match native::status()? {
             State::Enabled => native::set(false)?,
@@ -153,13 +154,32 @@ fn verify_registration(directory: &Path) -> Result<(), String> {
         if let Some(entry) = legacy::inspect(&bundle.executable)? {
             legacy::remove(&entry)?;
         }
+        let clean_read = service.refresh();
+        if !matches!(clean_read.state.as_str(), "disabled" | "unknown") {
+            return Err(format!("无旧项时设置状态读取异常：{clean_read:?}"));
+        }
         // Reproduce the exact 2.5.0 disk registration, without bootstrapping the running app.
         legacy::write(&bundle.executable)?;
-        set(true)?;
-        if old.exists() || read()?.state != "enabled" {
+        let original = std::fs::read(&old).map_err(|e| e.to_string())?;
+        let before_read = native::status()?;
+        let legacy_read = service.refresh();
+        if !matches!(legacy_read.state.as_str(), "stale" | "blocked" | "unknown")
+            || (legacy_read.state == "unknown"
+                && legacy_read.reason.as_deref()
+                    != Some("系统无法确认旧登录项授权状态，原文件已保留；请检查系统登录项。"))
+        {
+            return Err(format!("迁移前设置状态读取异常：{legacy_read:?}"));
+        }
+        if std::fs::read(&old).map_err(|e| e.to_string())? != original
+            || native::status()? != before_read
+        {
+            return Err("读取设置不应修改旧文件或主应用登录项".into());
+        }
+        let enabled_read = service.set(true)?;
+        if old.exists() || enabled_read.state != "enabled" {
             return Err("旧登录项未完成迁移".into());
         }
-        set(true)?;
+        service.set(true)?;
         std::fs::write(directory.join("macos-login-enabled.json"), serde_json::json!({"pid":std::process::id(),"bundle":bundle.path,"state":"enabled","migration":true}).to_string()).map_err(|e|e.to_string())?;
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
         while !directory.join("macos-login-inspected.json").exists() {
@@ -168,12 +188,12 @@ fn verify_registration(directory: &Path) -> Result<(), String> {
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
-        set(false)?;
-        set(false)?;
-        if read()?.state != "disabled" {
+        service.set(false)?;
+        let disabled_read = service.set(false)?;
+        if disabled_read.state != "disabled" {
             return Err("取消主应用登录项未生效".into());
         }
-        std::fs::write(directory.join("macos-login-service.json"), serde_json::json!({"enabled":true,"migrated":true,"disabled":true,"processContinued":true,"bundle":bundle.path}).to_string()).map_err(|e|e.to_string())?;
+        std::fs::write(directory.join("macos-login-service.json"), serde_json::json!({"enabled":true,"migrated":true,"disabled":true,"processContinued":true,"bundle":bundle.path,"cleanRead":clean_read,"legacyRead":legacy_read,"enabledRead":enabled_read,"disabledRead":disabled_read,"readPreservedRegistration":true}).to_string()).map_err(|e|e.to_string())?;
         Ok(())
     })();
     let cleanup = if native::status()? != State::NotRegistered {

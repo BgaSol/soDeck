@@ -28,7 +28,7 @@
 
 启动上下文消费一次性登录来源，向 Tauri 提供统一归一化 Env，普通重启及 Windows updater 共用该参数来源。登录后台与用户关闭共用呈现层原生动作；关闭的首次说明和前端预检仍只属于关闭流程。桌面错误保留可读快照，前端首次挂载前先取得实际可见性。独立[登录项适配](../src-tauri/src/login_startup.rs)读取系统事实、串行修改与退出前收束，不写入核心偏好 JSON；[应用设置界面](../src/application-settings.ts)按页面和焦点读取，与组件设置分工。原生 finalizer 在官方 updater 可能直接退出前完成必要清理，保留原数据锁和关闭协调器的失败事实；具体行为见[登录启动](features/settings.md#登录后自动启动)。
 
-macOS 的[原生桥接](../src-tauri/src/login_startup/macos/native.rs)封装 Service Management、主 bundle 身份、Launch Services 登记和启动 Apple Event。13+ 登记主应用，旧系统使用私有 legacy 兼容模块；公共服务不演变为后端框架。Tauri setup 在系统启动回调内读取一次原生登录来源，事件循环前暂缓激活，首次显示与后台收起继续共用呈现层。设置命令通过主线程调度访问 AppKit/NSBundle/Service Management，后台线程只负责等待结果；旧项迁移只在明确设置操作中发生，不对托管当前进程的旧 job 执行 bootout。
+macOS 的[原生桥接](../src-tauri/src/login_startup/macos/native.rs)封装 Service Management、主 bundle 身份、Launch Services 登记和启动 Apple Event。13+ 登记主应用，旧系统使用私有 legacy 兼容模块；公共服务不演变为后端框架。Tauri setup 在系统启动回调内读取一次原生登录来源，事件循环前暂缓激活，首次显示与后台收起继续共用呈现层。设置命令在后台读取和串行修改系统登记；旧项迁移只在明确设置操作中发生，不对托管当前进程的旧 job 执行 bootout。
 
 短命令、命令捕获和终端通过 [remote_execution.rs](../src-tauri/src/remote_execution.rs) 共用通道启动、读写、退出和取消循环；[execution_output.rs](../src-tauri/src/execution_output.rs) 只包含既有内存结果、Capture 和 Replay 三种输出。各服务仍管理自己的接纳、额度与持久结果，不设第四张全局资源表。[session_process.rs](../src-tauri/src/session_process.rs) 替代原命令流资源表，提供原进程的有界顺序输入；正文订阅、固定阅读与 ACK 位于 session_process/output。MCP 管理调查任务、调用端输入身份与本地证据；提示解释和输入内容由客户端决定。
 

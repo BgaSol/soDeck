@@ -8,7 +8,7 @@ const [app, output]=process.argv.slice(2);
 assert(process.platform==='darwin'&&process.env.GITHUB_ACTIONS==='true','Use a clean native macOS CI runner');
 const data=path.resolve(output,'login-data');fs.mkdirSync(data,{recursive:true});
 const binary=path.join(app,'Contents/MacOS/sodeck');
-const env={...process.env,SODECK_TEST_DATA_DIR:data,SODECK_PACKAGE_ONLY:'1',SODECK_TEST_LOGIN_RESTART:'0',SODECK_TEST_MACOS_LOGIN:'1',SODECK_TEST_LOGIN_SETTINGS:'1'};
+const env={...process.env,SODECK_TEST_DATA_DIR:data,SODECK_PACKAGE_ONLY:'1',SODECK_TEST_LOGIN_RESTART:'0',SODECK_TEST_MACOS_LOGIN:'1'};
 const child=spawn(process.execPath,['scripts/smoke.mjs',binary],{env,stdio:'inherit'});
 const completed=new Promise(resolve=>{child.once('error',error=>resolve({error}));child.once('exit',(code,signal)=>resolve({code,signal}));});
 const deadline=Date.now()+90000;
@@ -33,9 +33,13 @@ while(Date.now()<deadline){
 assert(inspected,'Main application login registration was not observed');
 const result=await completed;assert.equal(result.code,0,JSON.stringify(result));
 if(captureError)throw captureError;
-assert(fs.existsSync(path.join(data,'login-startup-settings-smoke.json')),'Settings page login-item read did not complete on the macOS main thread');
 const receipt=JSON.parse(fs.readFileSync(path.join(data,'macos-login-service.json'),'utf8'));
 assert(receipt.enabled&&receipt.migrated&&receipt.disabled&&receipt.processContinued);
+assert(['disabled','unknown'].includes(receipt.cleanRead?.state),'Settings read without a legacy item did not reach the native service');
+assert(['stale','blocked','unknown'].includes(receipt.legacyRead?.state),'Settings read before migration did not reach the legacy native query');
+assert.equal(receipt.readPreservedRegistration,true);
+assert.equal(receipt.enabledRead?.state,'enabled');
+assert.equal(receipt.disabledRead?.state,'disabled');
 const launcher=path.join(output,'login-event');
 const compile=spawnSync('clang',['-fobjc-arc','-framework','AppKit','-framework','Carbon','scripts/fixtures/macos-login-event.m','-o',launcher],{stdio:'inherit'});assert.equal(compile.status,0);
 // A separate copy keeps the persisted-data case without sharing a just-closed lock/socket.

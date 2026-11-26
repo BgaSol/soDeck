@@ -50,7 +50,7 @@ pub fn legacy_status(path: &Path) -> Result<State, String> {
         let class = AnyClass::get(c"SMAppService").ok_or("当前系统不支持登录项授权查询")?;
         let path = NSString::from_str(path.to_str().ok_or("登录项路径不是有效 Unicode")?);
         let url = NSURL::fileURLWithPath(&path);
-        state(unsafe { msg_send![class, statusForLegacyPlistAtURL: &*url] })
+        state(unsafe { msg_send![class, statusForLegacyURL: &*url] })
     })
 }
 
