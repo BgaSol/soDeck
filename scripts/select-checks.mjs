@@ -81,6 +81,9 @@ export function selectChecks(files, { suite, fallback } = {}) {
       if (file.endsWith('.md') || file.startsWith('docs/')) continue;
       if (/^src\/motion\.(js|d\.ts)$/.test(file)) {sharedUi();pluginNames.forEach(plugin);continue;}
       if (file === 'src/dom-update.ts' || file === 'scripts/plugin-dom-assets.mjs') { ui(); for(const name of ['network-proxy','docker']){plugin(name);integration.add(name);} continue; }
+      if (file === 'src-tauri/tests/server_sharing.rs') { core(); ui(); plan.ssh=true; continue; }
+      if (file.startsWith('src-tauri/src/platform/')) { core(); ui(); continue; }
+      if (file.startsWith('src-tauri/src/validation/') || file === 'src-tauri/src/validation.rs') { core(); ui(); continue; }
       if (file === 'scripts/test-cli-arguments.mjs') { full(); continue; }
       if (file === 'scripts/test-theme-tokens.mjs') { ui(); integration.add('system-status'); integration.add('docker'); continue; }
       if (file.startsWith('.github/workflows/') || file.startsWith('.github/actions/')) plan.workflow = true;

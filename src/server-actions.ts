@@ -3,9 +3,9 @@ import {routeTo, type ConnectionNode, type ConnectionTree} from './connection-tr
 
 export type ConnectionActions=Pick<ConnectionsUi,'connect'|'cancelAttempt'|'continueAttempt'|'focusWorkspace'>;
 export type ServerCommand=
-  | {kind:'new-server'|'new-proxy'|'reload'}
+  | {kind:'new-server'|'new-proxy'|'reload'|'share-all'|'import-share'}
   | {kind:'new-via';path:string}
-  | {kind:'edit'|'copy'|'delete'|'locate-target';id:string;path?:string}
+  | {kind:'edit'|'copy'|'delete'|'locate-target'|'share';id:string;path?:string}
   | {kind:'connect';id:string;path:string}
   | {kind:'focus';id:string;attempt:string}
   | {kind:'cancel-attempt';attempt:string}
@@ -16,6 +16,7 @@ export function serverActions(node:ConnectionNode|undefined,tree:ConnectionTree,
     {command:{kind:'new-server'},label:'新增 SSH 服务器',group:'create',disabled:unavailable},
     {command:{kind:'new-proxy'},label:'新增 SOCKS5 代理',group:'create',disabled:unavailable},
     {command:{kind:'reload'},label:'刷新目录',group:'record'},
+    {command:{kind:'share-all'},label:'分享全部服务器',group:'record',disabled:unavailable},
   ];
   if(!node.record)return [{command:{kind:'reload'},label:'刷新目录',group:'record'}];
   const id=node.recordId,path=node.key,actions:ServerAction[]=[];
@@ -32,6 +33,7 @@ export function serverActions(node:ConnectionNode|undefined,tree:ConnectionTree,
     {command:{kind:'edit',id,path},label:connection?.state==='failed'?'编辑连接资料':'编辑资料',group:'record',disabled:unavailable},
     {command:{kind:'copy',id,path},label:'复制资料',group:'record',disabled:unavailable},
     {command:{kind:'delete',id,path},label:'删除资料',group:'delete',danger:true,disabled:unavailable||(connection?.state==='connecting'?'请先取消连接并等待结束':'')});
+  if(node.kind==='ssh')actions.splice(actions.length-1,0,{command:{kind:'share',id,path},label:'分享连接',group:'record',disabled:unavailable});
   return actions;
 }
 export const actionKey=(command:ServerCommand)=>command.kind;

@@ -85,11 +85,7 @@ impl ServerStore {
             .find(|s| s.id == id)
             .ok_or("服务器资料已不存在")?;
         let ssh = |s: &Server| -> Result<Node, String> {
-            let secret = self
-                .sessions
-                .get(&s.id)
-                .cloned()
-                .or_else(|| s.authentication.secret().cloned());
+            let secret = effective_secret(&self.sessions, &s.id, &s.authentication);
             let auth = match &s.authentication {
                 Authentication::Password { .. } => Auth::Password(secret),
                 Authentication::PrivateKey {
@@ -133,10 +129,7 @@ impl ServerStore {
                         Authentication::None => (None, None),
                         Authentication::UsernamePassword { username, .. } => (
                             Some(username.clone()),
-                            self.sessions
-                                .get(proxy_id)
-                                .cloned()
-                                .or_else(|| p.authentication.secret().cloned()),
+                            effective_secret(&self.sessions, proxy_id, &p.authentication),
                         ),
                         _ => return Err("SOCKS5 认证方式无效".into()),
                     };

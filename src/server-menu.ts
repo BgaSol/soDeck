@@ -4,7 +4,7 @@ import {updateDOM} from './dom-update';
 import {escape as e} from './ui';
 import {actionKey,type ServerAction,type ServerCommand} from './server-actions';
 
-export type MenuSource=Readonly<{kind:'node';path:string;role:boolean;stamp:string}|{kind:'root'}|{kind:'toolbar'}>;
+export type MenuSource=Readonly<{kind:'node';path:string;role:boolean;stamp:string}|{kind:'root'}|{kind:'toolbar';menu?:'sharing'}>;
 type CloseReason='dismiss'|'cancel'|'tab'|'execute'|'replace'|'immediate';
 interface MenuOptions {
   source:MenuSource;title:string;actions:ServerAction[];anchor:HTMLElement;reference:MenuReference;

@@ -96,6 +96,7 @@ try {
   report.passed = true;
   report.pluginIconsNative = true;
   report.logsMessagesNative = true;
+  report.serverSharingNative = true;
   report.desktopShellNative = true;
   report.desktopStartupNative = true;
   report.loginRegistrationIoNative = true;

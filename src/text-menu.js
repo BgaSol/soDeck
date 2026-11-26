@@ -50,8 +50,8 @@ import { attachMenuPosition } from './menu-position.js';
         return;
       }
       try {
-        if (choice === 'paste') { const text = await read(valid); if (text !== null && valid()) replace(s, text); }
-        else { const result = await write(s.text, valid); if (result !== false && valid() && choice === 'cut') replace(s, ''); }
+        if (choice === 'paste') { const text = await read(valid, s.element); if (text !== null && valid()) replace(s, text); }
+        else { const result = await write(s.text, valid, s.element); if (result !== false && valid() && choice === 'cut') replace(s, ''); }
       } catch (error) { if (valid()) notify(String(error)); }
     }
     function show(s, reference) {

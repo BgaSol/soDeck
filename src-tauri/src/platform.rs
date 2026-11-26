@@ -1,3 +1,6 @@
+#[path = "platform/private_files.rs"]
+mod private_files;
+pub(crate) use private_files::secure_directory;
 use std::{
     io,
     path::Path,

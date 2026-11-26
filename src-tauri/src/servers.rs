@@ -1,18 +1,22 @@
 //! Local server directory. This module does not open network connections.
 mod change;
 pub(crate) mod connection_profile;
+mod managed_keys;
 mod read;
 mod rpc;
+mod sharing;
+mod validation;
 use crate::{core::now, storage, AppCore};
-use change::validate;
 pub use change::{AuthInput, CatalogChange, ProxyInput, SecretChange, ServerInput, ServerPatch};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+pub use sharing::{ShareError, SHARE_LIMIT};
 use std::{
     collections::{HashMap, HashSet},
     fs,
     path::PathBuf,
 };
+use validation::validate;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -220,12 +224,16 @@ impl ServerStore {
                 )),
             ),
         };
-        Self {
+        let store = Self {
             path,
             catalog,
             sessions: HashMap::new(),
             error,
+        };
+        if store.error.is_none() {
+            managed_keys::cleanup(&root, &store.catalog);
         }
+        store
     }
     fn view(&self) -> Value {
         // Construct public views explicitly: disk authentication is never returned.
@@ -328,5 +336,25 @@ mod tests {
             assert_eq!(timestamp(millis).unwrap(), expected);
         }
         assert!(timestamp(u64::MAX).is_err());
+    }
+}
+
+fn effective_secret(
+    sessions: &HashMap<String, String>,
+    id: &str,
+    auth: &Authentication,
+) -> Option<String> {
+    sessions.get(id).cloned().or_else(|| auth.secret().cloned())
+}
+
+impl AppCore {
+    fn publish_catalog_changed(&self) {
+        self.changed();
+        self.workspace_changed();
+        self.event("server-catalog-changed", Value::Null);
+    }
+    fn catalog_committed(&self, store: &ServerStore) {
+        self.connections.cancel_stale(store);
+        self.workspace_state().rename(&store.workspace_names());
     }
 }

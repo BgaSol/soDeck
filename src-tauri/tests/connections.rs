@@ -419,6 +419,7 @@ include!("fixtures/docker_flow.rs");
 include!("fixtures/process_output_flow.rs");
 include!("fixtures/session_target_flow.rs");
 include!("fixtures/connection_requests.rs");
+include!("fixtures/server_sharing_flow.rs");
 struct Fixture {
     core: Arc<AppCore>,
     path: PathBuf,
@@ -1534,6 +1535,20 @@ async fn openssh_interop() {
         .as_str()
         .unwrap()
         .to_string();
+    let shared = f
+        .core
+        .export_server_share(
+            f.core.server_catalog()["revision"].as_u64().unwrap(),
+            Some(copied.clone()),
+        )
+        .unwrap();
+    let code = shared["code"].as_str().unwrap();
+    let preview = f.core.preview_server_share(code).unwrap();
+    let imported = f
+        .core
+        .import_server_share(preview["catalogRevision"].as_u64().unwrap(), code)
+        .unwrap();
+    let copied = imported["targetIds"][0].as_str().unwrap().to_string();
     let copied_context = connected(&f, &copied).await.context.unwrap();
     let (bytes, code) = f
         .core

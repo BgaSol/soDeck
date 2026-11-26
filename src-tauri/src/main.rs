@@ -13,7 +13,6 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    time::Duration,
 };
 use tauri::{Emitter, Manager, State};
 
@@ -129,7 +128,13 @@ async fn clipboard_text(
     handle: tauri::AppHandle,
     operation: String,
     text: Option<String>,
+    purpose: Option<String>,
 ) -> Result<Option<String>, String> {
+    let limit = match purpose.as_deref() {
+        None => 256 * 1024,
+        Some("serverShare") => sodeck::servers::SHARE_LIMIT,
+        _ => return Err("剪贴板用途无效".into()),
+    };
     use tauri_plugin_clipboard_manager::ClipboardExt;
     // Native reads must stay off the event loop (in particular on Linux).
     tauri::async_runtime::spawn_blocking(move || match operation.as_str() {
@@ -141,15 +146,15 @@ async fn clipboard_text(
                     if message == "The clipboard contents were not available in the requested format or the clipboard is empty." => String::new(),
                 Err(error) => return Err(format!("无法读取系统剪贴板：{error}")),
             };
-            if text.len() > 256 * 1024 {
-                return Err("剪贴板超过 256 KiB，请分段粘贴；本次未发送".into());
+            if text.len() > limit {
+                return Err(format!("剪贴板文本超过 {} KiB", limit / 1024));
             }
             Ok(Some(text))
         }
         "write" => {
             let text = text.ok_or("缺少剪贴板文本")?;
-            if text.len() > 256 * 1024 {
-                return Err("剪贴板文本超过 256 KiB".into());
+            if text.len() > limit {
+                return Err(format!("剪贴板文本超过 {} KiB", limit / 1024));
             }
             handle
                 .clipboard()
@@ -178,20 +183,25 @@ async fn clipboard_roundtrip(handle: tauri::AppHandle) -> Result<(), String> {
     }
     let sample = "SoDeck 原生剪贴板 🙂\r\nsecond line\n".repeat(300);
     let result = async {
-        clipboard_text(handle.clone(), "write".into(), Some(sample.clone())).await?;
-        if clipboard_text(handle.clone(), "read".into(), None).await? != Some(sample) {
+        clipboard_text(handle.clone(), "write".into(), Some(sample.clone()), None).await?;
+        if clipboard_text(handle.clone(), "read".into(), None, None).await? != Some(sample) {
             return Err("原生剪贴板文本往返不一致".into());
         }
-        if clipboard_text(handle.clone(), "write".into(), Some("中".repeat(90_000)))
-            .await
-            .is_ok()
+        if clipboard_text(
+            handle.clone(),
+            "write".into(),
+            Some("中".repeat(90_000)),
+            None,
+        )
+        .await
+        .is_ok()
         {
             return Err("原生剪贴板未拒绝超限文本".into());
         }
         Ok(())
     }
     .await;
-    let restored = clipboard_text(handle, "write".into(), Some(original)).await;
+    let restored = clipboard_text(handle, "write".into(), Some(original), None).await;
     result.and(restored.map(|_| ()))
 }
 
@@ -452,6 +462,47 @@ async fn set_login_startup(
     app.core.record_login_startup(enabled, &result);
     let _ = handle.emit("login-startup-changed", ());
     result
+}
+#[tauri::command]
+async fn export_server_share(
+    app: State<'_, Application>,
+    revision: u64,
+    server_id: Option<String>,
+) -> Result<serde_json::Value, sodeck::servers::ShareError> {
+    let core = app.core.clone();
+    tauri::async_runtime::spawn_blocking(move || core.export_server_share(revision, server_id))
+        .await
+        .map_err(|_| sodeck::servers::ShareError {
+            code: "internal",
+            message: "生成分享码失败，请重试".into(),
+        })?
+}
+#[tauri::command]
+async fn preview_server_share(
+    app: State<'_, Application>,
+    code: String,
+) -> Result<serde_json::Value, sodeck::servers::ShareError> {
+    let core = app.core.clone();
+    tauri::async_runtime::spawn_blocking(move || core.preview_server_share(&code))
+        .await
+        .map_err(|_| sodeck::servers::ShareError {
+            code: "internal",
+            message: "解析分享码失败，请重试".into(),
+        })?
+}
+#[tauri::command]
+async fn import_server_share(
+    app: State<'_, Application>,
+    revision: u64,
+    code: String,
+) -> Result<serde_json::Value, sodeck::servers::ShareError> {
+    let core = app.core.clone();
+    tauri::async_runtime::spawn_blocking(move || core.import_server_share(revision, &code))
+        .await
+        .map_err(|_| sodeck::servers::ShareError {
+            code: "internal",
+            message: "导入结果未能返回，请刷新目录核对后再操作".into(),
+        })?
 }
 #[tauri::command]
 fn server_catalog(app: State<Application>) -> serde_json::Value {
@@ -799,6 +850,9 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
                 ))?;
             }
             sodeck::validation::server_roundtrip(&core, persisted)?;
+            if package_only {
+                sodeck::validation::server_sharing_roundtrip(&handle, &core, persisted)?;
+            }
             if !package_only {
                 sodeck::validation::workspace_roundtrip(&handle, &core)?;
             }
@@ -818,7 +872,7 @@ fn frontend_ready(handle: tauri::AppHandle, window: tauri::WebviewWindow, app: S
         let result = validation.and(stopped);
         if result.is_ok() {
             let status = core.snapshot();
-            let report = serde_json::json!({"completed":true,"pid":std::process::id(),"workspaceNative":!package_only,"packageNative":true,"pluginIconsNative":package_only,"logsMessagesNative":package_only,"desktopShellNative":package_only,"desktopStartupNative":package_only,"loginRegistrationIoNative":package_only,"loginRestartNative":restart_probe,"macosApplicationPolicyNative":package_only && cfg!(target_os = "macos"),"sshNative":ssh_test_requested,"clipboardNative":clipboard_test_requested,"desktopFilesNative":desktop_files_requested,"desktopOpenNative":desktop_open_requested,"version":status.version,"target":status.target});
+            let report = serde_json::json!({"completed":true,"pid":std::process::id(),"workspaceNative":!package_only,"packageNative":true,"pluginIconsNative":package_only,"logsMessagesNative":package_only,"serverSharingNative":package_only,"desktopShellNative":package_only,"desktopStartupNative":package_only,"loginRegistrationIoNative":package_only,"loginRestartNative":restart_probe,"macosApplicationPolicyNative":package_only && cfg!(target_os = "macos"),"sshNative":ssh_test_requested,"clipboardNative":clipboard_test_requested,"desktopFilesNative":desktop_files_requested,"desktopOpenNative":desktop_open_requested,"version":status.version,"target":status.target});
             let _ = std::fs::write(
                 status.data_directory.join("smoke-result.json"),
                 report.to_string(),
@@ -1003,6 +1057,9 @@ fn run() -> Result<(), String> {
             network_snapshot,
             sodeck::connections::desktop::connection,
             server_catalog,
+            export_server_share,
+            preview_server_share,
+            import_server_share,
             change_catalog,
             recover_catalog,
             snapshot,
