@@ -1,608 +1,520 @@
-use crate::collectors::{self, Family};
-use serde_json::{json, Value};
-use std::{
-    collections::{BTreeMap, HashMap},
-    time::Instant,
-};
+use crate::{collectors, model::*, mounts::Target};
+use std::{collections::BTreeMap, time::Instant};
+
+struct Previous {
+    first: u64,
+    second: u64,
+    local: Instant,
+    boot: String,
+    remote: Option<f64>,
+    clock: Option<(u64, u64)>,
+}
 #[derive(Default)]
 pub struct Baseline {
-    pub previous: Option<Raw>,
-}
-pub struct Raw {
-    time: f64,
-    boot: String,
-    cpu: Option<(u64, u64)>,
-    counters: HashMap<String, (u64, u64)>,
-    counter_clocks: HashMap<String, (u64, u64)>,
-    local: Instant,
+    streams: BTreeMap<String, Previous>,
 }
 impl Baseline {
+    pub fn clear(&mut self) {
+        self.streams.clear();
+    }
     pub fn memory_usage(&self) -> usize {
-        self.previous
-            .as_ref()
-            .map(|r| {
-                r.boot.capacity()
-                    + r.counters.capacity() * 96
-                    + r.counters.keys().map(String::capacity).sum::<usize>()
-                    + r.counter_clocks.capacity() * 96
-                    + r.counter_clocks.keys().map(String::capacity).sum::<usize>()
-            })
-            .unwrap_or(0)
+        self.streams
+            .iter()
+            .map(|(k, v)| k.capacity() + v.boot.capacity() + 160)
+            .sum()
     }
-}
-fn number(v: &Value) -> Option<u64> {
-    v.as_str()?.parse().ok()
-}
-fn metric(value: Option<f64>, source: &str) -> Value {
-    json!({"value":value.filter(|v|v.is_finite()),"state":if value.is_some(){"ok"}else{"warmingUp"},"source":source})
-}
-fn count(text: &str) -> Option<u64> {
-    text.trim().parse().ok()
-}
-fn normalize_architecture(text: &str) -> Option<String> {
-    let raw = text.trim();
-    if raw.is_empty()
-        || raw.eq_ignore_ascii_case("unknown")
-        || raw.len() > 64
-        || !raw
-            .bytes()
-            .all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-' || c == b'.')
-    {
-        return None;
-    }
-    Some(
-        match raw.to_ascii_lowercase().as_str() {
-            "amd64" | "x64" | "x86_64" => "x86_64",
-            "aarch64" | "arm64" => "ARM64",
-            "i386" | "i486" | "i586" | "i686" | "x86" => "x86",
-            "armv7" | "armv7l" => "ARMv7",
-            "armv6" | "armv6l" => "ARMv6",
-            "arm" => "ARM",
-            _ => raw,
+    fn delta(
+        &mut self,
+        key: &str,
+        first: u64,
+        second: u64,
+        d: &Clock,
+        device_clock: Option<(u64, u64)>,
+    ) -> Option<(u64, u64, f64)> {
+        let current = Previous {
+            first,
+            second,
+            local: d.local,
+            boot: d.boot.clone(),
+            remote: d.remote,
+            clock: device_clock,
+        };
+        let previous = self.streams.insert(key.into(), current)?;
+        if previous.boot != d.boot
+            || d.local.duration_since(previous.local).as_secs_f64() > d.interval as f64 * 3.0
+        {
+            return None;
         }
-        .to_string(),
-    )
+        let seconds = match (device_clock, previous.clock) {
+            (Some((t, hz)), Some((pt, phz))) if hz > 0 && hz == phz => {
+                t.checked_sub(pt)? as f64 / hz as f64
+            }
+            (None, None) => match (d.remote, previous.remote) {
+                (Some(t), Some(p)) => t - p,
+                (None, None) => d.local.duration_since(previous.local).as_secs_f64(),
+                _ => return None,
+            },
+            _ => return None,
+        };
+        if !seconds.is_finite() || seconds <= 0.0 {
+            return None;
+        }
+        Some((
+            first.checked_sub(previous.first)?,
+            second.checked_sub(previous.second)?,
+            seconds,
+        ))
+    }
+}
+struct Clock {
+    local: Instant,
+    boot: String,
+    remote: Option<f64>,
+    interval: u64,
+}
+#[derive(Default)]
+pub struct ApplySummary {
+    pub points: BTreeMap<String, Option<f64>>,
+    pub successes: usize,
+    pub failures: Vec<String>,
+}
+fn warm<T>(v: &mut Observed<T>, at: u64) {
+    v.state = "warmingUp";
+    v.attempted_at = Some(at);
+    v.reason = None;
+}
+fn record<T>(v: &mut Observed<T>, read: Read<T>, at: u64, out: &mut ApplySummary) {
+    if let Read::Failed(e) = &read {
+        out.failures.push(e.clone());
+    }
+    if v.apply(read, at) {
+        out.successes += 1;
+    }
 }
 pub fn apply(
-    family: Family,
-    group: &str,
-    text: &str,
-    nonce: &str,
-    paths: &[String],
-    snapshot: &mut Value,
+    state: &mut StatusState,
     base: &mut Baseline,
+    sample: Sample,
+    targets: &[Target],
+    at: u64,
+    now: Instant,
     interval: u64,
-) -> Result<(), String> {
-    let sections = if family == Family::Windows {
-        BTreeMap::new()
-    } else {
-        collectors::sections(text, nonce)?
-    };
-    let win = if family == Family::Windows {
-        collectors::windows_json(text, nonce)?
-    } else {
-        Value::Null
-    };
-    if family == Family::Windows {
-        snapshot["sourceErrors"][group] = Value::Object(
-            win["errors"]
-                .as_object()
-                .into_iter()
-                .flatten()
-                .take(16)
-                .map(|(key, value)| {
-                    (
-                        limited(key, 64),
-                        json!(limited(value.as_str().unwrap_or("数据源不可用"), 256)),
-                    )
-                })
-                .collect(),
-        );
-        if win.as_object().is_none_or(|o| {
-            o.keys()
-                .all(|k| ["schemaVersion", "nonce", "errors"].contains(&k.as_str()))
-        }) {
-            return Err("此数据组没有可用的数据源，详情见采集详情".into());
-        }
-    }
-    if family != Family::Windows && sections.is_empty() {
-        return Err("此数据组没有可用的数据源".into());
-    }
-    let get = |key: &str| sections.get(key).map(String::as_str).unwrap_or("");
-    match group {
-        "identity" => {
-            let architecture = if family == Family::Windows {
-                win["cpu"].as_array().into_iter().flatten().find_map(|cpu| {
-                    match cpu["architecture"].as_u64()? {
-                        0 => Some("x86"),
-                        1 => Some("MIPS"),
-                        2 => Some("Alpha"),
-                        3 => Some("PowerPC"),
-                        5 => Some("ARM"),
-                        6 => Some("IA64"),
-                        9 => Some("x86_64"),
-                        12 => Some("ARM64"),
-                        _ => None,
-                    }
-                    .map(str::to_string)
-                })
-            } else if family == Family::Darwin && get("arm64").trim() == "1" {
-                Some("ARM64".into())
-            } else {
-                normalize_architecture(get("architecture"))
-            };
-            let (system, hostname, model, cores, total) = if family == Family::Windows {
-                let cores = win["cpu"]
-                    .as_array()
-                    .map(|a| a.iter().filter_map(|v| v["cores"].as_u64()).sum::<u64>());
-                (
-                    win["os"]["system"].as_str().unwrap_or("").into(),
-                    win["os"]["hostname"].as_str().unwrap_or("").into(),
-                    win["cpu"][0]["model"]
-                        .as_str()
-                        .or(win["device"]["model"].as_str())
-                        .unwrap_or("")
-                        .into(),
-                    cores,
-                    number(&win["os"]["totalBytes"]),
-                )
-            } else if family == Family::Linux {
-                let os = get("os")
-                    .lines()
-                    .find_map(|l| l.strip_prefix("PRETTY_NAME="))
-                    .map(|s| s.trim_matches(['"', '\'']).to_string())
-                    .unwrap_or_else(|| get("system").trim().into());
-                let model = get("cpuinfo")
-                    .lines()
-                    .filter_map(|l| l.split_once(':'))
-                    .find(|(k, _)| ["model name", "Hardware", "Processor"].contains(&k.trim()))
-                    .map(|(_, v)| v.trim().to_string())
-                    .unwrap_or_else(|| get("model").trim_matches(['\0', '\n']).into());
-                let cores = get("cpuinfo")
-                    .lines()
-                    .filter(|l| {
-                        l.split_once(':')
-                            .is_some_and(|(k, _)| k.trim() == "processor")
-                    })
-                    .count();
-                (
-                    os,
-                    get("hostname").trim().into(),
-                    model,
-                    (cores > 0).then_some(cores as u64),
-                    None,
-                )
-            } else {
-                (
-                    (if get("os").is_empty() {
-                        get("system")
-                    } else {
-                        get("os")
-                    })
-                    .trim()
-                    .to_string(),
-                    get("hostname").trim().to_string(),
-                    get("model").trim().to_string(),
-                    count(get("cores")),
-                    count(get("total")),
-                )
-            };
-            snapshot["identity"] = json!({"system":limited(&system,256),"hostname":limited(&hostname,256),"cpuModel":limited(&model,256),"cores":cores,"architecture":architecture});
-            if let Some(total) = total {
-                snapshot["memoryTotal"] = json!(total.to_string());
+) -> ApplySummary {
+    let mut out = ApplySummary::default();
+    match sample {
+        Sample::Identity(v) => record(&mut state.identity, v, at, &mut out),
+        Sample::Uptime(v) => record(&mut state.uptime, v, at, &mut out),
+        Sample::Topology(v) => {
+            record(&mut state.interfaces, v.interfaces, at, &mut out);
+            record(&mut state.load, v.load, at, &mut out);
+            if let Read::Failed(e) = &v.mounts {
+                out.failures.push(e.clone());
+            }
+            if state.mounts.scan(v.mounts, at) {
+                out.successes += 1;
             }
         }
-        "dynamic" => {
-            let now = Instant::now();
-            let uptime = if family == Family::Linux {
-                get("uptime")
-                    .split_whitespace()
-                    .next()
-                    .and_then(|s| s.parse::<f64>().ok())
-            } else {
-                None
-            };
-            let mut raw = Raw {
-                time: uptime
-                    .unwrap_or_else(|| snapshot["originMs"].as_f64().unwrap_or(0.0) / 1000.0),
-                boot: get("boot").trim().into(),
-                cpu: None,
-                counters: HashMap::new(),
-                counter_clocks: HashMap::new(),
+        Sample::Capacity(v) => match v {
+            Read::Value(v) => {
+                for r in v.rows {
+                    if state.mounts.capacity(r, targets, at) {
+                        out.successes += 1;
+                    }
+                }
+                for (path, error) in v.failures {
+                    state.mounts.fail_capacity(&path, &error, at);
+                    out.failures.push(error);
+                }
+            }
+            Read::Failed(e) => {
+                state.mounts.fail_capacity("", &e, at);
+                out.failures.push(e);
+            }
+            Read::Unsupported => {}
+        },
+        Sample::Dynamic(v) => {
+            let clock = Clock {
                 local: now,
+                boot: v.boot,
+                remote: v.remote_seconds,
+                interval,
             };
-            if family == Family::Linux {
-                let values: Vec<u64> = get("cpu")
-                    .lines()
-                    .find(|l| l.starts_with("cpu "))
-                    .unwrap_or("")
-                    .split_whitespace()
-                    .skip(1)
-                    .take(8)
-                    .map(str::parse)
-                    .collect::<Result<_, _>>()
-                    .map_err(|_| "CPU 计数无效")?;
-                if values.len() >= 4 {
-                    raw.cpu = values
-                        .iter()
-                        .try_fold(0u64, |n, &v| n.checked_add(v))
-                        .map(|total| {
-                            (
-                                total,
-                                values[3].saturating_add(values.get(4).copied().unwrap_or(0)),
-                            )
-                        });
+            match v.cpu {
+                Read::Value(Cpu::Direct(value)) => {
+                    record(
+                        &mut state.cpu,
+                        Read::Value(Gauge {
+                            value,
+                            source: "top · 1 秒观察窗口".into(),
+                            window_ms: Some(1000.0),
+                        }),
+                        at,
+                        &mut out,
+                    );
+                    out.points.insert("cpu".into(), Some(value));
                 }
-                let m = meminfo(get("memory"));
-                let total = m.get("MemTotal").copied();
-                let available = m.get("MemAvailable").copied().or_else(|| {
-                    let free = *m.get("MemFree")?;
-                    Some(
-                        free.saturating_add(*m.get("Buffers")?)
-                            .saturating_add(*m.get("Cached")?)
-                            .saturating_add(m.get("SReclaimable").copied().unwrap_or(0))
-                            .saturating_sub(m.get("Shmem").copied().unwrap_or(0)),
-                    )
-                });
-                if let Some(total) = total {
-                    snapshot["memoryTotal"] = json!(total.to_string());
-                    snapshot["memory"] = json!({"value":available.filter(|&a|a<=total && total>0).map(|a|(total-a) as f64/total as f64*100.0),"state":if available.is_some(){"ok"}else{"unavailable"},"total":total.to_string(),"available":available.map(|n|n.to_string()),"estimated":!m.contains_key("MemAvailable"),"source":"procfs"});
-                } else {
-                    snapshot["memory"] =
-                        json!({"value":null,"state":"unavailable","reason":"内存数据源不可读"});
-                }
-                snapshot["swap"] = json!({"total":m.get("SwapTotal").map(u64::to_string),"available":m.get("SwapFree").map(u64::to_string)});
-                for line in get("network").lines().skip(2) {
-                    if let Some((name, values)) = line.split_once(':') {
-                        let n: Vec<_> = values.split_whitespace().collect();
-                        if let (Some(a), Some(b)) = (
-                            n.first().and_then(|n| count(n)),
-                            n.get(8).and_then(|n| count(n)),
-                        ) {
-                            let name = name.trim();
-                            let identity = snapshot["interfaces"]
-                                .as_array()
-                                .and_then(|a| a.iter().find(|v| v["name"] == name))
-                                .and_then(|v| v["id"].as_str())
-                                .unwrap_or(name);
-                            raw.counters.insert(format!("net:{identity}"), (a, b));
-                        }
-                    }
-                }
-                let mut disks = Vec::new();
-                for line in get("disk").lines() {
-                    let n: Vec<_> = line.split_whitespace().collect();
-                    if n.len() < 14 {
-                        continue;
-                    }
-                    let name = n[2];
-                    if name.starts_with("loop") || name.starts_with("ram") {
-                        continue;
-                    }
-                    if let (Some(a), Some(b)) = (
-                        count(n[5]).and_then(|n| n.checked_mul(512)),
-                        count(n[9]).and_then(|n| n.checked_mul(512)),
-                    ) {
-                        let id = format!("{}:{}", n[0], n[1]);
-                        raw.counters.insert(format!("disk:{id}"), (a, b));
-                        disks.push(json!({"id":id,"name":name}));
-                    }
-                }
-                disks.truncate(256);
-                snapshot["disks"] = json!(disks);
-                if let Some(up) = uptime {
-                    snapshot["uptime"] = json!({"seconds":up,"estimated":false});
-                }
-            } else if family == Family::Windows {
-                if let (Some(t), Some(idle)) =
-                    (number(&win["cpu"]["time"]), number(&win["cpu"]["idle"]))
-                {
-                    raw.cpu = Some((t, idle));
-                    raw.time = t as f64 / 10_000_000.0;
-                    raw.boot = "windows-perf".into();
-                }
-                if let (Some(total), Some(available)) = (
-                    number(&snapshot["memoryTotal"]),
-                    number(&win["memory"]["availableBytes"]),
-                ) {
-                    snapshot["memory"] = json!({"value":(available<=total && total>0).then(||(total-available) as f64/total as f64*100.0),"state":"ok","total":total.to_string(),"available":available.to_string(),"source":"Windows 可见内存"});
-                } else {
-                    snapshot["memory"] = json!({"value":null,"state":"unavailable","reason":"Windows 内存数据源不可读"});
-                }
-                for (kind, field, a, b) in [
-                    ("net", "network", "received", "sent"),
-                    ("disk", "disks", "read", "write"),
-                ] {
-                    let mut rows = Vec::new();
-                    for v in win[field].as_array().into_iter().flatten().take(256) {
-                        if let (Some(id), Some(x), Some(y)) =
-                            (v["id"].as_str(), number(&v[a]), number(&v[b]))
-                        {
-                            let key = format!("{kind}:{id}");
-                            raw.counters.insert(key.clone(), (x, y));
-                            if let (Some(time), Some(frequency)) = (
-                                number(&v["time"]),
-                                number(&v["frequency"]).filter(|n| *n > 0),
-                            ) {
-                                raw.counter_clocks.insert(key, (time, frequency));
-                            }
-                            rows.push(json!({"id":limited(id,256),"name":limited(v["name"].as_str().unwrap_or(id),256),"counterInstance":kind=="net"}));
-                        }
-                    }
-                    snapshot[if kind == "net" {
-                        "counterInterfaces"
+                Read::Value(Cpu::Counter(total, idle)) => {
+                    out.successes += 1;
+                    let cpu_clock = (state.family == Some(collectors::Family::Windows))
+                        .then_some((total, 10_000_000));
+                    let delta = base.delta("cpu", total, idle, &clock, cpu_clock);
+                    let value = delta.and_then(|(t, i, sec)| {
+                        (t > 0 && i <= t).then_some(((t - i) as f64 / t as f64 * 100.0, sec))
+                    });
+                    if let Some((value, seconds)) = value {
+                        state.cpu.apply(
+                            Read::Value(Gauge {
+                                value,
+                                source: "累计 CPU 时间".into(),
+                                window_ms: Some(seconds * 1000.0),
+                            }),
+                            at,
+                        );
                     } else {
-                        "disks"
-                    }] = json!(rows);
-                }
-            } else {
-                if family == Family::Darwin {
-                    let cpu = get("cpu")
-                        .lines()
-                        .filter(|l| l.starts_with("CPU usage:"))
-                        .last()
-                        .and_then(|l| l.split(',').last())
-                        .and_then(|l| l.split('%').next())
-                        .and_then(|s| s.trim().parse::<f64>().ok())
-                        .filter(|v| (0.0..=100.0).contains(v));
-                    snapshot["cpu"] = metric(cpu.map(|v| 100.0 - v), "top · 1 秒观察窗口");
-                    snapshot["memoryDetails"] = json!(limited(get("memory"), 4096));
-                } else {
-                    let n: Vec<u64> = get("cpu")
-                        .split_whitespace()
-                        .map(str::parse)
-                        .collect::<Result<_, _>>()
-                        .unwrap_or_default();
-                    if n.len() == 5 {
-                        raw.cpu = n
-                            .iter()
-                            .try_fold(0u64, |a, &b| a.checked_add(b))
-                            .map(|t| (t, n[4]));
+                        warm(&mut state.cpu, at);
                     }
+                    out.points.insert("cpu".into(), value.map(|v| v.0));
                 }
-                for (id, a, b) in netstat(get("network")) {
-                    raw.counters.insert(format!("net:{id}"), (a, b));
+                other => {
+                    base.streams.remove("cpu");
+                    record(
+                        &mut state.cpu,
+                        match other {
+                            Read::Failed(e) => Read::Failed(e),
+                            _ => Read::Unsupported,
+                        },
+                        at,
+                        &mut out,
+                    );
+                    out.points.insert("cpu".into(), None);
                 }
             }
-            let compatible = base.previous.as_ref().filter(|p| {
-                p.boot == raw.boot
-                    && now.duration_since(p.local).as_secs_f64() <= interval as f64 * 3.0
-                    && (uptime.is_none() || raw.time > p.time)
-            });
-            let elapsed = compatible
-                .map(|p| {
-                    if family == Family::Windows {
-                        raw.cpu
-                            .zip(p.cpu)
-                            .and_then(|(n, p)| n.0.checked_sub(p.0))
-                            .map(|delta| delta as f64 / 10_000_000.0)
-                            .unwrap_or(0.0)
-                    } else if family == Family::Linux {
-                        raw.time - p.time
-                    } else {
-                        now.duration_since(p.local).as_secs_f64()
-                    }
-                })
-                .filter(|n| *n > 0.0 && n.is_finite());
-            if family != Family::Darwin {
-                let cpu = compatible.and_then(|p| {
-                    let (t, i) = raw.cpu?;
-                    let (pt, pi) = p.cpu?;
-                    let total = t.checked_sub(pt)?;
-                    let idle = i.checked_sub(pi)?;
-                    (total > 0 && idle <= total)
-                        .then(|| (total - idle) as f64 / total as f64 * 100.0)
-                });
-                snapshot["cpu"] = metric(
-                    cpu,
-                    if family == Family::Windows {
-                        "Windows inverse timer"
-                    } else {
-                        "累计 CPU 时间"
-                    },
-                );
-            }
-            let mut rates = serde_json::Map::new();
-            for (key, &(a, b)) in raw.counters.iter().take(512) {
-                let previous = compatible.and_then(|p| p.counters.get(key));
-                let window = if family == Family::Windows {
-                    compatible
-                        .and_then(|p| raw.counter_clocks.get(key).zip(p.counter_clocks.get(key)))
-                        .and_then(|(&(t, f), &(pt, pf))| {
-                            (f == pf)
-                                .then(|| t.checked_sub(pt).map(|n| n as f64 / f as f64))
-                                .flatten()
-                        })
-                        .filter(|n| *n > 0.0)
-                } else {
-                    elapsed
-                };
-                let rate = previous.and_then(|&(x, y)| {
-                    Some((
-                        a.checked_sub(x)? as f64 / window?,
-                        b.checked_sub(y)? as f64 / window?,
-                    ))
-                });
-                rates.insert(key.clone(),json!({"first":rate.map(|v|v.0),"second":rate.map(|v|v.1),"state":if rate.is_some(){"ok"}else{"warmingUp"},"estimated":!matches!(family,Family::Linux|Family::Windows)}));
-            }
-            snapshot["rates"] = Value::Object(rates);
-            snapshot["cpu"]["windowMs"] = if family == Family::Darwin {
-                json!(1000)
-            } else {
-                json!(elapsed.map(|n| n * 1000.0))
+            let memory_value = match &v.memory {
+                Read::Value(m) => Some((m.total - m.available) as f64 / m.total as f64 * 100.0),
+                _ => None,
             };
-            base.previous = Some(raw);
+            record(&mut state.memory, v.memory, at, &mut out);
+            out.points.insert("memory".into(), memory_value);
+            counters(
+                state,
+                base,
+                v.network,
+                "net",
+                &clock,
+                at,
+                v.estimated,
+                &mut out,
+            );
+            counters(
+                state,
+                base,
+                v.disks,
+                "disk",
+                &clock,
+                at,
+                v.estimated,
+                &mut out,
+            );
+            if let Some(up) = v.uptime {
+                state.uptime.apply(Read::Value(up), at);
+            }
+            state.swap = v.swap;
+        }
+    }
+    out
+}
+fn counters(
+    state: &mut StatusState,
+    base: &mut Baseline,
+    read: Read<Vec<Counter>>,
+    kind: &str,
+    clock: &Clock,
+    at: u64,
+    estimated: bool,
+    out: &mut ApplySummary,
+) {
+    let source = if kind == "net" {
+        &mut state.network_source
+    } else {
+        &mut state.disk_source
+    };
+    match read {
+        Read::Value(rows) => {
+            source.apply(Read::Value(()), at);
+            out.successes += 1;
+            let prefix = format!("{kind}:");
+            let keys: std::collections::BTreeSet<_> = rows
+                .iter()
+                .map(|r| format!("{kind}:{}", r.device.id))
+                .collect();
+            state
+                .rates
+                .retain(|k, _| !k.starts_with(&prefix) || keys.contains(k));
+            base.streams
+                .retain(|k, _| !k.starts_with(&prefix) || keys.contains(k));
+            let devices: Vec<_> = rows.iter().map(|r| r.device.clone()).collect();
+            if kind == "disk" {
+                state.disks.apply(Read::Value(devices), at);
+            } else if state.family == Some(collectors::Family::Windows) {
+                state.counter_interfaces.apply(Read::Value(devices), at);
+            } else {
+                let list = state.interfaces.value.get_or_insert_with(Vec::new);
+                for device in devices {
+                    if !list.iter().any(|d| d.id == device.id) && list.len() < 256 {
+                        list.push(device);
+                    }
+                }
+            }
+            for r in rows {
+                let key = format!("{kind}:{}", r.device.id);
+                let delta = base.delta(&key, r.first, r.second, clock, r.clock);
+                let slot = state.rates.entry(key.clone()).or_default();
+                let rates = delta.map(|(a, b, seconds)| Rates {
+                    first: a as f64 / seconds,
+                    second: b as f64 / seconds,
+                    estimated,
+                });
+                out.points
+                    .insert(format!("{key}:first"), rates.as_ref().map(|r| r.first));
+                out.points
+                    .insert(format!("{key}:second"), rates.as_ref().map(|r| r.second));
+                if let Some(v) = rates {
+                    slot.apply(Read::Value(v), at);
+                } else {
+                    warm(slot, at);
+                }
+            }
+        }
+        other => {
+            let reason = match other {
+                Read::Failed(e) => {
+                    out.failures.push(e.clone());
+                    Some(e)
+                }
+                _ => None,
+            };
+            source.apply(reason.clone().map_or(Read::Unsupported, Read::Failed), at);
+            let prefix = format!("{kind}:");
+            base.streams.retain(|k, _| !k.starts_with(&prefix));
+            for (k, r) in state
+                .rates
+                .iter_mut()
+                .filter(|(k, _)| k.starts_with(&prefix))
+            {
+                r.apply(reason.clone().map_or(Read::Unsupported, Read::Failed), at);
+                out.points.insert(format!("{k}:first"), None);
+                out.points.insert(format!("{k}:second"), None);
+            }
+        }
+    }
+}
+pub fn failed(
+    state: &mut StatusState,
+    base: &mut Baseline,
+    group: &str,
+    error: &str,
+    at: u64,
+) -> ApplySummary {
+    let mut out = ApplySummary::default();
+    match group {
+        "dynamic" => {
+            base.clear();
+            state.cpu.apply(Read::Failed(error.to_string()), at);
+            state.memory.apply(Read::Failed(error.to_string()), at);
+            state
+                .network_source
+                .apply(Read::Failed(error.to_string()), at);
+            state.disk_source.apply(Read::Failed(error.to_string()), at);
+            out.points.insert("cpu".into(), None);
+            out.points.insert("memory".into(), None);
+            for (k, r) in &mut state.rates {
+                r.apply(Read::Failed(error.to_string()), at);
+                out.points.insert(format!("{k}:first"), None);
+                out.points.insert(format!("{k}:second"), None);
+            }
+        }
+        "identity" => {
+            state.identity.apply(Read::Failed(error.to_string()), at);
         }
         "topology" => {
-            if family == Family::Linux {
-                let rows:Vec<_>=get("interfaces").lines().filter_map(|l|{let n:Vec<_>=l.split('|').collect();if n.len()<4 {return None;}let addresses:Vec<_>=get("addresses").lines().filter(|l|l.split_whitespace().nth(1).is_some_and(|s|s.trim_end_matches(':')==n[0])).filter_map(|l|l.split_whitespace().nth(3)).map(|s|limited(s,128)).collect();Some(json!({"id":format!("{}:{}:{}",n[0],n[1],n[2]),"name":limited(n[0],256),"state":n[3],"addresses":addresses}))}).take(256).collect();
-                snapshot["interfaces"] = json!(rows);
-                let mounts = collectors::mount_paths(get("mounts"));
-                snapshot["mountTopology"] = crate::shared_state::linux_mounts(get("mounts"));
-                let complete = snapshot["mountTopology"]["coverage"] == "complete";
-                if let Some(rows) = snapshot["filesystems"].as_array_mut().filter(|_| complete) {
-                    rows.retain(|r| {
-                        r["path"]
-                            .as_str()
-                            .is_some_and(|p| mounts.iter().any(|m| m == p))
-                    });
-                }
-                snapshot["mountPaths"] = json!(mounts);
-                snapshot["load"] = json!(get("load")
-                    .split_whitespace()
-                    .take(3)
-                    .map(str::to_owned)
-                    .collect::<Vec<_>>());
-            } else if family == Family::Windows {
-                let rows:Vec<_>=win["mounts"].as_array().into_iter().flatten().take(512).map(|r|json!({"identity":[r["id"],r["path"]],"capacityIdentity":r["id"],"path":r["path"],"pathStyle":"windows","device":r["id"],"filesystemType":r["kind"],"readOnly":null})).collect();
-                snapshot["mountTopology"] = json!({"mounts":rows,"coverage":"partial","reason":"本地固定卷的主挂载路径；不包含网络卷及所有附加挂载点","observedAt":crate::scheduler::timestamp()});
-                snapshot["interfaces"] = json!(win["interfaces"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .take(256)
-                    .cloned()
-                    .collect::<Vec<_>>());
-            } else {
-                let rows:Vec<_>=df_all(get("filesystems")).iter().map(|r|json!({"identity":[r["id"],r["path"]],"path":r["path"],"pathStyle":"posix","device":r["id"],"filesystemType":null,"readOnly":null})).collect();
-                snapshot["mountTopology"] = json!({"mounts":rows,"coverage":"partial","reason":"df 提供的本地挂载路径，不能确认完整拓扑及只读属性","observedAt":crate::scheduler::timestamp()});
-                snapshot["loadText"] = json!(limited(get("load").trim(), 512));
-                let names: Vec<_> = get("interfaces")
-                    .lines()
-                    .filter(|l| !l.starts_with(char::is_whitespace))
-                    .filter_map(|l| l.split_once(':'))
-                    .map(|(name, _)| json!({"id":name,"name":name}))
-                    .take(256)
-                    .collect();
-                snapshot["interfaces"] = json!(names);
-            }
+            state.interfaces.apply(Read::Failed(error.to_string()), at);
+            state.load.apply(Read::Failed(error.to_string()), at);
+            state
+                .mounts
+                .status
+                .apply(Read::Failed(error.to_string()), at);
         }
-        "capacity" => {
-            let observed = crate::scheduler::timestamp();
-            if family == Family::Windows {
-                snapshot["filesystems"] = json!(win["filesystems"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .take(512)
-                    .cloned()
-                    .map(|mut row| {
-                        row["observedAt"] = json!(observed);
-                        crate::filesystem::associate(&mut row, &snapshot["mountTopology"]);
-                        row
-                    })
-                    .collect::<Vec<_>>());
-            } else {
-                let mut rows = if family == Family::Linux {
-                    snapshot["filesystems"]
-                        .as_array()
-                        .cloned()
-                        .unwrap_or_default()
-                } else {
-                    vec![]
-                };
-                for (i, path) in paths.iter().enumerate().take(16) {
-                    if let Some(mut fs) = df(get(&format!("fs{i}")), Some(path)) {
-                        fs["observedAt"] = json!(observed);
-                        crate::filesystem::associate(&mut fs, &snapshot["mountTopology"]);
-                        rows.retain(|v| v["path"] != *path);
-                        rows.push(fs);
-                    }
-                }
-                if family != Family::Linux {
-                    rows = df_all(get("filesystems"));
-                    for row in &mut rows {
-                        row["observedAt"] = json!(observed);
-                        crate::filesystem::associate(row, &snapshot["mountTopology"]);
-                    }
-                }
-                rows.truncate(512);
-                snapshot["filesystems"] = json!(rows);
-            }
-        }
+        "capacity" => state.mounts.fail_capacity("", error, at),
         "uptime" => {
-            let seconds = if family == Family::Windows {
-                number(&win["uptime"]["seconds"]).map(|n| n as f64)
-            } else if family == Family::Linux {
-                get("uptime")
-                    .split_whitespace()
-                    .next()
-                    .and_then(|s| s.parse::<f64>().ok())
-            } else {
-                let boot = get("boottime")
-                    .split("sec =")
-                    .nth(1)
-                    .and_then(|s| s.split(',').next())
-                    .and_then(|s| s.trim().parse::<u64>().ok())
-                    .or_else(|| get("boottime").split_whitespace().next().and_then(count));
-                count(get("now"))
-                    .zip(boot)
-                    .and_then(|(now, boot)| now.checked_sub(boot))
-                    .map(|n| n as f64)
-            };
-            if let Some(seconds) = seconds.filter(|n| *n >= 0.0 && n.is_finite()) {
-                snapshot["uptime"] = json!({"seconds":seconds,"estimated":!matches!(family,Family::Linux|Family::Windows)});
-            }
+            state.uptime.apply(Read::Failed(error.to_string()), at);
         }
         _ => {}
     }
-    if group == "topology" {
-        crate::filesystem::reconcile(snapshot);
-    }
-    Ok(())
+    out
 }
 pub fn limited(s: &str, n: usize) -> String {
-    s.chars().take(n).collect()
+    collectors::common::limited(s, n)
 }
-fn meminfo(text: &str) -> HashMap<String, u64> {
-    text.lines()
-        .filter_map(|l| {
-            let (k, v) = l.split_once(':')?;
-            let n = v
-                .split_whitespace()
-                .next()?
-                .parse::<u64>()
-                .ok()?
-                .checked_mul(1024)?;
-            Some((k.into(), n))
+
+#[cfg(test)]
+mod reducer_tests {
+    use super::*;
+    fn dynamic(cpu: Read<Cpu>, network: Read<Vec<Counter>>) -> Sample {
+        Sample::Dynamic(Dynamic {
+            cpu,
+            memory: Read::Unsupported,
+            network,
+            disks: Read::Unsupported,
+            boot: "boot".into(),
+            remote_seconds: None,
+            uptime: None,
+            estimated: true,
+            swap: None,
         })
-        .collect()
+    }
+    fn net(a: u64, t: u64) -> Read<Vec<Counter>> {
+        Read::Value(vec![Counter {
+            device: Device {
+                id: "en0".into(),
+                name: "en0".into(),
+                ..Device::default()
+            },
+            first: a,
+            second: a,
+            clock: Some((t, 10)),
+        }])
+    }
+    #[test]
+    fn independent_clock_survives_cpu_failure_and_old_values_are_not_new_history() {
+        let mut s = StatusState::default();
+        let mut b = Baseline::default();
+        let now = Instant::now();
+        apply(
+            &mut s,
+            &mut b,
+            dynamic(Read::Value(Cpu::Direct(20.0)), net(9007199254740993, 100)),
+            &[],
+            1,
+            now,
+            5,
+        );
+        let out = apply(
+            &mut s,
+            &mut b,
+            dynamic(
+                Read::Failed("cpu failed".into()),
+                net(9007199254741043, 150),
+            ),
+            &[],
+            2,
+            now + std::time::Duration::from_secs(5),
+            5,
+        );
+        assert_eq!(s.rates["net:en0"].value.as_ref().unwrap().first, 10.0);
+        assert_eq!(s.cpu.observed_at, Some(1));
+        assert_eq!(s.cpu.value.as_ref().unwrap().value, 20.0);
+        assert_eq!(out.points["cpu"], None);
+        assert_eq!(out.points["net:en0:first"], Some(10.0));
+        let out = failed(&mut s, &mut b, "dynamic", "failed", 3);
+        assert_eq!(out.points["net:en0:first"], None);
+        let out = apply(
+            &mut s,
+            &mut b,
+            dynamic(Read::Value(Cpu::Direct(10.0)), net(9007199254741093, 200)),
+            &[],
+            4,
+            now + std::time::Duration::from_secs(10),
+            5,
+        );
+        assert_eq!(out.points["net:en0:first"], None);
+    }
 }
-fn netstat(text: &str) -> Vec<(String, u64, u64)> {
-    let mut lines = text.lines();
-    let header: Vec<_> = lines.next().unwrap_or("").split_whitespace().collect();
-    let (Some(a), Some(b)) = (
-        header.iter().position(|&s| s == "Ibytes"),
-        header.iter().position(|&s| s == "Obytes"),
-    ) else {
-        return vec![];
-    };
-    let mut seen = std::collections::HashSet::new();
-    lines
-        .filter_map(|l| {
-            let f: Vec<_> = l.split_whitespace().collect();
-            if !f.iter().any(|s| s.starts_with("<Link")) || !seen.insert(*f.first()?) {
-                return None;
-            }
-            Some((f[0].to_string(), count(f.get(a)?)?, count(f.get(b)?)?))
-        })
-        .take(256)
-        .collect()
-}
-fn df(text: &str, path: Option<&String>) -> Option<Value> {
-    df_all(text).into_iter().next().map(|mut v| {
-        if let Some(path) = path {
-            v["path"] = json!(path);
-        }
-        v
-    })
-}
-fn df_all(text: &str) -> Vec<Value> {
-    text.lines().skip(1).filter_map(|l|{let f:Vec<_>=l.split_whitespace().collect();if f.len()<6 {return None;}let(total,used,available)=(count(f[1])?.checked_mul(1024)?,count(f[2])?.checked_mul(1024)?,count(f[3])?.checked_mul(1024)?);Some(json!({"id":f[0],"path":limited(&f[5..].join(" "),4096),"total":total.to_string(),"used":used.to_string(),"available":available.to_string(),"percent":(total>0).then(||used as f64/total as f64*100.0)}))}).take(512).collect()
-}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::collectors::Family;
+    use serde_json::{json, Value};
+    fn normalize_architecture(s: &str) -> Option<String> {
+        collectors::common::architecture(s)
+    }
+    fn meminfo(s: &str) -> std::collections::HashMap<String, u64> {
+        collectors::test_meminfo(s)
+    }
+    fn netstat(s: &str) -> Vec<(String, u64, u64)> {
+        collectors::common::links(s)
+            .unwrap()
+            .into_iter()
+            .map(|r| (r.name, r.first, r.second))
+            .collect()
+    }
+    fn df(s: &str, _: Option<&String>) -> Option<Value> {
+        collectors::common::capacities(s).ok()?.first().map(|r|json!({"id":r.device,"path":r.path,"total":r.total.to_string(),"used":r.used.map(|v|v.to_string()),"available":r.available.to_string()}))
+    }
+    fn apply(
+        family: Family,
+        group: &str,
+        text: &str,
+        nonce: &str,
+        paths: &[String],
+        data: &mut Value,
+        base: &mut Baseline,
+        interval: u64,
+    ) -> Result<(), String> {
+        let mut state = StatusState::fixture(data);
+        state.family = Some(family);
+        let targets = state.mounts.targets();
+        let sample = collectors::decode(
+            family,
+            group,
+            text,
+            nonce,
+            &collectors::DecodeContext {
+                total: state.identity.value.as_ref().and_then(|v| v.total),
+                interfaces: state.interfaces.value.as_deref().unwrap_or(&[]),
+                paths,
+            },
+        )?;
+        let result = super::apply(
+            &mut state,
+            base,
+            sample,
+            &targets,
+            crate::scheduler::timestamp(),
+            Instant::now(),
+            interval,
+        );
+        *data = state.data();
+        data["filesystems"] = json!(state.mounts.rows());
+        data["mountTopology"] = json!({"mounts":state.mounts.entries.values().map(|e|json!({"identity":[e.mount.identity],"path":e.mount.path,"device":e.mount.device,"filesystemType":e.mount.kind,"readOnly":e.mount.read_only})).collect::<Vec<_>>()});
+        data["mountPaths"] = json!(state
+            .mounts
+            .targets()
+            .iter()
+            .map(|t| t.path.clone())
+            .collect::<Vec<_>>());
+        if result.successes == 0 {
+            Err(result
+                .failures
+                .first()
+                .cloned()
+                .unwrap_or("no sources".into()))
+        } else {
+            Ok(())
+        }
+    }
+    #[test]
+    fn macos_link_rows_without_hardware_address_use_byte_columns() {
+        let sample = "Name Mtu Network Address Ipkts Ierrs Ibytes Opkts Oerrs Obytes Coll\nlo0 16384 <Link#1> 26067 0 7035943 26067 0 7035943 0\nen0 1500 <Link#9> 02:00:00:00:00:01 20 0 12000 10 0 8000 0\nutun223 1400 <Link#25> 15836 0 4788974 7414 0 2143775 0\n";
+        assert_eq!(
+            netstat(sample),
+            vec![
+                ("lo0".into(), 7035943, 7035943),
+                ("en0".into(), 12000, 8000),
+                ("utun223".into(), 4788974, 2143775)
+            ]
+        );
+    }
     #[test]
     fn unix_identity_reports_architecture_without_guessing_from_model() {
         for (family, raw, arm64, expected) in [
@@ -736,8 +648,7 @@ mod tests {
     }
     #[test]
     fn capacity_batches_do_not_refresh_other_mount_timestamps() {
-        let mut data =
-            json!({"filesystems":[{"path":"/a","observedAt":1},{"path":"/b","observedAt":2}]});
+        let mut data = json!({"filesystems":[{"id":"/dev/root","path":"/a","total":"102400","used":"40960","available":"51200","observedAt":1},{"id":"/dev/b","path":"/b","total":"102400","used":"40960","available":"51200","observedAt":2}]});
         let sample = "SD1 n BEGIN fs0\nFilesystem 1024-blocks Used Available Capacity Mounted on\n/dev/root 100 40 50 40% /a\nSD1 n END fs0 0\nSD1 n DONE\n";
         apply(
             Family::Linux,
@@ -804,7 +715,8 @@ mod tests {
             5,
         )
         .unwrap();
-        assert!(snapshot["cpu"]["value"].is_null());
+        assert_eq!(snapshot["cpu"]["state"], "warmingUp");
+        assert_eq!(snapshot["cpu"]["value"], 50.0);
     }
     #[test]
     fn memory_and_reserved_space_are_not_zeroed_or_relabelled() {
@@ -900,7 +812,7 @@ mod tests {
             )
             .unwrap();
         }
-        let projected = crate::filesystem::project(&data);
+        let projected = crate::filesystem::project(&crate::mounts::MountCatalog::fixture(&data));
         let row = |path: &str| projected.iter().find(|r| r["path"] == path).unwrap();
         assert_eq!(row(&snap_path)["capacityState"], "fixedImage");
         assert_eq!(row(&snap_path)["percent"], 100.0);
@@ -930,11 +842,13 @@ mod tests {
             5,
         )
         .unwrap();
-        assert!(crate::filesystem::project(&data)
-            .iter()
-            .any(|r| r["path"] == "/boot"
-                && r["spaceWarning"] == true
-                && r["displayGroup"] == "primary"));
+        assert!(
+            crate::filesystem::project(&crate::mounts::MountCatalog::fixture(&data))
+                .iter()
+                .any(|r| r["path"] == "/boot"
+                    && r["spaceWarning"] == true
+                    && r["displayGroup"] == "primary")
+        );
         assert_eq!(data["filesystems"].as_array().unwrap().len(), 6);
         assert!(data["mountTopology"]["mounts"].as_array().unwrap().len() >= 6);
     }

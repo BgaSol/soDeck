@@ -17,7 +17,13 @@
 
 Linux/OpenWrt 走 procfs 与 POSIX sh，不 source os-release、不依赖远端 Python/SFTP；容量只查询可明确识别的本地文件系统，排除 NFS/CIFS。Windows 使用 PowerShell CIM/性能计数器；macOS/BSD/其他 Unix 使用各自可用的命令路径。缺少可靠来源的字段显示不可用。
 
-Windows 网络计数器实例尚未可靠映射为物理网卡；macOS/BSD 缺少统一口径时不显示总内存使用率或部分磁盘 I/O。编入采集器不代表真实 OpenWrt、Dropbear、各 Windows SSH shell 或 BSD 设备已经验证。
+Windows 网络计数器实例尚未可靠映射为物理网卡；BSD 缺少可靠来源时不显示总内存使用率或磁盘 I/O。macOS 自插件 0.6.0 补齐内存、磁盘 I/O 和接口地址，发行与实际验证范围见[插件 CHANGELOG](../../plugins/system-status/CHANGELOG.md)。编入采集器不代表真实 OpenWrt、Dropbear、各 Windows SSH shell 或 BSD 设备已经验证。
+
+macOS 内存按 `vm_stat` 的实际页大小，将匿名页减可清理页，再加 wired 和压缩器实际占用页，得到已用物理内存；可用为总量减已用的可回收余量估算，明确标记估算并保留口径详情，不等同 `top` 的立即空闲量。CPU 保留一秒观察窗口。磁盘按 IOBlockStorageDriver 设备分别计算累计读写字节差，不合计物理设备、分区与 APFS 层。
+
+macOS 接口保存全部已读取 IPv4/IPv6（含作用域与前缀）、链路状态与身份，网络统计只取每个接口的 Link 行。首次默认优先选择可用且有常规地址的非回环接口；手选接口保持原身份，设备移除时明确提示。IP 或设备清单超出读取预算时报告不完整，不静默宣称完整采集。
+
+每个指标和计数来源分别保存最后成功时间和最新读取结果。一项失败时保留该项旧读数并显示原因，不借其他项的成功刷新其时间；历史在该轮记录缺口。恢复后的累计计数先重新预热；暂停、断线、设备变化和过长采样间隔同样不跨缺口计算速率。
 
 ## 当前界面约束
 
@@ -41,13 +47,17 @@ Windows 网络计数器实例尚未可靠映射为物理网卡；macOS/BSD 缺�
 
 分类在完整有界缓存上执行后再分页，每页至多 32 项并受原有响应预算约束。内部 `list(kind="filesystems")` 可选 `group=overview/primary/auxiliary/system`；不传 group 保留原始完整容量列表。分组投影附加 `mountKey`、`filesystemType`、`readOnly`、`displayGroup`、`capacityState`、`spaceWarning`；快照提供 `filesystemSummary`，分页提供修订与游标。挂载身份、分组或顺序变化时页面从该组第一页重读，不拼接不同修订的页面。导航保存“其他挂载”的展开状态。
 
-容量观察与当时确认的挂载身份绑定。同路径换挂载后清空旧容量等待新观察；只读属性变化重新分类，不能更新旧容量时间。Windows 以卷 ID 关联，类型沿用现有 `kind`、只读未知；macOS/BSD 使用已有部分拓扑，类型或只读来源缺失时不猜测。共享发布继续提供完整挂载与容量，界面隐藏不会删除文件插件可读取的记录。此行为随插件 0.4.5 交付，验证范围见[插件 CHANGELOG](../../plugins/system-status/CHANGELOG.md)。
+容量任务绑定启动时已确认的挂载身份、来源与路径；结果必须仍匹配才可使用。同路径换挂载后清空旧容量等待新观察；只读属性变化重新分类，不能更新旧容量时间。Windows 以卷 ID 关联，类型沿用现有 `kind`、只读未知；macOS 使用 `mount` 提供的类型和只读属性，BSD 缺少可靠元数据时不猜测。部分扫描保留未再次确认的记录及其原时间，完整扫描才按缺席移除；无法观察到两次扫描之间来源与路径完全相同的短暂卸载重挂载。
+
+macOS 的根卷与 Data 卷进入主要存储；已确认本地 APFS、带 `nobrowse` 且位于已知精确系统挂载点的其他系统卷进入“其他挂载”，真实容量告警仍提升到主列表。普通只读卷、自定义路径不按前缀折叠。APFS 的总量、已用与可用量分别保存，共享容器的卷不相加，不要求已用加可用等于总量。
+
+展示与共享读取同一份挂载目录及已关联容量，分组隐藏不会删除文件插件可读取的记录。原分组自 0.4.5 交付，统一身份关联与 macOS 补齐随 0.6.0 交付，验证范围见[插件 CHANGELOG](../../plugins/system-status/CHANGELOG.md)。
 
 ## 生命周期与入口
 
 逻辑 view 独立于 iframe，隐藏停止页面轮询但继续后台采集。断线/重连代次隔离旧结果，关闭工作区或插件后释放受管任务；取消单个命令不关闭共享连接。容量共享经核心发布，文件插件只消费已确认的快照。
 
-- 实现：[scheduler.rs](../../plugins/system-status/src/scheduler.rs)、[filesystem.rs](../../plugins/system-status/src/filesystem.rs)、[collectors.rs](../../plugins/system-status/src/collectors.rs)、[metrics.rs](../../plugins/system-status/src/metrics.rs)、[shared_state.rs](../../plugins/system-status/src/shared_state.rs)、[view.js](../../plugins/system-status/ui/view.js)、[charts.js](../../plugins/system-status/ui/charts.js)、[style.css](../../plugins/system-status/ui/style.css)。
+- 实现：[采集与平台解析](../../plugins/system-status/src/collectors.rs)、[类型化状态](../../plugins/system-status/src/model.rs)、[计数与归并](../../plugins/system-status/src/metrics.rs)、[挂载目录](../../plugins/system-status/src/mounts.rs)、[调度与查询](../../plugins/system-status/src/scheduler.rs)、[文件系统投影](../../plugins/system-status/src/filesystem.rs)、[共享发布](../../plugins/system-status/src/shared_state.rs)、[界面](../../plugins/system-status/ui/view.js)。
 - 核心能力：[session_exec.rs](../../src-tauri/src/session_exec.rs)、[后台 view](../../src-tauri/src/component_ui/background.rs)、[共享状态](../../src-tauri/src/shared_state.rs)。契约见[插件 API](../plugin-api.md)。
 - 回归：[系统状态夹具](../../src-tauri/tests/fixtures/system_status_flow.rs)、[UI](../../scripts/test-system-status-ui.mjs)、[实际包](../../scripts/test-plugin-package.mjs)、[跨插件联动](../../scripts/test-component-communication.mjs)。源码和设备验证分开记录，运行方法见[开发指南](../development.md)。
 

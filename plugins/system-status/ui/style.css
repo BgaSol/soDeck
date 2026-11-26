@@ -124,3 +124,8 @@ footer { min-height: 31px; display: flex; justify-content: space-between; flex-w
 @container (max-width: 180px) { .resource-readouts .metric-value { font-size: 16px; }.resource-readouts .metric-value .unit { font-size: 11px; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
 @media (forced-colors: active) { .trend .first, .trend .second { stroke: CanvasText; }.trend .second { stroke-dasharray: 4 2; }.line-key { border-color: CanvasText; }.meter > span { background: Highlight; } }
+
+.reading-note { display: block; margin-top: 2px; overflow-wrap: anywhere; font-weight: 400; white-space: normal; }
+.reading-old { color: var(--muted); }
+.trend .series.reading-old { opacity: .55; stroke-dasharray: 3 2; }
+#resource-chart .series.second.reading-old { stroke-dasharray: 6 3; }

@@ -27,7 +27,7 @@ pub struct View {
     pub paused: bool,
     pub connected: bool,
     pub revision: u64,
-    pub data: Value,
+    pub data: crate::model::StatusState,
     pub navigation: Value,
     pub groups: Vec<Group>,
     pub history: BTreeMap<String, VecDeque<Point>>,
@@ -48,6 +48,7 @@ pub struct Point {
     value: Option<f64>,
 }
 struct Ticket {
+    epoch: u64,
     id: Option<String>,
     params: Value,
     nonce: String,
@@ -57,6 +58,7 @@ struct Ticket {
     a: String,
     b: String,
     paths: Vec<String>,
+    targets: Vec<crate::mounts::Target>,
     poll_due: Instant,
 }
 pub struct App {
@@ -129,11 +131,50 @@ impl App {
         }
     }
     pub fn mount(&mut self, id: &str, context: &Value) -> std::result::Result<(), String> {
+        if let Some(v) = self.views.get_mut(id).filter(|v| v.context != *context) {
+            // Reconnection reuses the logical view; target.describe requires the new exact Context.
+            v.context = context.clone();
+            v.epoch += 1;
+            v.connected = false;
+            v.family = None;
+            v.probe = 0;
+            v.data = crate::model::StatusState::default();
+            v.groups = groups();
+            v.baseline.clear();
+            v.history.clear();
+            v.publisher = crate::shared_state::Publisher::default();
+            v.state_due = Instant::now();
+            v.capacity_page = 0;
+            v.revision += 1;
+        }
         if !self.views.contains_key(id) {
             if self.views.len() >= 128 {
                 return Err("系统状态工作区已达上限".into());
             }
-            self.views.insert(id.into(),View{publisher:crate::shared_state::Publisher::default(),context:context.clone(),paused:false,connected:false,revision:1,data:json!({"identity":{},"cpu":{"value":null,"state":"warmingUp"},"memory":{"value":null,"state":"unsupported"},"rates":{},"interfaces":[],"disks":[],"filesystems":[],"mountPaths":[]}),navigation:json!({}),groups:groups(),history:BTreeMap::new(),family:None,epoch:1,sequence:0,state_due:Instant::now(),pending:false,ticket:None,probe:0,baseline:Baseline::default(),manual:false,capacity_page:0});
+            self.views.insert(
+                id.into(),
+                View {
+                    publisher: crate::shared_state::Publisher::default(),
+                    context: context.clone(),
+                    paused: false,
+                    connected: false,
+                    revision: 1,
+                    data: crate::model::StatusState::default(),
+                    navigation: json!({}),
+                    groups: groups(),
+                    history: BTreeMap::new(),
+                    family: None,
+                    epoch: 1,
+                    sequence: 0,
+                    state_due: Instant::now(),
+                    pending: false,
+                    ticket: None,
+                    probe: 0,
+                    baseline: Baseline::default(),
+                    manual: false,
+                    capacity_page: 0,
+                },
+            );
         }
         Ok(())
     }
@@ -144,52 +185,32 @@ impl App {
             return Ok(json!({"revision":v.revision,"unchanged":true}));
         }
         let group:Vec<_>=v.groups.iter().enumerate().map(|(i,g)|json!({"name":GROUPS[i],"observedAt":g.observed,"error":g.error,"quarantined":g.quarantined,"staleAfterMs":match i {1=>self.interval*2000,2=>60000,_=>120000}})).collect();
-        let mut data = v.data.clone();
-        for key in [
-            "interfaces",
-            "counterInterfaces",
-            "disks",
-            "filesystems",
-            "mountPaths",
-            "mountTopology",
-            "rates",
-        ] {
-            data.as_object_mut().unwrap().remove(key);
-        }
+        let mut data = v.data.data();
         let interfaces = if v.family == Some(Family::Windows) {
-            &v.data["counterInterfaces"]
+            &v.data.counter_interfaces
         } else {
-            &v.data["interfaces"]
+            &v.data.interfaces
         };
-        let selected = |rows: &Value, key: &str| {
-            if v.navigation[key].is_string() {
-                return rows
-                    .as_array()
-                    .and_then(|a| a.iter().find(|r| v.navigation[key] == r["id"]))
-                    .cloned()
-                    .unwrap_or_else(
-                        || json!({"id":v.navigation[key],"name":"已移除的设备","removed":true}),
-                    );
-            }
-            rows.as_array()
-                .and_then(|a| {
-                    a.iter()
-                        .find(|r| v.navigation[key] == r["id"])
-                        .or_else(|| a.iter().find(|r| r["name"] != "lo" && r["name"] != "lo0"))
-                        .or_else(|| a.first())
-                })
-                .cloned()
-                .unwrap_or(Value::Null)
-        };
-        let network = selected(interfaces, "interfaceId");
-        let disk = selected(&v.data["disks"], "diskId");
-        let rates = |prefix: &str, row: &Value| {
-            v.data["rates"][format!("{prefix}:{}", row["id"].as_str().unwrap_or(""))].clone()
+        data["sources"]["interfaces"] = interfaces.meta();
+        let network = selected_device(
+            interfaces.value.as_deref().unwrap_or(&[]),
+            v.navigation["interfaceId"].as_str(),
+            true,
+        );
+        let disk = selected_device(
+            v.data.disks.value.as_deref().unwrap_or(&[]),
+            v.navigation["diskId"].as_str(),
+            false,
+        );
+        let rates = |kind: &str, row: &Value| {
+            let key = format!("{kind}:{}", row["id"].as_str().unwrap_or(""));
+            v.data.rate(&key)
         };
         Ok(
-            json!({"revision":v.revision,"context":v.context,"paused":v.paused,"connected":v.connected,"collecting":v.ticket.is_some(),"family":v.family.map(Family::name),"intervalSeconds":self.interval,"data":data,"groups":group,"navigation":v.navigation,"network":{"device":network,"rates":rates("net",&network)},"disk":{"device":disk,"rates":rates("disk",&disk)},"filesystemTotal":v.data["filesystems"].as_array().map(Vec::len).unwrap_or(0),"filesystemSummary":crate::filesystem::summary(&crate::filesystem::project(&v.data))}),
+            json!({"revision":v.revision,"context":v.context,"paused":v.paused,"connected":v.connected,"collecting":v.ticket.is_some(),"family":v.family.map(Family::name),"intervalSeconds":self.interval,"data":data,"groups":group,"navigation":v.navigation,"network":{"device":network,"rates":rates("net",&network)},"disk":{"device":disk,"rates":rates("disk",&disk)},"filesystemTotal":v.data.mounts.rows().len(),"filesystemSummary":crate::filesystem::summary(&crate::filesystem::project(&v.data.mounts))}),
         )
     }
+
     pub fn control(
         &mut self,
         id: &str,
@@ -213,7 +234,7 @@ impl App {
                 v.paused = true;
                 v.manual = false;
                 v.epoch += 1;
-                v.baseline.previous = None;
+                v.baseline.clear();
                 for g in &mut v.groups {
                     g.manual_pending = false;
                 }
@@ -221,7 +242,7 @@ impl App {
             "resume" => {
                 v.paused = false;
                 v.epoch += 1;
-                v.baseline.previous = None;
+                v.baseline.clear();
                 for g in &mut v.groups {
                     g.due = Some(Instant::now());
                     g.quarantined = false;
@@ -264,8 +285,12 @@ impl App {
         }
         v.revision += 1;
         if ["pause", "resume"].contains(&action) {
-            v.publisher
-                .observe(&v.data, timestamp(), v.groups[2].error.as_deref(), v.paused);
+            v.publisher.observe(
+                &v.data.mounts,
+                timestamp(),
+                v.groups[2].error.as_deref(),
+                v.paused,
+            );
         }
         Ok(json!({"accepted":true,"revision":v.revision}))
     }
@@ -275,11 +300,6 @@ impl App {
             .as_str()
             .filter(|s| ["interfaces", "disks", "filesystems"].contains(s))
             .ok_or("未知列表")?;
-        let key = if kind == "interfaces" && v.family == Some(Family::Windows) {
-            "counterInterfaces"
-        } else {
-            kind
-        };
         if p["expectedRevision"]
             .as_u64()
             .is_some_and(|r| r != v.revision)
@@ -291,15 +311,31 @@ impl App {
                 .as_str()
                 .filter(|g| ["overview", "primary", "auxiliary", "system"].contains(g))
                 .ok_or("未知文件系统分组")?;
-            crate::filesystem::select(crate::filesystem::project(&v.data), group)
+            crate::filesystem::select(crate::filesystem::project(&v.data.mounts), group)
         } else {
-            let mut rows = v.data[key].as_array().cloned().unwrap_or_default();
-            for row in &mut rows {
-                if let Some(o) = row.as_object_mut() {
-                    o.remove("mountIdentity");
+            match kind {
+                "interfaces" => serde_json::to_value(if v.family == Some(Family::Windows) {
+                    &v.data.counter_interfaces.value
+                } else {
+                    &v.data.interfaces.value
+                })
+                .unwrap()
+                .as_array()
+                .cloned()
+                .unwrap_or_default(),
+                "disks" => serde_json::to_value(&v.data.disks.value)
+                    .unwrap()
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default(),
+                _ => {
+                    let mut rows = v.data.mounts.rows();
+                    for row in &mut rows {
+                        row.as_object_mut().unwrap().remove("mountIdentity");
+                    }
+                    rows
                 }
             }
-            rows
         };
         let start = p["offset"].as_u64().unwrap_or(0) as usize;
         if start > rows.len() {
@@ -332,7 +368,7 @@ impl App {
             .unwrap_or(-1.0);
         if mono > 3.0 || (mono - clock).abs() > 2.0 {
             for v in self.views.values_mut() {
-                v.baseline.previous = None;
+                v.baseline.clear();
                 v.groups[4].due = Some(now);
                 v.revision += 1;
             }
@@ -357,6 +393,29 @@ impl App {
                     params,
                 }
             };
+            if v.ticket
+                .as_ref()
+                .is_some_and(|t| t.params["expectedContext"] != v.context)
+            {
+                let t = v.ticket.as_ref().unwrap();
+                if let Some(task) = t.id.clone() {
+                    v.ticket = None;
+                    return Some(make(
+                        v,
+                        Kind::Cancel,
+                        "session.exec.release",
+                        json!({"taskId":task}),
+                    ));
+                }
+                if t.poll_due > now {
+                    continue;
+                }
+                let epoch = t.epoch;
+                let params = t.params.clone();
+                let mut work = make(v, Kind::Start, "session.exec.start", params);
+                work.epoch = epoch;
+                return Some(work);
+            }
             if v.paused && !v.manual && v.ticket.as_ref().is_some_and(|t| t.id.is_some()) {
                 let t = v.ticket.take().unwrap();
                 if let Some(task) = t.id {
@@ -453,13 +512,13 @@ impl App {
                 v.groups[group].manual_pending = false;
             }
             let nonce = format!("n{}e{}", v.sequence, v.epoch);
-            let all: Vec<String> = v.data["mountPaths"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect();
-            let paths: Vec<_> = all.iter().skip(v.capacity_page).take(16).cloned().collect();
+            let all = v.data.mounts.targets();
+            let targets: Vec<_> = if v.family == Some(Family::Linux) {
+                all.iter().skip(v.capacity_page).take(16).cloned().collect()
+            } else {
+                all.clone()
+            };
+            let paths: Vec<_> = targets.iter().map(|t| t.path.clone()).collect();
             if group == 3 {
                 v.capacity_page = if v.capacity_page + 16 >= all.len() {
                     0
@@ -478,6 +537,7 @@ impl App {
             };
             let params = json!({"viewId":id,"expectedContext":v.context,"operationId":nonce,"sequence":v.sequence.to_string(),"command":command,"timeoutMs":if group==3 {20000}else if group==5 || group==4 {5000}else{10000},"maxOutputBytes":262144});
             v.ticket = Some(Ticket {
+                epoch: v.epoch,
                 id: None,
                 params: params.clone(),
                 nonce,
@@ -487,6 +547,7 @@ impl App {
                 a: "0".into(),
                 b: "0".into(),
                 paths,
+                targets,
                 poll_due: now,
             });
             return Some(make(v, Kind::Start, "session.exec.start", params));
@@ -514,6 +575,17 @@ impl App {
             // Resolve an ambiguous start with its original ticket before releasing it.
             if v.ticket.as_ref().is_some_and(|t| t.id.is_some())
                 || (matches!(work.kind, Kind::Start) && result.is_ok())
+                || result.as_ref().is_err_and(|e| {
+                    matches!(
+                        e.data["code"].as_str(),
+                        Some(
+                            "staleContext"
+                                | "taskExpired"
+                                | "operationExpired"
+                                | "workspaceClosing"
+                        )
+                    )
+                })
             {
                 if let Some(t) = v.ticket.take() {
                     if let Some(id) = t.id {
@@ -554,19 +626,18 @@ impl App {
                         }
                         v.context = r["context"].clone();
                         v.publisher = crate::shared_state::Publisher::default();
-                        v.data["mountTopology"] = Value::Null;
-                        v.data["filesystems"] = json!([]);
+                        v.data = crate::model::StatusState::default();
                         v.epoch += 1;
                         v.family = None;
                         v.probe = 0;
                         v.groups = groups();
-                        v.baseline.previous = None;
+                        v.baseline.clear();
                         v.history.clear();
                         v.revision += 1;
                     }
                     if connected != v.connected {
                         v.connected = connected;
-                        v.baseline.previous = None;
+                        v.baseline.clear();
                         v.revision += 1;
                         if !connected {
                             if let Some(t) = v.ticket.take() {
@@ -659,7 +730,7 @@ impl App {
                             });
                         if let Some(family) = family {
                             v.family = Some(family);
-                            v.data["capabilities"] = collectors::initial_capabilities(family);
+                            v.data.family = Some(family);
                             v.groups = groups();
                             if v.manual {
                                 for g in &mut v.groups {
@@ -670,8 +741,8 @@ impl App {
                         } else {
                             v.probe += 1;
                             if v.probe >= 3 {
-                                v.data["collectionError"] =
-                                    json!("此登录环境不支持只读命令采集，可刷新重试");
+                                v.data.collection_error =
+                                    Some("此登录环境不支持只读命令采集，可刷新重试".into());
                             }
                         }
                         v.revision += 1;
@@ -679,38 +750,67 @@ impl App {
                     }
                     let now = Instant::now();
                     let observed = timestamp();
-                    let parsed = if r["state"] == "completed" {
+                    let decoded = if r["state"] == "completed" {
                         text.and_then(|text| {
-                            metrics::apply(
+                            collectors::decode(
                                 v.family.unwrap(),
                                 GROUPS[t.group],
                                 &text,
                                 &t.nonce,
-                                &t.paths,
-                                &mut v.data,
-                                &mut v.baseline,
-                                self.interval,
+                                &collectors::DecodeContext {
+                                    total: v.data.identity.value.as_ref().and_then(|v| v.total),
+                                    interfaces: v.data.interfaces.value.as_deref().unwrap_or(&[]),
+                                    paths: &t.paths,
+                                },
                             )
                         })
                     } else {
                         Err(r["error"]["message"].as_str().unwrap_or("采集失败").into())
                     };
+                    let (parsed, summary) = match decoded {
+                        Ok(sample) => {
+                            let summary = metrics::apply(
+                                &mut v.data,
+                                &mut v.baseline,
+                                sample,
+                                &t.targets,
+                                observed,
+                                now,
+                                self.interval,
+                            );
+                            let status = if summary.successes > 0 {
+                                Ok(())
+                            } else {
+                                Err(summary
+                                    .failures
+                                    .first()
+                                    .cloned()
+                                    .unwrap_or("此数据组没有可用的数据源".into()))
+                            };
+                            (status, summary)
+                        }
+                        Err(error) => {
+                            let summary = metrics::failed(
+                                &mut v.data,
+                                &mut v.baseline,
+                                GROUPS[t.group],
+                                &error,
+                                observed,
+                            );
+                            (Err(error), summary)
+                        }
+                    };
+                    if t.group == 1 {
+                        record_history(v, observed, &summary.points);
+                    }
                     let g = &mut v.groups[t.group];
                     match parsed {
                         Ok(()) => {
-                            if (t.group == 4 || (t.group == 1 && v.family == Some(Family::Linux)))
-                                && v.data["uptime"]["seconds"].is_number()
-                            {
-                                v.data["uptime"]["observedAt"] = json!(observed);
-                            }
                             g.success = Some(now);
                             g.observed = Some(observed);
                             g.error = None;
                             g.failures = 0;
                             g.due = next_due(g.due, period(t.group, self.interval), now);
-                            if t.group == 1 {
-                                record_history(v, observed);
-                            }
                         }
                         Err(message) => {
                             g.failures = g.failures.saturating_add(1);
@@ -732,7 +832,7 @@ impl App {
                     }
                     if [2, 3].contains(&t.group) {
                         v.publisher.observe(
-                            &v.data,
+                            &v.data.mounts,
                             observed,
                             v.groups[2].error.as_deref(),
                             v.paused,
@@ -743,6 +843,55 @@ impl App {
             },
         }
     }
+}
+fn selected_device(rows: &[crate::model::Device], selected: Option<&str>, network: bool) -> Value {
+    if let Some(id) = selected {
+        return rows
+            .iter()
+            .find(|d| d.id == id)
+            .map(|d| json!(d))
+            .unwrap_or_else(|| json!({"id":id,"name":"已移除的设备","removed":true}));
+    }
+    let rank = |d: &crate::model::Device| {
+        if !network {
+            return 0;
+        }
+        let loopback = matches!(d.name.as_str(), "lo" | "lo0");
+        let up = d.state.as_deref() == Some("up");
+        let usable = d.addresses.iter().any(|a| {
+            let raw = a
+                .split('/')
+                .next()
+                .unwrap_or(a)
+                .split('%')
+                .next()
+                .unwrap_or(a);
+            match raw.parse::<std::net::IpAddr>() {
+                Ok(std::net::IpAddr::V4(v)) => {
+                    !v.is_loopback() && !v.is_link_local() && !v.is_unspecified()
+                }
+                Ok(std::net::IpAddr::V6(v)) => {
+                    !v.is_loopback() && !v.is_unicast_link_local() && !v.is_unspecified()
+                }
+                _ => false,
+            }
+        });
+        if loopback {
+            5
+        } else if up && usable {
+            0
+        } else if up && !d.addresses.is_empty() {
+            1
+        } else if up {
+            2
+        } else {
+            3
+        }
+    };
+    rows.iter()
+        .min_by_key(|d| (rank(d), d.name.as_str()))
+        .map(|d| json!(d))
+        .unwrap_or(Value::Null)
 }
 fn release(view: &str, epoch: u64, id: &str) -> Work {
     Work {
@@ -787,33 +936,46 @@ fn next_due(due: Option<Instant>, seconds: Option<u64>, now: Instant) -> Option<
 fn fail_ticket(v: &mut View, message: &str, quarantine: bool) {
     if let Some(t) = v.ticket.take() {
         if t.group < 5 {
+            let at = timestamp();
+            let outcome =
+                metrics::failed(&mut v.data, &mut v.baseline, GROUPS[t.group], message, at);
+            if t.group == 1 {
+                record_history(v, at, &outcome.points);
+            }
             let g = &mut v.groups[t.group];
             g.error = Some(metrics::limited(message, 512));
             g.quarantined = quarantine;
             g.due = (!quarantine).then(|| Instant::now() + Duration::from_secs(5));
         } else {
             v.probe = 3;
-            v.data["collectionError"] = json!(message);
+            v.data.collection_error = Some(message.into());
         }
     }
     v.revision += 1;
 }
-fn record_history(v: &mut View, at: u64) {
-    let mut points = vec![
-        ("cpu".to_string(), v.data["cpu"]["value"].clone()),
-        ("memory".to_string(), v.data["memory"]["value"].clone()),
-    ];
-    if let Some(rates) = v.data["rates"].as_object() {
-        for (key, rate) in rates.iter().take(64) {
-            points.push((format!("{key}:first"), rate["first"].clone()));
-            points.push((format!("{key}:second"), rate["second"].clone()));
-        }
-    }
+fn record_history(v: &mut View, at: u64, points: &BTreeMap<String, Option<f64>>) {
+    let selected = v.navigation["interfaceId"]
+        .as_str()
+        .map(|id| format!("net:{id}:"));
+    let mut points: Vec<_> = points.iter().collect();
+    points.sort_by_key(|(key, _)| {
+        (
+            if key.as_str() == "cpu" || key.as_str() == "memory" {
+                0
+            } else if selected.as_ref().is_some_and(|s| key.starts_with(s)) {
+                1
+            } else {
+                2
+            },
+            key.as_str(),
+        )
+    });
+    points.truncate(130);
     for (key, value) in points {
-        let history = v.history.entry(key).or_default();
+        let history = v.history.entry(key.clone()).or_default();
         history.push_back(Point {
             at,
-            value: value.as_f64().filter(|v| v.is_finite()),
+            value: value.filter(|v| v.is_finite()),
         });
         while history.len() > 100 || history.front().is_some_and(|v| v.at + 300000 < at) {
             history.pop_front();
@@ -847,7 +1009,7 @@ fn value_size(v: &Value) -> usize {
 }
 fn cache_size(v: &View) -> usize {
     v.publisher.bytes()
-        + value_size(&v.data)
+        + v.data.bytes()
         + value_size(&v.navigation)
         + v.baseline.memory_usage()
         + v.history
@@ -866,20 +1028,26 @@ fn shrink(v: &mut View) -> bool {
         }
     }
     if !changed {
-        for key in ["filesystems", "interfaces", "counterInterfaces", "disks"] {
-            if let Some(a) = v.data[key].as_array_mut() {
-                if !a.is_empty() {
-                    a.truncate(a.len() / 2);
+        changed = v.data.mounts.trim();
+        for source in [
+            &mut v.data.interfaces,
+            &mut v.data.counter_interfaces,
+            &mut v.data.disks,
+        ] {
+            if let Some(rows) = source.value.as_mut() {
+                if !rows.is_empty() {
+                    rows.truncate(rows.len() / 2);
                     changed = true;
                 }
             }
         }
-        if v.baseline.previous.take().is_some() {
+        if v.baseline.memory_usage() > 0 {
+            v.baseline.clear();
             changed = true;
         }
     }
     if changed {
-        v.data["cacheLimited"] = json!(true);
+        v.data.cache_limited = true;
         v.revision += 1;
     }
     changed
@@ -971,6 +1139,70 @@ pub fn start(app: Arc<Mutex<App>>, client: Client) {
 mod tests {
     use super::*;
     #[test]
+    fn network_selection_prefers_active_routable_addresses_and_keeps_explicit_identity() {
+        use crate::model::Device;
+        let rows = vec![
+            Device {
+                id: "gif".into(),
+                name: "gif0".into(),
+                state: Some("down".into()),
+                ..Device::default()
+            },
+            Device {
+                id: "awdl".into(),
+                name: "awdl0".into(),
+                state: Some("up".into()),
+                addresses: vec!["fe80::1%awdl0/64".into()],
+                ..Device::default()
+            },
+            Device {
+                id: "en".into(),
+                name: "en0".into(),
+                state: Some("up".into()),
+                addresses: vec!["192.0.2.1/24".into(), "2001:db8::1/64".into()],
+                ..Device::default()
+            },
+        ];
+        assert_eq!(selected_device(&rows, None, true)["id"], "en");
+        assert_eq!(selected_device(&rows, Some("gif"), true)["id"], "gif");
+        assert_eq!(
+            selected_device(&rows, Some("removed"), true)["removed"],
+            true
+        );
+    }
+    #[test]
+    fn reconnect_rebinds_existing_view_before_exact_target_queries_and_clears_old_samples() {
+        let mut a = App::new(5);
+        let first = json!({"workspaceId":"w","connectionId":"c","generation":1});
+        let next = json!({"workspaceId":"w","connectionId":"c2","generation":2});
+        a.mount("v", &first).unwrap();
+        let v = a.views.get_mut("v").unwrap();
+        v.connected = true;
+        v.family = Some(Family::Darwin);
+        v.data.cpu.apply(
+            crate::model::Read::Value(crate::model::Gauge {
+                value: 20.0,
+                source: "old".into(),
+                window_ms: None,
+            }),
+            1,
+        );
+        v.history.insert(
+            "cpu".into(),
+            VecDeque::from([Point {
+                at: 1,
+                value: Some(20.0),
+            }]),
+        );
+        a.mount("v", &next).unwrap();
+        assert!(a.views["v"].data.cpu.value.is_none());
+        assert!(a.views["v"].history.is_empty());
+        assert_eq!(a.views.len(), 1);
+        let work = a.take_work().unwrap();
+        assert_eq!(work.method, "session.target.describe");
+        assert_eq!(work.params["expectedContext"], next);
+    }
+    #[test]
     fn dynamic_setting_does_not_speed_up_slow_groups() {
         assert_eq!(period(1, 3), Some(3));
         assert_eq!(period(2, 3), Some(30));
@@ -986,7 +1218,11 @@ mod tests {
         a.control("v", "pause", &json!({})).unwrap();
         assert!(a.views["v"].paused);
         for i in 0..4000 {
-            record_history(a.views.get_mut("v").unwrap(), i * 5000);
+            record_history(
+                a.views.get_mut("v").unwrap(),
+                i * 5000,
+                &BTreeMap::from([("cpu".into(), None), ("memory".into(), None)]),
+            );
         }
         assert!(a.views["v"].history["cpu"].len() <= 61);
         a.control("v", "refresh", &json!({})).unwrap();
@@ -1130,32 +1366,23 @@ mod tests {
             let id = i.to_string();
             app.mount(&id, &json!({})).unwrap();
             let v = app.views.get_mut(&id).unwrap();
-            v.data["filesystems"] = json!((0..32)
-                .map(|_| json!({"path":"x".repeat(65536)}))
-                .collect::<Vec<_>>());
-            v.data["cpu"] = json!({"value":23.0});
+            v.data = crate::model::StatusState::fixture(
+                &json!({"filesystems":(0..32).map(|i|json!({"path":format!("/{i}{}","x".repeat(65500))})).collect::<Vec<_>>(),"cpu":{"value":23.0}}),
+            );
         }
         app.enforce_budget();
         assert!(app.views.values().map(cache_size).sum::<usize>() <= 64 * 1024 * 1024);
-        assert!(app
-            .views
-            .values()
-            .all(|v| cache_size(v) <= 2 * 1024 * 1024 && v.data["cpu"]["value"] == 23.0));
+        assert!(app.views.values().all(|v| cache_size(v) <= 2 * 1024 * 1024
+            && v.data.cpu.value.as_ref().is_some_and(|g| g.value == 23.0)));
     }
     #[test]
     fn filesystem_overview_does_not_warn_on_snap_images() {
         let mut app = App::new(5);
         app.mount("v", &json!({})).unwrap();
         let v = app.views.get_mut("v").unwrap();
-        v.data["filesystems"] = json!([
-            {"id":"/dev/sda1","path":"/","total":"1000","used":"200","available":"800"},
-            {"id":"/dev/loop0","path":"/snap/core20/2318","total":"1000","used":"1000","available":"0"}
-        ]);
-        v.data["mountTopology"] = crate::shared_state::linux_mounts("1 0 8:1 / / rw - ext4 /dev/sda1 rw\n2 1 7:0 / /snap/core20/2318 ro - squashfs /dev/loop0 ro\n");
-        let topology = v.data["mountTopology"].clone();
-        for row in v.data["filesystems"].as_array_mut().unwrap() {
-            crate::filesystem::associate(row, &topology);
-        }
+        let mut fixture = json!({"filesystems":[{"id":"/dev/sda1","path":"/","total":"1000","used":"200","available":"800"},{"id":"/dev/loop0","path":"/snap/core20/2318","total":"1000","used":"1000","available":"0"}]});
+        fixture["mountTopology"]=crate::collectors::test_mounts("1 0 8:1 / / rw - ext4 /dev/sda1 rw\n2 1 7:0 / /snap/core20/2318 ro - squashfs /dev/loop0 ro\n");
+        v.data = crate::model::StatusState::fixture(&fixture);
         let overview = app
             .list("v", &json!({"kind":"filesystems","group":"overview"}))
             .unwrap();
@@ -1173,10 +1400,11 @@ mod tests {
         let mut app = App::new(5);
         app.mount("v", &json!({})).unwrap();
         let v = app.views.get_mut("v").unwrap();
-        v.data = crate::filesystem::tests::screenshot();
+        let mut fixture = crate::filesystem::tests::screenshot();
         for i in 0..40 {
-            v.data["filesystems"].as_array_mut().unwrap().push(json!({"id":i.to_string(),"path":format!("/mnt/{i:02}"),"total":"1000","used":"900","available":"100"}));
+            fixture["filesystems"].as_array_mut().unwrap().push(json!({"id":i.to_string(),"path":format!("/mnt/{i:02}"),"total":"1000","used":"900","available":"100"}));
         }
+        v.data = crate::model::StatusState::fixture(&fixture);
         let raw = app.list("v", &json!({"kind":"filesystems"})).unwrap();
         assert_eq!(raw["total"], 54);
         let first = app
@@ -1204,7 +1432,9 @@ mod tests {
         assert!(app
             .list("v", &json!({"kind":"filesystems","expectedRevision":0}))
             .is_err());
-        app.views.get_mut("v").unwrap().data["filesystems"] = json!((0..6).map(|i|json!({"id":i.to_string(),"path":format!("/{i}{}","x".repeat(4090)),"total":"1000","used":"900","available":"100"})).collect::<Vec<_>>());
+        app.views.get_mut("v").unwrap().data = crate::model::StatusState::fixture(
+            &json!({"filesystems":(0..6).map(|i|json!({"id":i.to_string(),"path":format!("/{i}{}","x".repeat(4090)),"total":"1000","used":"900","available":"100"})).collect::<Vec<_>>()}),
+        );
         let limited = app
             .list("v", &json!({"kind":"filesystems","group":"primary"}))
             .unwrap();
@@ -1212,7 +1442,17 @@ mod tests {
         assert!(n > 0 && n < 6);
         assert_eq!(limited["nextOffset"], n);
         assert!(serde_json::to_vec(&limited).unwrap().len() < 24 * 1024);
-        app.views.get_mut("v").unwrap().data["filesystems"][0]["path"] = json!("x".repeat(25000));
+        app.views
+            .get_mut("v")
+            .unwrap()
+            .data
+            .mounts
+            .entries
+            .values_mut()
+            .next()
+            .unwrap()
+            .mount
+            .path = "x".repeat(25000);
         assert!(app.list("v", &json!({"kind":"filesystems"})).is_err());
         app.control(
             "v",

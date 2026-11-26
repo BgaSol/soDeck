@@ -47,7 +47,9 @@ try{
  await page.evaluate(()=>settings.refresh());assert.match(await page.locator('#close-behavior-feedback').innerText(),/关闭行为保存失败/,'Login reads cannot clear close failures');
  await close.selectOption('exit');await page.evaluate(()=>closePending.resolve());await page.waitForFunction(()=>!document.querySelector('#close-behavior').disabled);assert.equal(await close.inputValue(),'exit');
  await page.evaluate(()=>{holdTheme=true;});await page.locator('#theme-dark').click();await page.evaluate(()=>paint());assert.equal(await page.locator('#theme-light').isDisabled(),true);assert.equal(await close.isEnabled(),true);
- await page.evaluate(()=>themePending.reject(Error('主题保存失败')));await page.locator('#theme-feedback').filter({hasText:'主题保存失败'}).waitFor();assert.equal(await page.locator('#theme-system').getAttribute('aria-pressed'),'true');
+ await page.locator('#theme-dark').evaluate(node=>node.blur());
+ await page.evaluate(()=>themePending.reject(Error('主题保存失败')));await page.locator('#theme-feedback').filter({hasText:'主题保存失败'}).waitFor();assert.equal(await page.locator('#theme-system').getAttribute('aria-pressed'),'true');assert.equal(await page.locator('#theme-dark').evaluate(node=>node===document.activeElement),true,'Disabled preference source regains focus after failure');
+ await page.locator('#theme-light').click();await close.focus();await page.evaluate(()=>themePending.resolve());await page.waitForFunction(()=>!document.querySelector('#theme-light').disabled);assert.equal(await close.evaluate(node=>node===document.activeElement),true,'Completed preference does not steal a newer focus');
  await page.evaluate(()=>{holdTheme=false;readFail=true;});await page.evaluate(()=>settings.refresh());assert.equal(await toggle.isDisabled(),true);assert.equal(await page.locator('#theme-dark').isEnabled(),true);assert.equal(await close.isEnabled(),true);
  await page.evaluate(()=>{readFail=false;});await page.getByRole('button',{name:'重新读取'}).click();await page.waitForFunction(()=>!document.querySelector('#login-startup').disabled);
  for(const state of ['unknown','unavailable']){
