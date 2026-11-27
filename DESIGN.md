@@ -103,16 +103,16 @@ typography:
     fontWeight: 550
   status-title:
     fontFamily: "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", sans-serif"
-    fontSize: "24px"
-    fontWeight: 650
+    fontSize: "17px"
+    fontWeight: 600
   status-section:
     fontFamily: "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", sans-serif"
-    fontSize: "15px"
+    fontSize: "13px"
     fontWeight: 600
   status-rate-narrow:
     fontFamily: "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", sans-serif"
-    fontSize: "19px"
-    fontWeight: 550
+    fontSize: "17px"
+    fontWeight: 600
 rounded:
   badge: "4px"
   navigation: "5px"
@@ -120,7 +120,7 @@ rounded:
   core-control: "7px"
   shared-control: "8px"
   menu: "10px"
-  status-card: "12px"
+  status-card: "14px"
 spacing:
   step-3: "3px"
   step-4: "4px"
@@ -332,6 +332,8 @@ good、warning、error 分别辅助成功、需关注和错误文字。success-b
 状态标签使用 badge 字号与圆角、内边距（3px 6px），普通底为 hover，成功/错误底使用语义浅底；运行中和失败标签添加 currentColor 小点（5px）。它们是文字状态标签，不能赋予不存在的点击或筛选动作。实际模板见 [views.ts](src/views.ts) 与 [plugin-settings.ts](src/plugin-settings.ts)。
 
 ### Cards / Containers
+
+系统状态插件使用自身紧凑卡片，圆角（14px）、默认内边距（12px）和间距（8px）；三主题共享布局，以 panel/canvas、描边 token 和 status-bg 表达卡片与底栏。概况和卡片随正文滚动，底栏单独贴底；极窄宽度回退并排读数。该局部布局不扩展为核心公共卡片组件。具体行为与源码见[系统状态](docs/features/system-status.md)。
 
 实际待重启容器使用 shared-control 圆角、accent-bg 底、内边距（16px）和可换行布局，正文保留重启会结束连接与任务的明确提示；它没有额外描边。管理台和工作面仍按区域拼接，不把每段信息自动包进卡片。相关行为见 [更新](docs/features/updates.md)，模板与样式见 [updates.ts](src/updates.ts)、[updates.css](src/updates.css)。
 

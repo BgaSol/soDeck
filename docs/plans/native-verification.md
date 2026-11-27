@@ -32,6 +32,7 @@
 | 默认应用 | 可控关联下确认 URL/目录真实且只到达一次；macOS 关联被保护而跳过收据的结果继续标 skipped；补真实浏览器/Finder/Explorer、UNC、Wayland 可见行为 |
 | 退出诊断 | 稳定复现并定位历史 WebView2 退出警告，区分日志与实际资源/进程残留，不能只隐藏输出 |
 | 系统状态远端 | 真实 OpenWrt/Dropbear、Windows Server/不同 SSH 默认 shell、macOS/BSD；核对字段口径、缺失值、命令成本、长时间采集及资源清理 |
+| 系统状态卡片 | 0.7.0 卡片在五平台原生 WebView 下补验真实滚轮/触控板、popover 上下翻转/焦点、侧栏 160–480px 与混合 DPI、贴底栏和读屏；Chromium 三主题/宽度回归与独立包生命周期验收不等于设备验证，来源及实际范围见[插件记录](../../plugins/system-status/CHANGELOG.md) |
 | 系统状态补充实现 | 原方案中的完整真实系统 fixture 和设备截断计数尚未实现；补齐可重复样例和有界截断的可见结果。Windows 网卡身份映射、macOS/BSD 缺失指标继续明确能力边界，不以其他字段替代 |
 
 编辑器完整样例与断言保留在[历史验收矩阵](https://github.com/BgaSol/soDeck/blob/8115fdcd5bed4108021a729da605fbde77afc2af/docs/plan-file-editor-search.md#12-可验收行为与失败矩阵)，系统交互缺口见[历史桌面记录](https://github.com/BgaSol/soDeck/blob/8115fdcd5bed4108021a729da605fbde77afc2af/docs/implementation-desktop-consistency.md)。这里保留的是尚无充分设备证据的范围，不要求重复已经通过且未受改动影响的源码测试。

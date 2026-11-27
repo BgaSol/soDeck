@@ -65,7 +65,7 @@ try {
   }
   if (plugin === "system-status") {
     assert.equal(manifest.ui.views[0].backgroundOnWorkspace, true);
-    for (const file of ["view.js", "charts.js", "style.css"]) assert(fs.statSync(path.join(checked.root, "ui", file)).size > 0);
+    for (const file of ["view.js", "render.js", "interface-picker.js", "charts.js", "style.css"]) assert(fs.statSync(path.join(checked.root, "ui", file)).size > 0);
   }
   const unexpected = [], calls = [], resources = new Set(), context = { workspaceId: "package", serverId: "server", connectionId: "connection", generation: 1 };
   peer = pluginPeer(path.join(checked.root, manifest.entry), async (method, params) => {

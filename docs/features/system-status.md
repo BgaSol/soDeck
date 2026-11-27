@@ -29,12 +29,14 @@ macOS 接口保存全部已读取 IPv4/IPv6（含作用域与前缀）、链路�
 
 服务器概况和刷新/暂停共用顶部区域，网卡选择显示当前项与全部 IP，长 IPv6 可换行。该组界面自 0.4.2 发行，版本与验证范围见[插件 CHANGELOG](../../plugins/system-status/CHANGELOG.md)。
 
-指标在一个连续滚动面中按细线分区，继承宿主三主题、字体和描边；不另设数据卡片或阴影。窄面板缩减细节并换行，设备详情转为单列。具体色值、字号和间距以插件样式为唯一实现来源。
+概况、资源、网络、文件系统、磁盘与设备信息采用紧凑卡片；正文独立滚动，采集状态、实际更新时间与采样间隔常驻底栏。继承宿主三主题角色、字重和描边，使用系统字体栈；多巴胺保留暖底、2px 描边、黄色选中与绿色状态底。宽面板将标签和读数、存储路径/容量条/百分比并排，窄面板按内容回退，极窄宽度将 CPU 与内存读数纵排。具体色值、字号和间距以插件样式为唯一实现来源。此组界面随插件 0.7.0 交付，发行状态见[插件 CHANGELOG](../../plugins/system-status/CHANGELOG.md)。
 
-- CPU 与内存在一张图中共用五分钟时间轴和 0–100% 刻度，上方并排保留当前读数、CPU 峰值及内存容量。CPU 使用蓝色实线，内存使用绿色虚线；窄面板与强制颜色模式仍保留刻度和线型区分。
+首次打开时磁盘和设备卡展开，采集详情与其他挂载收合；后续尊重已保存的展开状态和阅读位置，包括全部收起。刷新更新既有节点，保留焦点与详情；连接上下文改变后，旧查询和操作错误不能覆盖新连接。采集诊断、内存口径与历史仍按需展开；底栏只提供短状态，错误与旧读数原因保留在正文和对应指标下方。
+
+- CPU 与内存在一张图中共用五分钟时间轴和 0–100% 刻度，上方保留当前读数、CPU 峰值及内存容量。CPU 使用蓝色实线，内存使用绿色虚线；窄面板与强制颜色模式仍保留刻度和线型区分。
 - 指针、方向键和 Home/End 查看同一观察时刻的两项采样，Esc 隐藏提示；一项缺失显示“采样缺口”，不配对其他时刻的值。仅有 CPU 或内存历史时仍能查看曲线和游标，采集详情同步提供两项历史。此行为随插件 0.4.6 交付，验证范围见[插件 CHANGELOG](../../plugins/system-status/CHANGELOG.md)。
 - 曲线只连接真实连续样本，网络按所选接口历史峰值缩放；暂停、断线或过期曲线以较浅虚线区分，成功时间持续显示。
-- 文件系统采用两行概览，显示路径、使用率、已用/总量及短容量条；展开单项查看完整路径、可用量、类型、只读属性和实际容量观察时间。刷新保留详情与焦点。
+- 文件系统采用两行概览，显示路径、使用率、已用/总量、可用量及容量条；展开单项查看完整路径、类型、只读属性和实际容量观察时间。刷新保留详情与焦点。
 - 原生 select、details、meter 保留可访问名称和焦点；减少动态效果关闭过渡，强制颜色模式采用系统颜色。未知值必须使用文本说明。
 
 ## 文件系统分组
@@ -57,7 +59,7 @@ macOS 的根卷与 Data 卷进入主要存储；已确认本地 APFS、带 `nobr
 
 逻辑 view 独立于 iframe，隐藏停止页面轮询但继续后台采集。断线/重连代次隔离旧结果，关闭工作区或插件后释放受管任务；取消单个命令不关闭共享连接。容量共享经核心发布，文件插件只消费已确认的快照。
 
-- 实现：[采集与平台解析](../../plugins/system-status/src/collectors.rs)、[类型化状态](../../plugins/system-status/src/model.rs)、[计数与归并](../../plugins/system-status/src/metrics.rs)、[挂载目录](../../plugins/system-status/src/mounts.rs)、[调度与查询](../../plugins/system-status/src/scheduler.rs)、[文件系统投影](../../plugins/system-status/src/filesystem.rs)、[共享发布](../../plugins/system-status/src/shared_state.rs)、[界面](../../plugins/system-status/ui/view.js)。
+- 实现：[采集与平台解析](../../plugins/system-status/src/collectors.rs)、[类型化状态](../../plugins/system-status/src/model.rs)、[计数与归并](../../plugins/system-status/src/metrics.rs)、[挂载目录](../../plugins/system-status/src/mounts.rs)、[调度与查询](../../plugins/system-status/src/scheduler.rs)、[文件系统投影](../../plugins/system-status/src/filesystem.rs)、[共享发布](../../plugins/system-status/src/shared_state.rs)、[页面调度](../../plugins/system-status/ui/view.js)、[DOM 呈现](../../plugins/system-status/ui/render.js)、[接口选择器](../../plugins/system-status/ui/interface-picker.js)。
 - 核心能力：[session_exec.rs](../../src-tauri/src/session_exec.rs)、[后台 view](../../src-tauri/src/component_ui/background.rs)、[共享状态](../../src-tauri/src/shared_state.rs)。契约见[插件 API](../plugin-api.md)。
 - 回归：[系统状态夹具](../../src-tauri/tests/fixtures/system_status_flow.rs)、[UI](../../scripts/test-system-status-ui.mjs)、[实际包](../../scripts/test-plugin-package.mjs)、[跨插件联动](../../scripts/test-component-communication.mjs)。源码和设备验证分开记录，运行方法见[开发指南](../development.md)。
 

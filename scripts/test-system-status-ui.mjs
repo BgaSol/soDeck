@@ -41,6 +41,7 @@ const screenshotFiles = [
   ...['/boot', '/boot/efi'].map((path, i) => ({ id: 'boot-' + i, path, total: '104857600', used: '1048576', available: '103809024', percent: 1, displayGroup: 'auxiliary', filesystemType: i ? 'vfat' : 'ext4', readOnly: false, observedAt: observed }))
 ];
 let snapshot = structuredClone(base), files = structuredClone(normalFiles), interfaces = structuredClone(normalInterfaces), requests = 0, actions = [], seriesKeys = [], historyStep = 5000, historyAt = observed, staggered = false, allGaps = false, failRefresh = false, failSnapshots = false;
+let heldRefresh, rejectRefresh;
 const windowEnd = 300000;
 assert.equal(chartPath([{ at: windowEnd, value: 20 }], 100, 15000, windowEnd + 120000), 'M144.0 37.2');
 assert.equal(chartPath([{ at: 1000, value: 20 }], 100, 15000, windowEnd + 120000), '');
@@ -71,6 +72,7 @@ await page.exposeFunction('statusRequest', params => {
   if (params.action === 'pause') { snapshot.paused = true; snapshot.revision++; }
   if (params.action === 'resume') { snapshot.paused = false; snapshot.revision++; }
   if (params.action === 'refresh') { if (failRefresh) throw new Error('刷新失败：远端查询超时'); snapshot.revision++; }
+  if (params.action === 'refresh' && heldRefresh) return heldRefresh;
   if (params.action === 'navigation') {
     Object.assign(snapshot.navigation, params.state);
     if (params.state.interfaceId) { snapshot.network.device = structuredClone(interfaces.find(item => item.id === params.state.interfaceId)); snapshot.revision++; }
@@ -143,6 +145,28 @@ async function selectInterface(id) { await openInterfaces(); await frame.locator
 try {
   await page.goto('http://127.0.0.1:' + server.address().port);
   await frame.locator('#cpu').filter({ hasText: '23.4%' }).waitFor();
+  assert.equal(await frame.locator('#device').evaluate(e => e.open), true, 'Device card opens on first mount');
+  assert.equal(await frame.locator('#disks').evaluate(e => e.open), true, 'Disk card opens on first mount');
+  const readingNode = await frame.locator('#memory .reading-value').elementHandle();
+  await refresh();
+  assert(await readingNode.evaluate(e => e.isConnected), 'Polling preserves the original readout node');
+  const footerBefore = await frame.locator('#footer').boundingBox();
+  await frame.locator('#scroll').evaluate(e => e.scrollTop = e.scrollHeight);
+  const footerAfter = await frame.locator('#footer').boundingBox();
+  assert(Math.abs(footerAfter.y - footerBefore.y) < 1 && Math.abs(footerAfter.y + footerAfter.height - 760) < 1, 'Footer stays at the Surface bottom while content scrolls');
+  assert(await frame.locator('#collection').evaluate(e => e.getBoundingClientRect().bottom <= document.querySelector('#footer').getBoundingClientRect().top), 'Last disclosure remains reachable above the footer');
+  await frame.locator('#scroll').evaluate(e => e.scrollTop = 0);
+  await page.setViewportSize({width: 400, height: 760});
+  for (const selector of ['.metric-heading', '.rates > div']) {
+    const rows = await frame.locator(selector).evaluateAll(rows => rows.map(row => {
+      const label = row.querySelector('h2, .receive-label, .send-label, :scope > span');
+      const value = row.querySelector('strong');
+      if (!label || !value) return true;
+      return label.getBoundingClientRect().top < value.getBoundingClientRect().bottom && value.getBoundingClientRect().top < label.getBoundingClientRect().bottom;
+    }));
+    assert(rows.every(Boolean), 'Labels and live readings share a line at normal panel width: ' + selector);
+  }
+  await page.setViewportSize({width: 320, height: 760});
   assert.equal(await frame.locator('.resource-section').count(), 1, 'CPU and memory share one resource region');
   assert.equal(await frame.locator('#cpu-chart, #memory-chart').count(), 0, 'The resource chart has one time axis');
   assert.equal(await frame.locator('#host-architecture').innerText(), 'x86_64');
@@ -268,7 +292,7 @@ try {
   }
   await page.setViewportSize({ width: 320, height: 760 });
   await applyTheme('light');
-  await frame.locator('#device > summary').click();
+  if (!await frame.locator('#device').evaluate(e => e.open)) await frame.locator('#device > summary').click();
   await page.setViewportSize({ width: 320, height: 1100 });
   await frame.locator('#scroll').evaluate(e => e.scrollTop = 0);
   assert.equal(await frame.locator('#architecture').innerText(), 'ARM64');
@@ -301,7 +325,8 @@ try {
   const beforeAge = snapshot.groups.find(g => g.name === 'dynamic').observedAt;
   await selectInterface('eth1');
   await frame.locator('#notice').filter({ hasText: '远端查询超时' }).waitFor();
-  await frame.locator('#disks summary').click(); await frame.locator('#disk').selectOption('8:16');
+  if (!await frame.locator('#disks').evaluate(e => e.open)) await frame.locator('#disks summary').click();
+  await frame.locator('#disk').selectOption('8:16');
   await frame.locator('#notice').filter({ hasText: '远端查询超时' }).waitFor();
   assert.equal(snapshot.groups.find(g => g.name === 'dynamic').observedAt, beforeAge);
   await page.setViewportSize({ width: 320, height: 980 });
@@ -492,18 +517,39 @@ try {
   await refresh();
   await frame.locator('#freshness').filter({hasText:'部分指标读取失败'}).waitFor();
   assert.equal(await frame.locator('#memory').innerText(), '62.1%');
-  assert.match(await frame.locator('#memory + .reading-note').innerText(), /保留读数/);
+  assert.match(await frame.locator('#memory-note').innerText(), /保留读数/);
+  assert(await frame.locator('#memory-note').evaluate(e => e.getBoundingClientRect().top >= document.querySelector('#memory').getBoundingClientRect().bottom), 'Retained reading note sits below the horizontal readout');
   assert(await frame.locator('#resource-chart .series.second.reading-old').count());
   assert.match(await frame.locator('#notice').innerText(), /部分指标读取失败/);
   await page.screenshot({path:'artifacts/system-status-ui/macos-memory-failed-light.png'});
   snapshot.data.memory = { ...base.data.memory, state: 'ok', observedAt: Date.now() }; snapshot.data.sourceErrors = {}; snapshot.revision++; await refresh();
-  assert.equal(await frame.locator('#memory + .reading-note').isVisible(), false);
+  assert.equal(await frame.locator('#memory-note').isVisible(), false);
   snapshot = structuredClone(base); snapshot.groups.forEach(g => g.observedAt = Date.now()); snapshot.revision += 400; failSnapshots = true;
   await page.reload();
   await frame.locator('#notice').filter({ hasText: '首次读取失败' }).waitFor();
   failSnapshots = false;
   await frame.locator('#cpu').filter({ hasText: '23.4%' }).waitFor();
   assert.equal(await frame.locator('#notice').isVisible(), false);
+  snapshot.navigation = {expandedGroups: [], scrollTop: 0};
+  await page.reload(); await frame.locator('#cpu').filter({hasText: '23.4%'}).waitFor();
+  assert.equal(await frame.locator('#device').evaluate(e => e.open), false, 'Saved empty expansion list is respected');
+  assert.equal(await frame.locator('#disks').evaluate(e => e.open), false);
+  snapshot.navigation = {expandedGroups: ['device', 'disks'], scrollTop: 180};
+  await page.reload(); await frame.locator('.filesystem').first().waitFor();
+  await page.waitForFunction(() => document.querySelector('iframe').contentDocument.querySelector('#scroll').scrollTop >= 179);
+  await frame.locator('#scroll').evaluate(e => e.scrollTop = 50);
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  assert.equal(Math.round(await frame.locator('#scroll').evaluate(e => e.scrollTop)), 50, 'Periodic updates do not restore scroll again');
+  heldRefresh = new Promise((resolve, reject) => { rejectRefresh = reject; });
+  await frame.locator('#refresh').click();
+  await page.waitForFunction(() => document.querySelector('iframe').contentDocument.querySelector('#refresh').disabled);
+  const nextContext = {...base.context, connectionId: 'connection-after-control', generation: 9};
+  snapshot.context = nextContext; snapshot.revision++;
+  await page.evaluate(context => document.querySelector('iframe').contentWindow.postMessage({channel: 'sodeck-ui-v2', type: 'contextChanged', surfaceId: 'test', context}, '*'), nextContext);
+  await frame.locator('#refresh:enabled').waitFor();
+  rejectRefresh(new Error('旧连接的迟到刷新错误')); heldRefresh = null;
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.equal(await frame.locator('#notice').isVisible(), false, 'Late control failure cannot replace the new connection status');
   assert(actions.includes('refresh') && actions.includes('pause') && actions.includes('resume'));
   assert.deepEqual(errors, []);
   console.log('Status UI: shared CPU/memory chart, matching/misaligned timestamps, one-series and gap states, keyboard cursor, forced colors and 100% readouts, three themes/seven widths, existing filesystem/network/lifecycle regressions passed.');
