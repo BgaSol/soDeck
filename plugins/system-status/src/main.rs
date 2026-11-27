@@ -1,4 +1,6 @@
 use sodeck_plugin_client::protocol::requests as api;
+#[cfg(test)]
+mod collection_tests;
 mod collectors;
 mod filesystem;
 mod metrics;

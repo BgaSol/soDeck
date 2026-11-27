@@ -1,0 +1,22 @@
+SD1 fixture BEGIN load
+0.1 0.2 0.3 1/100 123
+
+SD1 fixture END load 0
+SD1 fixture BEGIN mounts
+1 0 8:1 / / rw,relatime - ext4 /dev/sda1 rw
+2 1 8:17 / /data rw,relatime - ext4 /dev/sdb1 rw
+3 1 0:1 / /run rw,nosuid - tmpfs tmpfs rw
+
+SD1 fixture END mounts 0
+SD1 fixture BEGIN interfaces
+eno1|2|02:00:00:00:00:01|up|
+wt0|3||unknown|
+
+SD1 fixture END interfaces 0
+SD1 fixture BEGIN addresses
+2: eno1 inet 192.0.2.10/24 scope global eno1
+2: eno1 inet6 2001:db8::10/64 scope global
+3: wt0 inet 198.51.100.10/24 scope global wt0
+
+SD1 fixture END addresses 0
+SD1 fixture DONE

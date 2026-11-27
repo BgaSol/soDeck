@@ -36,6 +36,7 @@ try{
  // The sampler must publish independently of opening its own page.
  await wait(()=>files.locator('.mount-row').count().then(n=>n>0),'system-status mount decoration');
  await wait(()=>files.locator('.mount-row').evaluateAll(rows=>rows.some(r=>r.title.includes('可用 '))),'capacity from same producer');
+ if(process.platform==='linux')await wait(()=>files.locator('.mount-row').evaluateAll(rows=>rows.length>0&&rows.every(r=>!r.title.includes('部分扫描'))),'complete Linux mount scan reaches file consumer');
  const tree=await files.locator('.tree-row[aria-selected="true"]').count();assert(tree>0);
  const directoryWrites=()=>requests.filter(r=>r.args?.args?.input?.op==='put'&&r.args.args.input.topic==='workspace.location.v1');const beforeCommand=directoryWrites().length;
  await send(first,process.platform==='win32'?'Start-Sleep -Seconds 3':'sleep 3');

@@ -770,6 +770,17 @@ mod tests {
         assert!(snapshot["memory"]["value"].is_number(), "{snapshot}");
         assert!(snapshot["cpu"]["value"].is_number(), "{snapshot}");
         assert!(!snapshot["filesystems"].as_array().unwrap().is_empty());
+        for source in ["interfaces", "network", "disk"] {
+            assert_eq!(snapshot["sources"][source]["state"], "ok", "{snapshot}");
+        }
+        assert!(
+            snapshot["sourceErrors"]
+                .as_object()
+                .unwrap()
+                .values()
+                .all(|v| v.as_object().unwrap().is_empty()),
+            "{snapshot}"
+        );
     }
     #[test]
     #[ignore = "requires isolated Ubuntu container with real Snap and ext4 mounts; SODECK_STATUS_TEST_CONTAINER"]

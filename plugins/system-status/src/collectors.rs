@@ -119,11 +119,15 @@ fn envelope(text: &str, nonce: &str) -> Result<Sections, String> {
                     active = Some((name.to_string(), String::new()))
                 }
                 ["END", name, code] => {
-                    let (key, data) = active.take().ok_or("采集段缺少起点")?;
+                    let (key, mut data) = active.take().ok_or("采集段缺少起点")?;
                     if key != *name {
                         return Err("采集段不匹配".into());
                     }
                     let code = code.parse::<u32>().map_err(|_| "采集退出码无效")?;
+                    // The script adds one newline before END, independently of the command's output.
+                    if data.ends_with('\n') {
+                        data.pop();
+                    }
                     out.insert(
                         key.clone(),
                         if code == 0 {
@@ -213,21 +217,28 @@ mod command_tests {
         assert!(source["memory"].as_ref().unwrap_err().contains('7'));
     }
     #[test]
-    #[cfg(target_os = "macos")]
-    fn native_macos_sources_cover_real_dynamic_and_topology() {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn native_posix_sources_cover_each_expected_source() {
+        let family = if cfg!(target_os = "linux") {
+            Family::Linux
+        } else {
+            Family::Darwin
+        };
         let mut state = StatusState::default();
-        state.family = Some(Family::Darwin);
+        state.family = Some(family);
         let mut base = crate::metrics::Baseline::default();
-        for group in ["identity", "topology", "dynamic", "capacity", "dynamic"] {
+        for group in [
+            "identity", "topology", "dynamic", "capacity", "uptime", "dynamic",
+        ] {
             let targets = state.mounts.targets();
             let paths: Vec<_> = targets.iter().map(|t| t.path.clone()).collect();
             let output = std::process::Command::new("/bin/sh")
-                .args(["-c", &command(Family::Darwin, group, "native", &paths)])
+                .args(["-c", &command(family, group, "native", &paths)])
                 .output()
                 .unwrap();
             assert!(output.status.success());
             let sample = decode(
-                Family::Darwin,
+                family,
                 group,
                 &String::from_utf8(output.stdout).unwrap(),
                 "native",
@@ -248,10 +259,20 @@ mod command_tests {
                 5,
             );
             assert!(applied.successes > 0, "{group}: {:?}", applied.failures);
+            assert!(
+                applied.failures.is_empty(),
+                "{group}: {:?}",
+                applied.failures
+            );
         }
         assert_eq!(state.memory.state, "ok");
         assert_eq!(state.cpu.state, "ok");
         assert_eq!(state.disk_source.state, "ok");
+        assert_eq!(state.network_source.state, "ok");
+        assert_eq!(state.interfaces.state, "ok");
+        assert_eq!(state.load.state, "ok");
+        assert_eq!(state.uptime.state, "ok");
+        assert!(state.mounts.complete, "{:?}", state.mounts.reason);
         assert!(!state.mounts.rows().is_empty());
     }
 }
@@ -259,10 +280,29 @@ mod command_tests {
 mod tests {
     use super::*;
     #[test]
+    fn framing_removes_only_the_script_separator() {
+        for payload in [
+            "",
+            "line",
+            "line\n",
+            "line\n\n",
+            " leading and trailing \n",
+            "\n",
+            "a\n\nb\n",
+        ] {
+            let wire = format!("\nSD1 n BEGIN value\n{payload}\nSD1 n END value 0\nSD1 n BEGIN next\nnext\n\nSD1 n END next 0\nSD1 n DONE\n");
+            for text in [wire.clone(), wire.replace('\n', "\r\n")] {
+                let parsed = envelope(&text, "n").unwrap();
+                assert_eq!(parsed["value"].as_ref().unwrap(), payload);
+                assert_eq!(parsed["next"].as_ref().unwrap(), "next\n");
+            }
+        }
+    }
+    #[test]
     fn protocol_requires_complete_unique_matching_sections() {
         assert_eq!(
             sections(
-                "banner\nSD1 n BEGIN cpu\n1\nSD1 n END cpu 0\nSD1 n DONE\n",
+                "banner\nSD1 n BEGIN cpu\n1\n\nSD1 n END cpu 0\nSD1 n DONE\n",
                 "n"
             )
             .unwrap()["cpu"],
@@ -270,6 +310,16 @@ mod tests {
         );
         assert!(sections("SD1 n BEGIN cpu\n1", "n").is_err());
         assert!(sections("SD1 x DONE", "n").is_err());
+        assert!(sections("SD1 n BEGIN a\nvalue\n\nSD1 n END b 0\nSD1 n DONE\n", "n").is_err());
+        assert!(sections(
+            &format!(
+                "SD1 n BEGIN a\n{}\nSD1 n END a 0\nSD1 n DONE\n",
+                "x".repeat(32769)
+            ),
+            "n"
+        )
+        .is_err());
+        assert!(sections(&"x".repeat(1024 * 1024 + 1), "n").is_err());
         assert!(sections(
             "SD1 n BEGIN a\nSD1 n END a 0\nSD1 n BEGIN a\nSD1 n END a 0\nSD1 n DONE",
             "n"

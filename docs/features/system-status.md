@@ -17,6 +17,8 @@
 
 Linux/OpenWrt 走 procfs 与 POSIX sh，不 source os-release、不依赖远端 Python/SFTP；容量只查询可明确识别的本地文件系统，排除 NFS/CIFS。Windows 使用 PowerShell CIM/性能计数器；macOS/BSD/其他 Unix 使用各自可用的命令路径。缺少可靠来源的字段显示不可用。
 
+POSIX 分段协议只移除包装脚本添加的一个结束分隔换行，保留命令实际输出的换行和空白；真实缺字段、来源失败及部分挂载扫描仍明确报告。此修复随插件 0.7.1 交付，发行状态与实际验证范围见[插件 CHANGELOG](../../plugins/system-status/CHANGELOG.md)。
+
 Windows 网络计数器实例尚未可靠映射为物理网卡；BSD 缺少可靠来源时不显示总内存使用率或磁盘 I/O。macOS 自插件 0.6.0 补齐内存、磁盘 I/O 和接口地址，发行与实际验证范围见[插件 CHANGELOG](../../plugins/system-status/CHANGELOG.md)。编入采集器不代表真实 OpenWrt、Dropbear、各 Windows SSH shell 或 BSD 设备已经验证。
 
 macOS 内存按 `vm_stat` 的实际页大小，将匿名页减可清理页，再加 wired 和压缩器实际占用页，得到已用物理内存；可用为总量减已用的可回收余量估算，明确标记估算并保留口径详情，不等同 `top` 的立即空闲量。CPU 保留一秒观察窗口。磁盘按 IOBlockStorageDriver 设备分别计算累计读写字节差，不合计物理设备、分区与 APFS 层。

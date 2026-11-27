@@ -1,0 +1,33 @@
+SD1 fixture BEGIN cpu
+cpu 100 0 20 880 0 0 0 0 0 0
+
+SD1 fixture END cpu 0
+SD1 fixture BEGIN memory
+MemTotal: 102400 kB
+MemAvailable: 51200 kB
+SwapTotal: 0 kB
+SwapFree: 0 kB
+
+SD1 fixture END memory 0
+SD1 fixture BEGIN network
+Inter-| Receive | Transmit
+ face |bytes packets errs drop fifo frame compressed multicast|bytes packets errs drop fifo colls carrier compressed
+eno1: 1000 1 0 0 0 0 0 0 2000 1 0 0 0 0 0 0
+wt0: 10 1 0 0 0 0 0 0 20 1 0 0 0 0 0 0
+
+SD1 fixture END network 0
+SD1 fixture BEGIN disk
+7 0 loop0 1 0 100 0 1 0 200 0 0 0 0
+8 0 sda 1 0 100 0 1 0 200 0 0 0 0
+8 1 sda1 1 0 50 0 1 0 100 0 0 0 0
+
+SD1 fixture END disk 0
+SD1 fixture BEGIN uptime
+10.00 20.00
+
+SD1 fixture END uptime 0
+SD1 fixture BEGIN boot
+fixture-boot
+
+SD1 fixture END boot 0
+SD1 fixture DONE

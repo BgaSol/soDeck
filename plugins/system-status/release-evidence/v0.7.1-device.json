@@ -1,0 +1,24 @@
+{
+  "component": "system-status",
+  "version": "0.7.1",
+  "date": "2026-11-28",
+  "remote": {"os": "Ubuntu 22.04.5 LTS", "kernel": "Linux 5.15 x86_64", "authentication": "existing SoDeck session"},
+  "method": "Generated read-only commands using the implementation's collectors::command; executed through the existing SoDeck MCP session; replayed unchanged stdout through the same source copies of decode, metrics::apply and Publisher.",
+  "result": {
+    "passed": true,
+    "groups": ["topology", "dynamic", "capacity", "uptime", "dynamic"],
+    "sourceFailures": [],
+    "disksAndPartitions": 7,
+    "interfaces": 9,
+    "addresses": 12,
+    "mounts": 37,
+    "capacityReadings": 4,
+    "diskRatesAfterSecondObservation": true,
+    "sharedCoverage": "complete"
+  },
+  "limits": [
+    "Source command/decode/reducer/publisher verification; did not replace or restart the user's active 0.7.0 plugin.",
+    "No mouse or foreground-window operations; no remote configuration, credentials or mount changes.",
+    "No new physical native WebView, screen-reader, DPI, full remote OS matrix or published-version upgrade verification."
+  ]
+}

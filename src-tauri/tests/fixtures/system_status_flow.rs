@@ -27,10 +27,17 @@ async fn openssh_system_status_plugin(){
     let context=connected(&f,&server).await.context.unwrap();
     // The coordinator must create and mount the logical view without ui_snapshot or attach.
     let end=std::time::Instant::now()+Duration::from_secs(8);let view=loop {let ui=f.core.ui_state();let found=ui.workspaces.get(&context.workspace_id).and_then(|w|w.views.first()).map(|v|v.id.clone());drop(ui);if let Some(v)=found{break v;}assert!(std::time::Instant::now()<end);tokio::time::sleep(Duration::from_millis(50)).await;};
-    tokio::time::sleep(Duration::from_secs(16)).await;
     let state=f.core.ui_snapshot("main").unwrap();assert_eq!(state["workspaces"][&context.workspace_id]["right"],view);
     let mount=f.core.ui_attach("main",&view).unwrap();let token=mount["surfaceId"].as_str().unwrap();f.core.ui_surface_ready("main",token).unwrap();
-    let first=f.core.ui_event("main",token,json!({"action":"snapshot"})).unwrap();assert!(first["family"].is_string(),"{first}");assert!(first["data"]["identity"]["hostname"].is_string(),"{first}");
+    let end=std::time::Instant::now()+Duration::from_secs(45);
+    let first=loop {let s=f.core.ui_event("main",token,json!({"action":"snapshot"})).unwrap();
+        let observed=s["groups"].as_array().is_some_and(|groups|groups.iter().all(|g|g["observedAt"].is_number()||g["error"]=="此系统暂未提供可靠的数据源"));
+        let healthy=s["data"]["sourceErrors"].as_object().is_some_and(|groups|groups.values().all(|g|g.as_object().is_some_and(|g|g.is_empty())));
+        if observed&&healthy&&s["data"]["cpu"]["state"]=="ok" {break s;}
+        assert!(std::time::Instant::now()<end,"expected each status source to recover: {s}");tokio::time::sleep(Duration::from_millis(100)).await;};
+    assert!(first["data"]["identity"]["hostname"].is_string(),"{first}");
+    for source in ["interfaces","network","disk"]{assert_eq!(first["data"]["sources"][source]["state"],"ok","{source}: {first}");}
+    if first["family"]=="Linux" {let interfaces=f.core.ui_event("main",token,json!({"action":"list","kind":"interfaces"})).unwrap();assert!(interfaces["items"].as_array().unwrap().iter().any(|i|i["addresses"].as_array().is_some_and(|a|!a.is_empty())),"{interfaces}");}
     let before=first["groups"][1]["observedAt"].as_u64().expect("dynamic sample");
     let raw=f.core.ui_event("main",token,json!({"action":"list","kind":"filesystems"})).unwrap();
     let overview=f.core.ui_event("main",token,json!({"action":"list","kind":"filesystems","group":"overview"})).unwrap();
