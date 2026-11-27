@@ -2,7 +2,15 @@
 
 - 首次确认、目录变化及用户重新激活时发布通用目录；普通同目录提示符及恢复不重复发布。Shell 观察、本地阅读与对外发布分开，保留旧位置投影。
 
-配套核心 2.11.0，通用终端／文件组合为终端 0.12.0 与文件 0.14.0；Docker 0.13.1 可独立发布目录。启用中的插件升级重启生效。源码与本机验证进行中，五平台实际包验收及正式发行待完成；不新增生产依赖。Compose 标签不证明另一机器的目录身份。
+配套核心 2.11.0，终端 0.12.0 与 Docker 0.13.1 独立发布，文件 0.14.0 自行决定是否跟随。先更新核心，再更新所需插件并重启；不新增生产依赖。正式行为见[终端功能](../../docs/features/terminal.md)。
+
+包来源 [562343f](https://github.com/BgaSol/soDeck/commit/562343f7d92e9374adcc86a0cc06a7a41442b4ef)；[原始独立打包](https://github.com/BgaSol/soDeck/actions/runs/45962106727) 的 Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 原生构建、架构/资源、实际包生命周期与退出全部通过。正式发行 [terminal 0.12.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.12.0) 共六个附件，保持非 Latest；直接发布同一份原归档，清单仅同步 notes。[永久附件证据](release-evidence/v0.12.0-assets.json)保存来源、五份包报告、Check 与公开摘要；Windows x86_64 原归档另在本机通过包内启动和退出。
+
+本机终端 Rust、真实 PTY、输入/阅读/搜索/历史与既有基准通过。 [本轮源码与业务验收](../../docs/releases/v2.11.0.md#验证与发行)记录原始 Check 的失败、测试修正、Docker 完成投影修正及最终完整业务通过；包来源与组件实际产品代码一致。
+
+[五平台原生远程组合](https://github.com/BgaSol/soDeck/actions/runs/45963470904)使用本次确切核心、终端、文件包及网络隧道 0.6.2 完成实际 WebView/SSH/PTY/SFTP、移窗、重开和退出；三种 Linux x86_64 新旧终端/文件组合完成基础兼容。[固定输入与报告](../../docs/releases/v2.11.0-remote.json)。旧终端不发布通用目录，新终端继续兼容旧文件位置投影。
+
+未执行物理 IME/DPI/读屏、netem、正式旧版实际升级或全部 Docker 远端组合；Compose 标签不能证明另一机器原目录的身份。
 
 # 0.11.2
 

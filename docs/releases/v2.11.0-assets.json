@@ -1,0 +1,805 @@
+{
+  "component": "core",
+  "version": "2.11.0",
+  "source": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+  "packageRun": {
+    "id": 45962099691,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45962099691"
+  },
+  "checks": [
+    {
+      "run": 45962067702,
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45962067702",
+      "source": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "conclusion": "failure",
+      "attempt": 2,
+      "scope": "All five native source jobs, browser, desktop and network passed. Business job failed in the new Compose test iframe selector; aggregate remained failed.",
+      "jobs": [
+        {
+          "name": "native-linux-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "desktop",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-macos-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "netem",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "native-linux-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-network-linux-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "checks",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-business-linux-x86_64",
+          "conclusion": "failure"
+        },
+        {
+          "name": "native-windows-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-network-linux-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "select",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-windows-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "browser",
+          "conclusion": "success"
+        },
+        {
+          "name": "format",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "run": 45965057074,
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45965057074",
+      "source": "d2e21e3267bb18346cd3f2db92664a3cfcc57f79",
+      "conclusion": "failure",
+      "attempt": 2,
+      "scope": "Corrected iframe selector. First business attempt hit existing files copy timeout; retry reached Compose but opened menu before a complete index was ready.",
+      "jobs": [
+        {
+          "name": "integration-business-linux-x86_64",
+          "conclusion": "failure"
+        },
+        {
+          "name": "select",
+          "conclusion": "success"
+        },
+        {
+          "name": "desktop",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "native-${{ matrix.name }}",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "checks",
+          "conclusion": "success"
+        },
+        {
+          "name": "browser",
+          "conclusion": "success"
+        },
+        {
+          "name": "netem",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "format",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "run": 45968553391,
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45968553391",
+      "source": "82d4fede2839d560a00beeed4dcfb8b6b09e62fc",
+      "conclusion": "failure",
+      "attempt": 1,
+      "scope": "Complete-index UI wait reproduced stale cached tree; background index was ready but worker completion incorrectly required loading. Fixed in final Docker product source.",
+      "jobs": [
+        {
+          "name": "select",
+          "conclusion": "success"
+        },
+        {
+          "name": "checks",
+          "conclusion": "success"
+        },
+        {
+          "name": "browser",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-business-linux-x86_64",
+          "conclusion": "failure"
+        },
+        {
+          "name": "netem",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "native-${{ matrix.name }}",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "desktop",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "format",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "run": 45971753955,
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45971753955",
+      "source": "4e2db0284d200a93483d5166fd5db926fe7210ab",
+      "conclusion": "cancelled",
+      "attempt": 1,
+      "scope": "Five native Docker source jobs passed. Business reached enabled Compose menu but second action moved outside compact viewport; final test sets a stable viewport with both sidebars visible. Browser cancellation, if any, followed the final test-only push.",
+      "jobs": [
+        {
+          "name": "select",
+          "conclusion": "success"
+        },
+        {
+          "name": "browser",
+          "conclusion": "cancelled"
+        },
+        {
+          "name": "checks",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-business-linux-x86_64",
+          "conclusion": "failure"
+        },
+        {
+          "name": "native-windows-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-macos-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-windows-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-linux-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-linux-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "netem",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "desktop",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "format",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "run": 45972978512,
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45972978512",
+      "source": "d2920d80a2d8d675ba4b401f844e7561dad885b8",
+      "conclusion": "success",
+      "attempt": 1,
+      "scope": "Stable two-sidebar viewport and reduced motion test correction; product code identical to exact component package sources. Format/types/scripts, browser and complete real SSH/PTY/SFTP/isolated Engine business passed. Native/desktop/netem not reselected.",
+      "jobs": [
+        {
+          "name": "select",
+          "conclusion": "success"
+        },
+        {
+          "name": "checks",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-business-linux-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "browser",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-${{ matrix.name }}",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "desktop",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "netem",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "format",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "release": {
+    "tag": "v2.11.0",
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/v2.11.0",
+    "publishedAt": "2026-11-27T09:38:12Z",
+    "isDraft": false,
+    "latest": true,
+    "tagCommit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef"
+  },
+  "assets": [
+    {
+      "name": "core-update.json",
+      "size": 8805,
+      "digest": "sha256:fc6f4cb8e39d7fef525b6ec8cc099b0423b5b58d2209d27ce25a1d5cf459902e",
+      "id": "799857094",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.11.0/core-update.json"
+    },
+    {
+      "name": "SoDeck_2.11.0_aarch64.app.tar.gz",
+      "size": 10867272,
+      "digest": "sha256:ff589dcadc1aedc86e4d02d4bfec11ddf2b71bfdf9408d8aa2127265c4584d0e",
+      "id": "799562528",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.11.0/SoDeck_2.11.0_aarch64.app.tar.gz"
+    },
+    {
+      "name": "SoDeck_2.11.0_aarch64.app.tar.gz.sig",
+      "size": 424,
+      "digest": "sha256:39871ef9ccf00e6f269ac9d4d8e0a71b0e8ad5e7cbd11e53ec4e85fd8e7072f3",
+      "id": "799562585",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.11.0/SoDeck_2.11.0_aarch64.app.tar.gz.sig"
+    },
+    {
+      "name": "SoDeck_2.11.0_aarch64.AppImage",
+      "size": 86661640,
+      "digest": "sha256:246fa331e73d7fc4c7d4f89f9dd7db975e2be5ac39d386b29bee83675928ae7d",
+      "id": "799562871",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.11.0/SoDeck_2.11.0_aarch64.AppImage"
+    },
+    {
+      "name": "SoDeck_2.11.0_aarch64.AppImage.sig",
+      "size": 440,
+      "digest": "sha256:57772fee615eaa6620b8d8f2bbce23814109e18978d9fc1da84330a1e9370dea",
+      "id": "799563263",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.11.0/SoDeck_2.11.0_aarch64.AppImage.sig"
+    },
+    {
+      "name": "SoDeck_2.11.0_aarch64.dmg",
+      "size": 10590013,
+      "digest": "sha256:765af479ccf2320571b92afe40304596de50a32c47b830b2751c37fe37eb1c9d",
+      "id": "799562454",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.11.0/SoDeck_2.11.0_aarch64.dmg"
+    },
+    {
+      "name": "SoDeck_2.11.0_amd64.AppImage",
+      "size": 89369080,
+      "digest": "sha256:c4736018ca784e9b9e677eae065f03b2fb14e3293c6b339e0565512d2cbba2c4",
+      "id": "799563633",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.11.0/SoDeck_2.11.0_amd64.AppImage"
+    },
+    {
+      "name": "SoDeck_2.11.0_amd64.AppImage.sig",
+      "size": 440,
+      "digest": "sha256:ef33c8a5d328e0f83f8abf273f01e1860c79e133bbf8bbbc4f01a06df8b488c3",
+      "id": "799563850",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.11.0/SoDeck_2.11.0_amd64.AppImage.sig"
+    },
+    {
+      "name": "SoDeck_2.11.0_amd64.deb",
+      "size": 11819360,
+      "digest": "sha256:68294056a4260bb528f82efc526e4ee3b3c15e26e974f0e7885f54528975b6d1",
+      "id": "799563449",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.11.0/SoDeck_2.11.0_amd64.deb"
+    },
+    {
+      "name": "SoDeck_2.11.0_amd64.deb.sig",
+      "size": 432,
+      "digest": "sha256:da104d781f22770c6edb7e33eb1a18fe5fd1aa67012280003474551c3fafb018",
+      "id": "799563535",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.11.0/SoDeck_2.11.0_amd64.deb.sig"
+    },
+    {
+      "name": "SoDeck_2.11.0_arm64-setup.exe",
+      "size": 7022727,
+      "digest": "sha256:76ac8376412e9c89182349fb5db746b9db2e37d4a6f7a33889f6b821c459aa2e",
+      "id": "799562617",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.11.0/SoDeck_2.11.0_arm64-setup.exe"
+    },
+    {
+      "name": "SoDeck_2.11.0_arm64-setup.exe.sig",
+      "size": 440,
+      "digest": "sha256:dd69a5cb6e3c0a634065576d01a2dae546325dc8c515bf4f041edffc70176b7c",
+      "id": "799562699",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.11.0/SoDeck_2.11.0_arm64-setup.exe.sig"
+    },
+    {
+      "name": "SoDeck_2.11.0_arm64.deb",
+      "size": 11002222,
+      "digest": "sha256:259d336b5b94a6b7e30137d267331bd5d68ff5b3271347b058a4fb09d28fce57",
+      "id": "799562748",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.11.0/SoDeck_2.11.0_arm64.deb"
+    },
+    {
+      "name": "SoDeck_2.11.0_arm64.deb.sig",
+      "size": 432,
+      "digest": "sha256:d45f3174d822c978acb63995c65cddd146c74c5d2e94d3970388ff8ad91e5f14",
+      "id": "799562810",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.11.0/SoDeck_2.11.0_arm64.deb.sig"
+    },
+    {
+      "name": "SoDeck_2.11.0_x64-setup.exe",
+      "size": 8098831,
+      "digest": "sha256:453e07f39a22717c6f1726970b19238e22f2ad8327955959ec1e13d8c9715914",
+      "id": "799563316",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.11.0/SoDeck_2.11.0_x64-setup.exe"
+    },
+    {
+      "name": "SoDeck_2.11.0_x64-setup.exe.sig",
+      "size": 436,
+      "digest": "sha256:81d0514e68b5c458264d8b9d8b9070a4e5a520413e35a8dc3911dcd47935eb46",
+      "id": "799563400",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/v2.11.0/SoDeck_2.11.0_x64-setup.exe.sig"
+    }
+  ],
+  "nativePackageVerification": [
+    {
+      "id": "sodeck.core",
+      "version": "2.11.0",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "files": [
+        {
+          "name": "SoDeck_2.11.0_arm64.deb",
+          "size": 11002222,
+          "sha256": "259d336b5b94a6b7e30137d267331bd5d68ff5b3271347b058a4fb09d28fce57"
+        },
+        {
+          "name": "SoDeck_2.11.0_arm64.deb.sig",
+          "size": 432,
+          "sha256": "d45f3174d822c978acb63995c65cddd146c74c5d2e94d3970388ff8ad91e5f14"
+        },
+        {
+          "name": "SoDeck_2.11.0_aarch64.AppImage",
+          "size": 86661640,
+          "sha256": "246fa331e73d7fc4c7d4f89f9dd7db975e2be5ac39d386b29bee83675928ae7d"
+        },
+        {
+          "name": "SoDeck_2.11.0_aarch64.AppImage.sig",
+          "size": 440,
+          "sha256": "57772fee615eaa6620b8d8f2bbce23814109e18978d9fc1da84330a1e9370dea"
+        }
+      ],
+      "toolCommit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "passed": true,
+      "pluginIconsNative": true,
+      "logsMessagesNative": true,
+      "serverSharingNative": true,
+      "desktopShellNative": true,
+      "desktopStartupNative": true,
+      "loginRegistrationIoNative": true,
+      "loginRestartNative": true
+    },
+    {
+      "id": "sodeck.core",
+      "version": "2.11.0",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "files": [
+        {
+          "name": "SoDeck_2.11.0_amd64.deb",
+          "size": 11819360,
+          "sha256": "68294056a4260bb528f82efc526e4ee3b3c15e26e974f0e7885f54528975b6d1"
+        },
+        {
+          "name": "SoDeck_2.11.0_amd64.deb.sig",
+          "size": 432,
+          "sha256": "da104d781f22770c6edb7e33eb1a18fe5fd1aa67012280003474551c3fafb018"
+        },
+        {
+          "name": "SoDeck_2.11.0_amd64.AppImage",
+          "size": 89369080,
+          "sha256": "c4736018ca784e9b9e677eae065f03b2fb14e3293c6b339e0565512d2cbba2c4"
+        },
+        {
+          "name": "SoDeck_2.11.0_amd64.AppImage.sig",
+          "size": 440,
+          "sha256": "ef33c8a5d328e0f83f8abf273f01e1860c79e133bbf8bbbc4f01a06df8b488c3"
+        }
+      ],
+      "toolCommit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "passed": true,
+      "pluginIconsNative": true,
+      "logsMessagesNative": true,
+      "serverSharingNative": true,
+      "desktopShellNative": true,
+      "desktopStartupNative": true,
+      "loginRegistrationIoNative": true,
+      "loginRestartNative": true
+    },
+    {
+      "id": "sodeck.core",
+      "version": "2.11.0",
+      "target": "aarch64-apple-darwin",
+      "commit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "files": [
+        {
+          "name": "SoDeck_2.11.0_aarch64.dmg",
+          "size": 10590013,
+          "sha256": "765af479ccf2320571b92afe40304596de50a32c47b830b2751c37fe37eb1c9d"
+        },
+        {
+          "name": "SoDeck_2.11.0_aarch64.app.tar.gz",
+          "size": 10867272,
+          "sha256": "ff589dcadc1aedc86e4d02d4bfec11ddf2b71bfdf9408d8aa2127265c4584d0e"
+        },
+        {
+          "name": "SoDeck_2.11.0_aarch64.app.tar.gz.sig",
+          "size": 424,
+          "sha256": "39871ef9ccf00e6f269ac9d4d8e0a71b0e8ad5e7cbd11e53ec4e85fd8e7072f3"
+        }
+      ],
+      "toolCommit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "passed": true,
+      "macosLoginServiceNative": true,
+      "macosBundleIdentityNative": true,
+      "pluginIconsNative": true,
+      "logsMessagesNative": true,
+      "serverSharingNative": true,
+      "desktopShellNative": true,
+      "desktopStartupNative": true,
+      "loginRegistrationIoNative": true,
+      "loginRestartNative": true,
+      "macosApplicationPolicyNative": true
+    },
+    {
+      "id": "sodeck.core",
+      "version": "2.11.0",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "files": [
+        {
+          "name": "SoDeck_2.11.0_arm64-setup.exe",
+          "size": 7022727,
+          "sha256": "76ac8376412e9c89182349fb5db746b9db2e37d4a6f7a33889f6b821c459aa2e"
+        },
+        {
+          "name": "SoDeck_2.11.0_arm64-setup.exe.sig",
+          "size": 440,
+          "sha256": "dd69a5cb6e3c0a634065576d01a2dae546325dc8c515bf4f041edffc70176b7c"
+        }
+      ],
+      "toolCommit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "passed": true,
+      "windowsInstallModes": [
+        {
+          "mode": "CurrentUser",
+          "hive": "HKCU",
+          "install": "C:\\Users\\runneradmin\\AppData\\Local\\Programs\\SoDeck",
+          "passed": true
+        },
+        {
+          "mode": "AllUsers",
+          "hive": "HKLM",
+          "install": "C:\\Program Files\\SoDeck",
+          "passed": true
+        }
+      ],
+      "pluginIconsNative": true,
+      "logsMessagesNative": true,
+      "serverSharingNative": true,
+      "desktopShellNative": true,
+      "desktopStartupNative": true,
+      "loginRegistrationIoNative": true,
+      "loginRestartNative": true
+    },
+    {
+      "id": "sodeck.core",
+      "version": "2.11.0",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "files": [
+        {
+          "name": "SoDeck_2.11.0_x64-setup.exe",
+          "size": 8098831,
+          "sha256": "453e07f39a22717c6f1726970b19238e22f2ad8327955959ec1e13d8c9715914"
+        },
+        {
+          "name": "SoDeck_2.11.0_x64-setup.exe.sig",
+          "size": 436,
+          "sha256": "81d0514e68b5c458264d8b9d8b9070a4e5a520413e35a8dc3911dcd47935eb46"
+        }
+      ],
+      "toolCommit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "passed": true,
+      "windowsInstallModes": [
+        {
+          "mode": "CurrentUser",
+          "hive": "HKCU",
+          "install": "C:\\Users\\runneradmin\\AppData\\Local\\Programs\\SoDeck",
+          "passed": true
+        },
+        {
+          "mode": "AllUsers",
+          "hive": "HKLM",
+          "install": "C:\\Program Files\\SoDeck",
+          "passed": true
+        }
+      ],
+      "pluginIconsNative": true,
+      "logsMessagesNative": true,
+      "serverSharingNative": true,
+      "desktopShellNative": true,
+      "desktopStartupNative": true,
+      "loginRegistrationIoNative": true,
+      "loginRestartNative": true
+    }
+  ],
+  "remoteVerification": {
+    "run": 45963470904,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45963470904",
+    "conclusion": "success",
+    "evidence": "v2.11.0-remote.json"
+  },
+  "publicVerification": {
+    "checkedAt": "2026-11-27T09:41:22.932Z",
+    "assets": [
+      {
+        "name": "core-update.json",
+        "size": 8805,
+        "sha256": "fc6f4cb8e39d7fef525b6ec8cc099b0423b5b58d2209d27ce25a1d5cf459902e",
+        "anonymous": true,
+        "verified": true
+      },
+      {
+        "name": "SoDeck_2.11.0_aarch64.app.tar.gz",
+        "size": 10867272,
+        "sha256": "ff589dcadc1aedc86e4d02d4bfec11ddf2b71bfdf9408d8aa2127265c4584d0e",
+        "anonymous": true,
+        "verified": true
+      },
+      {
+        "name": "SoDeck_2.11.0_aarch64.app.tar.gz.sig",
+        "size": 424,
+        "sha256": "39871ef9ccf00e6f269ac9d4d8e0a71b0e8ad5e7cbd11e53ec4e85fd8e7072f3",
+        "anonymous": true,
+        "verified": true
+      },
+      {
+        "name": "SoDeck_2.11.0_aarch64.AppImage",
+        "size": 86661640,
+        "sha256": "246fa331e73d7fc4c7d4f89f9dd7db975e2be5ac39d386b29bee83675928ae7d",
+        "anonymous": true,
+        "verified": true
+      },
+      {
+        "name": "SoDeck_2.11.0_aarch64.AppImage.sig",
+        "size": 440,
+        "sha256": "57772fee615eaa6620b8d8f2bbce23814109e18978d9fc1da84330a1e9370dea",
+        "anonymous": true,
+        "verified": true
+      },
+      {
+        "name": "SoDeck_2.11.0_aarch64.dmg",
+        "size": 10590013,
+        "sha256": "765af479ccf2320571b92afe40304596de50a32c47b830b2751c37fe37eb1c9d",
+        "anonymous": true,
+        "verified": true
+      },
+      {
+        "name": "SoDeck_2.11.0_amd64.AppImage",
+        "size": 89369080,
+        "sha256": "c4736018ca784e9b9e677eae065f03b2fb14e3293c6b339e0565512d2cbba2c4",
+        "anonymous": true,
+        "verified": true
+      },
+      {
+        "name": "SoDeck_2.11.0_amd64.AppImage.sig",
+        "size": 440,
+        "sha256": "ef33c8a5d328e0f83f8abf273f01e1860c79e133bbf8bbbc4f01a06df8b488c3",
+        "anonymous": true,
+        "verified": true
+      },
+      {
+        "name": "SoDeck_2.11.0_amd64.deb",
+        "size": 11819360,
+        "sha256": "68294056a4260bb528f82efc526e4ee3b3c15e26e974f0e7885f54528975b6d1",
+        "anonymous": true,
+        "verified": true
+      },
+      {
+        "name": "SoDeck_2.11.0_amd64.deb.sig",
+        "size": 432,
+        "sha256": "da104d781f22770c6edb7e33eb1a18fe5fd1aa67012280003474551c3fafb018",
+        "anonymous": true,
+        "verified": true
+      },
+      {
+        "name": "SoDeck_2.11.0_arm64-setup.exe",
+        "size": 7022727,
+        "sha256": "76ac8376412e9c89182349fb5db746b9db2e37d4a6f7a33889f6b821c459aa2e",
+        "anonymous": true,
+        "verified": true
+      },
+      {
+        "name": "SoDeck_2.11.0_arm64-setup.exe.sig",
+        "size": 440,
+        "sha256": "dd69a5cb6e3c0a634065576d01a2dae546325dc8c515bf4f041edffc70176b7c",
+        "anonymous": true,
+        "verified": true
+      },
+      {
+        "name": "SoDeck_2.11.0_arm64.deb",
+        "size": 11002222,
+        "sha256": "259d336b5b94a6b7e30137d267331bd5d68ff5b3271347b058a4fb09d28fce57",
+        "anonymous": true,
+        "verified": true
+      },
+      {
+        "name": "SoDeck_2.11.0_arm64.deb.sig",
+        "size": 432,
+        "sha256": "d45f3174d822c978acb63995c65cddd146c74c5d2e94d3970388ff8ad91e5f14",
+        "anonymous": true,
+        "verified": true
+      },
+      {
+        "name": "SoDeck_2.11.0_x64-setup.exe",
+        "size": 8098831,
+        "sha256": "453e07f39a22717c6f1726970b19238e22f2ad8327955959ec1e13d8c9715914",
+        "anonymous": true,
+        "verified": true
+      },
+      {
+        "name": "SoDeck_2.11.0_x64-setup.exe.sig",
+        "size": 436,
+        "sha256": "81d0514e68b5c458264d8b9d8b9070a4e5a520413e35a8dc3911dcd47935eb46",
+        "anonymous": true,
+        "verified": true
+      }
+    ],
+    "notesMatch": true,
+    "platformFieldsUnchanged": true
+  },
+  "packageJobs": [
+    {
+      "name": "preflight",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "linux-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "macos-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "linux-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-windows-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-linux-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-windows-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-linux-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-macos-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "metadata",
+      "conclusion": "success"
+    }
+  ],
+  "retryHistory": [
+    {
+      "run": 45962067702,
+      "job": "native-linux-aarch64",
+      "reason": "Existing lifecycle unload response timeout; reran only failed job and passed."
+    },
+    {
+      "run": 45962067702,
+      "job": "integration-business-linux-x86_64",
+      "reason": "New integration test selected a terminal iframe using a mismatching title; corrected to actual View ID in test-only commit."
+    },
+    {
+      "run": 45965057074,
+      "job": "integration-business-linux-x86_64",
+      "reason": "Existing files copy batch hit 120s timeout after 161 completed and zero failed items; original source CI and local passed; unchanged files rerun passed. That retry subsequently failed because the new Compose test opened the menu while the index was incomplete; the next test-only commit pauses automatic refresh and waits for a complete index before directory actions."
+    }
+  ],
+  "limitations": "Physical IME/DPI/accessibility, netem, formal published-version upgrade, every Docker remote combination and cross-host Compose directory identity were not verified. Extra local core installer run was safely refused because 2.10.0 is installed; clean native CI installer checks passed. Windows actual Compose flow passed; the subsequent existing full Docker maintenance fixture twice timed out waiting for the index after its second stop and is not recorded as passed. Linux final full Engine result is recorded separately.",
+  "localDirectoryIntegration": {
+    "platform": "windows-x86_64",
+    "productSources": {
+      "core": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "terminal": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "files": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "docker": "4e2db0284d200a93483d5166fd5db926fe7210ab"
+    },
+    "testSource": "d2920d80a2d8d675ba4b401f844e7561dad885b8",
+    "actualCoreFixture": true,
+    "isolatedRemoteEngine": "24.0.9",
+    "result": {
+      "passed": true,
+      "actualCore": true,
+      "actualIndependentPlugins": [
+        "sodeck.terminal",
+        "sodeck.files",
+        "sodeck.system-status",
+        "sodeck.docker"
+      ],
+      "ssh": true,
+      "sftp": true,
+      "engine": "isolated",
+      "composeLabelDirectory": true,
+      "terminalAutomaticDirectory": true,
+      "repeatedSameDirectory": true,
+      "userReactivation": true
+    },
+    "fullDockerMaintenance": {
+      "passed": false,
+      "attempts": 2,
+      "failedAt": "Existing idle() 40-second index wait after second stop",
+      "observed": "busy=false, container index loading revision=7, stop operation succeeded; not diagnosed as a directory-follow failure or marked as passed",
+      "linuxCi": "https://github.com/BgaSol/soDeck/actions/runs/45972978512"
+    }
+  }
+}

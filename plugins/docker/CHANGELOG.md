@@ -1,9 +1,15 @@
 # 0.13.1
 
 - Compose 分组菜单新增“跟随”，从完整项目成员的一致工作目录标签发布位置，不直接调用文件插件。缺失、冲突、旧观察和路径不对应时明确拒绝。
-- 修复异步索引和对象读取完成后资源树仍保留加载中投影的问题；完成后的结果按观察代次接纳，旧代次与已失效观察继续丢弃。
+- 修复异步索引和对象读取完成后树投影仍为加载中；同代次完成结果更新页面，旧代次和失效观察继续丢弃。
 
-配套核心 2.11.0，通用终端／文件组合为终端 0.12.0 与文件 0.14.0；Docker 0.13.1 可独立发布目录。启用中的插件升级重启生效。源码与本机验证进行中，五平台实际包验收及正式发行待完成；不新增生产依赖。Compose 标签不证明另一机器的目录身份。
+配套核心 2.11.0，终端 0.12.0 与 Docker 0.13.1 独立发布，文件 0.14.0 自行决定是否跟随。先更新核心，再更新所需插件并重启；不新增生产依赖。正式行为见[Docker功能](../../docs/features/docker.md)。
+
+包来源 [4e2db02](https://github.com/BgaSol/soDeck/commit/4e2db0284d200a93483d5166fd5db926fe7210ab)；[原始独立打包](https://github.com/BgaSol/soDeck/actions/runs/45971756129) 的 Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 原生构建、架构/资源、实际包生命周期与退出全部通过。正式发行 [docker 0.13.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.13.1) 共六个附件，保持非 Latest；直接发布同一份原归档，清单仅同步 notes。[永久附件证据](release-evidence/v0.13.1-assets.json)保存来源、五份包报告、Check 与公开摘要；Windows x86_64 原归档另在本机通过包内启动和退出。
+
+本机 42 项 Docker Rust、POSIX/Linux、Windows/Linux 与 Windows/Windows 进程夹具和 UI 回归通过。Windows 本机与 Linux CI 使用真实隔离 Engine/OpenSSH 与实际核心、终端、文件插件，验证 Compose 目录发布、同目录再次发布、手动浏览及终端重新激活；Docker 不在原生远程包组合工作流内，不推定全部平台的 Engine 界面已验。原 0.13.0 草稿通过包烟测后，在真实 Compose UI 链路暴露树投影缺陷；该候选未发布，原打包 run 为 [45962122123](https://github.com/BgaSol/soDeck/actions/runs/45962122123)，由本版本替代。 [本轮源码与业务验收](../../docs/releases/v2.11.0.md#验证与发行)记录原始 Check 的失败、测试修正、Docker 完成投影修正及最终完整业务通过；包来源与组件实际产品代码一致。
+
+未执行物理 IME/DPI/读屏、netem、正式旧版实际升级或全部 Docker 远端组合；Compose 标签不能证明另一机器原目录的身份。
 
 # 0.12.1
 

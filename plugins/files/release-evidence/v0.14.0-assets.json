@@ -1,0 +1,553 @@
+{
+  "component": "files",
+  "version": "0.14.0",
+  "source": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+  "packageRun": {
+    "id": 45962114669,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45962114669"
+  },
+  "checks": [
+    {
+      "run": 45962067702,
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45962067702",
+      "source": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "conclusion": "failure",
+      "attempt": 2,
+      "scope": "All five native source jobs, browser, desktop and network passed. Business job failed in the new Compose test iframe selector; aggregate remained failed.",
+      "jobs": [
+        {
+          "name": "native-linux-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "desktop",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-macos-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "netem",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "native-linux-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-network-linux-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "checks",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-business-linux-x86_64",
+          "conclusion": "failure"
+        },
+        {
+          "name": "native-windows-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-network-linux-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "select",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-windows-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "browser",
+          "conclusion": "success"
+        },
+        {
+          "name": "format",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "run": 45965057074,
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45965057074",
+      "source": "d2e21e3267bb18346cd3f2db92664a3cfcc57f79",
+      "conclusion": "failure",
+      "attempt": 2,
+      "scope": "Corrected iframe selector. First business attempt hit existing files copy timeout; retry reached Compose but opened menu before a complete index was ready.",
+      "jobs": [
+        {
+          "name": "integration-business-linux-x86_64",
+          "conclusion": "failure"
+        },
+        {
+          "name": "select",
+          "conclusion": "success"
+        },
+        {
+          "name": "desktop",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "native-${{ matrix.name }}",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "checks",
+          "conclusion": "success"
+        },
+        {
+          "name": "browser",
+          "conclusion": "success"
+        },
+        {
+          "name": "netem",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "format",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "run": 45968553391,
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45968553391",
+      "source": "82d4fede2839d560a00beeed4dcfb8b6b09e62fc",
+      "conclusion": "failure",
+      "attempt": 1,
+      "scope": "Complete-index UI wait reproduced stale cached tree; background index was ready but worker completion incorrectly required loading. Fixed in final Docker product source.",
+      "jobs": [
+        {
+          "name": "select",
+          "conclusion": "success"
+        },
+        {
+          "name": "checks",
+          "conclusion": "success"
+        },
+        {
+          "name": "browser",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-business-linux-x86_64",
+          "conclusion": "failure"
+        },
+        {
+          "name": "netem",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "native-${{ matrix.name }}",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "desktop",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "format",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "run": 45971753955,
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45971753955",
+      "source": "4e2db0284d200a93483d5166fd5db926fe7210ab",
+      "conclusion": "cancelled",
+      "attempt": 1,
+      "scope": "Five native Docker source jobs passed. Business reached enabled Compose menu but second action moved outside compact viewport; final test sets a stable viewport with both sidebars visible. Browser cancellation, if any, followed the final test-only push.",
+      "jobs": [
+        {
+          "name": "select",
+          "conclusion": "success"
+        },
+        {
+          "name": "browser",
+          "conclusion": "cancelled"
+        },
+        {
+          "name": "checks",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-business-linux-x86_64",
+          "conclusion": "failure"
+        },
+        {
+          "name": "native-windows-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-macos-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-windows-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-linux-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-linux-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "netem",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "desktop",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "format",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "run": 45972978512,
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45972978512",
+      "source": "d2920d80a2d8d675ba4b401f844e7561dad885b8",
+      "conclusion": "success",
+      "attempt": 1,
+      "scope": "Stable two-sidebar viewport and reduced motion test correction; product code identical to exact component package sources. Format/types/scripts, browser and complete real SSH/PTY/SFTP/isolated Engine business passed. Native/desktop/netem not reselected.",
+      "jobs": [
+        {
+          "name": "select",
+          "conclusion": "success"
+        },
+        {
+          "name": "checks",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-business-linux-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "browser",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-${{ matrix.name }}",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "desktop",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "netem",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "format",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "release": {
+    "tag": "plugin-files-v0.14.0",
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.14.0",
+    "publishedAt": "2026-11-27T09:38:19Z",
+    "isDraft": false,
+    "latest": false,
+    "tagCommit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef"
+  },
+  "assets": [
+    {
+      "name": "plugin-update.json",
+      "size": 3746,
+      "digest": "sha256:01083b6918bcdd5b1dd4916e58cc2c8fc4319de0c8566aa0b2d627230d16de4a",
+      "id": "799858075",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-files-v0.14.0/plugin-update.json"
+    },
+    {
+      "name": "sodeck-files_0.14.0_aarch64-apple-darwin.tar.gz",
+      "size": 2143420,
+      "digest": "sha256:bc4ea69f86e695c2261f1df22f729036e54980dd7c152ab75183c0927ef39585",
+      "id": "799553217",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-files-v0.14.0/sodeck-files_0.14.0_aarch64-apple-darwin.tar.gz"
+    },
+    {
+      "name": "sodeck-files_0.14.0_aarch64-pc-windows-msvc.zip",
+      "size": 2174024,
+      "digest": "sha256:d68cf1bfd7e1625ec8bbab57b4f48ae2d18c464de47a37d87e647f6d2ec71e43",
+      "id": "799553064",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-files-v0.14.0/sodeck-files_0.14.0_aarch64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "sodeck-files_0.14.0_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 2149621,
+      "digest": "sha256:730a51dfff5b3cb9c9486839843d65f6cbceb63fe3b3bc7135d74dfa379675a2",
+      "id": "799553165",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-files-v0.14.0/sodeck-files_0.14.0_aarch64-unknown-linux-gnu.tar.gz"
+    },
+    {
+      "name": "sodeck-files_0.14.0_x86_64-pc-windows-msvc.zip",
+      "size": 2236642,
+      "digest": "sha256:1517928de2adce8781e89446001612a7768356c0376da32495df87be3315cd53",
+      "id": "799552996",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-files-v0.14.0/sodeck-files_0.14.0_x86_64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "sodeck-files_0.14.0_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 2230271,
+      "digest": "sha256:1a08f0f84c11de5b0a40a65ea5ecb2075b9f35f8ec45980b22ea7004534d36ba",
+      "id": "799553111",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-files-v0.14.0/sodeck-files_0.14.0_x86_64-unknown-linux-gnu.tar.gz"
+    }
+  ],
+  "nativePackageVerification": [
+    {
+      "id": "sodeck.files",
+      "version": "0.14.0",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "sha256": "730a51dfff5b3cb9c9486839843d65f6cbceb63fe3b3bc7135d74dfa379675a2",
+      "runId": "45962114669",
+      "toolCommit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "passed": true,
+      "pluginIcons": [
+        "folder",
+        "log"
+      ],
+      "dataDirectory": {
+        "unicode": true,
+        "extended": false,
+        "length": 317
+      },
+      "calls": [
+        "files.open",
+        "files.close"
+      ]
+    },
+    {
+      "id": "sodeck.files",
+      "version": "0.14.0",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "sha256": "1a08f0f84c11de5b0a40a65ea5ecb2075b9f35f8ec45980b22ea7004534d36ba",
+      "runId": "45962114669",
+      "toolCommit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "passed": true,
+      "pluginIcons": [
+        "folder",
+        "log"
+      ],
+      "dataDirectory": {
+        "unicode": true,
+        "extended": false,
+        "length": 317
+      },
+      "calls": [
+        "files.open",
+        "files.close"
+      ]
+    },
+    {
+      "id": "sodeck.files",
+      "version": "0.14.0",
+      "target": "aarch64-apple-darwin",
+      "commit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "sha256": "bc4ea69f86e695c2261f1df22f729036e54980dd7c152ab75183c0927ef39585",
+      "runId": "45962114669",
+      "toolCommit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "passed": true,
+      "pluginIcons": [
+        "folder",
+        "log"
+      ],
+      "dataDirectory": {
+        "unicode": true,
+        "extended": false,
+        "length": 361
+      },
+      "calls": [
+        "files.open",
+        "files.close"
+      ]
+    },
+    {
+      "id": "sodeck.files",
+      "version": "0.14.0",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "sha256": "d68cf1bfd7e1625ec8bbab57b4f48ae2d18c464de47a37d87e647f6d2ec71e43",
+      "runId": "45962114669",
+      "toolCommit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "passed": true,
+      "pluginIcons": [
+        "folder",
+        "log"
+      ],
+      "dataDirectory": {
+        "unicode": true,
+        "extended": true,
+        "length": 353
+      },
+      "calls": [
+        "files.open",
+        "files.close"
+      ]
+    },
+    {
+      "id": "sodeck.files",
+      "version": "0.14.0",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "sha256": "1517928de2adce8781e89446001612a7768356c0376da32495df87be3315cd53",
+      "runId": "45962114669",
+      "toolCommit": "562343f7d92e9374adcc86a0cc06a7a41442b4ef",
+      "passed": true,
+      "pluginIcons": [
+        "folder",
+        "log"
+      ],
+      "dataDirectory": {
+        "unicode": true,
+        "extended": true,
+        "length": 353
+      },
+      "calls": [
+        "files.open",
+        "files.close"
+      ]
+    }
+  ],
+  "remoteVerification": {
+    "run": 45963470904,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45963470904",
+    "conclusion": "success",
+    "evidence": "../../../docs/releases/v2.11.0-remote.json"
+  },
+  "publicVerification": {
+    "checkedAt": "2026-11-27T09:41:44.041Z",
+    "assets": [
+      {
+        "name": "plugin-update.json",
+        "size": 3746,
+        "sha256": "01083b6918bcdd5b1dd4916e58cc2c8fc4319de0c8566aa0b2d627230d16de4a",
+        "anonymous": true,
+        "verified": true
+      },
+      {
+        "name": "sodeck-files_0.14.0_aarch64-apple-darwin.tar.gz",
+        "size": 2143420,
+        "sha256": "bc4ea69f86e695c2261f1df22f729036e54980dd7c152ab75183c0927ef39585",
+        "anonymous": true,
+        "verified": true
+      },
+      {
+        "name": "sodeck-files_0.14.0_aarch64-pc-windows-msvc.zip",
+        "size": 2174024,
+        "sha256": "d68cf1bfd7e1625ec8bbab57b4f48ae2d18c464de47a37d87e647f6d2ec71e43",
+        "anonymous": true,
+        "verified": true
+      },
+      {
+        "name": "sodeck-files_0.14.0_aarch64-unknown-linux-gnu.tar.gz",
+        "size": 2149621,
+        "sha256": "730a51dfff5b3cb9c9486839843d65f6cbceb63fe3b3bc7135d74dfa379675a2",
+        "anonymous": true,
+        "verified": true
+      },
+      {
+        "name": "sodeck-files_0.14.0_x86_64-pc-windows-msvc.zip",
+        "size": 2236642,
+        "sha256": "1517928de2adce8781e89446001612a7768356c0376da32495df87be3315cd53",
+        "anonymous": true,
+        "verified": true
+      },
+      {
+        "name": "sodeck-files_0.14.0_x86_64-unknown-linux-gnu.tar.gz",
+        "size": 2230271,
+        "sha256": "1a08f0f84c11de5b0a40a65ea5ecb2075b9f35f8ec45980b22ea7004534d36ba",
+        "anonymous": true,
+        "verified": true
+      }
+    ],
+    "notesMatch": true,
+    "platformFieldsUnchanged": true
+  },
+  "packageJobs": [
+    {
+      "name": "select",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "linux-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "macos-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "linux-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-windows-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-windows-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-linux-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-linux-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-macos-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "release",
+      "conclusion": "success"
+    }
+  ],
+  "retryHistory": [
+    {
+      "run": 45962067702,
+      "job": "native-linux-aarch64",
+      "reason": "Existing lifecycle unload response timeout; reran only failed job and passed."
+    },
+    {
+      "run": 45962067702,
+      "job": "integration-business-linux-x86_64",
+      "reason": "New integration test selected a terminal iframe using a mismatching title; corrected to actual View ID in test-only commit."
+    },
+    {
+      "run": 45965057074,
+      "job": "integration-business-linux-x86_64",
+      "reason": "Existing files copy batch hit 120s timeout after 161 completed and zero failed items; original source CI and local passed; unchanged files rerun passed. That retry subsequently failed because the new Compose test opened the menu while the index was incomplete; the next test-only commit pauses automatic refresh and waits for a complete index before directory actions."
+    }
+  ],
+  "limitations": "Physical IME/DPI/accessibility, netem, formal published-version upgrade, every Docker remote combination and cross-host Compose directory identity were not verified. Extra local core installer run was safely refused because 2.10.0 is installed; clean native CI installer checks passed. Windows actual Compose flow passed; the subsequent existing full Docker maintenance fixture twice timed out waiting for the index after its second stop and is not recorded as passed. Linux final full Engine result is recorded separately."
+}
