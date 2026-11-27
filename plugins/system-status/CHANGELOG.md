@@ -4,7 +4,17 @@
 - 统一在协议分段处移除脚本添加的一个换行，保留真实空白与严格字段检查；继续按来源保留旧值、历史缺口和恢复预热。
 - 补齐原始协议、逐项来源、连续状态及挂载/容量共享清理回归；Linux/macOS 原生脚本与真实 SSH 验收不再只判断组内部分成功。
 
-要求核心 2.12.0 的 API 2.2；未新增生产依赖或核心接口。本版待独立五平台验收和发行，剩余交付见[采集整改计划](../../docs/plans/system-status-collection-boundary.md)。
+要求核心 2.12.0 的 API 2.2；未新增生产依赖或核心接口。更新插件并重启后生效，本轮核心不升版。
+
+包来源 [ed4ef8e](https://github.com/BgaSol/soDeck/commit/ed4ef8e4367f5b5bc5d57954cdc1f09ec2423334)；[原始独立打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/46040653359) 的 Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 原生归档、架构/资源、包内握手、生命周期和退出全部通过。发行 [system-status 0.7.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-system-status-v0.7.1) 使用同一草稿的五份程序归档及更新清单，显式非 Latest；清单仅同步 notes。[永久附件与原生报告](release-evidence/v0.7.1-assets.json)保留来源与公开下载摘要，仓库 Latest 保持核心 2.12.1。
+
+[最终同源 Check](https://github.com/BgaSol/soDeck/actions/runs/46040650973) 的五平台插件 Rust、工程脚本、Linux 实际 OpenSSH/后台采集、UI 和三插件通信通过；Linux 两架构及 macOS 原生测试实际执行生产采集脚本，逐项验证来源。独立 browser/desktop 与 netem 任务按改动选择跳过，不记为通过。本机另通过格式/类型、234 项工程脚本、42 项插件 Rust、Windows OpenSSH 及三插件共享；最终 Actions Windows x86_64 归档通过三主题七宽度 UI 回归。
+
+真实 Ubuntu 设备使用生产代码生成的只读命令，经同一实现的 decode/apply/Publisher 验证，恢复 7 个磁盘/分区、9 个接口、12 个地址与完整挂载扫描，第二轮磁盘速率及共享 complete 通过。[脱敏设备证据](release-evidence/v0.7.1-device.json)保留方法与限制；未替换用户当时运行的旧插件，未操作鼠标或修改远端配置。
+
+首轮候选 [f249a4c](https://github.com/BgaSol/soDeck/commit/f249a4cd7bb3fc86619611578552e48fd2bab890) 的 [Check](https://github.com/BgaSol/soDeck/actions/runs/46040210811) 与[打包](https://github.com/BgaSol/soDeck/actions/runs/46040215441)在发布前主动取消：复核发现旧容器测试辅助每轮重建简化状态，接口断言应在拓扑当轮执行。修正仅涉及测试，最终归档重新按上述最终提交构建；首轮候选未发行。
+
+两个依赖 Linux 容器/Snap 挂载夹具的专项本轮未执行，本机 Rust 将其标为 ignored；原生 Linux 真实采集另行通过。未执行 netem、正式旧版线上升级、全远端系统矩阵、新一轮原生远程包组合或物理 IME/DPI/读屏专项；包内进程验收不代表这些范围通过。
 
 # 0.7.0
 
