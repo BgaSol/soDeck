@@ -1,5 +1,7 @@
 import {createAppearance} from './appearance.js';
 import {createLocation} from './location.js';
+import {createLocationPublication} from './location-publication.js';
+import {SharedState} from './sdk/state.js';
 import {createSearch} from './search.js';
 import {snapshotChunks} from './snapshot.js';
 import {createBufferState} from './buffer-state.js';
@@ -38,7 +40,8 @@ import {createReading} from './reading/view.js';
   let submitMarker;
   const controls=installTerminalInput(terminal,host,()=>({key:mountKey,canCopy:!disposed&&!restoring,canPaste:enabled&&!restoring&&!disposed&&visible}),fail,()=>search.show(),{submit(){submitMarker?.dispose();submitMarker=reading.submit();},contextActions:row=>reading.contextActions(row)});
   const appearance=createAppearance(terminal,host,()=>caughtUp&&!restoring&&visible&&!disposed,()=>enqueueSize(true),()=>controls.invalidate());
-  const location=createLocation(terminal,value=>reading.location(value));
+  let publication;
+  const location=createLocation(terminal,(value,options)=>{reading.location(value);publication?.observe(value,options);});
   let lastCols=0,lastRows=0;
   let sizeFrame,sizeJob,sizeDone,sizeReject,desiredSize,resizeQueued=false,sizeEpoch=0,resizeFailed=false,resizeRetries=0,retryTimer;
   const request=p=>sodeck.request('data',{id,...p});
@@ -138,12 +141,14 @@ import {createReading} from './reading/view.js';
     terminal.open(host);
     createParams=mount.data.createParams||{};newTerminal.textContent=createParams.launch?.kind==='command'?'重新打开终端':'新建终端';if(mount.data.commandPending)void commandStatus({status:'pending'});
     appearance.receive(mount.settings);
+    publication?.dispose();
+    publication=createLocationPublication(mount,{client:new SharedState(mount),restore:value=>location.restore(value),error:fail});
     location.mount(mount);
     reading.mount(mount);
     status.textContent=`${mount.serverName||'服务器'} · 正在接续终端…`;
     void request({op:'attach'}).catch(fail);
   });
-  addEventListener('sodeck:surfaceReady',()=>{readOnly=false;transferFrozen=false;surfaceReady=true;enabled=caughtUp&&!disconnected&&!ended;void resumeDisplay().catch(fail);if(enabled)location.ready();});
+  addEventListener('sodeck:surfaceReady',()=>{readOnly=false;transferFrozen=false;surfaceReady=true;enabled=caughtUp&&!disconnected&&!ended;void resumeDisplay().catch(fail);if(enabled)void publication?.ready().then(()=>location.ready());});
   addEventListener('sodeck:data',event=>{
     chain=chain.then(async()=>{
       if(disposed)return;
@@ -152,7 +157,7 @@ import {createReading} from './reading/view.js';
       reading.frame(frame.kind);
       if(frame.kind==='error'){location.unknown(offset,'终端输出不可用');fail(frame.metadata);return;}
       if(frame.kind==='recovery'){recoveryUnavailable=frame.metadata?.available===false;if(recoveryUnavailable)fail(recoveryNotice);else if(status.textContent===recoveryNotice){status.hidden=true;status.classList.remove('error');}}
-      if(frame.kind==='reset'){location.invalidate();controls.invalidate();stopSize();restoring=true;enabled=false;terminal.reset();offset=frame.offset;savedOffset=offset;const d=frame.metadata;restoredDisplay=d;if(d?.cols&&d?.rows)terminal.resize(d.cols,d.rows);}
+      if(frame.kind==='reset'){location.reset();controls.invalidate();stopSize();restoring=true;enabled=false;terminal.reset();offset=frame.offset;savedOffset=offset;const d=frame.metadata;restoredDisplay=d;if(d?.cols&&d?.rows)terminal.resize(d.cols,d.rows);}
       if(frame.kind==='snapshot')await write(Uint8Array.from(frame.data));
       if(frame.kind==='restore')restoring=false;
       if(frame.kind==='data'){const bytes=Uint8Array.from(frame.data);await write(bytes);scan(bytes);offset=frame.offset;location.completed();}
@@ -161,7 +166,7 @@ import {createReading} from './reading/view.js';
         caughtUp=true;enabled=surfaceReady&&!disconnected&&!ended;status.textContent=recoveryUnavailable?recoveryNotice:'远程终端 · 已连接';status.hidden=!recoveryUnavailable;status.classList.toggle('error',recoveryUnavailable);document.body.dataset.ready='true';
         // Incoming windows may render before ownership commits. Only the owner saves a checkpoint.
         search.update(true);sodeck.prepared(true);if(restoredDisplay?.ui?.atBottom)terminal.scrollToBottom();else if(restoredDisplay?.ui?.viewportY!=null)terminal.scrollToLine(restoredDisplay.ui.viewportY);else if(restoredDisplay?.viewportY!=null)terminal.scrollToLine(restoredDisplay.viewportY);const selection=restoredDisplay?.ui?.selection!==undefined?restoredDisplay.ui.selection:restoredDisplay?.selection;if(selection){const p=selection;terminal.select(p.start.x,p.start.y,(p.end.y-p.start.y)*terminal.cols+p.end.x-p.start.x);}search.restore(restoredDisplay?.ui);restoredDisplay=undefined;if(surfaceReady){void appearance.apply();void enqueueSize().catch(()=>{});}
-        if(surfaceReady&&!disconnected&&!ended)location.ready();
+        if(surfaceReady&&!disconnected&&!ended)void publication?.ready().then(()=>location.ready());
       }
       if(frame.kind==='end'){reading.interrupt();location.unknown(offset,'终端已退出');controls.invalidate();enabled=false;ended=true;stopSize();void enqueueSize().catch(()=>{});status.hidden=false;status.textContent=disconnected?'连接已断开，请在工作台重新连接后新建终端。':frame.metadata?.error||`终端已退出${frame.metadata?.exitCode==null?'':` · ${frame.metadata.exitCode}`}`;newTerminal.hidden=disconnected;}
     }).catch(fail);
@@ -171,22 +176,23 @@ import {createReading} from './reading/view.js';
   addEventListener('sodeck:flush',async event=>{
     try {
       if(controls.composing()||search.composing())throw new Error('中文输入仍在组合，请完成输入后再移动');
-      transferFrozen=event.detail.freeze===true;if(transferFrozen){stopSize();search.pause();reading.pause();}await inputChain;await chain;
+      transferFrozen=event.detail.freeze===true;await publication?.freeze(transferFrozen);if(transferFrozen){stopSize();search.pause();reading.pause();}await inputChain;await chain;
       if(inputError)throw inputError;
       await checkpoint(true);
       sodeck.flushed(event.detail.id);
-    }catch(error){if(transferFrozen){transferFrozen=false;void resumeDisplay().catch(fail);}sodeck.flushed(event.detail.id,String(error));}
+    }catch(error){if(transferFrozen){transferFrozen=false;void publication?.freeze(false);void resumeDisplay().catch(fail);}sodeck.flushed(event.detail.id,String(error));}
   });
   addEventListener('sodeck:transferCancelled',()=>{transferFrozen=false;void resumeDisplay().catch(fail);});
   addEventListener('sodeck:visibilityChanged',event=>{visible=event.detail.visible;if(!visible){controls.invalidate();stopSize();search.pause();reading.pause();}if(visible)void resumeDisplay().catch(fail);});
   addEventListener('sodeck:settingsChanged',event=>{appearance.receive({...event.detail.settings,retry:true});location.settings(event.detail.settings);reading.settings(event.detail.settings);});
-  addEventListener('sodeck:contextChanged',()=>location.invalidate());
-  addEventListener('sodeck:connectionChanged',event=>{if(!event.detail.connected){location.invalidate();reading.interrupt();}});
+  addEventListener('sodeck:contextChanged',()=>{location.invalidate();publication?.invalidate();});
+  addEventListener('sodeck:connectionChanged',event=>{if(!event.detail.connected){location.invalidate();publication?.invalidate();reading.interrupt();}});
   addEventListener('sodeck:contextChanged',()=>{controls.invalidate();enabled=false;stopSize();newTerminal.hidden=disconnected||!ended;status.hidden=false;status.textContent='连接已更换，请在工作台新建终端；此页保留原输出。';});
   addEventListener('sodeck:connectionChanged',event=>{disconnected=!event.detail.connected;if(disconnected){controls.invalidate();enabled=false;stopSize();newTerminal.hidden=true;status.hidden=false;status.textContent='连接已断开，请在工作台重新连接；此页保留原输出。';}else if(ended){newTerminal.hidden=false;newTerminal.disabled=opening||commandPending;}});
   addEventListener('sodeck:themeChanged',event=>theme(event.detail.tokens));
   addEventListener('sodeck:focus',()=>{if(!search.focus())terminal.focus();void enqueueSize(true).catch(()=>{});});
-  addEventListener('sodeck:unmount',()=>{disposed=true;submitMarker?.dispose();clearTimeout(commandTimer);stopSize();search.dispose();reading.dispose();buffers.dispose();location.dispose();appearance.dispose();controls.dispose();observer.disconnect();terminal.dispose();});
+  addEventListener('sodeck:activated',()=>publication?.activate());
+  addEventListener('sodeck:unmount',()=>{disposed=true;submitMarker?.dispose();clearTimeout(commandTimer);stopSize();search.dispose();reading.dispose();buffers.dispose();location.dispose();publication?.dispose();appearance.dispose();controls.dispose();observer.disconnect();terminal.dispose();});
   // The final output chunk may arrive without another chunk to trigger a checkpoint.
   const timer=setInterval(()=>{if(disposed){clearInterval(timer);return;}chain=chain.then(()=>{void checkpoint().catch(error=>reading.storageError(String(error)));}).catch(()=>{});},1000);
 })();

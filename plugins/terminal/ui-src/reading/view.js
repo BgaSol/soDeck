@@ -4,7 +4,7 @@ import {createReadingModel} from './model.js';
 const paths={up:'m5 9 3-3 3 3M8 6v7',down:'m5 7 3 3 3-3M8 10V3',bookmark:'M4 2h8v12l-4-3-4 3Z',folder:'M2 4h5l1.5 2H14v7H2Zm0 0V3h4l1 1',terminal:'m3 4 4 4-4 4m6 0h4',start:'M3 3h10M8 13V6m-3 3 3-3 3 3',check:'M14 8A6 6 0 1 1 2 8a6 6 0 0 1 12 0Zm-9-0 2 2 4-4',error:'M14 8A6 6 0 1 1 2 8a6 6 0 0 1 12 0ZM6 6l4 4m0-4-4 4',running:'M14 8A6 6 0 1 1 2 8a6 6 0 0 1 12 0ZM7 5l4 3-4 3Z',input:'M4 8h8',unknown:'M14 8A6 6 0 1 1 2 8a6 6 0 0 1 12 0ZM8 11h.01M6 6a2 2 0 1 1 3 1.7L8 9'};
 const icon=name=>`<svg viewBox="0 0 16 16" aria-hidden="true"><path d="${paths[name]}"/></svg>`;
 export function createReading(terminal,host,buffers,allowed){
-  let disposed=false,paused=false,frame,kind,token='',mode='auto',stickyEnabled=true,fill=false,inputEnabled=false,notice='',selectedId,hoverRow,shell='';
+  let disposed=false,paused=false,frame,kind,token='',mode='auto',stickyEnabled=true,fill=false,inputEnabled=false,notice='',selectedId,hoverRow,shell='',locationReason='';
   const listeners=new Set();
   const layout=host.parentElement;
   const toolbar=document.createElement('div');toolbar.className='terminal-reading-toolbar';toolbar.setAttribute('aria-label','终端历史阅读');
@@ -57,7 +57,7 @@ export function createReading(terminal,host,buffers,allowed){
     const executable=shell.split(/[\\/]/).at(-1)?.toLowerCase(),shellName=({bash:'Bash',zsh:'Zsh',pwsh:'PowerShell','powershell.exe':'PowerShell',powershell:'PowerShell'})[executable]||executable||'命令识别已连接';
     integrationState.textContent=notice?'标记保存暂不可用':!normal()?'应用接管中':mode==='manual'?'仅手动标记':model.state().available?shellName:inputEnabled?'回车辅助已开启':'手动标记可用';
     integrationState.setAttribute('aria-label','终端信息：'+integrationState.textContent);integrationState.title='查看终端信息';information.classList.toggle('has-notice',!!notice);
-    informationText.textContent=[directory.title||'当前目录未确认',shell&&`Shell：${shell}`, '编码：UTF-8',explanation].filter(Boolean).join('\n');
+    informationText.textContent=[directory.title||'当前目录未确认',shell&&`Shell：${shell}`, '编码：UTF-8',locationReason,explanation].filter(Boolean).join('\n');
     if(!enabled||!g)return;
     const fragment=document.createDocumentFragment();
     for(const position of positions){
@@ -106,7 +106,7 @@ export function createReading(terminal,host,buffers,allowed){
     model,
     mount(mount){token=mount.data.integration?.token||'';shell=mount.data.integration?.shell||'';this.settings(mount.settings);},
     settings(value){const v=value?.values||{},before=mode;mode=['manual','off'].includes(v.readingMode)?v.readingMode:'auto';host.classList.toggle('has-reading-gutter',mode!=='off');stickyEnabled=v.commandSticky!==false;fill=v.commandFill===true;if(mode!==before)model.suspend(mode!=='auto');schedule();},
-    location(value){if(value.state==='known'){directoryText.textContent=value.path;directory.title=value.path;}else if(value.activity==='busy'&&directoryText.textContent!=='当前终端'){directory.title='最近确认目录：'+directoryText.textContent;}else{directoryText.textContent='当前终端';directory.title='当前目录未确认';}schedule();},
+    location(value){locationReason=value.reason||({'unsupported-shell':'此 Shell 不支持自动目录识别','hook-conflict':'已有 Shell 调试钩子，自动目录识别不可用','handshake-timeout':'未收到目录启动报告','manual-setup':'目录兼容模式需要 OSC 7 配置及正确主机名','disabled':'目录识别已关闭','invalid-report':'目录报告无效'}[value.reasonCode])||'';if(value.state==='known'){directoryText.textContent=value.path;directory.title=value.path;}else if(value.activity==='busy'&&directoryText.textContent!=='当前终端'){directory.title='最近确认目录：'+directoryText.textContent;}else{directoryText.textContent='当前终端';directory.title='当前目录未确认';}schedule();},
     frame(type){kind=type;if(type==='reset'){model.reset();notice='';}},
     checkpoint(){return checkpointFrames({version:1,inputEnabled,model:model.snapshot()});},
     revision(){return model.revision()+':'+inputEnabled;},

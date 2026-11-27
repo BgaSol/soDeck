@@ -108,11 +108,11 @@ pub fn root(value: &Value) -> Value {
 pub fn normalize(kind: Kind, mut row: Value) -> Result<Value, String> {
     kind.validate(row["id"].as_str().ok_or("资源 ID 缺失")?)?;
     if kind == Kind::Container {
-        row["project"] = json!(commands::text(
-            row["labels"]["com.docker.compose.project"]
-                .as_str()
-                .unwrap_or(""),
-            256
+        row["project"] = json!(
+            crate::compose::label(&row["labels"]["com.docker.compose.project"]).unwrap_or("")
+        );
+        row["composeDirectory"] = json!(crate::compose::label(
+            &row["labels"]["com.docker.compose.project.working_dir"]
         ));
         row["service"] = json!(commands::text(
             row["labels"]["com.docker.compose.service"]

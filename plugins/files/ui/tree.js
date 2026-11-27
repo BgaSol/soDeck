@@ -77,9 +77,8 @@
       const b = document.createElement('button'); b.className='sd-icon'; b.type = 'button'; b.title = label; b.setAttribute('aria-label', label); b.append(icon(name)); b.addEventListener('click', () => void this.run(fn)); return b;
     }
     async run(fn) { try { await fn(); } catch (error) { if(error.code!=='cancelled')this.message(error.message, true); } }
-    cancelFollow(manual=false){++this.navigationEpoch;if(manual)this.onManual?.();}
+    cancelNavigation(manual=false){++this.navigationEpoch;if(manual)this.onManualNavigation?.();}
     navigation(){const navigation=this.navigationEpoch,context=this.contextEpoch;return()=>{if(this.disposed||navigation!==this.navigationEpoch||context!==this.contextEpoch)throw Object.assign(new Error('定位已取消'),{code:'cancelled'});};}
-    async followLocation(location){this.cancelFollow();const check=this.navigation();const resolved=await this.data('resolveLocation',location);check();await this.locate(resolved.path,{follow:true,check});}
     node(path, attrs = { kind: 'directory' }, name = path.split('/').pop() || path) {
       let n = this.nodes.get(path);
       if (!n) { n = { path, name, attrs, children: [], pages: 0, loaded: false, more: false, cursor: null, error: '', loading: null, key: 'node-' + ++this.counter }; this.nodes.set(path, n); }
@@ -146,7 +145,7 @@
     }
     async toggle(n) {
       const positions=SoDeckMotion.captureMotion(this.tree,'.tree-row');
-      this.cancelFollow(true);
+      this.cancelNavigation(true);
       if (this.expanded.has(n.path)) {
         this.expanded.delete(n.path);
         if (this.selected.startsWith(n.path.replace(/\/$/, '') + '/')) this.select(n, false);
@@ -178,28 +177,34 @@
       }
       if (expandTarget && current.attrs.kind === 'directory') { this.expand(path); if (!current.loaded) await this.load(current); }
       check();
+      if(current.error)throw new Error(current.error);
       return current;
     }
     async locate(target, focus = true) {
-      const options=typeof focus==='object'?focus:{};
-      if(!options.follow)this.cancelFollow(!this.restoring);
-      const check=options.check||this.navigation();check();
-      this.navigationPath=target;
-      const info = await this.data('stat', { path: target });
-      check();
-      const path = info.path.replace(/\/$/, '') || '/';
-      const volume = /^\/[A-Za-z]:/.exec(path)?.[0] || '/';
-      if (volume !== this.rootPath) {
-        for (const n of this.nodes.values()) if (n.cursor) {await this.data('closeDirectory', { cursor: n.cursor });check();}
-        this.nodes.clear(); this.expanded.clear(); this.rootPath = volume;
-        this.node(volume, { kind: 'directory' }, volume);
+      this.cancelNavigation(!this.restoring);const check=this.navigation();
+      const info=await this.data('stat',{path:target});check();
+      await this.locateResolved(info,{check,focus});
+    }
+    async locateResolved(info,{check=this.navigation(),focus=false}={}) {
+      check();const path=info.path.replace(/\/$/,'')||'/',volume=/^\/[A-Za-z]:/.exec(path)?.[0]||'/';
+      if(volume!==this.rootPath){
+        const prepared=[],opened=[];let committed=false;
+        try{
+          let next=volume;const paths=[volume];for(const part of path.slice(volume.length).split('/').filter(Boolean)){next=next.replace(/\/$/,'')+'/'+part;paths.push(next);}
+          for(const target of paths){const item=target===path?info:await this.data('stat',{path:target});check();const page=item.attrs.kind==='directory'?await this.data('list',{path:target}):null;if(page?.cursor)opened.push(page.cursor);check();prepared.push({info:item,page});}
+          for(const n of this.nodes.values())if(n.cursor){await this.data('closeDirectory',{cursor:n.cursor});check();n.cursor=null;}
+          check();this.nodes.clear();this.expanded.clear();this.rootPath=volume;
+          for(const {info:item,page}of prepared){const n=this.node(item.path.replace(/\/$/,'')||'/',item.attrs);if(page){n.loaded=true;n.pages=1;n.more=page.more;n.cursor=page.cursor;for(const entry of page.entries){const child=join(n.path,entry.name);this.node(child,entry.attrs,entry.name);n.children.push(child);}this.sort(n);}}
+          committed=true;
+        }finally{if(!committed)await Promise.all(opened.map(cursor=>this.data('closeDirectory',{cursor}).catch(()=>{})));}
       }
-      const n = await this.reveal(path, info.attrs.kind === 'directory',check);check();
-      this.select(n, false,null,true); this.render(); this.row(path)?.scrollIntoView({ block: 'nearest' });
-      if (focus===true) this.tree.focus(); this.persist();
+      check();this.navigationPath=path;
+      const n=await this.reveal(path,info.attrs.kind==='directory',check);check();
+      this.select(n,false,null,true);this.render();this.row(path)?.scrollIntoView({block:'nearest'});
+      if(focus)this.tree.focus();this.persist();
     }
     select(n, scroll = true, modifiers = null, automatic=false) {
-      if(!automatic&&!this.restoring)this.cancelFollow(true);
+      if(!automatic&&!this.restoring)this.cancelNavigation(true);
       if (modifiers?.shiftKey && this.anchor && this.visible) {
         const from = this.visible.findIndex(v => v.path === this.anchor), to = this.visible.indexOf(n);
         if (!modifiers.ctrlKey && !modifiers.metaKey) this.selection.clear();
@@ -295,7 +300,7 @@
       this.expand(n.path); await this.load(n); this.persist();
     }
     collapseAll() {
-      this.cancelFollow(true);
+      this.cancelNavigation(true);
       this.expanded.clear(); this.selected = this.rootPath; this.input.value = this.rootPath; this.render(true); this.persist();
     }
     render(motion = false, previous) {
@@ -468,38 +473,25 @@
       for (const path of [...this.expanded].sort((a, b) => a.length - b.length)) {
         state.expanded.push(path);
         if (this.nodes.get(path)?.pages > 1) state.pages[path] = this.nodes.get(path).pages;
-        if (state.expanded.length > 128 || new TextEncoder().encode(JSON.stringify(state)).length > 11800) { state.expanded.pop(); delete state.pages[path]; break; }
+        if (state.expanded.length > 128 || new TextEncoder().encode(JSON.stringify(state)).length > 10600) { state.expanded.pop(); delete state.pages[path]; break; }
       }
       state.selection=[];
-      for(const path of this.selectedPaths()){state.selection.push(path);if(new TextEncoder().encode(JSON.stringify(state)).length>11800){state.selection.pop();break;}}
+      for(const path of this.selectedPaths()){state.selection.push(path);if(new TextEncoder().encode(JSON.stringify(state)).length>10600){state.selection.pop();break;}}
       return state;
     }
-    persist() {
-      if (this.restoring) return;
-      this.pendingState = this.snapshot();
-      clearTimeout(this.persistTimer);
-      this.persistTimer = setTimeout(() => this.writeState(), 100);
-    }
-    writeState() {
-      if (this.persisting) return;
-      this.persisting = true;
-      this.persistQueue = Promise.resolve().then(async () => {
-        while (this.pendingState) { const state = this.pendingState; this.pendingState = null; await this.event({ action: 'navigation', state }); }
-      }).finally(() => { this.persisting = false; });
-      this.persistQueue.catch(error => this.message(error.message, true));
-    }
-    async flush() { await Promise.all([...this.pending]); this.persist(); clearTimeout(this.persistTimer); this.writeState(); await this.persistQueue; }
+    persist(){if(!this.restoring)this.onNavigationChanged?.();}
+    async flush(){await Promise.all([...this.pending]);}
     focus() { this.tree.focus(); }
     setMounts(mounts){this.mounts=mounts;for(const row of this.tree.querySelectorAll('.tree-row'))this.decorateMount(row);}
     decorateMount(row){let detail=row.querySelector('.mount-detail');const mount=this.mounts.get(row.dataset.path);if(!mount){detail?.remove();row.classList.remove('mount-row');row.title=row.dataset.path;return;}if(!detail){detail=document.createElement('span');detail.className='mount-detail';row.append(detail);}detail.textContent=mount.label;row.title=row.dataset.path+' · '+mount.detail;row.classList.add('mount-row');}
     contextChanged() {
-      ++this.contextEpoch;this.cancelFollow();this.setMounts(new Map());
+      ++this.contextEpoch;this.cancelNavigation();this.setMounts(new Map());
       this.closeMenu();
       this.pointerEnd(null);
       // Loaded rows are useful while offline; refresh reopens cursors on the new session.
       for (const n of this.nodes.values()) { n.cursor = null; if (n.more) n.error = '连接已更换，请刷新目录'; }
       this.render();
     }
-    dispose(){this.disposed=true;++this.contextEpoch;this.cancelFollow();this.closeMenu();removeEventListener('focus',this.menuRefresh);removeEventListener('sodeck:fileClipboardChanged',this.menuRefresh);}
+    dispose(){this.disposed=true;++this.contextEpoch;this.cancelNavigation();this.closeMenu();removeEventListener('focus',this.menuRefresh);removeEventListener('sodeck:fileClipboardChanged',this.menuRefresh);}
   };
 })();

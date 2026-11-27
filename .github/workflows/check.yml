@@ -234,7 +234,7 @@ jobs:
       - name: Real system status plugin and background sampling
         if: matrix.status
         run: npm run ci:test -- system-status:test
-      - name: Actual Docker plugin with isolated Engine and OpenSSH
+      - name: Actual Docker Engine, directory collaboration and OpenSSH
         if: matrix.docker
         run: npm run ci:test -- docker:test
       - name: Docker UI and source process regression

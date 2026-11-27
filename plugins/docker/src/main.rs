@@ -3,6 +3,7 @@ mod browser;
 mod cli;
 mod collaboration;
 mod commands;
+mod compose;
 mod connection;
 mod logs;
 mod object;

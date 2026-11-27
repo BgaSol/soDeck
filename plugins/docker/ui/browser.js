@@ -37,7 +37,7 @@ export function installBrowserPage(){
     connection.render(snapshot);syncVisibility();
     $('freshness').textContent=snapshot.state==='stale'?'离线快照 · 待刷新':snapshot.observedAt?'采集于 '+new Date(snapshot.observedAt).toLocaleTimeString():'等待首次采集';
     $('busy').textContent=snapshot.busy?'请求处理中':'';$('count').textContent='';$('operation').hidden=true;
-    if(snapshot.error)message(snapshot.error);
+    if(snapshot.error)message(snapshot.error);else if(snapshot.directoryPublication?.message)message(snapshot.directoryPublication.message);
     if(paint&&snapshot.tree){tree.render(snapshot.tree,nav.selected,motion);if(restoreScroll!==undefined){$('tree-viewport').scrollTop=restoreScroll;restoreScroll=undefined;}const operation=snapshot.operation;if(selectedNode?.resource&&!tree.node(nav.selected)&&operation?.state==='succeeded'&&['remove','resource.remove'].includes(operation.action)&&(operation.containerId===selectedNode.resource.id||operation.resource?.id===selectedNode.resource.id)){const index=tree.positions.get(nav.selected)||0;nav.selected=tree.page.nodes[Math.max(0,Math.min(tree.page.nodes.length-1,index-tree.page.offset))]?.key;void remember();}selectedNode=nodeInCache(nav.selected);}
     if(paint)renderInline();
     if(formTarget)menu.valid(current(formTarget)&&(!formTarget.observationRevision||snapshot.indexes?.[formTarget.resource.kind]?.revision===formTarget.observationRevision));
@@ -85,6 +85,10 @@ export function installBrowserPage(){
   async function openMenu(n,trigger){if(!n||!enabled||frozen)return;nav.selected=n.key;formTarget=null;const items=[];const add=(label,run,disabled=false,reason='',danger=false)=>items.push({label,run,disabled,reason,danger});
     if(n.resource){add('展开信息',()=>activate(n));for(const item of actionItems(n))add(item.label,async()=>{await activate(n);void action(item.action,n);},item.disabled,'当前资源或连接状态不可用',item.danger);
       if(n.resource.kind==='container'){add('端口隧道…',async()=>{await activate(n,'resource','ports');tree.inline.querySelector('[data-details-tab=ports]')?.focus({preventScroll:true});});add('终端选项',async()=>{await activate(n);shell(n);},n.status!=='running'||!current(identity()));}add('重新读取信息',()=>load(null,n.resource));add('复制完整标识',()=>copy(n.resource.id));
+    }else if(n.composeProject){
+      const fixed={...identity(),project:n.composeProject,observationRevision:n.observationRevision,publicationId:crypto.randomUUID()};
+      add('跟随',()=>send({action:'compose.follow',...fixed}),!!n.composeLocation?.error||!n.composeLocation?.path,n.composeLocation?.error||('在当前服务器定位；目录来自 Compose 标签：'+n.composeLocation.path));
+      add(n.expanded?'折叠':'展开',()=>toggle(n));
     }else if(n.type==='engine'){
       add('全部折叠',()=>{nav.inline=null;nav.expandedKeys=['engine'];nav.offset=0;closeInline();void remember();},!!nav.query,'清空搜索后可折叠');add('刷新资源树',()=>send({action:'refresh'}),snapshot.busy);add(snapshot.paused?'恢复自动刷新':'暂停自动刷新',()=>send({action:'pauseRefresh',paused:!snapshot.paused}));add('连接设置',()=>activate({key:'tool:connection'},'connection'));add('查看任务',()=>activate({key:'tool:tasks'},'tasks'));add('拉取公开镜像',async()=>{nav.expandedKeys=[...new Set([...(nav.expandedKeys||[]),'engine','category:image'])];await activate({key:'tool:pull'},'pull');});
     }else if(n.type==='root'){add('复制路径',()=>copy(snapshot.engine?.dockerRootDir),!snapshot.engine?.dockerRootDir);add('连接设置',()=>activate({key:'tool:connection'},'connection'));}

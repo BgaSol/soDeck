@@ -66,8 +66,8 @@ footer button { font-size: 11px; padding: 1px 4px; }
 .file-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 }
 .mount-detail { max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--muted); }
-.follow-terminal { white-space: nowrap; flex-shrink: 0; }
-.follow-terminal[aria-pressed="true"] { color: var(--accent); background: var(--accent-bg); }
+.follow-directory { white-space: nowrap; flex-shrink: 0; }
+.follow-directory[aria-pressed="true"] { color: var(--accent); background: var(--accent-bg); }
 .follow-status { flex-shrink: 0; padding: 6px 10px; border-top: var(--sd-stroke-structure, 1px) solid var(--border); background: var(--status-bg, var(--panel)); font-size: 12px; overflow-wrap: anywhere; }
 .follow-status summary { cursor: pointer; min-height: 24px; display: list-item; align-content: center; }
 .follow-status p { margin: 6px 0; max-height: 7em; overflow: auto; }

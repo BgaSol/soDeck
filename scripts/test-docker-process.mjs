@@ -8,6 +8,7 @@ const environment=windows?{kind:'windows',launcher:'powershell.exe',exitMode:'na
 const root=packageRoot();
 const manifest=JSON.parse(fs.readFileSync(path.join(root,'plugin.json')));
 const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-docker-process-'));
+const directoryRecords=new Map(),directoryWrites=[];let loseDirectoryReply=true;
 const tickets=new Map(),submissions=[],streams=new Map(),streamRequests=[],streamLookups=[];let loseCommandReceipt=true,loseStreamReceipts=2,tunnelOutcome='accepted';
 const id='a'.repeat(64),tasks=new Map(),commands=[],diagnostics=[];let number=0,hold=false,holdMutation=false,loseReceipt=true,malformed=false,engineId='engine',peer;
 const programs=new Map(),streamBodies=new Map();
@@ -30,7 +31,7 @@ const output=command=>{
   if(command.includes("'ls'"))return id+'\n';
   if(command.includes("'inspect'")&&command.includes('"mounts":'))return JSON.stringify({id,name:inspect.Name,imageId:inspect.Image,mounts:inspect.Mounts});
   if(command.includes("'inspect'")&&command.includes('"HostConfig":'))return JSON.stringify(inspect);
-  if(command.includes("'inspect'")&&command.includes('"id":'))return JSON.stringify({id,name:'service-中文',image:'demo:1',imageId:inspect.Image,status:inspect.State.Status,health:'unhealthy',exitCode:0,labels:{'com.docker.compose.project':'web','com.docker.compose.service':'api'}});
+  if(command.includes("'inspect'")&&command.includes('"id":'))return JSON.stringify({id,name:'service-中文',image:'demo:1',imageId:inspect.Image,status:inspect.State.Status,health:'unhealthy',exitCode:0,labels:{'com.docker.compose.project':'web','com.docker.compose.service':'api','com.docker.compose.project.working_dir':windows?'C:\\compose':'/srv/compose'}});
   if(command.includes("'inspect'"))return JSON.stringify(inspect);
   if(command.includes("'stats'"))return JSON.stringify({CPUPerc:'150.5%',MemUsage:'10MiB / 1GiB',MemPerc:'1%',NetIO:'1kB / 2kB',BlockIO:'0B / 0B',PIDs:'2'});
   if(command.includes("'logs'"))return '2026-11-10T00:00:00Z alpha 中文\n'+Array.from({length:149},(_,i)=>'line '+i).join('\n')+'\noff-page UNIQUE 中文\n';
@@ -39,6 +40,8 @@ const output=command=>{
   return id+'\n';
 };
 peer=pluginPeer(path.join(root,manifest.entry),withProcessFacts(async(method,p)=>{
+  if(method==='state.get')return {record:directoryRecords.get(p.topic)||{revision:'0',present:false}};
+  if(method==='state.put'){assert.deepEqual(p.expectedContext,context);assert.equal(p.topic,'workspace.location.v1');const old=directoryRecords.get(p.topic);assert.equal(p.expectedRevision,old?.revision||'0');directoryWrites.push(p);const revision=String(directoryWrites.length);directoryRecords.set(p.topic,{revision,present:true,value:p.value});if(loseDirectoryReply){loseDirectoryReply=false;throw Object.assign(new Error('lost directory reply'),{code:-32003});}return {revision};}
   if(method==='session.program.prepare'){
     assert.deepEqual(p.expectedContext,context);
     assert.deepEqual(p.environment,environment);
@@ -111,6 +114,13 @@ try{
   await request('ui.createView','browser',{viewType:'browser'});let browser=await idle('browser');assert.equal(browser.state,'ready');
   const initialPage=(await request('ui.event','browser',{data:{action:'browser.page',status:'abnormal',query:'中文'}})).data;
   assert(initialPage.nodes.some(n=>n.resource?.id===id));
+  const project=initialPage.nodes.find(n=>n.composeProject==='web');assert(project);assert.equal(project.composeLocation.path,windows?'C:\\compose':'/srv/compose');
+  const follow={action:'compose.follow',project:'web',observationRevision:project.observationRevision,publicationId:'00000000-0000-4000-8000-000000000001',engineId:browser.engine.id,endpoint:browser.endpoint,expectedContext:context,scopeEpoch:browser.scopeEpoch};
+  await request('ui.event','browser',{data:follow});await until(()=>state('browser'),s=>s.directoryPublication?.state==='succeeded');assert.equal(directoryWrites.length,1,'lost reply queries the original directory publication');assert.equal(directoryWrites[0].value.filesystemView,'session-default');
+  await request('ui.event','browser',{data:follow});assert.equal(directoryWrites.length,1);
+  await assert.rejects(request('ui.event','browser',{data:{...follow,engineId:'other'}}),/身份/);
+  await request('ui.event','browser',{data:{...follow,publicationId:'00000000-0000-4000-8000-000000000002'}});await until(()=>state('browser'),s=>s.directoryPublication?.state==='succeeded');assert.equal(directoryWrites.length,2,'explicit same directory publishes a fresh ID');
+
   await assert.rejects(request('ui.createView','removed',{viewType:'container',resourceKey:JSON.stringify({id})}),/未知 Docker 视图/);
   await request('ui.createView','detail',{viewType:'browser'});await idle('detail');
   const terminal={action:'openTerminal',requestId:'terminal-once',shell};

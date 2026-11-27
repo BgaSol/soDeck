@@ -191,6 +191,15 @@ pub(super) async fn roundtrip(
     } else {
         None
     };
+    if cfg!(target_os = "linux")
+        && core.snapshot().plugins.iter().any(|p| {
+            p.manifest.id == "sodeck.terminal"
+                && semver::Version::parse(&p.manifest.version)
+                    .is_ok_and(|v| v >= semver::Version::new(0, 12, 0))
+        })
+    {
+        wait("通用目录发布",||{let result=core.state_surface_request(&window,&token,&json!({"op":"get","expectedContext":context,"topic":"workspace.location.v1","key":"current"})).ok()?;let v=&result["record"]["value"];(v["version"]==1&&v["filesystemView"]=="shell-reported"&&v["path"].is_string()&&v["witness"]["value"].is_string()).then_some(())}).await?;
+    }
     let opened=core.ui_action("main",context,json!({"op":"open","key":"sodeck.files:editor","requestId":"native-file-open","resourceKey":remote,"params":{"path":remote}}))?;
     let fv = opened["viewId"].as_str().ok_or("没有编辑器视图")?;
     let (_, token) = wait("文件编辑器界面挂载", || core.ui_ready_surface(fv)).await?;

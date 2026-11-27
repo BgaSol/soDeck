@@ -142,7 +142,7 @@ Linux 安装 Bash、Zsh 和 Python 3 后运行 `python3 scripts/test-terminal-sh
 
 Windows 命令阅读 hook 使用 `node scripts/test-terminal-powershell.mjs`，实际运行已安装的 Windows PowerShell 5.1/PowerShell 7；独立终端包构建包含此回归。`node scripts/test-terminal-powershell-pty.mjs` 另使用本机 OpenSSH sshd、ssh-keygen 和两个 PowerShell，通过临时回环服务与密钥验证真实 PSReadLine 回车、执行结果和绝对程序路径；不修改系统 SSH 服务或服务器 profile，不等同于系统 IME/ARM64 远端验收。
 
-docker:windows:test 先运行 test:prepare -- docker；需要本机 Docker Desktop 已启动，docker.exe/ssh-keygen/Cargo 在 PATH，Windows OpenSSH sshd 可用。测试只启动临时回环服务与独立密钥，不修改系统 SSH 配置；创建唯一名称/标签的容器、卷、网络与派生镜像，结束仅清理这些资源。它不等于 Windows Server Engine 或 ARM64 远端验收。Docker 的 test:prepare 同时准备终端和网络隧道作为组合测试输入；这不改变核心／插件独立打包边界。隔离 Linux Engine 和 Windows Desktop 夹具还从 Docker 发布端口创建网络隧道，经真实核心命令及共享状态验证 HTTP 字节、复用、来源关闭与端口释放。docker:process:test 与实际插件包回归另覆盖模拟 POSIX/Linux、Windows/Linux、Windows/Windows 三种组合，模拟不计为真实 Engine 验收。
+docker:windows:test 先运行 test:prepare -- docker；需要本机 Docker Desktop 已启动，docker.exe/ssh-keygen/Cargo 在 PATH，Windows OpenSSH sshd 可用。测试只启动临时回环服务与独立密钥，不修改系统 SSH 配置；创建唯一名称/标签的容器、卷、网络与派生镜像，结束仅清理这些资源。它不等于 Windows Server Engine 或 ARM64 远端验收。Docker 的 test:prepare 同时准备终端、文件、系统状态和网络隧道作为组合测试输入；这不改变核心／插件独立打包边界。隔离 Linux Engine 和 Windows Desktop 夹具还从 Docker 发布端口创建网络隧道，经真实核心命令及共享状态验证 HTTP 字节、复用、来源关闭与端口释放。docker:process:test 与实际插件包回归另覆盖模拟 POSIX/Linux、Windows/Linux、Windows/Windows 三种组合，模拟不计为真实 Engine 验收。
 
 ### MCP 调查与交互回归
 

@@ -435,7 +435,7 @@ impl BrowserState {
                     .then(a["id"].as_str().cmp(&b["id"].as_str()))
             });
             let no_matches = rows.is_empty() && !index.rows.is_empty();
-            let mut groups: BTreeMap<String, Vec<(&Value, String)>> = BTreeMap::new();
+            let mut groups: BTreeMap<(bool, String), Vec<(&Value, String)>> = BTreeMap::new();
             for row in rows {
                 if kind == Kind::Image {
                     let tags = row["tags"].as_array().filter(|a| !a.is_empty());
@@ -445,13 +445,13 @@ impl BrowserState {
                             let (repo, label) =
                                 split.map_or((tag, "latest"), |i| (&tag[..i], &tag[i + 1..]));
                             groups
-                                .entry(repo.into())
+                                .entry((false, repo.into()))
                                 .or_default()
                                 .push((row, label.into()));
                         }
                     } else {
                         groups
-                            .entry("无标签镜像".into())
+                            .entry((false, "无标签镜像".into()))
                             .or_default()
                             .push((row, short(row["id"].as_str().unwrap_or("")).into()));
                     }
@@ -461,21 +461,33 @@ impl BrowserState {
                         .filter(|s| !s.is_empty())
                         .unwrap_or("独立容器");
                     groups
-                        .entry(project.into())
+                        .entry((
+                            row["project"].as_str().is_some_and(|s| !s.is_empty()),
+                            project.into(),
+                        ))
                         .or_default()
                         .push((row, row["name"].as_str().unwrap_or("").into()));
                 } else {
                     groups
-                        .entry(String::new())
+                        .entry((false, String::new()))
                         .or_default()
                         .push((row, row["name"].as_str().unwrap_or("").into()));
                 }
             }
-            for (group, rows) in groups {
+            for ((is_compose, group), rows) in groups {
                 let parent = if group.is_empty() {
                     category.clone()
                 } else {
-                    format!("group:{}:{}", kind.name(), encode(&group))
+                    format!(
+                        "group:{}:{}{}",
+                        kind.name(),
+                        if kind == Kind::Container && !is_compose {
+                            "standalone:"
+                        } else {
+                            ""
+                        },
+                        encode(&group)
+                    )
                 };
                 let depth = if group.is_empty() { 2 } else { 3 };
                 if !group.is_empty() {
@@ -490,6 +502,18 @@ impl BrowserState {
                     };
                     let mut n = node(&parent, &category, 2, "group", &group, &meta, true, None);
                     n["branchKind"] = json!(kind.name());
+                    if is_compose {
+                        n["composeProject"] = json!(group);
+                        n["composeLocation"] = match crate::compose::directory(
+                            index,
+                            &group,
+                            &engine["locationEnvironment"],
+                        ) {
+                            Ok(value) => value,
+                            Err(error) => json!({"error":error}),
+                        };
+                        n["observationRevision"] = json!(index.revision.to_string());
+                    }
                     n["expanded"] = json!(expanding(&parent));
                     emit(n);
                     if !expanding(&parent) {

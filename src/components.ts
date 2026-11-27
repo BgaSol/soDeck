@@ -33,7 +33,7 @@ interface UiWorkspace {tools?:ToolEntry[];returnLocations?:Record<string,ReturnL
 interface ActionDefinition { command:string; key: string; title: string; available: boolean; reason?: string }
 interface ActionResult { commandId?:string; command?:string; groupId?:string; hostId?:string; status: "pending" | "completed" | "failed" | "invalidated" | "unknown"; requestId: string; context: Context; viewId?: string; error?: string }
 export interface UiProjection { definitions: Record<string, Definition>; actions?: Record<string, ActionDefinition>; defaultCreateAction?: string; pendingAction?: ActionResult[]; workspaces: Record<string, UiWorkspace>; error?: string; layoutSaveError?:string; transfers?:Transfer[] }
-interface Surface { readOnly?:boolean; readPending?:number; transferEpoch?:string; node: HTMLDivElement; frame: HTMLIFrameElement; view: View; token?: string; chain: Promise<unknown>; deferred: Map<string,MessageEvent>; visible: boolean; initialized: boolean; mounted?: boolean; acceptsLocalFiles?: boolean; focusPending?: number; flushable?: boolean; flushing?: {id: string; done: (error?: string) => void}; timeout: ReturnType<typeof setTimeout> }
+interface Surface { readOnly?:boolean; readPending?:number; transferEpoch?:string; node: HTMLDivElement; frame: HTMLIFrameElement; view: View; token?: string; chain: Promise<unknown>; deferred: Map<string,MessageEvent>; visible: boolean; initialized: boolean; mounted?: boolean; acceptsLocalFiles?: boolean; focusPending?: number; activationPending?:number; activationEpoch?:number; flushable?: boolean; flushing?: {id: string; done: (error?: string) => void}; timeout: ReturnType<typeof setTimeout> }
 interface Shell { region: DomRegion; tabStrips?: Map<string, {strip?:TabStrip;scroll:number;active:string|null;seen?:boolean}>; node: HTMLElement; surfaces: Map<string, Surface>; observer: ResizeObserver; workspace: Workspace; ui: UiWorkspace; railCapacity?: number; layoutFrame?: number; motionKey?: string; layoutBefore?: Map<Element, DOMRect>; renderedSides?: {left:string|null;right:string|null}; closingSides?: {left:string|null;right:string|null} }
 interface MenuEntry { label: string; action: () => Promise<unknown>; extra?: MenuEntry; checked?: boolean; disabled?: boolean; separatorBefore?: boolean }
 const empty = (): UiWorkspace => ({ views: [], preferences: {}, left: null, right: null, editor: null });
@@ -79,6 +79,7 @@ export class Components {
   private layoutError?: string;
   layoutSaveFailed=false;
   private focusEpoch = 0;
+  private interactedViews=new Map<string,string>();
   private interaction = () => { this.focusEpoch++; };
   private themeUnsubscribe?: () => void;
   private hostVisible = true;
@@ -91,7 +92,7 @@ export class Components {
     void listen<{pluginId:string}>("core-settings-changed", event => {
       for (const shell of this.shells.values()) for (const surface of shell.surfaces.values()) if (surface.token && this.definitions[surface.view.definitionKey]?.pluginId === event.payload.pluginId) void this.refreshSettings(surface);
     }).then(unlisten => {if(this.disposed)unlisten();else this.settingsListener=unlisten;}).catch(()=>{});
-    void listen<{workspaceId:string;viewId:string}>("workbench-locate-view",event=>{void this.refresh().then(()=>{const surface=this.shells.get(event.payload.workspaceId)?.surfaces.get(event.payload.viewId);if(surface)this.focusSurface(surface);});}).then(unlisten=>{if(this.disposed)unlisten();else this.locateListener=unlisten;});
+    void listen<{workspaceId:string;viewId:string}>("workbench-locate-view",event=>{void this.refresh().then(()=>{const surface=this.shells.get(event.payload.workspaceId)?.surfaces.get(event.payload.viewId);if(surface)this.focusSurface(surface,true);});}).then(unlisten=>{if(this.disposed)unlisten();else this.locateListener=unlisten;});
     window.addEventListener("message", this.message);
     document.addEventListener("visibilitychange", this.resumeActionPolling);
     this.themeUnsubscribe=subscribeTheme(()=>this.broadcast());
@@ -253,7 +254,7 @@ export class Components {
       node.querySelector('[data-tab-action="pick"]')?.addEventListener('click',event=>{event.stopPropagation();this.pagesPicker(shell,node.dataset.group!,(event.currentTarget as HTMLElement));});
       node.addEventListener("contextmenu",event=>{const target=event.target as Element,header=target.closest<HTMLElement>('.component-tabs');if(!header)return;event.preventDefault();const tab=target.closest<HTMLElement>("[data-view]"),anchor=tab?.querySelector<HTMLElement>('[role="tab"]')??header,reference={x:event.clientX,y:event.clientY,contextElement:anchor};if(tab)this.viewMenu(shell,tab.dataset.view!,anchor,false,reference);else this.groupMenu(shell,node.dataset.group!,anchor,false,reference);});
       node.addEventListener('keydown',event=>{if(event.key!=='ContextMenu'&&!(event.shiftKey&&event.key==='F10'))return;const target=event.target as Element,header=target.closest<HTMLElement>('.component-tabs');if(!header)return;event.preventDefault();event.stopPropagation();const tab=target.closest<HTMLElement>('[data-view]'),anchor=tab?.querySelector<HTMLElement>('[role="tab"]')??header;if(tab)this.viewMenu(shell,tab.dataset.view!,anchor,true);else this.groupMenu(shell,node.dataset.group!,anchor,true);});
-      list.addEventListener("keydown",event=>{if(!(event.target as Element).closest('[role="tab"]'))return;if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const g=shell.ui.host!.groups[node.dataset.group!],at=g.viewIds.indexOf(g.activeViewId??'');const index=event.key==='Home'?0:event.key==='End'?g.viewIds.length-1:(at+(event.key==='ArrowRight'?1:-1)+g.viewIds.length)%g.viewIds.length;const id=g.viewIds[index];if(id)void this.run(async()=>{await this.perform(shell,{op:'select',viewId:id});this.revealView(shell,id);node.querySelector<HTMLElement>(`[data-view="${CSS.escape(id)}"] [role="tab"]`)?.focus({preventScroll:true});});});
+      list.addEventListener("keydown",event=>{if(!(event.target as Element).closest('[role="tab"]'))return;if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const g=shell.ui.host!.groups[node.dataset.group!],at=g.viewIds.indexOf(g.activeViewId??'');const index=event.key==='Home'?0:event.key==='End'?g.viewIds.length-1:(at+(event.key==='ArrowRight'?1:-1)+g.viewIds.length)%g.viewIds.length;const id=g.viewIds[index];if(id)void this.run(async()=>{await this.perform(shell,{op:'select',viewId:id});this.revealView(shell,id);const selected=shell.surfaces.get(id);if(selected)this.activateSurface(selected);node.querySelector<HTMLElement>(`[data-view="${CSS.escape(id)}"] [role="tab"]`)?.focus({preventScroll:true});});});
     }
     for (const saved of strips.values()) if (saved.strip && !saved.strip.viewport.isConnected) {saved.strip.dispose();saved.strip=undefined;}
     this.picker?.update();
@@ -275,7 +276,7 @@ export class Components {
         return [{id,title:v.title,detail:v.resourceKey||d?.pluginName||d?.title||v.definitionKey,icon:resourceIcon(d?.iconUrl,d?.icon),current:group.activeViewId===id,status:[!shell.workspace.connected?'已断开':'',v.dirty?'未保存':'',v.error?'错误':'',!d?.available?'不可用':'',v.busy?'忙碌':''].filter(Boolean).join(' · '),disabled:this.closeBlocked.has(id)||this.movingViews.has(id),closeLabel:d?.container==='sidebar'?'隐藏':'关闭'}];
       }),...(shell.ui.unavailableTools??[]).filter(t=>t.groupId===groupId).map(t=>({id:'missing:'+t.key,title:t.key,detail:'未安装或未启用',status:'不可用',disabled:true,icon:'plug'}))];
     };
-    this.picker=new TabPicker(anchor,'本组页面',records,async id=>{const group=shell.ui.host?.groups[groupId];if(!group?.viewIds.includes(id))return;await this.run(async()=>{await this.perform(shell,{op:'select',viewId:id});this.revealView(shell,id);shell.node.querySelector<HTMLElement>(`[data-view="${CSS.escape(id)}"] [role="tab"]`)?.focus({preventScroll:true});});},
+    this.picker=new TabPicker(anchor,'本组页面',records,async id=>{const group=shell.ui.host?.groups[groupId];if(!group?.viewIds.includes(id))return;await this.run(async()=>{await this.perform(shell,{op:'select',viewId:id});this.revealView(shell,id);const selected=shell.surfaces.get(id);if(selected)this.activateSurface(selected);shell.node.querySelector<HTMLElement>(`[data-view="${CSS.escape(id)}"] [role="tab"]`)?.focus({preventScroll:true});});},
       id=>this.run(async()=>{if(!shell.ui.host?.groups[groupId]?.viewIds.includes(id))return;const v=shell.ui.views.find(v=>v.id===id);if(this.definitions[v?.definitionKey??'']?.container==='sidebar')await this.perform(shell,{op:'hideTool',viewId:id});else await this.close([shell.workspace.context.workspaceId],id);}),
       ()=>!shell.node.hidden&&shell.ui.host?.id===hostId&&Boolean(shell.ui.host?.groups[groupId])&&!document.querySelector('dialog[open]'),this.notify);
   }
@@ -563,7 +564,8 @@ export class Components {
         surface.node.hidden=false;
         if(visible&&!modal.open){modal.showModal();enterMotion(modal);}else if(!visible&&modal.open)modal.close();
         if(surface.visible!==visible){surface.visible=visible;this.post(surface,{type:"visibilityChanged",visible});}
-        if (visible && surface.focusPending === this.focusEpoch) this.focusSurface(surface);
+        if(visible&&surface.activationPending===this.focusEpoch)this.activateSurface(surface);
+      if (visible && surface.focusPending === this.focusEpoch) this.focusSurface(surface);
         continue;
       }
       const s = placements.get(surface);
@@ -574,6 +576,7 @@ export class Components {
       surface.node.style.visibility=shell.node.classList.contains("incoming-component-workspace")?"hidden":"";
       if (s) for (const [key, value] of Object.entries({ left: `${s.left-r.left}px`, top: `${s.top-r.top}px`, width: `${s.width}px`, height: `${s.height}px` })) { if (surface.node.style.getPropertyValue(key) !== value) surface.node.style.setProperty(key, value); }
       if (surface.visible !== visible) { if(visible)void this.refreshSettings(surface); if(!visible&&surface.token)this.clipboard.discard(surface.token); surface.visible = visible; this.post(surface, { type: "visibilityChanged", visible }); }
+      if(visible&&surface.activationPending===this.focusEpoch)this.activateSurface(surface);
       if (visible && surface.focusPending === this.focusEpoch) this.focusSurface(surface);
     }
     const moving=[shell.node,...center.querySelectorAll('.view-group')].some(node=>node.getAnimations().some(a=>a.id.startsWith('sd-motion:')&&a.playState==='running'));
@@ -624,8 +627,8 @@ export class Components {
       return;
     }
     if (!surface.token || message.surfaceId !== surface.token) return;
-    if (message.type === "interaction") { if (surface.visible && !surface.readOnly && !this.movingViews.has(surface.view.id)) { void this.invoke("action",{context:surface.view.context,action:{op:"focus",viewId:surface.view.id}}).catch(()=>{}); this.interaction(); this.closeMenu(); this.content.dispatchEvent(new Event("surface-interaction")); } return; }
-    if (message.type === "prepared") { surface.flushable = message.flush === true; surface.acceptsLocalFiles = message.localFiles === true; clearTimeout(surface.timeout); void this.invoke("ready", { surfaceId: surface.token }).then(async () => { surface.mounted = true; surface.node.removeAttribute("aria-busy"); this.scheduleLayout(surface.view.context.workspaceId); await this.refreshSettings(surface); await this.refresh(); if (surface.focusPending === this.focusEpoch && surface.visible) this.focusSurface(surface); }).catch(error => this.surfaceError(surface, String(error))); return; }
+    if (message.type === "interaction") { if (surface.visible && !surface.readOnly && !this.movingViews.has(surface.view.id)) { if(this.interactedViews.get(surface.view.context.workspaceId)!==surface.view.id)this.activateSurface(surface); void this.invoke("action",{context:surface.view.context,action:{op:"focus",viewId:surface.view.id}}).catch(()=>{}); this.interaction(); this.closeMenu(); this.content.dispatchEvent(new Event("surface-interaction")); } return; }
+    if (message.type === "prepared") { surface.flushable = message.flush === true; surface.acceptsLocalFiles = message.localFiles === true; clearTimeout(surface.timeout); void this.invoke("ready", { surfaceId: surface.token }).then(async () => { surface.mounted = true; surface.node.removeAttribute("aria-busy"); this.scheduleLayout(surface.view.context.workspaceId); await this.refreshSettings(surface); await this.refresh(); if(surface.activationPending===this.focusEpoch&&surface.visible)this.activateSurface(surface);if (surface.focusPending === this.focusEpoch && surface.visible) this.focusSurface(surface); }).catch(error => this.surfaceError(surface, String(error))); return; }
     if (message.type === "flushed" && surface.flushing && surface.flushing.id === message.id) { surface.flushing.done(message.error); return; }
     if (message.type !== "request" || typeof message.id !== "string") return;
     const requestId = message.id;
@@ -699,7 +702,7 @@ export class Components {
         let data: unknown;
         const shell = this.shells.get(surface.view.context.workspaceId)!;
         if (message.method === "openView") { const key = `${this.definitions[surface.view.definitionKey].pluginId}:${message.params.viewType}`; data = await this.perform(shell, { op: "open", key, params: message.params.params, resourceKey: message.params.resourceKey,sourceViewId:surface.view.id,groupId:shell.ui.host?.focusedGroupId }); if (this.focusEpoch === requestFocusEpoch && this.state?.window.activeWorkspace === shell.workspace.context.workspaceId) this.focus(shell,key); }
-        else if (message.method === "event") { data = await this.invoke("event", { surfaceId: surface.token, event: message.params }); await this.refresh(); const viewId=(data as {viewId?:string})?.viewId; if(viewId && this.focusEpoch===requestFocusEpoch && this.state?.window.activeWorkspace===shell.workspace.context.workspaceId){const target=shell.surfaces.get(viewId);if(target)this.focusSurface(target);} }
+        else if (message.method === "event") { data = await this.invoke("event", { surfaceId: surface.token, event: message.params }); await this.refresh(); const viewId=(data as {viewId?:string})?.viewId; if(viewId && this.focusEpoch===requestFocusEpoch && this.state?.window.activeWorkspace===shell.workspace.context.workspaceId){const target=shell.surfaces.get(viewId);if(target)this.focusSurface(target,true);} }
         else throw new Error("未知插件 UI bridge 方法");
         this.post(surface, { type: "response", id: requestId, data });
       } catch (error) { this.post(surface, { type: "response", id: requestId, error: surfaceError(error) }); }
@@ -738,7 +741,7 @@ export class Components {
       if(result.persistence==='failed'&&this.layoutSaveFailed)this.notify('布局已调整，但未能保存，重启后可能恢复原位置。可点击状态栏重试保存。');
       if(this.focusEpoch===focusEpoch&&this.state?.window.activeWorkspace===shell.workspace.context.workspaceId){
         const surface=entry?.active&&entry.viewId?shell.surfaces.get(entry.viewId):undefined;
-        if(surface)this.focusSurface(surface);else shell.node.querySelector<HTMLElement>(`[data-tool-key="${CSS.escape(key)}"]`)?.focus({preventScroll:true});
+        if(surface)this.focusSurface(surface,true);else shell.node.querySelector<HTMLElement>(`[data-tool-key="${CSS.escape(key)}"]`)?.focus({preventScroll:true});
       }
     })().finally(()=>this.pendingMoves.delete(pendingKey));
     this.pendingMoves.set(pendingKey,job);return job;
@@ -769,7 +772,7 @@ export class Components {
     if (["toggle", "locate"].includes(action) && !this.definitions[key]?.available) { this.notify("组件不可用，请查看应用状态"); return; }
     if (["toggle", "locate", "collapse"].includes(action)) { await this.perform(shell, { op: action, key, side: key }); if (this.focusEpoch === focusEpoch && this.state?.window.activeWorkspace === id) this.focus(shell, action === "collapse" ? undefined : key); return; }
     if (action === "pages") { if(groupId)this.pagesPicker(shell,groupId,anchor);return; }
-    if (action === "select") { if (!shell.ui.views.some(v => v.id === key)) return; await this.perform(shell, { op: "select", viewId: key }); const surface = shell.surfaces.get(key); if (surface && this.focusEpoch === focusEpoch && this.state?.window.activeWorkspace === id) this.focusSurface(surface); return; }
+    if (action === "select") { if (!shell.ui.views.some(v => v.id === key)) return; await this.perform(shell, { op: "select", viewId: key }); const surface = shell.surfaces.get(key); if (surface && this.focusEpoch === focusEpoch && this.state?.window.activeWorkspace === id) this.focusSurface(surface,true); return; }
     if (action === "close") { if(this.definitions[shell.ui.views.find(v=>v.id===key)?.definitionKey??""]?.container==="sidebar")await this.perform(shell,{op:"hideTool",viewId:key});else await this.close([id], key); return; }
     if (action === "more") {
       this.showMenu(anchor,(shell.ui.tools??[]).map(t=>{
@@ -809,7 +812,7 @@ export class Components {
     const shell=this.shells.get(id),surface=result.viewId? shell?.surfaces.get(result.viewId):undefined;
     if(surface && focusEpoch!==undefined && this.focusEpoch===focusEpoch && this.state?.window.activeWorkspace===id){
       if(shell)this.revealView(shell,result.viewId!);
-      this.focusSurface(surface);
+      this.focusSurface(surface,true);
     }
   }
   private async command(args:Record<string,unknown>):Promise<ActionResult> {
@@ -847,10 +850,16 @@ export class Components {
   }
   private focus(shell: Shell, key?: string) {
     const selected = shell.ui.views.find(v => v.definitionKey === key && (this.definitions[v.definitionKey]?.container === "dialog" || [shell.ui.left, shell.ui.right, shell.ui.editor].includes(v.id)));
-    if (selected) { const surface = shell.surfaces.get(selected.id); if (surface) this.focusSurface(surface); }
+    if (selected) { const surface = shell.surfaces.get(selected.id); if (surface) this.focusSurface(surface,true); }
     else shell.node.querySelector<HTMLElement>(`[data-key="${CSS.escape(key ?? "")}"]`)?.focus();
   }
-  private focusSurface(surface: Surface) { if(!this.hostVisible){surface.focusPending=undefined;return;} const shell=this.shells.get(surface.view.context.workspaceId);if(shell)this.revealView(shell,surface.view.id); if (!surface.mounted || !surface.visible) { surface.focusPending = this.focusEpoch; return; } surface.focusPending = undefined; surface.frame.focus(); this.post(surface, { type: "focus" });void this.invoke("action",{context:surface.view.context,action:{op:"focus",viewId:surface.view.id}}).catch(()=>{}); }
+  private activateSurface(surface:Surface) {
+    this.interactedViews.set(surface.view.context.workspaceId,surface.view.id);
+    if(surface.activationEpoch===this.focusEpoch)return;
+    if(!surface.mounted||!surface.visible||surface.readOnly){surface.activationPending=this.focusEpoch;return;}
+    surface.activationEpoch=this.focusEpoch;surface.activationPending=undefined;this.post(surface,{type:'activated'});
+  }
+  private focusSurface(surface: Surface,user=false) { if(user)this.activateSurface(surface);else this.interactedViews.set(surface.view.context.workspaceId,surface.view.id); if(!this.hostVisible){surface.focusPending=undefined;return;} const shell=this.shells.get(surface.view.context.workspaceId);if(shell)this.revealView(shell,surface.view.id); if (!surface.mounted || !surface.visible) { surface.focusPending = this.focusEpoch; return; } surface.focusPending = undefined; surface.frame.focus(); this.post(surface, { type: "focus" });void this.invoke("action",{context:surface.view.context,action:{op:"focus",viewId:surface.view.id}}).catch(()=>{}); }
   private showMenu(anchor: HTMLElement, entries: MenuEntry[], searchable = false, detail?: string, keyboard = false, reference:MenuReference=anchor,valid:()=>boolean=()=>true) {
     if (this.menu && this.menuAnchor === anchor && reference===anchor) { this.closeMenu(); return; }
     this.closeMenu(); const node = document.createElement("div"); node.className = "workspace-menu component-menu sd-menu"; node.tabIndex = -1;

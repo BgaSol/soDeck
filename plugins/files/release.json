@@ -48,7 +48,7 @@
             "fields": [
               {
                 "key": "followTerminal",
-                "title": "跟随活动终端目录",
+                "title": "跟随组件发布的目录",
                 "type": "boolean",
                 "default": true,
                 "apply": "live"

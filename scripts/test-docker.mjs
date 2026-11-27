@@ -17,7 +17,7 @@ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sodeck-docker-engine-'));
 const created=[];let volumeCreated=false,imageBuilt=false;
 try{
   const key=spawnSync('ssh-keygen',['-q','-t','ed25519','-N','','-f',path.join(directory,'user')],{windowsHide:true,encoding:'utf8'});assert.equal(key.status,0,key.stderr);
-  fs.writeFileSync(path.join(directory,'Dockerfile'),'FROM docker:24.0.9-cli\nARG SODECK_ALPINE_MIRROR=https://dl-cdn.alpinelinux.org/alpine\nRUN printf "%s/v3.20/main\\n%s/v3.20/community\\n" "$SODECK_ALPINE_MIRROR" "$SODECK_ALPINE_MIRROR" > /etc/apk/repositories && apk del openssh-client && apk add --no-cache openssh-server busybox-extras && passwd -d root\n');
+  fs.writeFileSync(path.join(directory,'Dockerfile'),'FROM docker:24.0.9-cli\nARG SODECK_ALPINE_MIRROR=https://dl-cdn.alpinelinux.org/alpine\nRUN printf "%s/v3.20/main\\n%s/v3.20/community\\n" "$SODECK_ALPINE_MIRROR" "$SODECK_ALPINE_MIRROR" > /etc/apk/repositories && apk del openssh-client && apk add --no-cache openssh-server busybox-extras bash && passwd -d root && sed -i "/^root:/s|:[^:]*$|:/bin/bash|" /etc/passwd\n');
   const mirror=process.env.SODECK_TEST_ALPINE_MIRROR,buildArgs=['build','-t',image];
   if(mirror){const url=new URL(mirror);assert(url.protocol==='https:'&&!url.username&&!url.password&&!url.search&&!url.hash);buildArgs.push('--build-arg','SODECK_ALPINE_MIRROR='+mirror.replace(/\/$/,''));}
   run([...buildArgs,directory]);imageBuilt=true;
@@ -48,7 +48,7 @@ try{
     assert(pushed,'isolated registry did not accept the fixed test image');inside(['image','rm',pullReference]);
   }
   const app=inside(['run','-d','--name',name+'-app','--network',portNetwork,'-p','127.0.0.1::8080','--label','sodeck.test='+suffix,'--label','com.docker.compose.project=sodeck-test',
-    '--label','com.docker.compose.service=api','--env','SODECK_TOKEN=a=b','--mount','type=volume,source='+appVolume+',target=/data',
+    '--label','com.docker.compose.service=api','--label','com.docker.compose.project.working_dir=/srv/sodeck-compose','--env','SODECK_TOKEN=a=b','--mount','type=volume,source='+appVolume+',target=/data',
     ...(native?['--log-opt','max-size=10m','--log-opt','max-file=3']:[]),image,
     'sh','-c','mkdir -p /tmp/http; printf sodeck-port-tunnel > /tmp/http/index.html; httpd -p 8080 -h /tmp/http; '+(native?'awk \'BEGIN {for (i=0;i<1000000;i++) printf "INFO historical %07d 中文\\n",i}\'; printf "sodeck-docker-log 中文\\n"; i=0; while true; do awk -v batch="$i" \'BEGIN {for (j=0;j<1000;j++) printf "INFO live %07d 中文 %0100d\\n",batch*1000+j,j}\'; i=$((i+1)); sleep 1; done':'awk \'BEGIN {for (i=0;i<1000000;i++) printf "INFO historical %07d 中文\\n",i}\'; printf "sodeck-docker-log 中文\\n"; exec sleep 600')]);
   const historyStarted=Date.now();
@@ -65,7 +65,7 @@ try{
   const publicKey=fs.readFileSync(path.join(directory,'user.pub'),'utf8').trim();
   run(['run','-d','--name',ssh,'--label','sodeck.test='+suffix,'--network','container:'+engine,'--mount','type=volume,source='+socket+',target=/var/run',
     '-e','PUBKEY='+publicKey,image,'sh','-c',
-    'mkdir -p /root/.ssh /run/sshd; printf "%s\\n" "$PUBKEY" > /root/.ssh/authorized_keys; ssh-keygen -A; exec /usr/sbin/sshd -D -e -o PermitRootLogin=prohibit-password -o PasswordAuthentication=no -o StrictModes=no -o AllowTcpForwarding=yes -o PermitOpen=any']);created.push(ssh);
+    'mkdir -p /root/.ssh /run/sshd /srv/sodeck-compose /srv/sodeck-terminal /srv/sodeck-manual; printf "%s\\n" "$PUBKEY" > /root/.ssh/authorized_keys; ssh-keygen -A; exec /usr/sbin/sshd -D -e -o PermitRootLogin=prohibit-password -o PasswordAuthentication=no -o StrictModes=no -o AllowTcpForwarding=yes -o PermitOpen=any']);created.push(ssh);
   const port=run(['port',engine,'22/tcp']).split(':').at(-1);
   let sshReady=false;
   for(let i=0;i<40;i++){
@@ -79,6 +79,7 @@ try{
     const code=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-docker-native.mjs',path.resolve(executable)],{stdio:'inherit',windowsHide:true,env:{...process.env,SODECK_TEST_SSH_CONFIG:config,SODECK_TEST_DOCKER_PLUGIN:packageRoot()}});test.on('error',reject);test.on('exit',resolve);});
     assert.equal(code,0);
   } else {
+  const followCode=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-directory-follow-integration.mjs'],{stdio:'inherit',windowsHide:true,env:{...process.env,SODECK_TEST_SSH_PORT:port,SODECK_TEST_SSH_USER:'root',SODECK_TEST_SSH_KEY:path.join(directory,'user')}});test.on('error',reject);test.on('exit',resolve);});assert.equal(followCode,0,'actual directory collaboration failed');
   const code=await new Promise((resolve,reject)=>{
     const test=spawn('cargo',['test','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--locked','--test','connections','openssh_docker_plugin','--','--ignored','--exact','--nocapture'],
       {stdio:'inherit',windowsHide:true,env:{...process.env,SODECK_TEST_SSH_PORT:port,SODECK_TEST_SSH_USER:'root',SODECK_TEST_SSH_KEY:path.join(directory,'user'),SODECK_TEST_DOCKER_TUNNELS:'1',SODECK_TEST_NETWORK_PLUGIN:testPluginDirectory("network-proxy"),SODECK_TEST_DOCKER_PLUGIN:packageRoot(),SODECK_TEST_TERMINAL_PLUGIN:testPluginDirectory("terminal"),SODECK_TEST_DOCKER_CONTAINER:app,SODECK_TEST_DOCKER_FREE_VOLUME:freeVolume,SODECK_TEST_DOCKER_NETWORK:freeNetwork,SODECK_TEST_DOCKER_PULL:pullReference}});

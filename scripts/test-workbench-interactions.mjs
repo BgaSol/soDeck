@@ -28,6 +28,25 @@ const stripFixture=async()=>{
   return page;
 };
 
+test('cross-volume navigation keeps the old tree when preparing a new directory fails',async()=>{
+  const page=await fixture();
+  try{
+    await page.addScriptTag({path:'plugins/files/ui/tree.js'});
+    const result=await page.evaluate(async()=>{
+      const nodes=new Map([['/C:/keep',{path:'/C:/keep',cursor:'old-cursor'}]]),closed=[];
+      const tree=Object.create(FileTree.prototype);Object.assign(tree,{nodes,expanded:new Set(['/C:']),rootPath:'/C:',selected:'/C:/keep',navigationEpoch:0,contextEpoch:0,disposed:false,data:async(action,p)=>{
+        if(action==='closeDirectory'){closed.push(p.cursor);return {};}
+        if(action==='stat')return {path:p.path,attrs:{kind:'directory'}};
+        if(p.path==='/D:')return {entries:[],cursor:'prepared-cursor',more:false};
+        throw new Error('directory access denied');
+      }});
+      let error;try{await tree.locateResolved({path:'/D:/blocked',attrs:{kind:'directory'}});}catch(e){error=e.message;}
+      return {error,root:tree.rootPath,selected:tree.selected,sameNodes:tree.nodes===nodes,closed};
+    });
+    assert.deepEqual(result,{error:'directory access denied',root:'/C:',selected:'/C:/keep',sameNodes:true,closed:['prepared-cursor']});
+  }finally{await page.close();}
+});
+
 test('motion times accept seconds and milliseconds with the same limits and reduced-motion policy',async()=>{
   const page=await fixture();
   try{

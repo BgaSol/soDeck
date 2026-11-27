@@ -160,7 +160,7 @@
               {
                 "key": "directoryMode",
                 "title": "终端目录识别",
-                "description": "自动识别支持 Linux Bash/Zsh；只影响新建终端，不修改服务器配置文件。",
+                "description": "自动识别支持 Linux/macOS Bash/Zsh；只影响新建终端，不修改服务器配置文件。",
                 "type": "select",
                 "default": "auto",
                 "options": [

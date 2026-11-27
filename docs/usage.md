@@ -19,7 +19,7 @@
 | 管理资料、跳板、认证和连接 | [服务器与连接](features/connections.md) |
 | 标签、分屏、工具停靠、独立窗口 | [工作台](features/workbench.md) |
 | 执行命令、目录识别、查找历史输出 | [终端](features/terminal.md) |
-| 文件树、上传下载、编辑、搜索及跟随目录 | [文件](features/files.md) |
+| 文件树、上传下载、编辑、搜索及通用目录跟随 | [文件](features/files.md) |
 | TCP 转发、SOCKS5、实际入口与流量 | [网络隧道](features/network-proxy.md) |
 | CPU、内存、容量、网络和磁盘指标 | [系统状态](features/system-status.md) |
 | 查看容器、日志和执行单项操作 | [Docker](features/docker.md) |

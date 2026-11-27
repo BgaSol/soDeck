@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import {test} from 'node:test';
 const bus=new EventTarget();globalThis.addEventListener=bus.addEventListener.bind(bus);globalThis.removeEventListener=bus.removeEventListener.bind(bus);
 const {SharedState}=await import('../packages/plugin-sdk/src/state.js');
-const {parseOsc7,parseIntegration,createLocation}=await import('data:text/javascript;base64,'+Buffer.from(fs.readFileSync('plugins/terminal/ui-src/location.js','utf8').replace("'./sdk/state.js'",JSON.stringify(new URL('../packages/plugin-sdk/src/state.js',import.meta.url).href))).toString('base64'));
+const {parseOsc7,parseIntegration,createLocation}=await import('../plugins/terminal/ui-src/location.js');
 const fixture=JSON.parse(fs.readFileSync('scripts/fixtures/shared-state.json','utf8'));
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 test('JS wire contract applies a multipart batch atomically with decimal revisions and null tombstones',async()=>{
@@ -35,40 +35,11 @@ test('local terminal directory context follows confirmed reports and invalidatio
  location.frame('data',123);handlers.get(633)(`SODECK;token;ready;${Buffer.from('/cwd').toString('hex')};${Buffer.from('/tmp/witness').toString('hex')}`);assert.equal(locations.at(-1).state,'unknown');location.completed();assert.equal(locations.at(-1).path,'/cwd');assert.equal(locations.at(-1).outputOffset,'123');
  location.input('\r');assert.equal(locations.at(-1).activity,'busy');location.invalidate();assert.equal(locations.at(-1).state,'unknown');assert.equal(called,false);location.dispose();
 });
-test('same-directory prompts after busy preserve manual browsing; explicit retry follows again',async()=>{
- let emit,count=0;const elements=[];const prior=globalThis.document;
- globalThis.document={createElement:tag=>{const element={tag,setAttribute(){},append(){},replaceChildren(){},remove(){},textContent:''};elements.push(element);return element;}};
- globalThis.FileStateClient=class {available=true;watch(_,change){emit=change;return {valid:true,dispose(){}};}dispose(){}};
- const code=fs.readFileSync('plugins/files/ui/shared-state.js','utf8').replace("import {SharedState} from './sdk/state.js';",'const SharedState=globalThis.FileStateClient;');
- const {connectFileState}=await import('data:text/javascript;base64,'+Buffer.from(code+'\n//manual busy test').toString('base64'));
- const tree={toolbar:{append(){}},setMounts(){},cancelFollow(){},async followLocation(){count++;}};
- const controller=connectFileState(tree,{capabilities:{fileLocation:1,fileLocationProof:1}},async()=>({}),async()=>{});
- const value={state:'known',path:'/cwd',pathStyle:'posix',filesystemView:'shell-reported',outputOffset:'1',terminalId:'terminal',activity:'ready'};
- const projection=v=>({scope:{state:'active',connected:true},records:[{topic:'workspace.presentation.v1',key:'current',producer:{kind:'core'},value:{activeEditorViewId:'view',activeEditorPluginId:'sodeck.terminal'}},{topic:'terminal.location.v1',key:'current',producer:{pluginId:'sodeck.terminal',viewId:'view'},value:v}]});
- try{emit(projection(value));await tick();assert.equal(count,1);tree.onManual();emit(projection({...value,state:'unknown',path:null,activity:'busy',outputOffset:'2'}));emit(projection({...value,outputOffset:'3'}));await tick();assert.equal(count,1);assert.match(elements.find(e=>e.tag==='summary').textContent,/已手动浏览/);elements.find(e=>e.textContent==='定位到终端目录').onclick();await tick();assert.equal(count,2);}finally{controller.dispose();globalThis.document=prior;delete globalThis.FileStateClient;}
-});
-test('background observations only cancel a pending follow, preserving manual navigation',async()=>{
- let emit,release,cancelled=0;const priorDocument=globalThis.document;
- globalThis.document={createElement:()=>({setAttribute(){},append(){},replaceChildren(){},remove(){}})};
- globalThis.FileStateClient=class {available=true;watch(_,change){emit=change;return {valid:true,dispose(){}};}dispose(){}};
- const code=fs.readFileSync('plugins/files/ui/shared-state.js','utf8').replace("import {SharedState} from './sdk/state.js';",'const SharedState=globalThis.FileStateClient;');
- const {connectFileState}=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
- const tree={toolbar:{append(){}},setMounts(){},cancelFollow(){cancelled++;},followLocation:()=>new Promise(resolve=>release=resolve),message(){}};
- const controller=connectFileState(tree,{capabilities:{fileLocation:1}},async()=>({}),async()=>{});
- const empty={scope:{state:'active',connected:true},records:[]};
- try{
-  emit(empty);emit(empty);controller.visibility(true);assert.equal(cancelled,0,'no producer must not cancel manual navigation');
-  const active={...empty,records:[{topic:'workspace.presentation.v1',key:'current',producer:{kind:'core'},value:{activeEditorViewId:'view'}},{topic:'terminal.location.v1',key:'current',producer:{kind:'plugin',pluginId:'sodeck.terminal',pluginInstanceId:'instance',viewId:'view'},value:{state:'known',path:'/cwd',pathStyle:'posix',filesystemView:'session-default',outputOffset:'1',terminalId:'terminal'}}]};
-  emit(active);controller.settings({values:{followTerminal:false}});assert.equal(cancelled,1,'switching off cancels the pending follow');release();await tick();
-  emit(empty);emit(empty);assert.equal(cancelled,1,'later sampler events must not cancel a manual navigation');
- }finally{controller.dispose();globalThis.document=priorDocument;delete globalThis.FileStateClient;}
-});
-
 test('disabled directory integration ignores OSC7 and OSC633 and publishes only unknown state',async()=>{
- const writes=[],handlers=new Map();globalThis.sodeck={request:async(_,p)=>(p.op==='get'?{record:{present:true,revision:'1',value:{state:'known',path:'/old',terminalId:'pty',outputOffset:'0'}}}:writes.push(p))};
+ const writes=[],locations=[],handlers=new Map();globalThis.sodeck={request:async(_,p)=>(p.op==='get'?{record:{present:true,revision:'1',value:{state:'known',path:'/old',terminalId:'pty',outputOffset:'0'}}}:writes.push(p))};
  const terminal={parser:{registerOscHandler:(id,handler)=>{handlers.set(id,handler);return {dispose(){}};}}};
- const location=createLocation(terminal);location.mount({context:fixture.context,capabilities:{sharedState:1},settings:{values:{directoryReportHost:'host'}},data:{streamId:'pty',openedContext:fixture.context,integration:{mode:'off',token:'token'}}});
+ const location=createLocation(terminal,value=>locations.push(value));location.mount({context:fixture.context,capabilities:{sharedState:1},settings:{values:{directoryReportHost:'host'}},data:{streamId:'pty',openedContext:fixture.context,integration:{mode:'off',token:'token'}}});
  location.ready();await tick();
  location.frame('data',100);handlers.get(7)('file://host/should-not-follow');handlers.get(633)('SODECK;token;ready;2f776f726b;2f746d70');location.completed();location.input('command\n');await tick();
- assert(writes.some(p=>p.op==='put'&&p.value.reasonCode==='disabled'));assert(writes.every(p=>p.op!=='put'||p.value.state==='unknown'));location.dispose();
+ assert(locations.some(value=>value.reasonCode==='disabled'));assert(locations.every(value=>value.state==='unknown'));assert.equal(writes.length,0);location.dispose();
 });

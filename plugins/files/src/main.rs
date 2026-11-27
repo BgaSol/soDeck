@@ -400,6 +400,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     {
                         return Err("文件导航状态无效或过大".into());
                     }
+                    if let Some(follow) = state.get("follow") {
+                        if follow["version"] != 1
+                            || follow["context"] != p["context"]
+                            || follow.to_string().len() > 1024
+                            || follow["seenThrough"]
+                                .as_str()
+                                .and_then(|s| s.parse::<u64>().ok())
+                                .is_none()
+                            || !follow["handled"].is_boolean()
+                            || !follow["manual"].is_boolean()
+                            || !(follow["target"].is_null()
+                                || follow["target"].as_str().is_some_and(|s| s.len() <= 800))
+                        {
+                            return Err("目录跟随检查点无效".into());
+                        }
+                    }
                     v.path = state["selected"].as_str().unwrap().into();
                     v.navigation = state.clone();
                 }

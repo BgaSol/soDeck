@@ -148,7 +148,7 @@ UI v2 的 `flush.freeze` 为 true 时表示迁移或关闭的输入交接，源�
 `workbench_move.destination.returnToSource:true` 请求核心按运行期书签定位原窗口、标签组、相邻标签或工具侧栏。`workbench_return_window({requestId})` 返回调用窗口的全部 Host；核心先统一保留，再准备所有工作区的候选，全部恢复后在一次状态锁内提交。任一成员失败均不释放其他成员的来源 Surface。窗口投影增加 `incomingWorkspaces` 与 `windows`，候选挂载使用各自的 Context 和迁移编号。
 
 
-焦点由实际页面交互更新。`workspace.presentation.v1` 增加 `focusedViewId/focusedWindowId` 与 `lastInteractedLocationViewId`。终端可通过可选 `locationProvider:"terminal.location.v1"` 声明目录来源；文件跟随使用本服务器最近操作的目录提供页，经核心共享状态协作，不直接调用终端插件。
+焦点由实际页面交互更新。`workspace.presentation.v1` 增加 `focusedViewId/focusedWindowId` 与 `lastInteractedLocationViewId`。终端可通过可选 `locationProvider:"terminal.location.v1"` 声明目录来源；该旧字段继续兼容；通用目录跟随不再使用它选择来源。核心 2.11.0 在用户明确选择或重新操作 View 时，通过原页面通路发送 `sodeck:activated`；界面恢复与持续在同一页面输入不重复发送，也不因此修改键盘标签焦点。原 `sodeck:focus` 只处理输入焦点。
 
 布局文件只保存服务器的容器结构与工具定义位置；不保存 Context、viewId、Surface、正文或命令。当前交互见[工作台](features/workbench.md)，资源与交接职责见[架构](architecture.md)。
 
@@ -397,6 +397,16 @@ filter 为 `{topics:[...] ,producer?,key?}`，需要 1–8 个明确主题。快
 页面使用随插件打包的 [state.js](../packages/plugin-sdk/src/state.js)：`new SharedState(mount)`，`request(op,params)`，`watch(filter,onProjection)`，最终 `dispose()`。watch 会分页、原子拼批、确认、续订及重同步；onProjection 收到 null 表示当前不可用。Rust 使用 [plugin-client::shared_state](../crates/plugin-client/src/shared_state.rs) 的 request/Watch::open/snapshot/renew，持有 Watch 时每 30 秒调用 renew；snapshot 为 None 或 renew 失败时由调用者在有效 Context 内重建。两者使用同一组线协议样例测试。
 
 首批业务契约：Core 发布 `workspace.presentation.v1/current` 的 activeEditorViewId；终端发布 `terminal.location.v1/current` 的 state/path/pathStyle/filesystemView/terminalId/outputOffset/observedAt；系统状态发布 `filesystem.mounts.v1` 的 mount 与 scan-status，以及同源同 mountId 的 `filesystem.capacity.v1`。容量字节数使用十进制字符串，业务新鲜度由 observedAt/staleAfterMs 表达。扫描 coverage 与 publishState 分开：complete/partial/unsupported 描述采集覆盖，publishing/synced/limited 描述共享副本。没有跨记录事务。
+
+### 通用目录位置
+
+插件使用 `workspace.location.v1/current` 发布自身最近位置，每 producer 一条，复用 state.put／订阅和原有 Context。核心附加来源及范围修订，不识别业务插件或指定接收者；发布回执只表示记录已接纳，没有接收者亦可成功。
+
+值为 `{version:1,publicationId,path,pathStyle,filesystemView,witness?}`。publicationId 是一次发布的 UUID，新主动发布使用新 ID，同一次发布的重试沿用 ID 和完全相同值；路径变化也使用新 ID。path 为不含控制字符、最多 4096 UTF-8 字节的远端绝对目录；pathStyle 为 posix 或 windows，filesystemView 为 session-default 或 shell-reported。后者使用既有 `witness:{path,value}` 文件对应校验，value 最多 128 字节；前者仅表示在当前连接文件服务中尝试解析，不证明原发布环境的身份。
+
+接收者先按 record.revision 的 u64 数值选最近记录，再验证业务值；无效的新值不触发旧目录回退。保存已处理投影的 scope 修订水位，来源结束、租约重建和移窗不把旧记录当成新发布。目录解析与是否要求 directory 由消费者办理；文件导航不回发位置，避免回声。消息不持久化，重连等待新 Context 的发布；不广播命令，不自动创建或启用消费者。
+
+通用 topic 不包含终端忙碌、Shell、输出水位或 Docker 项目字段。这些事实分别在发布者内部校验。终端 0.12.0／Docker 0.13.0 发布，文件 0.14.0 接收；旧终端不发布通用位置，新终端继续向旧 terminal.location.v1 投影。各组件独立升级，核心用户激活通知与状态传递是不同职责。
 
 ### 只读页面查询与视图入口
 

@@ -86,6 +86,7 @@ enum JobAction {
         scan: Option<DeleteScan>,
     },
     Collaboration(CommandWork),
+    Directory(Value),
 }
 impl JobAction {
     fn parse(name: &str, view: &View) -> Result<Self, String> {
@@ -121,6 +122,7 @@ impl JobAction {
     }
     fn as_str(&self) -> &'static str {
         match self {
+            Self::Directory(_) => "compose.follow",
             Self::Refresh => "refresh",
             Self::Stats => "stats",
             Self::Logs => "logs",
@@ -404,6 +406,7 @@ impl App {
             .map_or(Value::Null, |s| json!(s));
         data["scopeEpoch"] = json!(v.epoch.to_string());
         data["pull"] = v.pull.clone();
+        data["directoryPublication"] = v.data["directoryPublication"].clone();
         if let Some(b) = &v.browser {
             data["indexes"] = b.metadata();
             data["tree"] = b.last_page.clone();
@@ -611,7 +614,12 @@ impl App {
             .min(16 * 1024);
         if let Some(v) = self.views.get_mut(id) {
             if let Some(b) = &mut v.browser {
-                b.page(&v.data["engine"], &v.navigation, budget);
+                let mut engine = v.data["engine"].clone();
+                engine["locationEnvironment"] = v
+                    .target
+                    .as_ref()
+                    .map_or(Value::Null, |t| json!({"kind":t.environment["kind"]}));
+                b.page(&engine, &v.navigation, budget);
             }
         }
     }
@@ -665,6 +673,11 @@ impl App {
         }
         if action == "browser.locate" {
             let resource = ResourceRef::read(&d["resource"])?;
+            let mut engine = v.data["engine"].clone();
+            engine["locationEnvironment"] = v
+                .target
+                .as_ref()
+                .map_or(Value::Null, |t| json!({"kind":t.environment["kind"]}));
             return Ok(v
                 .browser
                 .as_ref()
@@ -739,11 +752,12 @@ impl App {
                 .saturating_sub(browser::bytes(&base) + 1024)
                 .min(16 * 1024);
             let v = self.views.get_mut(id).unwrap();
-            return Ok(v
-                .browser
-                .as_mut()
-                .unwrap()
-                .page(&v.data["engine"], &state, budget));
+            let mut engine = v.data["engine"].clone();
+            engine["locationEnvironment"] = v
+                .target
+                .as_ref()
+                .map_or(Value::Null, |t| json!({"kind":t.environment["kind"]}));
+            return Ok(v.browser.as_mut().unwrap().page(&engine, &state, budget));
         }
         if v.frozen {
             return Err("页面正在关闭".into());
@@ -901,8 +915,64 @@ impl App {
         }
         Ok(self.snapshot(id)?)
     }
+    fn follow_directory(&mut self, id: &str, d: &Value) -> Result<Value, String> {
+        self.check_scope(id, d)?;
+        let project = crate::compose::label(&d["project"]).ok_or("项目身份无效")?;
+        let publication = d["publicationId"]
+            .as_str()
+            .filter(|s| s.len() == 36 && s.chars().all(|c| c.is_ascii_hexdigit() || c == '-'))
+            .ok_or("目录发布编号无效")?;
+        let v = self.views.get(id).ok_or("页面已关闭")?;
+        if v.data["directoryPublication"]["publicationId"] == publication {
+            if v.data["directoryPublication"]["project"] != d["project"]
+                || v.data["directoryPublication"]["observationRevision"] != d["observationRevision"]
+            {
+                return Err("相同目录发布编号的目标不同".into());
+            }
+            return self.snapshot(id);
+        }
+        let index = &v.browser.as_ref().ok_or("请从资源树选择项目")?.indexes[&Kind::Container];
+        if d["observationRevision"] != index.revision.to_string() {
+            return Err("项目信息已改变，请重新选择".into());
+        }
+        let mut location = crate::compose::directory(
+            index,
+            project,
+            &v.target.as_ref().ok_or("连接待识别")?.environment,
+        )?;
+        location["version"] = json!(1);
+        location["publicationId"] = json!(publication);
+        let job = Job {
+            epoch: v.epoch,
+            resource: None,
+            view: id.into(),
+            context: v.context.clone(),
+            endpoint: v.endpoint.clone(),
+            container: String::new(),
+            engine: v.expected_engine.clone(),
+            action: JobAction::Directory(
+                json!({"location":location,"project":project,"indexRevision":index.revision.to_string()}),
+            ),
+            target: v.target.clone(),
+            config: Config::default(),
+            deadline: None,
+        };
+        self.jobs
+            .retain(|j| j.view != id || !matches!(j.action, JobAction::Directory(_)));
+        if self.jobs.len() >= 16 {
+            return Err("Docker 请求队列已满".into());
+        }
+        self.jobs.push_back(job);
+        let v = self.views.get_mut(id).unwrap();
+        v.data["directoryPublication"] = json!({"publicationId":publication,"project":project,"observationRevision":d["observationRevision"],"state":"pending","message":"正在发布目录位置"});
+        v.revision += 1;
+        self.snapshot(id)
+    }
     pub fn event(&mut self, id: &str, d: &Value) -> Result<Value, String> {
         let action = d["action"].as_str().ok_or("缺少操作")?;
+        if action == "compose.follow" {
+            return self.follow_directory(id, d);
+        }
         if action == "snapshot" {
             return self.snapshot(id);
         }
@@ -2185,6 +2255,61 @@ fn resource_remove(app: &Shared, job: &Job, client: &Client) -> Result<DeleteRes
         json!({"state":"ready","operation":{"action":"resource.remove","resource":resource,"state":state,"message":message,"finishedAt":now()}}),
     ))
 }
+fn publish_directory(app: &Shared, job: &Job, client: &Client, work: &Value) -> Result<(), String> {
+    let location = &work["location"];
+    let owned = || {
+        app.lock().unwrap().views.get(&job.view).is_some_and(|v| {
+            !v.frozen
+                && v.epoch == job.epoch
+                && v.context == job.context
+                && v.endpoint == job.endpoint
+                && v.expected_engine == job.engine
+                && v.data["directoryPublication"]["publicationId"] == location["publicationId"]
+                && v.browser.as_ref().is_some_and(|b| {
+                    b.indexes[&Kind::Container].revision.to_string() == work["indexRevision"]
+                        && b.indexes[&Kind::Container].complete
+                        && !b.indexes[&Kind::Container].partial
+                        && b.indexes[&Kind::Container].phase == "ready"
+                })
+        })
+    };
+    let mut baseline = None;
+    for attempt in 0..3 {
+        if !owned() {
+            return Err("目录发布已取消".into());
+        }
+        let result = (|| -> Result<(), String> {
+            let r = sodeck_plugin_client::shared_state::request(
+                client,
+                &job.view,
+                &job.context,
+                "get",
+                json!({"topic":"workspace.location.v1","key":"current"}),
+            )
+            .map_err(|e| e.message)?;
+            if !owned() {
+                return Err("目录发布已取消".into());
+            }
+            let record = &r["record"];
+            if record["value"] == *location {
+                return Ok(());
+            }
+            if record["value"]["publicationId"] == location["publicationId"] {
+                return Err("相同目录发布编号的内容不同".into());
+            }
+            if baseline.as_ref().is_some_and(|b| *b != record["revision"]) {
+                return Err("目录发布已被较新位置替代".into());
+            }
+            baseline = Some(record["revision"].clone());
+            sodeck_plugin_client::shared_state::request(client,&job.view,&job.context,"put",json!({"topic":"workspace.location.v1","key":"current","expectedRevision":record["revision"],"value":location})).map_err(|e|e.message)?;
+            Ok(())
+        })();
+        if result.is_ok() || attempt == 2 {
+            return result;
+        }
+    }
+    unreachable!()
+}
 pub fn start(app: Shared, client: Client) {
     std::thread::spawn(move || {
         let mut foreground_streak = 0u8;
@@ -2245,6 +2370,27 @@ pub fn start(app: Shared, client: Client) {
                 job
             };
             if let Some(mut job) = job {
+                if let JobAction::Directory(work) = &job.action {
+                    let location = &work["location"];
+                    let result = publish_directory(&app, &job, &client, work);
+                    let mut a = app.lock().unwrap();
+                    if let Some(v) = a.views.get_mut(&job.view).filter(|v| {
+                        v.epoch == job.epoch
+                            && v.context == job.context
+                            && v.data["directoryPublication"]["publicationId"]
+                                == location["publicationId"]
+                    }) {
+                        v.data["directoryPublication"]["state"] = json!(if result.is_ok() {
+                            "succeeded"
+                        } else {
+                            "failed"
+                        });
+                        v.data["directoryPublication"]["message"] =
+                            json!(result.err().unwrap_or_else(|| "已发布目录位置".into()));
+                        v.revision += 1;
+                    }
+                    continue;
+                }
                 if job.action.as_str().starts_with("connection.")
                     || job.action.as_str() == "setEndpoint"
                 {
@@ -2569,6 +2715,8 @@ pub fn start(app: Shared, client: Client) {
                                         }
                                     }
                                 }
+                                data["directoryPublication"] =
+                                    v.data["directoryPublication"].clone();
                                 v.data = data;
                             }
                             Ok(_) => {
