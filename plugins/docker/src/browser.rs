@@ -181,12 +181,18 @@ impl BrowserState {
         }))
     }
     pub fn owns(&self, work: &Work) -> bool {
+        self.current(work)
+            && match work {
+                Work::Index { kind, .. } => self.indexes[kind].phase == "loading",
+                Work::Object { resource, .. } => self.objects[&resource.key()].phase == "loading",
+            }
+    }
+    pub fn current(&self, work: &Work) -> bool {
         match work {
             Work::Index {
                 kind, generation, ..
             } => {
-                self.indexes[kind].generation == *generation
-                    && self.indexes[kind].phase == "loading"
+                self.indexes[kind].generation == *generation && self.indexes[kind].phase != "stale"
             }
             Work::Object {
                 resource,
@@ -195,7 +201,7 @@ impl BrowserState {
             } => self
                 .objects
                 .get(&resource.key())
-                .is_some_and(|r| r.generation == *generation && r.phase == "loading"),
+                .is_some_and(|r| r.generation == *generation && r.phase != "stale"),
         }
     }
     pub fn fail(&mut self, work: &Work, error: String) {
@@ -813,6 +819,26 @@ fn status(r: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn completed_work_is_current_until_invalidated() {
+        let mut b = BrowserState::default();
+        let index = b.load(Kind::Container).unwrap();
+        let resource = ResourceRef {
+            kind: Kind::Container,
+            id: "a".repeat(64),
+        };
+        let object = b.load_object(resource.clone()).unwrap().unwrap();
+        assert!(b.owns(&index) && b.owns(&object));
+        b.indexes.get_mut(&Kind::Container).unwrap().phase = "ready".into();
+        b.objects.get_mut(&resource.key()).unwrap().phase = "ready".into();
+        assert!(!b.owns(&index) && !b.owns(&object));
+        assert!(b.current(&index) && b.current(&object));
+        b.invalidate();
+        assert!(!b.current(&index) && !b.current(&object));
+        b.load(Kind::Container);
+        b.load_object(resource).unwrap();
+        assert!(!b.current(&index) && !b.current(&object));
+    }
     #[test]
     fn loading_is_parent_state_and_keeps_cached_resources() {
         let mut b = BrowserState::default();

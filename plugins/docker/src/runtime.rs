@@ -2470,7 +2470,7 @@ pub fn start(app: Shared, client: Client) {
                     let owns = a.views.get(&job.view).is_some_and(|v| {
                         v.context == job.context
                             && v.epoch == job.epoch
-                            && v.browser.as_ref().is_some_and(|b| b.owns(work))
+                            && v.browser.as_ref().is_some_and(|b| b.current(work))
                     });
                     if owns {
                         match result {

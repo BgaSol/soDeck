@@ -112,6 +112,8 @@ try{
   await assert.rejects(peer.initialize({dataDirectory:directory,coreApiVersion:"1.0"}),/API/);
   await peer.initialize({dataDirectory:directory});
   await request('ui.createView','browser',{viewType:'browser'});let browser=await idle('browser');assert.equal(browser.state,'ready');
+  const completed=await until(()=>state('browser'),s=>s.indexes.container.complete&&!s.tree.nodes.find(n=>n.key==='category:container')?.loading);
+  assert(completed.tree.nodes.some(n=>n.composeProject==='web'&&n.composeLocation?.path),'completed index updates its cached tree without a navigation event');
   const initialPage=(await request('ui.event','browser',{data:{action:'browser.page',status:'abnormal',query:'中文'}})).data;
   assert(initialPage.nodes.some(n=>n.resource?.id===id));
   const project=initialPage.nodes.find(n=>n.composeProject==='web');assert(project);assert.equal(project.composeLocation.path,windows?'C:\\compose':'/srv/compose');
