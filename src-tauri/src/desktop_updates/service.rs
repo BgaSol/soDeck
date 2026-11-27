@@ -252,7 +252,7 @@ mod tests {
         let plugin = root.join("plugin");
         fs::create_dir_all(&plugin).unwrap();
         fs::write(plugin.join("entry"), b"not executed").unwrap();
-        fs::write(plugin.join("plugin.json"), json!({"id":"test.auto","name":"Auto fixture","version":"0.1.0","apiVersion":"2.0","target":crate::TARGET,"entry":"entry","updateSource":{"repository":"test/repo","tagPrefix":"plugin-auto-v"}}).to_string()).unwrap();
+        fs::write(plugin.join("plugin.json"), json!({"id":"test.auto","name":"Auto fixture","version":"0.1.0","apiVersion":"2.1","target":crate::TARGET,"entry":"entry","updateSource":{"repository":"test/repo","tagPrefix":"plugin-auto-v"}}).to_string()).unwrap();
         let core = AppCore::open(root.join("data"), "2.0.0".into()).unwrap();
         core.add_plugin(&plugin).unwrap();
         core.set_enabled("test.auto", false).unwrap();

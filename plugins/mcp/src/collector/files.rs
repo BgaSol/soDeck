@@ -89,11 +89,9 @@ impl Collector<'_> {
                     return Err(e);
                 }
             };
-            if self.task.kind() == Kind::Upload
-                && native["state"] == "completed"
-                && native["transfer"]["commitState"] != "committed"
+            if let Err(error) = sodeck_plugin_client::protocol::replies::CopyTransfer::read(&native)
             {
-                let fault = failure("invalidCopyReceipt", "核心未提供已确认的上传提交回执");
+                let fault = serde_json::to_value(error).unwrap();
                 self.unavailable(fault.clone());
                 return Err(fault);
             }

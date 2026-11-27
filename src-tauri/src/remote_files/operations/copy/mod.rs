@@ -1,8 +1,10 @@
 use super::*;
 mod destination;
+mod metadata;
 mod request;
 mod state;
 use request::CopyRequest;
+use sodeck_plugin_protocol::replies::CopyPhase;
 use state::CopyProgress;
 
 enum Reader {
@@ -15,9 +17,23 @@ enum Writer {
 }
 impl Io {
     pub(super) async fn copy(&self, p: &Value) -> Result<Value, OperationError> {
+        let mut progress = CopyProgress::new(self.operation.clone());
+        let result = self.copy_inner(p, &mut progress).await;
+        match result {
+            Ok(value) => {
+                progress.phase(CopyPhase::Finished, "finished");
+                Ok(value)
+            }
+            Err(error) => Err(progress.error(error)),
+        }
+    }
+    async fn copy_inner(
+        &self,
+        p: &Value,
+        progress: &mut CopyProgress,
+    ) -> Result<Value, OperationError> {
         let request = CopyRequest::parse(p)?;
         let host_source = p["source"]["side"] == "localPath";
-        let mut progress = CopyProgress::new(self.operation.clone());
         let source = self.endpoint(&p["source"])?;
         let destination = self.endpoint(&p["destination"])?;
         let source_parent = if matches!(source, Endpoint::Remote(_)) {
@@ -145,6 +161,7 @@ impl Io {
                 return Err(e);
             }
         };
+        progress.phase(CopyPhase::Transferring, "read");
         let mut offset = 0u64;
         let streaming = async {
             let mut buffer = vec![0u8; 64 * 1024];
@@ -153,6 +170,7 @@ impl Io {
                     return Err(failure("cancelled", "传输已取消，原目标保留"));
                 }
                 self.core.connection_session(&self.owner.context)?;
+                progress.stage("read");
                 let block = match &mut reader {
                     Reader::Local(file) => {
                         let n = file.file.read(&mut buffer).await.map_err(local_error)?;
@@ -179,6 +197,7 @@ impl Io {
                         Err(e) => return Err(err(e)),
                     },
                 };
+                progress.stage("write");
                 match &mut writer {
                     Writer::Local(file) => file.write_all(&block).await.map_err(local_error)?,
                     Writer::Remote(handle) => {
@@ -194,6 +213,7 @@ impl Io {
                 offset += block.len() as u64;
                 progress.bytes(offset, before["size"].clone());
             }
+            progress.phase(CopyPhase::Finalizing, "verifySource");
             if before["size"]
                 .as_str()
                 .and_then(|s| s.parse::<u64>().ok())
@@ -202,6 +222,7 @@ impl Io {
                 return Err(failure("sourceChanged", "源文件大小在传输期间变化"));
             }
             if let Writer::Local(file) = &mut writer {
+                progress.stage("flush");
                 file.flush().await.map_err(local_error)?;
                 file.sync_all().await.map_err(local_error)?;
             }
@@ -211,6 +232,10 @@ impl Io {
         let result = streaming.await;
         if let Reader::Remote(handle) = &reader {
             let _ = self.session.raw.close(handle.clone()).await;
+        }
+        let result = result.map_err(|e| progress.error(e));
+        if result.is_ok() {
+            progress.stage("close");
         }
         let closed = match writer {
             Writer::Remote(handle) => self
@@ -227,43 +252,27 @@ impl Io {
         };
         let result=async{
             result?;closed?;
+            progress.stage("verifySource");
             if let Some(parent) = &source_parent { if &self.parent_identity(&source).await? != parent { return Err(failure("sourceChanged","来源父目录发生变化，未提交")); } }
+            progress.stage("verifyTarget");
             if self.parent_identity(&destination).await? != destination_parent { return Err(failure("targetChanged","目标父目录发生变化，未提交")); }
+            progress.stage("verifySource");
             if let Reader::Local(source) = &reader { source.verify().await.map_err(|e|failure("sourceChanged",e))?; }
             // Preserve ordinary modification time and existing target mode where available.
             // Metadata failure is reported before replacing the destination.
-            match &temporary {
-                Endpoint::Local(path) => {
-                    let path=path.clone();
-                    let modified=(!request.content_only).then(||before["mtime"].as_u64()).flatten().map(|s|std::time::UNIX_EPOCH+Duration::from_secs(s));
-                    #[cfg(unix)]
-                    let permissions=original.as_ref().and_then(|v|v["permissions"].as_u64()).or_else(|| if request.content_only {None} else {before["permissions"].as_u64()});
-                    tokio::task::spawn_blocking(move || {
-                        let file=std::fs::OpenOptions::new().write(true).open(&path).map_err(err)?;
-                        if let Some(time)=modified {file.set_times(std::fs::FileTimes::new().set_modified(time)).map_err(err)?;}
-                        #[cfg(unix)]
-                        if let Some(mode)=permissions {use std::os::unix::fs::PermissionsExt;file.set_permissions(std::fs::Permissions::from_mode(mode as u32 & 0o777)).map_err(err)?;}
-                        Ok::<_,String>(())
-                    }).await.map_err(err)??;
-                }
-                Endpoint::Remote(path) => {
-                    let mtime=(!request.content_only).then(||before["mtime"].as_u64()).flatten().and_then(|s|u32::try_from(s).ok());
-                    let permissions=original.as_ref().and_then(|v|v["permissions"].as_u64()).or_else(|| if request.content_only {None} else {before["permissions"].as_u64()}).map(|p|p as u32 & 0o777);
-                    if mtime.is_some() || permissions.is_some() {self.session.raw.setstat(path,FileAttributes{atime:mtime,mtime,permissions,..Default::default()}).await.map_err(err)?;}
-                }
-            }
+            progress.stage("metadata");
+            self.preserve_metadata(&temporary, &before, &original, request.content_only).await?;
+            progress.stage("verifySource");
             if self.inspect(&source).await?.as_ref().map(|a|&a["stamp"])!=Some(&before["stamp"]){return Err(failure("sourceChanged","传输期间源文件发生变化，未提交"));}
             if self.operation.cancel.is_cancelled(){return Err(failure("cancelled","传输已取消，原目标保留"));}
+            progress.stage("verifyTarget");
             self.check_guard(&destination,&guard).await?;
             self.core.connection_session(&self.owner.context)?;
             progress.committing();
             match (&temporary,&destination){
                 (Endpoint::Local(temp),Endpoint::Local(target))=>{
-                    if guard["kind"]=="absent" {
-                        // A hard link is an atomic exclusive install of this same-directory ordinary file.
-                        tokio::fs::hard_link(temp,target).await.map_err(|e|failure(if e.kind()==std::io::ErrorKind::AlreadyExists{"targetExists"}else{"io"},e))?;
-                        let _=tokio::fs::remove_file(temp).await;
-                    }else{tokio::fs::rename(temp,target).await.map_err(err)?;}
+                    crate::local_files::commit_temporary(temp.clone(), target.clone(), guard["kind"]!="absent")
+                        .await.map_err(local_error)?;
                 },
                 (Endpoint::Remote(temp),Endpoint::Remote(target))=>{
                     let committed = destination::commit_remote(&self.session.raw,temp,target,original.is_some()).await;

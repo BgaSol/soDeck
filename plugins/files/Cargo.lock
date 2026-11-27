@@ -83,7 +83,7 @@ dependencies = [
 
 [[package]]
 name = "sodeck-files"
-version = "0.12.1"
+version = "0.13.0"
 dependencies = [
  "serde_json",
  "sodeck-plugin-client",

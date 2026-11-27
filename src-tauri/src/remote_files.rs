@@ -211,6 +211,8 @@ impl AppCore {
         let action = string(p, "action")?;
         if !["start", "lookup", "poll", "cancel", "release"].contains(&action) {
             return Err(OperationError {
+                stage: None,
+                os_code: None,
                 code: "invalid".into(),
                 message: "未知文件原语操作".into(),
             });
@@ -225,6 +227,8 @@ impl AppCore {
                 || p["operation"]["kind"] == "rename")
         {
             return Err(OperationError {
+                stage: None,
+                os_code: None,
                 code: "invalid".into(),
                 message: "需要固定请求身份、上下文及新版操作".into(),
             });

@@ -30,7 +30,7 @@ impl Fixture {
         fs::create_dir_all(&plugin).unwrap();
         let binary = format!("fixture{}", std::env::consts::EXE_SUFFIX);
         fs::copy(env!("CARGO_BIN_EXE_plugin-fixture"), plugin.join(&binary)).unwrap();
-        fs::write(plugin.join("plugin.json"),json!({"id":"test.fixture","name":"Fixture","version":"0.1.0","apiVersion":"2.0","target":TARGET,"entry":binary}).to_string()).unwrap();
+        fs::write(plugin.join("plugin.json"),json!({"id":"test.fixture","name":"Fixture","version":"0.1.0","apiVersion":"2.1","target":TARGET,"entry":binary}).to_string()).unwrap();
         fs::write(plugin.join("mode"), mode).unwrap();
         Self { root, plugin }
     }
@@ -103,7 +103,7 @@ fn load_stop_reload_and_persist() {
     )
     .unwrap();
     assert_eq!(initialization["coreVersion"], "test");
-    assert_eq!(initialization["coreApiVersion"], "2.0");
+    assert_eq!(initialization["coreApiVersion"], "2.1");
     assert!(initialization.get("capabilities").is_none());
     wait_for(|| !core.messages().is_empty());
     assert_eq!(

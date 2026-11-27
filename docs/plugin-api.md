@@ -1,10 +1,10 @@
-# 外置插件 API 2.0
+# 外置插件 API 2.1
 
 本文定义当前核心与插件的唯一 SDK 基线。功能操作见[功能索引](README.md)，工程与打包见[开发指南](development.md)。插件是可信扩展，分进程用于生命周期与故障恢复；不声明权限列表，不引入授权或沙箱流程。
 
 ## 版本与 SDK 边界
 
-清单必须声明 version、apiVersion:"2.0"、target 和包内入口。API 使用规范 major.minor：主版本相同且核心 minor 不低于插件要求才可加载。API 1 插件停止执行，但已安装登记、启用意图、数据和更新来源保留，可在管理页升级；不加载历史 UI、能力或 RPC 适配。未来变更通过显式 API 版本与插件升级处理。
+清单必须声明 version、apiVersion:"2.1"、target 和包内入口。API 使用规范 major.minor：主版本相同且核心 minor 不低于插件要求才可加载。API 1 插件停止执行，但已安装登记、启用意图、数据和更新来源保留，可在管理页升级；不加载历史 UI、能力或 RPC 适配。核心 2.10.0 起的当前 SDK 基线为 2.1，六插件使用同一份协议与客户端；新增复制阶段和故障字段后全部同步，不维护历史 SDK 或运行时字段降级。未来变更通过显式 API 版本与插件升级处理。
 
 - [plugin-protocol](../crates/plugin-protocol/src/lib.rs) 是核心与 Rust 客户端共同使用的数据契约；[Request](../crates/plugin-protocol/src/requests.rs) 定义当前控制方法、参数、Context 和错误。业务 payload、共享状态值及插件 UI data 仍由插件定义。
 - [plugin-client](../crates/plugin-client/src/lib.rs) 统一初始化、有界并发收发、命令票据和文件编辑生命周期。插件通过 `client.request(api::call::Target(api::ViewContext { ... }))` 等封闭请求入口调用服务；稳定的会话、程序、exec/process 和资源回执由关联类型解码，领域快照及插件自定内容保留 JSON。底层原始方法名发送为私有实现。初始化前或重复初始化失败，不执行业务回调。反向调用先按共享 `Callback` 校验方法、Context 与核心字段，插件业务状态机可以投影已校验的回调内容。
@@ -14,7 +14,7 @@
 ## 清单与初始化
 
 ```json
-{"id":"example.plugin","name":"示例","version":"1.0.0","apiVersion":"2.0","target":"x86_64-pc-windows-msvc","entry":"bin/example.exe","updateSource":{"repository":"BgaSol/soDeck","tagPrefix":"plugin-example-v"}}
+{"id":"example.plugin","name":"示例","version":"1.0.0","apiVersion":"2.1","target":"x86_64-pc-windows-msvc","entry":"bin/example.exe","updateSource":{"repository":"BgaSol/soDeck","tagPrefix":"plugin-example-v"}}
 ```
 
 version 按 SemVer 校验；API 与组件版本独立。每包对应一个正式支持的平台架构，Unix 入口保留执行位。ui、commands、settings 可按实际使用声明，但它们不再分别声明 apiVersion。
@@ -276,7 +276,7 @@ files.open({viewId}) 返回 id；files.close({id}) 清理所属资源。files.ba
 
 目录数据使用 home/stat/list/closeDirectory，list 每个 cursor 独立分页并显式关闭；不再有共享单目录或 independent 开关。文件复制支持 remote、原生 inputId/rootId/relative、localPath 及 pluginData 各自的端点约束。localPath 是只读本地来源，不伪造原生文件选择；pluginData 只在本组件数据目录内独占创建。路径按本地/远端分别处理。
 
-copyFile 使用 destinationGuard 的 absent/match/capture，capture 只允许远端目标并在准备时固定；提交前复核，不能重捕获掩盖变化。metadataPolicy=contentOnly 不传播来源属性。transfer 保留 commitState/commitAttempted/sourceVersion/temporaryPath，提交 ACK 后附属 stat/cleanup 失败保持 committed，未知提交不自动重试或删除未决临时文件。
+copyFile 使用 destinationGuard 的 absent/match/capture，capture 只允许远端目标并在准备时固定；提交前复核，不能重捕获掩盖变化。metadataPolicy=contentOnly 不传播来源属性。transfer 提供 phase（preparing/transferring/finalizing/committing/finished）、stage（当前 IO/检查步骤），并保留 commitState/commitAttempted/sourceVersion/temporaryPath；start/lookup/poll 与终态均提供复制事实。received 为确认写入目标流的正文大小，total 可未知，均使用 u64 十进制字符串；字节相等不能证明提交成功。失败保留实际阶段，error.stage 和可获得的 error.osCode 供诊断。提交 ACK 后附属 stat/cleanup 失败保持 committed，未知提交不自动重试或删除未决临时文件。
 
 
 

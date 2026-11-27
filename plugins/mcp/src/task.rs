@@ -147,6 +147,27 @@ pub fn fixture(root: PathBuf) -> Arc<Task> {
 mod tests {
     use super::*;
     #[test]
+    fn confirmed_commit_keeps_new_phases_and_survives_observation_failure() {
+        let mut task = fixture(PathBuf::new());
+        Arc::get_mut(&mut task).unwrap().spec.operation = TaskOperation::File(FileSpec::Download {
+            remote_path: "/source".into(),
+        });
+        task.observe(json!({"state":"committing","transfer":{"commitState":"committed","phase":"committing"}}),None);
+        task.observe(
+            json!({"state":"completed","transfer":{"commitState":"committed","phase":"finished"}}),
+            None,
+        );
+        assert_eq!(task.snapshot().native["transfer"]["phase"], "finished");
+        task.observe(
+            json!({"state":"unavailable","transfer":{"commitState":"unknown","phase":"finished"}}),
+            None,
+        );
+        assert_eq!(
+            task.snapshot().native["transfer"]["commitState"],
+            "committed"
+        );
+    }
+    #[test]
     fn only_meaningful_facts_wake_and_terminal_publication_is_stable() {
         let task = fixture(PathBuf::new());
         task.observe(json!({"state":"running","elapsedMs":1}), Some(0));
@@ -465,7 +486,10 @@ impl Task {
                 if ["committed", "notCommitted"]
                     .contains(&previous["transfer"]["commitState"].as_str().unwrap_or(""))
                 {
-                    next["transfer"] = previous["transfer"].clone();
+                    if next["transfer"].is_null() {
+                        next["transfer"] = previous["transfer"].clone();
+                    }
+                    next["transfer"]["commitState"] = previous["transfer"]["commitState"].clone();
                 }
                 let changed = meaningful_native(previous) != meaningful_native(&next);
                 r.native = next;

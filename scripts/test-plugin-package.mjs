@@ -26,7 +26,7 @@ try {
   for (const file of [metadata.file, `plugin-${target}.json`]) fs.copyFileSync(path.join(input, file), path.join(directory, file));
   const checked = validatePluginArchive(directory, { ...metadata, binary: `sodeck-${plugin}` }, target);
   const manifest = JSON.parse(fs.readFileSync(path.join(checked.root, "plugin.json"), "utf8"));
-  assert.equal(manifest.apiVersion, "2.0"); assert.equal(manifest.ui.apiVersion, undefined);
+  assert.equal(manifest.apiVersion, "2.1"); assert.equal(manifest.ui.apiVersion, undefined);
   for(const [name,asset] of Object.entries(manifest.icons ?? {})) {
     assert(/^[a-zA-Z0-9-]{1,64}$/.test(name));
     const root=fs.realpathSync(checked.root), file=fs.realpathSync(path.join(root,asset));
@@ -85,7 +85,7 @@ try {
   fs.mkdirSync(dataDirectory,{recursive:true});
   const initialized = await peer.initialize({dataDirectory});
   report.dataDirectory={unicode:true,extended:process.platform==='win32',length:dataDirectory.length};
-  assert.equal(initialized.apiVersion, "2.0");
+  assert.equal(initialized.apiVersion, "2.1");
   if (manifest.commands) {
     assert.deepEqual([...initialized.commandHandlers].sort(), [...manifest.commands.handlers].sort());
   }

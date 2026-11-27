@@ -294,3 +294,5 @@ phase=collecting 表示接纳/采集，finalizing 表示最终保存和原生清
 0.3.0 升级读取契约：默认由 full 改为 text，任务事实默认精简，full 不再附文本，structuredContent 删除。旧客户端需改为解析 content[0].text；原参数、路径、完整错误改用 detail=true。0.4.0 将 exec_start 从立即凭据改为默认有限等待与普通任务/第一文本页；依赖旧形状或极短回包期限的客户端需迁移，waitMs=0 保留立即交接意图但不恢复旧形状。客户端重新发现 tools/list。六工具名、启动/目标身份、task_get 的变化等待、分页、去重保持；0.7.0 元数据使用 schemaVersion=2，保存模式及最近输入摘要，原文件不扫描或迁移。无旧版开关或重复工具。
 
 返回[文档索引](README.md)。
+
+当前 API 2.1 文件任务的 `native.transfer` 增加 `phase`（preparing/transferring/finalizing/committing/finished）和 `stage`；终态保留最终 `received/total`，`native.error` 保留 `stage/osCode`。下载 `file.commitState` 与上传使用相同核心事实，只有稳定交付才提供 `localPath`。正文进度完成不代表校验或提交成功。

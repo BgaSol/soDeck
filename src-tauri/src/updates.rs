@@ -83,7 +83,7 @@ mod tests {
             tag_prefix: "plugin-docker-v".into(),
         };
         let manifest: UpdateManifest = serde_json::from_value(serde_json::json!({
-            "id": "sodeck.docker", "version": "0.1.3", "apiVersion": "2.0",
+            "id": "sodeck.docker", "version": "0.1.3", "apiVersion": "2.1",
             "source": source, "manifestUrl": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.1.3/plugin-update.json",
             "platforms": { (TARGET): { "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.1.3/package.zip", "sha256": "a".repeat(64) } }
         })).unwrap();

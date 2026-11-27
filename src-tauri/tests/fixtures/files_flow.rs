@@ -283,6 +283,33 @@ async fn openssh_files_plugin() {
     let source=json!({"side":"remote","path":large.to_str().unwrap().replace('\\',"/")});
     let copy=json!({"kind":"copyFile","source":source,"destination":destination,"destinationGuard":{"kind":"absent"}});
     let result=file_operation(&f.core,token,id,copy.clone()).await;assert_eq!(result["state"],"completed","{result}");assert_eq!(std::fs::read(plugin_data.join("evidence/binary.bin")).unwrap(),std::fs::read(&large).unwrap());
+    // A changed source can finish all bytes while correctly refusing final delivery.
+    {
+        let changing = remote.join("changing-source.bin");
+        std::fs::File::create(&changing).unwrap().set_len(16*1024*1024).unwrap();
+        let request = "changed-after-stream-start";
+        let direct = begin_direct_batch(&f.core, id, request);
+        let started = fd(&f.core,token,id,json!({"action":"operation.start","requestId":request,"sequence":next_file_sequence(),"batchId":request,"expectedContext":context,"operation":{"kind":"copyFile","source":{"side":"remote","path":changing.to_str().unwrap().replace('\\',"/")},"destination":{"side":"pluginData","relative":["evidence","changed-after-transfer.bin"]},"destinationGuard":{"kind":"absent"}}})).await.unwrap();
+        let operation = started["id"].as_str().unwrap();
+        assert_eq!(started["transfer"]["phase"],"preparing");
+        let mut changed = false;
+        let result = tokio::time::timeout(Duration::from_secs(90),async {loop {
+            let snapshot=fd(&f.core,token,id,json!({"action":"operation.poll","operationId":operation})).await.unwrap();
+            if !changed && snapshot["received"].as_str().and_then(|n|n.parse::<u64>().ok()).unwrap_or(0)>0 {
+                assert_eq!(snapshot["state"],"running","source mutation must happen during the actual stream: {snapshot}");
+                std::fs::OpenOptions::new().write(true).open(&changing).unwrap().set_times(std::fs::FileTimes::new().set_modified(std::time::UNIX_EPOCH+Duration::from_secs(1234567890))).unwrap();
+                changed=true;
+            }
+            if !["running","committing"].contains(&snapshot["state"].as_str().unwrap_or("")){break snapshot;}
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }}).await.unwrap();
+        assert!(changed);assert_eq!(result["received"],(16u64*1024*1024).to_string());
+        assert_eq!(result["state"],"failed","{result}");assert_eq!(result["transfer"]["phase"],"finalizing");
+        assert_eq!(result["error"]["stage"],"verifySource");assert_eq!(result["error"]["code"],"sourceChanged");
+        assert_eq!(result["transfer"]["commitState"],"notCommitted");assert!(!plugin_data.join("evidence/changed-after-transfer.bin").exists());
+        fd(&f.core,token,id,json!({"action":"operation.release","operationId":operation})).await.unwrap();
+        end_direct_batch(&f.core,id,&direct,request);
+    }
     let repeat=file_operation(&f.core,token,id,copy.clone()).await;assert_eq!(repeat["error"]["code"],"targetExists","{repeat}");
     for relative in [json!(["..","escape"]),json!(["evidence","../escape"]),json!(["C:\\escape"]),json!(["C:escape"]),json!(["evidence","a\\b"]),json!(["evidence","a:b"]),json!(["evidence","a/b"]),json!([])]{let mut bad=copy.clone();bad["destination"]["relative"]=relative.clone();let result=file_operation(&f.core,token,id,bad).await;assert!(matches!(result["error"]["code"].as_str(),Some("invalid"|"invalidName")),"relative={relative}, result={result}");}
     let inspect=file_operation(&f.core,token,id,json!({"kind":"inspect","endpoint":destination})).await;assert_eq!(inspect["error"]["code"],"invalid");
@@ -725,7 +752,7 @@ async fn openssh_files_plugin() {
         let page=f.core.ui_event("main",source_token,json!({"action":"readTasks"})).unwrap();
         let status=page["tasks"].as_array().unwrap().iter().find(|b|b["id"]==batch).unwrap();
         assert!(!["completed","failed"].contains(&status["state"].as_str().unwrap_or("")),"{status}");
-        if status["currentBytes"].as_str().and_then(|n|n.parse::<u64>().ok()).unwrap_or(0)>0 {break;}
+        if status["currentOperation"]["received"].as_str().and_then(|n|n.parse::<u64>().ok()).unwrap_or(0)>0 {break;}
         tokio::time::sleep(Duration::from_millis(2)).await;
     }}).await.unwrap();
     f.core.ui_event("main",source_token,json!({"action":"cancelBatch","batchId":batch})).unwrap();

@@ -3,6 +3,95 @@ use crate::{program::Mode, Context};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CopyPhase {
+    Preparing,
+    Transferring,
+    Finalizing,
+    Committing,
+    Finished,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CommitState {
+    Pending,
+    Committed,
+    NotCommitted,
+    Unknown,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CopyTransfer {
+    pub phase: CopyPhase,
+    pub stage: String,
+    pub commit_state: CommitState,
+    pub commit_attempted: bool,
+    pub source_version: Option<String>,
+    pub temporary_path: Option<String>,
+}
+impl Default for CopyTransfer {
+    fn default() -> Self {
+        Self {
+            phase: CopyPhase::Preparing,
+            stage: "prepare".into(),
+            commit_state: CommitState::Pending,
+            commit_attempted: false,
+            source_version: None,
+            temporary_path: None,
+        }
+    }
+}
+impl CopyTransfer {
+    pub fn read(receipt: &Value) -> Result<Self, crate::ApiError> {
+        let facts: Self = decode(receipt["transfer"].clone())?;
+        for key in ["received", "total"] {
+            if key == "total" && receipt[key].is_null() {
+                continue;
+            }
+            if receipt[key]
+                .as_str()
+                .and_then(|v| v.parse::<u64>().ok())
+                .is_none()
+            {
+                return Err(crate::ApiError::local(
+                    "核心复制字节回执无效，原操作结果待确认",
+                ));
+            }
+        }
+        if receipt["state"] == "completed"
+            && (facts.commit_state != CommitState::Committed || facts.phase != CopyPhase::Finished)
+        {
+            return Err(crate::ApiError::local("核心未提供已确认的复制提交回执"));
+        }
+        Ok(facts)
+    }
+}
+
+#[cfg(test)]
+mod copy_tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn full_bytes_are_not_a_commit_and_incomplete_success_receipts_are_rejected() {
+        let mut value = json!({"state":"running","received":"20","total":"20","transfer":CopyTransfer::default()});
+        assert_eq!(
+            CopyTransfer::read(&value).unwrap().commit_state,
+            CommitState::Pending
+        );
+        value["state"] = json!("completed");
+        assert!(CopyTransfer::read(&value).is_err());
+        value["transfer"]["phase"] = json!("finished");
+        value["transfer"]["commitState"] = json!("committed");
+        assert!(CopyTransfer::read(&value).is_ok());
+        value["received"] = json!("18446744073709551616");
+        assert!(CopyTransfer::read(&value).is_err());
+        value["received"] = json!("0");
+        value["total"] = Value::Null;
+        assert!(CopyTransfer::read(&value).is_ok());
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Resource {
     pub id: String,

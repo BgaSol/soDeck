@@ -13,7 +13,7 @@ pub(crate) fn brief_error(value: &Value) -> Value {
     if value.is_null() {
         return Value::Null;
     }
-    let mut result = json!({"code":value["code"],"message":value["message"]});
+    let mut result = json!({"code":value["code"],"message":value["message"],"stage":value["stage"],"osCode":value["osCode"]});
     if let Some(message) = value["message"].as_str() {
         let (text, cut) = preview(message, 512);
         result["message"] = json!(text);
@@ -171,7 +171,7 @@ fn file(task: &Task, r: &Record) -> Value {
             });
         return json!({"remotePath":input["remotePath"],"localPath":input["localPath"],"overwrite":input["overwrite"],"commitState":commit});
     }
-    json!({"remotePath":task.start_input()["remotePath"],"localPath":if r.phase==Phase::Done && matches!(r.saved,Saved::Complete) {json!(r.path)} else {Value::Null}})
+    json!({"remotePath":task.start_input()["remotePath"],"commitState":r.native["transfer"]["commitState"],"localPath":if r.phase==Phase::Done && matches!(r.saved,Saved::Complete) {json!(r.path)} else {Value::Null}})
 }
 fn mcp_facts(c: &CapturedTask, detail: bool, body: bool) -> Value {
     let (task, r) = (&c.task, &c.record);

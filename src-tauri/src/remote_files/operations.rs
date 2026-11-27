@@ -90,10 +90,12 @@ struct Io {
 pub struct OperationError {
     pub code: String,
     pub message: String,
+    pub stage: Option<String>,
+    pub os_code: Option<i32>,
 }
 impl OperationError {
     pub fn value(&self) -> Value {
-        json!({"code":self.code,"message":self.message,"effect":if self.code=="unknown"{"unknown"}else{"none"},"retryable":!["unknown","invalid","unsupported","expired","cancelled","contextChanged"].contains(&self.code.as_str())})
+        json!({"code":self.code,"message":self.message,"stage":self.stage,"osCode":self.os_code,"effect":if self.code=="unknown"{"unknown"}else{"none"},"retryable":!["unknown","invalid","unsupported","expired","cancelled","contextChanged"].contains(&self.code.as_str())})
     }
 }
 impl std::fmt::Display for OperationError {
@@ -123,6 +125,8 @@ fn failure(code: &str, message: impl std::fmt::Display) -> OperationError {
     OperationError {
         code: code.into(),
         message: message.to_string(),
+        stage: None,
+        os_code: None,
     }
 }
 fn mutation_error(error: Error) -> OperationError {
@@ -151,7 +155,8 @@ fn mutation_error(error: Error) -> OperationError {
     }
 }
 fn local_error(error: std::io::Error) -> OperationError {
-    failure(
+    let os_code = error.raw_os_error();
+    let mut value = failure(
         match error.kind() {
             std::io::ErrorKind::PermissionDenied => "permissionDenied",
             std::io::ErrorKind::StorageFull => "noSpace",
@@ -160,7 +165,9 @@ fn local_error(error: std::io::Error) -> OperationError {
             _ => "io",
         },
         error,
-    )
+    );
+    value.os_code = os_code;
+    value
 }
 fn error_value(error: OperationError) -> Value {
     error.value()
@@ -645,14 +652,19 @@ impl AppCore {
             _slot: slot,
             id: id.clone(),
             request: p.clone(),
-            state: Mutex::new(json!({"id":id,"state":"running","received":"0"})),
+            state: Mutex::new(json!({"id":id,"state":"running","received":"0","total":null})),
             cancel: r.cancel.child_token(),
             context: owner.context.clone(),
         });
+        if p["operation"]["kind"] == "copyFile" {
+            operation.state.lock().unwrap()["transfer"] =
+                json!(sodeck_plugin_protocol::replies::CopyTransfer::default());
+        }
         registry.entries.insert(id.clone(), operation.clone());
         drop(registry);
         drop(cancellation_guard);
         drop(admission);
+        let accepted = operation.state.lock().unwrap().clone();
         let core = self.clone();
         tauri::async_runtime::spawn(async move {
             let _task = task;
@@ -696,7 +708,15 @@ impl AppCore {
             let mut snapshot = operation.state.lock().unwrap();
             let terminal = match result {
                 Ok(value) => json!({"id":operation.id,"state":"completed","result":value}),
-                Err(error) => {
+                Err(mut error) => {
+                    if snapshot["transfer"].is_object() {
+                        if snapshot["transfer"]["commitState"] == "pending" {
+                            snapshot["transfer"]["commitState"] = json!("notCommitted");
+                        }
+                        if error.stage.is_none() {
+                            error.stage = snapshot["transfer"]["stage"].as_str().map(str::to_owned);
+                        }
+                    }
                     let value = error_value(error);
                     json!({"id":operation.id,"state":if value["code"]=="unknown"{"unknown"}else if value["code"]=="cancelled"{"cancelled"}else{"failed"},"error":value})
                 }
@@ -705,7 +725,7 @@ impl AppCore {
                 snapshot[key] = value.clone();
             }
         });
-        Ok(json!({"id":id,"state":"running"}))
+        Ok(accepted)
     }
 }
 impl Io {

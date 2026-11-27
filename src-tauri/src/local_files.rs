@@ -11,6 +11,33 @@ pub(crate) struct ReadSource {
     parent: PathBuf,
     version: String,
 }
+
+/// Commit only an operation-owned, closed, same-directory temporary file.
+pub(crate) async fn commit_temporary(
+    temp: PathBuf,
+    target: PathBuf,
+    replace: bool,
+) -> io::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        let metadata = std::fs::symlink_metadata(&temp)?;
+        if !metadata.is_file()
+            || metadata.file_type().is_symlink()
+            || std::fs::canonicalize(temp.parent().ok_or_else(|| invalid("临时文件没有父目录"))?)?
+                != std::fs::canonicalize(target.parent().ok_or_else(|| invalid("目标没有父目录"))?)?
+        {
+            return Err(invalid("提交需要同目录的普通临时文件"));
+        }
+        let temporary = tempfile::TempPath::try_from_path(temp)?;
+        if replace {
+            temporary.persist(target)
+        } else {
+            temporary.persist_noclobber(target)
+        }
+        .map_err(|e| e.error)
+    })
+    .await
+    .map_err(io::Error::other)?
+}
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
 }
@@ -133,6 +160,35 @@ impl ReadSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn commit_is_exclusive_and_replacement_preserves_original_on_failure() {
+        let root = tempfile::tempdir().unwrap();
+        let temp = root.path().join("中文.part");
+        let target = root.path().join("target");
+        std::fs::write(&temp, b"first").unwrap();
+        commit_temporary(temp.clone(), target.clone(), false)
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"first");
+        std::fs::write(&temp, b"second").unwrap();
+        assert_eq!(
+            commit_temporary(temp.clone(), target.clone(), false)
+                .await
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::AlreadyExists
+        );
+        assert_eq!(std::fs::read(&target).unwrap(), b"first");
+        std::fs::write(&temp, b"second").unwrap();
+        commit_temporary(temp.clone(), target.clone(), true)
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"second");
+        assert!(!temp.exists());
+        std::fs::create_dir(&temp).unwrap();
+        assert!(commit_temporary(temp, target.clone(), true).await.is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"second");
+    }
     #[cfg(windows)]
     #[tokio::test]
     async fn extended_ordinary_sources_work_while_devices_and_streams_stay_rejected() {

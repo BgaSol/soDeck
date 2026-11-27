@@ -40,10 +40,10 @@ impl Plugin {
         plugin.request(
             "init",
             "initialize",
-            json!({"coreApiVersion":"2.0","coreVersion":"2.0.0","dataDirectory":".","settings":[]}),
+            json!({"coreApiVersion":"2.1","coreVersion":"2.0.0","dataDirectory":".","settings":[]}),
         );
         let initialized = plugin.next();
-        assert_eq!(initialized["result"]["apiVersion"], "2.0");
+        assert_eq!(initialized["result"]["apiVersion"], "2.1");
         assert_eq!(
             initialized["result"]["commandHandlers"],
             json!(["terminal.open.v1"])

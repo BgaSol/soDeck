@@ -58,15 +58,24 @@ struct Item {
 struct TaskError {
     code: String,
     message: String,
+    details: Value,
 }
 impl TaskError {
     fn new(code: &str, message: impl ToString) -> Self {
         Self {
             code: code.into(),
             message: message.to_string(),
+            details: Value::Null,
         }
     }
     fn retryable(&self) -> bool {
+        if ["committed", "unknown"].contains(
+            &self.details["transfer"]["commitState"]
+                .as_str()
+                .unwrap_or(""),
+        ) {
+            return false;
+        }
         ![
             "unknown",
             "invalid",
@@ -233,7 +242,7 @@ impl Tasks {
             parameters: parameters.clone(),
             cancel: AtomicBool::new(false),
             state: Mutex::new(
-                json!({"id":id,"fileId":file,"inputId":parameters["inputId"],"kind":kind,"state":"queued","completed":"0","failed":"0","skipped":"0","cancelledItems":"0","bytes":"0","currentBytes":"0","currentTotal":null}),
+                json!({"id":id,"fileId":file,"inputId":parameters["inputId"],"kind":kind,"state":"queued","completed":"0","failed":"0","skipped":"0","cancelledItems":"0","completedBytes":"0","transferredBytes":"0","currentOperation":null}),
             ),
             decision: Mutex::new(None),
             decision_wake: Condvar::new(),
@@ -403,7 +412,7 @@ impl Tasks {
                         break;
                     }
                     let value: Value = serde_json::from_str(&line).map_err(|e| e.to_string())?;
-                    let value = json!({"state":value["state"],"error":value["error"].as_str().map(|e|e.chars().take(512).collect::<String>()),"item":{"name":value["item"]["name"].as_str().unwrap_or("").chars().take(256).collect::<String>(),"source":endpoint_label(&value["item"]["source"]),"destination":endpoint_label(&value["item"]["destination"])}});
+                    let value = json!({"failure":value["failure"],"copy":{"transfer":{"commitState":value["copy"]["transfer"]["commitState"],"phase":value["copy"]["transfer"]["phase"]}},"state":value["state"],"error":value["error"].as_str().map(|e|e.chars().take(512).collect::<String>()),"item":{"name":value["item"]["name"].as_str().unwrap_or("").chars().take(256).collect::<String>(),"source":endpoint_label(&value["item"]["source"]),"destination":endpoint_label(&value["item"]["destination"])}});
                     let size = value.to_string().len();
                     if bytes + size > 14000 {
                         reader
@@ -581,7 +590,8 @@ impl Inner {
                     batch_id: batch.id.to_string(),
                 }))
                 .map_err(|e| e.message);
-            let _=serde_json::from_value::<api::Message>(json!({"title":if state["state"]=="completed"{"文件任务完成"}else{"文件任务结束"},"body":format!("成功 {}，失败 {}，跳过 {}{}",state["completed"],state["failed"],state["skipped"],state["error"].as_str().map(|e|format!("；{e}")).unwrap_or_default()),"level":if state["state"]=="completed"{"success"}else{"warning"},"dedupeKey":batch.id})).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| self.client.request(api::call::Message(params))).map_err(|e|e.message);
+            let _=serde_json::from_value::<api::Message>(json!({"title":if state["state"]=="completed"{"文件任务完成"}else{"文件任务结束"},"body":format!("成功 {}，失败 {}，跳过 {}{}",state["completed"],state["failed"],state["skipped"],state["error"].as_str().or_else(||state["lastError"].as_str()).map(|e|format!("；{e}")).unwrap_or_default()),"level":if state["state"]=="completed"{"success"}else{"warning"},"dedupeKey":batch.id})).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| self.client.request(api::call::Message(params))).map_err(|e|e.message);
+            let _ = self.client.request(api::call::Log(api::Log {level:if state["state"]=="completed" {"info"} else {"warn"}.into(),message:"文件任务结束".into(),fields:Some(json!({"batchId":batch.id,"state":state["state"],"copy":state["currentOperation"],"failure":state["lastFailure"],"error":state["error"],"transferredBytes":state["transferredBytes"],"completedBytes":state["completedBytes"]}))}));
             self.queue.lock().unwrap().active.remove(&workspace(&batch));
             self.wake.notify_all();
         }
@@ -611,6 +621,15 @@ impl Inner {
                     if let Some(value) = status["id"].as_str() {
                         id = Some(value.into());
                     }
+                    if operation["kind"] == "copyFile" && !status["id"].is_null() {
+                        match sodeck_plugin_client::protocol::replies::CopyTransfer::read(&status) {
+                            Ok(_) => observe_copy(&mut batch.state.lock().unwrap(), &status),
+                            Err(error) => {
+                                response = Err(error);
+                                continue;
+                            }
+                        }
+                    }
                     if status["state"] == "completed" {
                         let id = id
                             .as_ref()
@@ -638,21 +657,18 @@ impl Inner {
                         } else {
                             status["error"]["code"].as_str().unwrap_or("io")
                         };
-                        return Err(TaskError::new(
+                        let mut error = TaskError::new(
                             code,
                             status["error"]["message"]
                                 .as_str()
                                 .unwrap_or("文件操作失败"),
-                        ));
+                        );
+                        error.details = json!({"operationId":status["id"],"error":{"code":status["error"]["code"],"stage":status["error"]["stage"],"osCode":status["error"]["osCode"]},"transfer":{"commitState":status["transfer"]["commitState"],"phase":status["transfer"]["phase"]}});
+                        return Err(error);
                     }
                     if !["running", "committing"].contains(&status["state"].as_str().unwrap_or(""))
                     {
                         return Err(TaskError::new("unknown", "核心操作状态无效"));
-                    }
-                    if operation["kind"] == "copyFile" {
-                        let mut s = batch.state.lock().unwrap();
-                        s["currentBytes"] = status["received"].clone();
-                        s["currentTotal"] = status["total"].clone();
                     }
                 }
                 Err(error) => {
@@ -982,8 +998,7 @@ impl Inner {
                     let mut state = batch.state.lock().unwrap();
                     state["state"] = json!("running");
                     state["current"] = json!(item.name);
-                    state["currentBytes"] = json!("0");
-                    state["currentTotal"] = Value::Null;
+                    state["currentOperation"] = Value::Null;
                 }
                 let result =
                     self.process(batch, &mut item, &mut work, &mut dirs, &mut offsets, kind);
@@ -1258,7 +1273,7 @@ impl Inner {
             .metadata()
             .map_err(|e| TaskError::new("unknown", e))?
             .len();
-        let record = json!({"item":item_value(item),"state":status,"retryable":error.as_ref().is_some_and(TaskError::retryable),"errorCode":error.as_ref().map(|e|&e.code),"error":error.as_ref().map(|e|e.message.chars().take(2048).collect::<String>())});
+        let record = json!({"item":item_value(item),"state":status,"retryable":error.as_ref().is_some_and(TaskError::retryable),"failure":error.as_ref().map(|e|&e.details),"copy":batch.state.lock().unwrap()["currentOperation"],"errorCode":error.as_ref().map(|e|&e.code),"error":error.as_ref().map(|e|e.message.chars().take(2048).collect::<String>())});
         loop {
             let persisted = (|| -> Result<(), String> {
                 journal.set_len(offset).map_err(|e| e.to_string())?;
@@ -1314,10 +1329,11 @@ impl Inner {
             if error.as_ref().is_some_and(TaskError::retryable) {
                 state["retryable"] = json!((count(&state, "retryable") + 1).to_string());
             }
-            let n = count(&state, "bytes") + bytes;
-            state["bytes"] = json!(n.to_string());
+            let n = count(&state, "completedBytes") + bytes;
+            state["completedBytes"] = json!(n.to_string());
             if let Some(error) = &error {
                 state["lastError"] = json!(error.message.chars().take(1024).collect::<String>());
+                state["lastFailure"] = error.details.clone();
             }
         }
         loop {
@@ -1337,6 +1353,18 @@ impl Inner {
         }
         Ok(())
     }
+}
+fn observe_copy(state: &mut Value, status: &Value) {
+    let previous = if state["currentOperation"]["id"] == status["id"] {
+        count(&state["currentOperation"], "received")
+    } else {
+        0
+    };
+    let received = count(status, "received");
+    state["transferredBytes"] = json!(count(state, "transferredBytes")
+        .saturating_add(received.saturating_sub(previous))
+        .to_string());
+    state["currentOperation"] = json!({"id":status["id"],"state":status["state"],"received":status["received"],"total":status["total"],"transfer":status["transfer"]});
 }
 fn count(value: &Value, key: &str) -> u64 {
     value[key]
@@ -1426,6 +1454,24 @@ fn duplicate_name(name: &str, index: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn copy_meter_counts_each_receipt_once_including_fast_terminal_and_failed_bytes() {
+        let mut batch = json!({"transferredBytes":"0","completedBytes":"0"});
+        let mut status = json!({"id":"first","state":"running","received":"12","total":"20"});
+        observe_copy(&mut batch, &status);
+        observe_copy(&mut batch, &status);
+        assert_eq!(batch["transferredBytes"], "12");
+        status["state"] = json!("failed");
+        status["received"] = json!("20");
+        observe_copy(&mut batch, &status);
+        assert_eq!(batch["transferredBytes"], "20");
+        assert_eq!(batch["completedBytes"], "0");
+        status["id"] = json!("next");
+        status["state"] = json!("completed");
+        status["received"] = json!("3");
+        observe_copy(&mut batch, &status);
+        assert_eq!(batch["transferredBytes"], "23");
+    }
     #[test]
     fn duplicate_names_keep_extensions_and_dotfiles() {
         assert_eq!(duplicate_name("file.txt", 2), "file (2).txt");

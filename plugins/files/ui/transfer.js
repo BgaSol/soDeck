@@ -4,6 +4,23 @@
   const labels = { queued: '等待', scanning: '正在统计', running: '处理中', cancelling:'正在取消',awaitingConflict: '等待处理同名', completed: '完成', partial: '部分失败', failed: '失败', cancelled: '已取消', needsReview: '请核对提交结果' };
   const kinds={upload:'上传',download:'下载',copy:'复制',move:'移动',delete:'删除',mkdir:'新建文件夹',createEmpty:'新建文件',rename:'重命名'};
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const phases={preparing:'正在准备',transferring:'正在传输',finalizing:'字节已传完，正在校验与保存',committing:'字节已传完，正在保存',finished:'文件已保存'};
+  const stages={prepare:'准备',read:'读取',write:'写入',flush:'刷盘',close:'关闭文件',metadata:'保存属性',verifySource:'校验来源',verifyTarget:'校验目标',commit:'提交文件'};
+  const faultText=(text,facts)=>text?[(stages[facts?.error?.stage]||facts?.error?.stage),text].filter(Boolean).join('失败：'):'';
+  window.FileTransferRate = class {
+    constructor(){this.samples=[];this.id=null;this.rate=null;this.updated=0;}
+    read(operation,now){
+      const bytes=Number(operation.received);
+      if(this.id!==operation.id || (this.samples.length && bytes<this.samples.at(-1).bytes)){
+        this.id=operation.id;this.samples=[{at:now,bytes}];this.rate=null;this.updated=now;return null;
+      }
+      if(now-this.updated<500)return this.rate;
+      this.updated=now;this.samples.push({at:now,bytes});
+      while(this.samples.length>2 && this.samples[1].at<=now-2000)this.samples.shift();
+      const first=this.samples[0];this.rate=now>first.at?(bytes-first.bytes)/(now-first.at)*1000:0;
+      return this.rate;
+    }
+  };
   window.FileTransfers = class {
     constructor({ fileId, data, event, request, message, host, target, ambiguous, refresh }) {
       Object.assign(this, { fileId, data, event, request, message, host, target, ambiguous, refresh });
@@ -167,39 +184,54 @@
     async poll() {
       if (this.running || this.disposed || !this.visible) return;
       this.running = true;
+      const epoch=this.contextEpoch;
       try {
         let result = await this.event({ action: 'readTasks' });
         const tasks = [...(result.tasks || [])];
         while(result.next!=null){result=await this.event({action:'readTasks',offset:result.next});tasks.push(...result.tasks);}
+        if(this.disposed || epoch!==this.contextEpoch || !this.visible)return;
+        const ids=new Set(tasks.map(t=>t.id));
+        for(const cache of [this.last,this.rates,this.conflictAll])for(const id of cache.keys())if(!ids.has(id))cache.delete(id);
         const active = tasks.filter(t => !terminal(t.state));
         this.summary.textContent = active.length ? `文件任务 · ${active.length} 项进行中` : `文件任务 · ${tasks.length} 项`;
         const positions=SoDeckMotion.captureMotion(this.body,'[data-batch]');
         const scroll=this.body.scrollTop;
         const focused=document.activeElement?.dataset.control;
-        const before=new Map([...this.body.querySelectorAll('[data-batch]')].map(row=>{const fill=row.querySelector('.transfer-progress span');return [row.dataset.batch,{row,fill,current:row.dataset.current,target:Number(row.dataset.progress),progress:fill&&positions.has(row)?new DOMMatrix(getComputedStyle(fill).transform).a:NaN}];}));
+        const before=new Map([...this.body.querySelectorAll('[data-batch]')].map(row=>{const fill=row._transfer?.meter.hidden?null:row.querySelector('.transfer-progress span');return [row.dataset.batch,{row,fill,current:row.dataset.current,target:Number(row.dataset.progress),progress:fill&&positions.has(row)?new DOMMatrix(getComputedStyle(fill).transform).a:NaN}];}));
         const ended=[];
-        const fragments = Object.fromEntries(Object.keys(this.groups).map(key=>[key,document.createDocumentFragment()]));
+        const fragments = Object.fromEntries(Object.keys(this.groups).map(key=>[key,[]]));
         for (const task of tasks) {
-          const oldRow=before.get(task.id),row = oldRow?.row||document.createElement('section'); row.replaceChildren();row.className = 'transfer-item';row.dataset.batch=task.id;row.dataset.phase=task.state;row.dataset.current=task.current||'';delete row.dataset.progress;
-          const title = document.createElement('div'); title.textContent = `${labels[task.state] || task.state} · ${kinds[task.kind]||task.kind}${task.current?' · '+task.current:''}`;
-          const detail = document.createElement('div'); detail.className = 'transfer-detail';
-          detail.textContent = `成功 ${task.completed} · 失败 ${task.failed} · 跳过 ${task.skipped}` + (Number(task.currentBytes) ? ` · ${Math.round(Number(task.currentBytes) / 1024)} KiB` : '');
-          const now=performance.now(),received=Number(task.bytes)+Number(task.currentBytes||0),old=this.rates.get(task.id);
-          if(old&&now-old.at>500){const rate=Math.max(0,(received-old.bytes)/(now-old.at)*1000),remaining=Math.max(0,Number(task.currentTotal||0)-Number(task.currentBytes||0));if(!terminal(task.state)&&rate>0)detail.textContent+=` · ${(rate/1024).toFixed(1)} KiB/s${remaining?` · 当前文件约 ${Math.ceil(remaining/rate)} 秒`:''}`;this.rates.set(task.id,{at:now,bytes:received});}
-          else if(!old)this.rates.set(task.id,{at:now,bytes:received});
-          row.append(title, detail);
-          const total=Number(task.currentTotal),current=Number(task.currentBytes);
-          if(!terminal(task.state)&&Number.isFinite(total)&&total>0&&Number.isFinite(current)&&current>=0){
-            const progress=Math.min(1,current/total);row.dataset.progress=String(progress);
-            const meter=document.createElement('div');meter.className='transfer-progress';meter.setAttribute('role','progressbar');meter.setAttribute('aria-label','当前文件传输');meter.setAttribute('aria-valuemin','0');meter.setAttribute('aria-valuemax',String(total));meter.setAttribute('aria-valuenow',String(Math.min(current,total)));
-            const fill=oldRow?.fill||document.createElement('span');fill.style.transform=`scaleX(${progress})`;meter.append(fill);row.append(meter);
+          const oldRow=before.get(task.id),row=oldRow?.row||document.createElement('section');
+          if(!row._transfer){
+            const title=document.createElement('div'),detail=document.createElement('div'),error=document.createElement('div'),actions=document.createElement('div'),meter=document.createElement('div'),fill=document.createElement('span');
+            detail.className='transfer-detail';error.className='transfer-error';meter.className='transfer-progress';meter.setAttribute('role','progressbar');meter.setAttribute('aria-label','当前文件传输字节');meter.append(fill);row.append(title,detail,meter,error,actions);row._transfer={title,detail,error,actions,meter,fill};
           }
-          if (task.error || task.lastError || task.warning) { const error = document.createElement('div'); error.className = 'transfer-error'; error.textContent = task.error || task.lastError || task.warning; row.append(error); }
+          const {title,detail,error,actions,meter,fill}=row._transfer,operation=task.currentOperation,phase=operation?.transfer?.phase;
+          row.className='transfer-item';row.dataset.batch=task.id;row.dataset.phase=task.state;row.dataset.current=operation?.id||task.current||'';delete row.dataset.progress;
+          const commit=operation?.transfer?.commitState,bodyWritten=operation?.total!=null&&Number(operation.total)>0&&Number(operation.received)>=Number(operation.total);
+          const phaseLabel=task.awaitingReceipt&&commit==='committed'?'文件已保存，正在确认结果记录':!terminal(task.state)&&task.state==='running'&&phase?(phase==='transferring'&&bodyWritten?'字节已传完，正在确认读取结束':phases[phase]):labels[task.state]||task.state;
+          title.textContent=phaseLabel+' · '+(kinds[task.kind]||task.kind)+(task.current?' · '+task.current:'');
+          detail.textContent='成功 '+task.completed+' · 失败 '+task.failed+' · 跳过 '+task.skipped+(operation?' · '+Math.round(Number(operation.received)/1024)+' KiB':'');
+          if(!terminal(task.state)&&phase==='transferring'&&!bodyWritten){
+            let sampler=this.rates.get(task.id);if(!sampler){sampler=new FileTransferRate();this.rates.set(task.id,sampler);}
+            const rate=sampler.read(operation,performance.now()),remaining=operation.total==null?0:Math.max(0,Number(operation.total)-Number(operation.received));
+            detail.textContent+=rate==null?' · 测速中':' · '+(rate/1024).toFixed(1)+' KiB/s'+(rate>0&&remaining?' · 当前文件约 '+Math.ceil(remaining/rate)+' 秒':'');
+          }else this.rates.delete(task.id);
+          const total=operation?.total==null?NaN:Number(operation.total),current=Number(operation?.received);
+          meter.hidden=terminal(task.state)||!Number.isFinite(total)||total<=0||!Number.isFinite(current);
+          if(meter.hidden)SoDeckMotion.cancelMotion(fill);
+          if(!meter.hidden){
+            const progress=Math.min(1,current/total);row.dataset.progress=String(progress);fill.style.transform='scaleX('+progress+')';
+            meter.setAttribute('aria-valuemin','0');meter.setAttribute('aria-valuemax',String(total));meter.setAttribute('aria-valuenow',String(Math.min(current,total)));
+          }
+          error.textContent=faultText(task.error||task.lastError,task.lastFailure)||task.warning||'';error.hidden=!error.textContent;
+          const controlsKey=JSON.stringify([task.state,task.awaitingReceipt,task.retryable,task.conflict,task.fileId,task.inputId]);
+          if(row._controlsKey!==controlsKey){row._controlsKey=controlsKey;actions.replaceChildren();
           const command = async parameters => { const result=await this.event({ batchId: task.id, conflictId:task.conflict?.itemId, ...parameters });if(result.batchId)this.last.set(result.batchId,'queued'); await this.poll(); };
-          const button = (label, fn) => { const b = document.createElement('button'); b.textContent = label; b.className = 'sd-control';b.dataset.control=task.id+'/'+label; b.onclick = () => Promise.resolve().then(fn).catch(e => this.message(e.message, true)); row.append(b); };
+          const button = (label, fn) => { const b = document.createElement('button'); b.textContent = label; b.className = 'sd-control';b.dataset.control=task.id+'/'+label; b.onclick = () => Promise.resolve().then(fn).catch(e => this.message(e.message, true)); actions.append(b); };
           if (task.state === 'awaitingConflict') {
-            const text = document.createElement('div'); text.textContent = task.conflict?.invalidName?'目标系统不支持此名称，请改名或跳过':task.conflict?.typeConflict ? '同名条目类型不同' : '目标已有同名文件'; row.append(text);
-            const all = document.createElement('input'); all.type = 'checkbox';all.checked=this.conflictAll.get(task.id)||false;all.dataset.control=task.id+'/all';all.onchange=()=>this.conflictAll.set(task.id,all.checked); const label = document.createElement('label'); label.append(all, document.createTextNode('应用到本批同类冲突')); row.append(label);
+            const text = document.createElement('div'); text.textContent = task.conflict?.invalidName?'目标系统不支持此名称，请改名或跳过':task.conflict?.typeConflict ? '同名条目类型不同' : '目标已有同名文件'; actions.append(text);
+            const all = document.createElement('input'); all.type = 'checkbox';all.checked=this.conflictAll.get(task.id)||false;all.dataset.control=task.id+'/all';all.onchange=()=>this.conflictAll.set(task.id,all.checked); const label = document.createElement('label'); label.append(all, document.createTextNode('应用到本批同类冲突')); actions.append(label);
             for (const [choice, text] of [['replace', '覆盖'], ['keepBoth', '保留两份'], ['skip', '跳过'], ['cancel', '取消任务']]) {
               if (!task.conflict?.allowedActions?.includes(choice)) continue;
               if(choice==='keepBoth'&&task.conflict?.invalidName)continue;
@@ -213,8 +245,9 @@
             if(task.kind==='download'&&task.fileId===this.fileId)button('打开所在目录',()=>this.data('input.reveal',{inputId:task.inputId}));
             button('清除记录',()=>command({action:'clearBatch'}));
           }
+          }
           const group=task.state==='completed'?'completed':['awaitingConflict','needsReview','failed','partial','cancelled'].includes(task.state)?'attention':'active';
-          fragments[group].append(row);
+          fragments[group].push(row);
           if(group==='attention'&&this.last.get(task.id)!==task.state)this.panel.open=true;
           if (terminal(task.state) && this.last.get(task.id) && !terminal(this.last.get(task.id))) {
             ended.push(task);
@@ -222,7 +255,9 @@
           this.last.set(task.id, task.state);
         }
         for(const [key,{group,heading,list,label}] of Object.entries(this.groups)){
-          const count=fragments[key].childElementCount;group.hidden=!count;heading.textContent=`${label} · ${count} 项`;list.replaceChildren(fragments[key]);
+          const rows=fragments[key];group.hidden=!rows.length;heading.textContent=label+' · '+rows.length+' 项';
+          rows.forEach((row,index)=>{if(list.children[index]!==row)list.insertBefore(row,list.children[index]||null);});
+          while(list.children.length>rows.length)list.lastElementChild.remove();
         }
         if(focused)([...this.body.querySelectorAll('[data-control]')].find(e=>e.dataset.control===focused)||this.summary)?.focus({preventScroll:true});
         this.body.scrollTop=scroll;
@@ -242,13 +277,13 @@
       const dialog=document.createElement('dialog');dialog.className='file-dialog';
       const list=document.createElement('div'),more=document.createElement('button'),close=document.createElement('button');
       more.textContent='加载更多';close.textContent='关闭';let offset=0;
-      const load=async()=>{const page=await this.event({action:'readItems',batchId,offset});for(const entry of page.entries){const row=document.createElement('p');row.textContent=`${entry.item.name} · ${entry.state==='completed'?'完成':entry.state==='skipped'?'跳过':'失败'}${entry.error?' · '+entry.error:''}`;list.append(row);}more.disabled=!page.entries.length;offset=page.offset;};
+      const load=async()=>{const page=await this.event({action:'readItems',batchId,offset});for(const entry of page.entries){const row=document.createElement('p');row.textContent=`${entry.item.name} · ${({completed:'完成',skipped:'跳过',cancelled:'已取消',unknown:'结果待核对'}[entry.state]||'失败')}${entry.error?' · '+faultText(entry.error,entry.failure):''}`;list.append(row);}more.disabled=!page.entries.length;offset=page.offset;};
       const finish=()=>{SoDeckMotion.exitMotion(dialog);dialog.close();dialog.remove();};
       close.onclick=finish;more.onclick=()=>load().catch(e=>this.message(e.message,true));dialog.oncancel=e=>{e.preventDefault();finish();};
       dialog.append(list,more,close);document.body.append(dialog);dialog.showModal();SoDeckMotion.enterMotion(dialog);await load();
     }
     visibility(visible) { this.visible = visible; if(!visible)this.invalidate();else void this.poll(); }
-    invalidate() { this.contextEpoch++; }
-    dispose() { this.disposed = true; clearTimeout(this.timer); removeEventListener('sodeck:viewsClosed',this.closeListener); for(const resolve of this.closed.values())resolve({accepted:false});this.closed.clear(); }
+    invalidate() { this.contextEpoch++; this.rates.clear(); }
+    dispose() { this.disposed = true; this.rates.clear(); this.last.clear(); this.conflictAll.clear(); clearTimeout(this.timer); removeEventListener('sodeck:viewsClosed',this.closeListener); for(const resolve of this.closed.values())resolve({accepted:false});this.closed.clear(); }
   };
 })();

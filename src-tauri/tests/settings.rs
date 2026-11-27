@@ -28,7 +28,7 @@ impl Fixture {
         Self { root }
     }
     fn definition(&self, version: &str, fields: Value) {
-        fs::write(self.root.join("plugin/plugin.json"), json!({"id":"test.settings","name":"设置夹具","version":version,"apiVersion":"2.0","target":TARGET,"entry":"entry","ui":{"entry":"ui/index.html","views":[{"id":"test","title":"test","icon":"info","container":"editor","instancePolicy":"multiple"}]},"settings":{"schemaVersion":1,"pages":[{"id":"appearance","title":"外观","viewTypes":["test"],"groups":[{"id":"text","title":"文字","fields":fields}]}]}}).to_string()).unwrap();
+        fs::write(self.root.join("plugin/plugin.json"), json!({"id":"test.settings","name":"设置夹具","version":version,"apiVersion":"2.1","target":TARGET,"entry":"entry","ui":{"entry":"ui/index.html","views":[{"id":"test","title":"test","icon":"info","container":"editor","instancePolicy":"multiple"}]},"settings":{"schemaVersion":1,"pages":[{"id":"appearance","title":"外观","viewTypes":["test"],"groups":[{"id":"text","title":"文字","fields":fields}]}]}}).to_string()).unwrap();
     }
     fn open(&self) -> std::sync::Arc<AppCore> {
         AppCore::open(self.root.join("data"), "test".into()).unwrap()

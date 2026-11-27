@@ -45,8 +45,9 @@ export function presentTask(task,now) {
   if(native.exitCode!=null)label+=' · 退出码 '+native.exitCode;
   if(native.exitSignal)label+=' · 退出信号 '+native.exitSignal;
   const commit=task.file?.commitState || native.transfer?.commitState;
-  if(upload)label=commit==='committed'?'已上传':commit==='unknown'?'结果待核对':commit==='notCommitted'?'未提交':state==='committing'?'正在提交':state==='running'?'上传中':label;
-  const execution={label,tone:failed?'error':unknown || state==='cancelled' || (upload && ['unknown','notCommitted'].includes(commit))?'attention':'normal',error:executionError};
+  if(fileTask && !task.done && ['preparing','transferring','finalizing','committing'].includes(native.transfer?.phase))label={preparing:'正在准备',transferring:upload?'上传中':'下载中',finalizing:'字节已传完，正在校验与保存',committing:'字节已传完，正在保存'}[native.transfer.phase];
+  if(fileTask)label=commit==='committed'?(upload?'已上传':'文件已保存'):commit==='unknown'?'结果待核对':commit==='notCommitted'?'未提交':state==='committing'?'正在提交':label;
+  const execution={label,tone:failed?'error':unknown || state==='cancelled' || (fileTask && ['unknown','notCommitted'].includes(commit))?'attention':'normal',error:executionError};
   const complete=task.done===true && saved.complete===true;
   const saveFailed=saved.state==='failed' || Boolean(evidenceError);
   const collecting=saved.state==='collecting' || task.phase==='collecting';
