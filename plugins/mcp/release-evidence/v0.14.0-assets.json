@@ -1,0 +1,135 @@
+{
+  "component": "mcp",
+  "version": "0.14.0",
+  "source": "e2b0a108941387969c30357ce7a014c8387959f4",
+  "packageRun": {
+    "id": 45951480411,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45951480411"
+  },
+  "checks": [
+    {
+      "run": 45951435357,
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45951435357",
+      "source": "e2b0a108941387969c30357ce7a014c8387959f4",
+      "conclusion": "success",
+      "attempt": 2,
+      "scope": "five native core, shared SDK, six plugins and selected UI/ordinary business; excludes netem"
+    }
+  ],
+  "release": {
+    "tag": "plugin-mcp-v0.14.0",
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/plugin-mcp-v0.14.0",
+    "publishedAt": "2026-11-27T06:43:48Z",
+    "isDraft": false,
+    "latest": false
+  },
+  "assets": [
+    {
+      "name": "plugin-update.json",
+      "size": 63433,
+      "digest": "sha256:fde75adbf74f210ccd3f334a99d2edefed008744cfbf7090f57b4a891fecae8a",
+      "id": "799287448",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.14.0/plugin-update.json"
+    },
+    {
+      "name": "sodeck-mcp_0.14.0_aarch64-apple-darwin.tar.gz",
+      "size": 4128852,
+      "digest": "sha256:487fa64b0fbaedd9ab0d85d96c8eb1dc1086e8cf6a2780a10d61fd2d92a3299a",
+      "id": "799287401",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.14.0/sodeck-mcp_0.14.0_aarch64-apple-darwin.tar.gz"
+    },
+    {
+      "name": "sodeck-mcp_0.14.0_aarch64-pc-windows-msvc.zip",
+      "size": 4305150,
+      "digest": "sha256:9cbe40c3bbb6618bbae36648e67c80feb19b8034648bfdbc19a03a8b5b50f536",
+      "id": "799287265",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.14.0/sodeck-mcp_0.14.0_aarch64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "sodeck-mcp_0.14.0_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 4206035,
+      "digest": "sha256:4f2ab09a7238d5bbd684e6ec12982909f8c619f73f7831d773a8792e85e72f0c",
+      "id": "799287347",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.14.0/sodeck-mcp_0.14.0_aarch64-unknown-linux-gnu.tar.gz"
+    },
+    {
+      "name": "sodeck-mcp_0.14.0_x86_64-pc-windows-msvc.zip",
+      "size": 4686611,
+      "digest": "sha256:7cb1ac586f86571f5d24589ee3425327b0449dbd9e5b69444de67e0d9147f47d",
+      "id": "799287220",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.14.0/sodeck-mcp_0.14.0_x86_64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "sodeck-mcp_0.14.0_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 4615721,
+      "digest": "sha256:683149d56cf7521a992ac6976dd928e51e2273497a1d82399a5939ce15fca23e",
+      "id": "799287309",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.14.0/sodeck-mcp_0.14.0_x86_64-unknown-linux-gnu.tar.gz"
+    }
+  ],
+  "manifest": {
+    "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-mcp-v0.14.0/plugin-update.json",
+    "sha256": "fde75adbf74f210ccd3f334a99d2edefed008744cfbf7090f57b4a891fecae8a",
+    "version": "0.14.0",
+    "apiVersion": "2.1",
+    "platforms": [
+      "aarch64-apple-darwin",
+      "aarch64-pc-windows-msvc",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu"
+    ]
+  },
+  "packageJobs": [
+    {
+      "name": "select",
+      "conclusion": "success"
+    },
+    {
+      "name": "linux-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "linux-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "macos-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-macos-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-linux-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-windows-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-linux-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-windows-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "release",
+      "conclusion": "success"
+    }
+  ],
+  "remoteVerification": null,
+  "limitations": "FAT32/exFAT physical/image, real disk-full, full finalization fault interleavings, netem, published old-version upgrades and physical IME/DPI/accessibility were not run."
+}

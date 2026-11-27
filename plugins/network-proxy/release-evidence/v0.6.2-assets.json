@@ -1,0 +1,140 @@
+{
+  "component": "network-proxy",
+  "version": "0.6.2",
+  "source": "e2b0a108941387969c30357ce7a014c8387959f4",
+  "packageRun": {
+    "id": 45951491093,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45951491093"
+  },
+  "checks": [
+    {
+      "run": 45951435357,
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45951435357",
+      "source": "e2b0a108941387969c30357ce7a014c8387959f4",
+      "conclusion": "success",
+      "attempt": 2,
+      "scope": "five native core, shared SDK, six plugins and selected UI/ordinary business; excludes netem"
+    }
+  ],
+  "release": {
+    "tag": "plugin-network-proxy-v0.6.2",
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/plugin-network-proxy-v0.6.2",
+    "publishedAt": "2026-11-27T06:43:55Z",
+    "isDraft": false,
+    "latest": false
+  },
+  "assets": [
+    {
+      "name": "plugin-update.json",
+      "size": 23539,
+      "digest": "sha256:a5e0d99431314022e9a137f16a72cf867be751003e10693c8e2ef50fb640dcb9",
+      "id": "799286403",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-network-proxy-v0.6.2/plugin-update.json"
+    },
+    {
+      "name": "sodeck-network-proxy_0.6.2_aarch64-apple-darwin.tar.gz",
+      "size": 678204,
+      "digest": "sha256:c163e445b900ef9aaab805a80cbca0c2c73458d098f0b363e18fe705103477d1",
+      "id": "799286392",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-network-proxy-v0.6.2/sodeck-network-proxy_0.6.2_aarch64-apple-darwin.tar.gz"
+    },
+    {
+      "name": "sodeck-network-proxy_0.6.2_aarch64-pc-windows-msvc.zip",
+      "size": 676448,
+      "digest": "sha256:0b838024b90118c3792d4d54c26845925093fb6f8f516796736bf169785eb70d",
+      "id": "799286297",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-network-proxy-v0.6.2/sodeck-network-proxy_0.6.2_aarch64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "sodeck-network-proxy_0.6.2_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 683070,
+      "digest": "sha256:1ddc5ff7290dacef41aebd4d43018cb911a0fa36b64a1bac552a4ee52a1677f1",
+      "id": "799286358",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-network-proxy-v0.6.2/sodeck-network-proxy_0.6.2_aarch64-unknown-linux-gnu.tar.gz"
+    },
+    {
+      "name": "sodeck-network-proxy_0.6.2_x86_64-pc-windows-msvc.zip",
+      "size": 727141,
+      "digest": "sha256:49f197fe5a4561a3edee4247b7ebd72fdef1ef107bbc124b6d221422629f7883",
+      "id": "799286243",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-network-proxy-v0.6.2/sodeck-network-proxy_0.6.2_x86_64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "sodeck-network-proxy_0.6.2_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 759029,
+      "digest": "sha256:2ab4b6d96d403d717ed8352621f7e9f3653c1d272ec7991a666ca4ed0e0a83e1",
+      "id": "799286321",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-network-proxy-v0.6.2/sodeck-network-proxy_0.6.2_x86_64-unknown-linux-gnu.tar.gz"
+    }
+  ],
+  "manifest": {
+    "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-network-proxy-v0.6.2/plugin-update.json",
+    "sha256": "a5e0d99431314022e9a137f16a72cf867be751003e10693c8e2ef50fb640dcb9",
+    "version": "0.6.2",
+    "apiVersion": "2.1",
+    "platforms": [
+      "aarch64-apple-darwin",
+      "aarch64-pc-windows-msvc",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu"
+    ]
+  },
+  "packageJobs": [
+    {
+      "name": "select",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "linux-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "linux-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "macos-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-linux-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-windows-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-windows-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-linux-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-macos-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "release",
+      "conclusion": "success"
+    }
+  ],
+  "remoteVerification": {
+    "id": 45952930618,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45952930618",
+    "conclusion": "success",
+    "evidence": "../../../docs/releases/v2.10.0-remote.json"
+  },
+  "limitations": "FAT32/exFAT physical/image, real disk-full, full finalization fault interleavings, netem, published old-version upgrades and physical IME/DPI/accessibility were not run."
+}

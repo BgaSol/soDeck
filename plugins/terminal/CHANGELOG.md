@@ -1,10 +1,14 @@
+# 0.11.2
+
+- 使用唯一当前 API 2.1 SDK，与核心文件传输契约保持一致，业务行为沿用。
+
+要求核心 2.10.0 的 API 2.1，先升级核心再升级插件并重启。
+
+包来源 [`e2b0a10`](https://github.com/BgaSol/soDeck/commit/e2b0a108941387969c30357ce7a014c8387959f4)；[原始独立打包](https://github.com/BgaSol/soDeck/actions/runs/45951484908) 五平台原生构建与实际包生命周期/退出验证全部通过。[本次来源 Check](https://github.com/BgaSol/soDeck/actions/runs/45951435357) 的 SDK/插件源码与相关普通业务通过。正式发行 [terminal 0.11.2](https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.11.2) 共六个附件，非 Latest；[附件摘要与来源](release-evidence/v0.11.2-assets.json)永久保留。
+
+[五平台原生远程组合](https://github.com/BgaSol/soDeck/actions/runs/45952930618) 使用本轮确切候选包完成远程业务、移窗与退出；[固定输入与报告](../../docs/releases/v2.10.0-remote.json)。
+
 # 0.11.1
-
-## 0.11.2
-
-使用唯一当前 API 2.1 SDK，与核心文件传输契约更新保持一致，业务行为沿用。
-
-要求核心 2.10.0 的 API 2.1。独立五平台包与发布验收待完成。
 
 - 阅读工具带按位置、状态和动作分组，路径优先；无标记时收起空计数和禁用导航，保留添加入口；有位置时显示紧凑图标导航。
 - 正常识别状态显示 Bash/Zsh 等简短名称，原生 details 支持点击与键盘查看完整目录、Shell、编码及限制；保存错误、手动和应用接管状态保留，外部操作或隐藏及时收起说明。

@@ -1,0 +1,135 @@
+{
+  "component": "docker",
+  "version": "0.12.1",
+  "source": "e2b0a108941387969c30357ce7a014c8387959f4",
+  "packageRun": {
+    "id": 45951501743,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45951501743"
+  },
+  "checks": [
+    {
+      "run": 45951435357,
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45951435357",
+      "source": "e2b0a108941387969c30357ce7a014c8387959f4",
+      "conclusion": "success",
+      "attempt": 2,
+      "scope": "five native core, shared SDK, six plugins and selected UI/ordinary business; excludes netem"
+    }
+  ],
+  "release": {
+    "tag": "plugin-docker-v0.12.1",
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.12.1",
+    "publishedAt": "2026-11-27T06:44:02Z",
+    "isDraft": false,
+    "latest": false
+  },
+  "assets": [
+    {
+      "name": "plugin-update.json",
+      "size": 50748,
+      "digest": "sha256:f8be8090a8172145c4af542e5dd92880288d07585d8bfd38540445be4c4f79cd",
+      "id": "799288506",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.12.1/plugin-update.json"
+    },
+    {
+      "name": "sodeck-docker_0.12.1_aarch64-apple-darwin.tar.gz",
+      "size": 1185594,
+      "digest": "sha256:ca29e02d5ae505fd9e52e4ea42ed1fc5753454a896106a696d7a7c97575aa517",
+      "id": "799288469",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.12.1/sodeck-docker_0.12.1_aarch64-apple-darwin.tar.gz"
+    },
+    {
+      "name": "sodeck-docker_0.12.1_aarch64-pc-windows-msvc.zip",
+      "size": 1242297,
+      "digest": "sha256:233fb4ab4b57a515fcc0c52046a4794278544e6540a856ced87c98b6af8da73f",
+      "id": "799288348",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.12.1/sodeck-docker_0.12.1_aarch64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "sodeck-docker_0.12.1_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 1197328,
+      "digest": "sha256:da39ef124edb468255954fec569b9eb2a5791cda4315c22ff69801e2b3028481",
+      "id": "799288433",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.12.1/sodeck-docker_0.12.1_aarch64-unknown-linux-gnu.tar.gz"
+    },
+    {
+      "name": "sodeck-docker_0.12.1_x86_64-pc-windows-msvc.zip",
+      "size": 1335977,
+      "digest": "sha256:caf1f55684088222062f069c3c8c469e0398cf368f233c01b0851fa9491daf03",
+      "id": "799288289",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.12.1/sodeck-docker_0.12.1_x86_64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "sodeck-docker_0.12.1_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 1321841,
+      "digest": "sha256:7be1981ef56d32cec87cf6c532f1bd7a7acd1a9a3eef11444049f13d7cdc0e81",
+      "id": "799288400",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.12.1/sodeck-docker_0.12.1_x86_64-unknown-linux-gnu.tar.gz"
+    }
+  ],
+  "manifest": {
+    "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-docker-v0.12.1/plugin-update.json",
+    "sha256": "f8be8090a8172145c4af542e5dd92880288d07585d8bfd38540445be4c4f79cd",
+    "version": "0.12.1",
+    "apiVersion": "2.1",
+    "platforms": [
+      "aarch64-apple-darwin",
+      "aarch64-pc-windows-msvc",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu"
+    ]
+  },
+  "packageJobs": [
+    {
+      "name": "select",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "linux-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "linux-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "macos-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-linux-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-windows-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-linux-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-windows-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-macos-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "release",
+      "conclusion": "success"
+    }
+  ],
+  "remoteVerification": null,
+  "limitations": "FAT32/exFAT physical/image, real disk-full, full finalization fault interleavings, netem, published old-version upgrades and physical IME/DPI/accessibility were not run."
+}

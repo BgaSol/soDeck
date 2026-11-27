@@ -1,10 +1,14 @@
+# 0.12.1
+
+- 使用唯一当前 API 2.1 SDK，与核心文件传输契约保持一致，业务行为沿用。
+
+要求核心 2.10.0 的 API 2.1，先升级核心再升级插件并重启。
+
+包来源 [`e2b0a10`](https://github.com/BgaSol/soDeck/commit/e2b0a108941387969c30357ce7a014c8387959f4)；[原始独立打包](https://github.com/BgaSol/soDeck/actions/runs/45951501743) 五平台原生构建与实际包生命周期/退出验证全部通过。[本次来源 Check](https://github.com/BgaSol/soDeck/actions/runs/45951435357) 的 SDK/插件源码与相关普通业务通过。正式发行 [docker 0.12.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-docker-v0.12.1) 共六个附件，非 Latest；[附件摘要与来源](release-evidence/v0.12.1-assets.json)永久保留。
+
+独立包和普通业务通过，不将核心/终端/文件/网络的原生组合结果算作本插件深度远程组合。
+
 # 0.12.0
-
-## 0.12.1
-
-使用唯一当前 API 2.1 SDK，与核心文件传输契约更新保持一致，业务行为沿用。
-
-要求核心 2.10.0 的 API 2.1。独立五平台包与发布验收待完成。
 
 - chrono 处理日志日历和时区，保留纳秒精度及原有拒绝边界。
 - 通道独立的有界 ANSI 状态机修复 DCS 载荷、字符集残片与跨记录控制序列；原字节仍用于证据。

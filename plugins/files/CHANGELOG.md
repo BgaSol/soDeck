@@ -1,10 +1,18 @@
+# 0.13.0
+
+- 稳定显示下载/上传速度，当前文件使用有界窗口采样；普通刷新保留任务行和控件。
+- 区分正文传完、校验与保存；最终回执不漏计字节，成功交付与传输工作量分别累计。
+- 结果日志与查看结果保留失败阶段、系统错误码和提交事实，未知提交不自动重试。
+
+要求核心 2.10.0 的 API 2.1，先升级核心再升级插件并重启。
+
+包来源 [`e2b0a10`](https://github.com/BgaSol/soDeck/commit/e2b0a108941387969c30357ce7a014c8387959f4)；[原始独立打包](https://github.com/BgaSol/soDeck/actions/runs/45951475549) 五平台原生构建与实际包生命周期/退出验证全部通过。[本次来源 Check](https://github.com/BgaSol/soDeck/actions/runs/45951435357) 的 SDK/插件源码与相关普通业务通过。正式发行 [files 0.13.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.13.0) 共六个附件，非 Latest；[附件摘要与来源](release-evidence/v0.13.0-assets.json)永久保留。
+
+[五平台原生远程组合](https://github.com/BgaSol/soDeck/actions/runs/45952930618) 使用本轮确切候选包完成远程业务、移窗与退出；[固定输入与报告](../../docs/releases/v2.10.0-remote.json)。
+
+本地文件真实进程/UI/OpenSSH 回归包含满字节后来源校验失败、刷盘故障诊断和失败项重试计量。FAT32/exFAT 实卷/镜像、真实磁盘耗尽和完整收尾故障交错未验证，[剩余验收](../../docs/plans/file-transfer-reliability.md)继续保留；对方那次现场失败原因仍未确认。
+
 # 0.12.1
-
-## 0.13.0
-
-稳定显示传输速度，保留任务节点，区分正文完成与校验/保存；完整采集终态字节，分开计量成功交付与传输工作量，失败结果保留阶段和提交事实。
-
-要求核心 2.10.0 的 API 2.1。独立五平台包与发布验收待完成。
 
 - 文件树刷新保留未变化行及子节点，只协调实际变化和排序，降低大目录重绘成本。
 - 保留菜单、滚动、选择、ARIA、分页与拖拽，不新增虚拟化依赖。

@@ -1,0 +1,140 @@
+{
+  "component": "terminal",
+  "version": "0.11.2",
+  "source": "e2b0a108941387969c30357ce7a014c8387959f4",
+  "packageRun": {
+    "id": 45951484908,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45951484908"
+  },
+  "checks": [
+    {
+      "run": 45951435357,
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45951435357",
+      "source": "e2b0a108941387969c30357ce7a014c8387959f4",
+      "conclusion": "success",
+      "attempt": 2,
+      "scope": "five native core, shared SDK, six plugins and selected UI/ordinary business; excludes netem"
+    }
+  ],
+  "release": {
+    "tag": "plugin-terminal-v0.11.2",
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/plugin-terminal-v0.11.2",
+    "publishedAt": "2026-11-27T06:43:51Z",
+    "isDraft": false,
+    "latest": false
+  },
+  "assets": [
+    {
+      "name": "plugin-update.json",
+      "size": 52976,
+      "digest": "sha256:e5eee8fd17efa33f658f8caea2211871b98c457c37eb18ddb5cb20b8b9a97b8f",
+      "id": "799286217",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.2/plugin-update.json"
+    },
+    {
+      "name": "sodeck-terminal_0.11.2_aarch64-apple-darwin.tar.gz",
+      "size": 1123877,
+      "digest": "sha256:d236bafec66a0843f1124998546ed34e880dee5ee477769d5f4da69080bbd550",
+      "id": "799286185",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.2/sodeck-terminal_0.11.2_aarch64-apple-darwin.tar.gz"
+    },
+    {
+      "name": "sodeck-terminal_0.11.2_aarch64-pc-windows-msvc.zip",
+      "size": 1118385,
+      "digest": "sha256:44c616c4407c5e75de4ab691014bc519ecebaa9a6f79b5c02176e83ffb5737ca",
+      "id": "799286046",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.2/sodeck-terminal_0.11.2_aarch64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "sodeck-terminal_0.11.2_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 1131813,
+      "digest": "sha256:89094f9c2219bdae0b8b3a5473f112d4a4fb44abcc13d479064cf4dbbb140c9b",
+      "id": "799286132",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.2/sodeck-terminal_0.11.2_aarch64-unknown-linux-gnu.tar.gz"
+    },
+    {
+      "name": "sodeck-terminal_0.11.2_x86_64-pc-windows-msvc.zip",
+      "size": 1153571,
+      "digest": "sha256:af44b8f67241c16f386e58a946897b7aabd5a0153ccbf5bb6836b6f8c405df7f",
+      "id": "799286018",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.2/sodeck-terminal_0.11.2_x86_64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "sodeck-terminal_0.11.2_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 1190825,
+      "digest": "sha256:8f873ad2db578b35e9b642e2f50183610e22483339af586cd9cd6d861ee8edd8",
+      "id": "799286092",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.2/sodeck-terminal_0.11.2_x86_64-unknown-linux-gnu.tar.gz"
+    }
+  ],
+  "manifest": {
+    "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-terminal-v0.11.2/plugin-update.json",
+    "sha256": "e5eee8fd17efa33f658f8caea2211871b98c457c37eb18ddb5cb20b8b9a97b8f",
+    "version": "0.11.2",
+    "apiVersion": "2.1",
+    "platforms": [
+      "aarch64-apple-darwin",
+      "aarch64-pc-windows-msvc",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu"
+    ]
+  },
+  "packageJobs": [
+    {
+      "name": "select",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "macos-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "linux-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "linux-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-windows-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-linux-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-windows-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-linux-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-macos-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "release",
+      "conclusion": "success"
+    }
+  ],
+  "remoteVerification": {
+    "id": 45952930618,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45952930618",
+    "conclusion": "success",
+    "evidence": "../../../docs/releases/v2.10.0-remote.json"
+  },
+  "limitations": "FAT32/exFAT physical/image, real disk-full, full finalization fault interleavings, netem, published old-version upgrades and physical IME/DPI/accessibility were not run."
+}

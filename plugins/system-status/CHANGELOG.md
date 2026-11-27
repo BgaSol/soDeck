@@ -1,10 +1,14 @@
+# 0.6.1
+
+- 使用唯一当前 API 2.1 SDK，与核心文件传输契约保持一致，业务行为沿用。
+
+要求核心 2.10.0 的 API 2.1，先升级核心再升级插件并重启。
+
+包来源 [`e2b0a10`](https://github.com/BgaSol/soDeck/commit/e2b0a108941387969c30357ce7a014c8387959f4)；[原始独立打包](https://github.com/BgaSol/soDeck/actions/runs/45951495968) 五平台原生构建与实际包生命周期/退出验证全部通过。[本次来源 Check](https://github.com/BgaSol/soDeck/actions/runs/45951435357) 的 SDK/插件源码与相关普通业务通过。正式发行 [system-status 0.6.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-system-status-v0.6.1) 共六个附件，非 Latest；[附件摘要与来源](release-evidence/v0.6.1-assets.json)永久保留。
+
+独立包和普通业务通过，不将核心/终端/文件/网络的原生组合结果算作本插件深度远程组合。
+
 # 0.6.0
-
-## 0.6.1
-
-使用唯一当前 API 2.1 SDK，与核心文件传输契约更新保持一致，业务行为沿用。
-
-要求核心 2.10.0 的 API 2.1。独立五平台包与发布验收待完成。
 
 - 补齐远端 macOS 的内存使用率、已用/可用量与历史，以及磁盘设备选择和独立读写速率；内存可回收余量明确标记估算并解释口径。
 - 显示 macOS 接口的 IPv4/IPv6 和链路状态；修复无硬件地址时网络计数错列、停用接口名称失配与默认接口误选。

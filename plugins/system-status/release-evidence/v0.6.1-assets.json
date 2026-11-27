@@ -1,0 +1,135 @@
+{
+  "component": "system-status",
+  "version": "0.6.1",
+  "source": "e2b0a108941387969c30357ce7a014c8387959f4",
+  "packageRun": {
+    "id": 45951495968,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45951495968"
+  },
+  "checks": [
+    {
+      "run": 45951435357,
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45951435357",
+      "source": "e2b0a108941387969c30357ce7a014c8387959f4",
+      "conclusion": "success",
+      "attempt": 2,
+      "scope": "five native core, shared SDK, six plugins and selected UI/ordinary business; excludes netem"
+    }
+  ],
+  "release": {
+    "tag": "plugin-system-status-v0.6.1",
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/plugin-system-status-v0.6.1",
+    "publishedAt": "2026-11-27T06:43:59Z",
+    "isDraft": false,
+    "latest": false
+  },
+  "assets": [
+    {
+      "name": "plugin-update.json",
+      "size": 31578,
+      "digest": "sha256:da6adc418efa7bf85eeb4809bd4e3ff6830cbc043a201019bd8a233bcf3ce9ea",
+      "id": "799287109",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.6.1/plugin-update.json"
+    },
+    {
+      "name": "sodeck-system-status_0.6.1_aarch64-apple-darwin.tar.gz",
+      "size": 757424,
+      "digest": "sha256:772e9de1d152aff5dc52fccee7d3c3ded58eec9b8197e10bd930e9775d23849a",
+      "id": "799287041",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.6.1/sodeck-system-status_0.6.1_aarch64-apple-darwin.tar.gz"
+    },
+    {
+      "name": "sodeck-system-status_0.6.1_aarch64-pc-windows-msvc.zip",
+      "size": 757030,
+      "digest": "sha256:d19a6da1d06619556b6a47068b2ed7e33c1e61dc3a9a576a725d50927ae94ced",
+      "id": "799286892",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.6.1/sodeck-system-status_0.6.1_aarch64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "sodeck-system-status_0.6.1_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 773280,
+      "digest": "sha256:8093a40b100d0d7130ac0a23ffa5a46809190d839de9869968b6f4321c490ee4",
+      "id": "799286994",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.6.1/sodeck-system-status_0.6.1_aarch64-unknown-linux-gnu.tar.gz"
+    },
+    {
+      "name": "sodeck-system-status_0.6.1_x86_64-pc-windows-msvc.zip",
+      "size": 820390,
+      "digest": "sha256:1e0ba4cb12bd1bb300ec98d7dc912ab75d2788f136f8b418b2f699666e72eae7",
+      "id": "799286838",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.6.1/sodeck-system-status_0.6.1_x86_64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "sodeck-system-status_0.6.1_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 858074,
+      "digest": "sha256:f90ff52e7d90a6864ed47fb4375067de10b8a955241fe71c7eb7c2189d5cc034",
+      "id": "799286952",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.6.1/sodeck-system-status_0.6.1_x86_64-unknown-linux-gnu.tar.gz"
+    }
+  ],
+  "manifest": {
+    "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.6.1/plugin-update.json",
+    "sha256": "da6adc418efa7bf85eeb4809bd4e3ff6830cbc043a201019bd8a233bcf3ce9ea",
+    "version": "0.6.1",
+    "apiVersion": "2.1",
+    "platforms": [
+      "aarch64-apple-darwin",
+      "aarch64-pc-windows-msvc",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu"
+    ]
+  },
+  "packageJobs": [
+    {
+      "name": "select",
+      "conclusion": "success"
+    },
+    {
+      "name": "linux-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "linux-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "macos-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-windows-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-macos-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-linux-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-windows-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-linux-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "release",
+      "conclusion": "success"
+    }
+  ],
+  "remoteVerification": null,
+  "limitations": "FAT32/exFAT physical/image, real disk-full, full finalization fault interleavings, netem, published old-version upgrades and physical IME/DPI/accessibility were not run."
+}

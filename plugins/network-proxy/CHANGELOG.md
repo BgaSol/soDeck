@@ -1,10 +1,14 @@
+# 0.6.2
+
+- 使用唯一当前 API 2.1 SDK，与核心文件传输契约保持一致，业务行为沿用。
+
+要求核心 2.10.0 的 API 2.1，先升级核心再升级插件并重启。
+
+包来源 [`e2b0a10`](https://github.com/BgaSol/soDeck/commit/e2b0a108941387969c30357ce7a014c8387959f4)；[原始独立打包](https://github.com/BgaSol/soDeck/actions/runs/45951491093) 五平台原生构建与实际包生命周期/退出验证全部通过。[本次来源 Check](https://github.com/BgaSol/soDeck/actions/runs/45951435357) 的 SDK/插件源码与相关普通业务通过。正式发行 [network-proxy 0.6.2](https://github.com/BgaSol/soDeck/releases/tag/plugin-network-proxy-v0.6.2) 共六个附件，非 Latest；[附件摘要与来源](release-evidence/v0.6.2-assets.json)永久保留。
+
+[五平台原生远程组合](https://github.com/BgaSol/soDeck/actions/runs/45952930618) 使用本轮确切候选包完成远程业务、移窗与退出；[固定输入与报告](../../docs/releases/v2.10.0-remote.json)。
+
 # 0.6.1
-
-## 0.6.2
-
-使用唯一当前 API 2.1 SDK，与核心文件传输契约更新保持一致，业务行为沿用。
-
-要求核心 2.10.0 的 API 2.1。独立五平台包与发布验收待完成。
 
 - 保存规则使用同目录独占临时文件，同步后原子替换，兼容 Windows 长路径。
 - 写入失败保留配置和原有运行/回执；损坏配置仍禁止覆盖。

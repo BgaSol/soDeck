@@ -15,7 +15,7 @@ Docker 是独立插件，默认固定在右侧工具栏、按需打开。通过�
 
 Compose 分组依赖项目标签，不猜测名称，也不执行部署。创建/编辑容器、Compose up/down、build/push、Registry 凭据、批量操作、prune 和 Kubernetes 不在当前范围。
 
-日志通过核心 session.process 与正文订阅、通用本地导出实现，使用统一 API 2.0；启用中的插件升级在重启后生效。验证与未完成范围见[日志后续验收](../plans/docker-log-viewer.md)，对应插件记录见[CHANGELOG](../../plugins/docker/CHANGELOG.md)。
+日志通过核心 session.process 与正文订阅、通用本地导出实现，使用统一 API 2.1；启用中的插件升级在重启后生效。验证与未完成范围见[日志后续验收](../plans/docker-log-viewer.md)，对应插件记录见[CHANGELOG](../../plugins/docker/CHANGELOG.md)。
 
 资源树从 Docker 0.5.0 提供，来源与验收范围见插件 [CHANGELOG](../../plugins/docker/CHANGELOG.md)。搜索常驻，状态、健康和 Compose 分组收在“筛选”，socket 编辑位于底部“连接设置”。操作结果带对象身份，离开当前页后仍可从任务查看。断线或数据待刷新时禁用维护，保留快照；不适用操作按容器状态隐藏，未运行容器的终端入口明确不可用。
 
