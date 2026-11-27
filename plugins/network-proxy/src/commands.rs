@@ -148,7 +148,8 @@ pub fn handle(service: &Arc<Service>, client: &Client, p: &Value) -> Result<Valu
                     .get_mut(&result.view_id)
                     .filter(|v| v.context == p["context"])
                 {
-                    v.navigation = json!({"selected":id,"offset":offset});
+                    v.navigate(json!({"selected":id,"offset":offset}))
+                        .map_err(error)?;
                 }
             }
             Ok(json!({"viewId":result.view_id,"closed":result.closed}))
@@ -179,9 +180,11 @@ mod tests {
                 kind: "manager".into(),
                 context: context.clone(),
                 draft: Value::Null,
+                draft_base: Value::Null,
                 dirty: false,
                 navigation: Value::Null,
                 draft_revision: 0,
+                navigation_revision: 0,
             },
         );
         (

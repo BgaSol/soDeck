@@ -16,9 +16,21 @@ pub struct View {
     pub kind: String,
     pub context: Value,
     pub draft: Value,
+    pub draft_base: Value,
     pub dirty: bool,
     pub navigation: Value,
     pub draft_revision: u64,
+    pub navigation_revision: u64,
+}
+impl View {
+    pub fn navigate(&mut self, state: Value) -> Result<(), String> {
+        self.navigation_revision = self
+            .navigation_revision
+            .checked_add(1)
+            .ok_or("导航序号已用尽")?;
+        self.navigation = state;
+        Ok(())
+    }
 }
 pub struct Run {
     pub rule: Rule,

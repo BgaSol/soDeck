@@ -42,7 +42,7 @@ export async function verifyNetworkCommands(executable){
   const ensure=(target={host:'127.0.0.1',port:8080},selectedRule=null)=>peer.request('commands.handle',{commandId:'ensure-'+(++command),name:'network.tcpForward.ensure.v1',context,payload:{version:1,target,suggestedName:'Docker · example',selectedRule}});
   const catalog=()=>request('ui.getView','manager').then(r=>r.data.catalog);
   const row=async id=>(await catalog()).rules.find(row=>row.rule.id===id);
-  const save=async rule=>{await request('ui.createView','editor',{viewType:'rule-editor',params:{rule}});await request('ui.event','editor',{data:{action:'draft',rule}});await request('ui.event','editor',{data:{action:'save'}});await request('ui.disposeView','editor');};
+  const save=async rule=>{const edit=await event({action:'edit.begin',rule});await event({action:'draft',rule,draftRevision:edit.data.draftRevision});await event({action:'save'});};
   try{
     const initialized=await peer.initialize({dataDirectory:directory,capabilities:['net.tcp.v1','net.listenerLifecycle.v1','ui.dialog.v1','commands.v1','sharedState.v1','ui.background.v1','ui.openView.v1']});
     assert.deepEqual(initialized.commandHandlers,['network.tcpForward.ensure.v1','network.rule.reveal.v1']);

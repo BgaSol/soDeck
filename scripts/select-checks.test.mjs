@@ -5,6 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { changedFiles, selectChecks, checkResults, targets, selectionSummary } from './select-checks.mjs';
+test('network presentation stays with network business checks',()=>{
+  const p=selectChecks(['scripts/network-presentation.test.mjs']);
+  assert(p.scripts);assert(!p.core);assert.deepEqual(p.plugins,[]);
+  assert(p.integration.length===2&&p.integration.every(row=>row.network));
+});
 
 test('logs and messages browser regression stays in the browser scope',()=>{
   const result=selectChecks(['scripts/test-logs-messages-ui.mjs']);

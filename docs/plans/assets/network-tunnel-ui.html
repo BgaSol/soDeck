@@ -1,0 +1,268 @@
+<style>
+  #sd-tunnel-inline { --sd-preview-width: 400px; }
+  #sd-tunnel-inline .sd-preview { display: flex; justify-content: center; padding: 16px 12px; }
+  #sd-tunnel-inline .sd-product {
+    --nt-bg: light-dark(#ffffff, #23252a);
+    --nt-soft: light-dark(#f5f6f8, #1d1f24);
+    --nt-hover: light-dark(#eceef2, #32353c);
+    --nt-text: light-dark(#25272d, #edeef3);
+    --nt-muted: light-dark(#656b76, #a7aebc);
+    --nt-line: light-dark(#e5e8ee, #383c45);
+    --nt-accent: light-dark(#1466cc, #8dbaff);
+    --nt-selection: light-dark(#eef4fd, #29384d);
+    --nt-primary: light-dark(#1466cc, #337bd8);
+    --nt-on-primary: #ffffff;
+    --nt-good: light-dark(#27744e, #8ccfa8);
+    --nt-bad: light-dark(#b63b46, #f0a0a7);
+    --nt-warning: light-dark(#906000, #e5c270);
+    --nt-shadow: light-dark(0 10px 32px #2739530d, 0 10px 32px #0000001f);
+    width: min(var(--sd-preview-width), 100%); min-width: 0;
+    background: var(--nt-bg); color: var(--nt-text); border-radius: 14px;
+    box-shadow: var(--nt-shadow); overflow: hidden;
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    text-align: left; --nt-row-space: 8px;
+  }
+  #sd-tunnel-inline .sd-product * { box-sizing: border-box; }
+  #sd-tunnel-inline .sd-product :is(h2,h3,p) { margin: 0; }
+  #sd-tunnel-inline :where(.sd-product button, .sd-product input, .sd-product select) { font: inherit; color: inherit; }
+  #sd-tunnel-inline :where(.sd-product button) { border: 0; background: transparent; }
+  #sd-tunnel-inline .sd-product button:disabled { opacity: .45; cursor: default; }
+  #sd-tunnel-inline .sd-product button { transition: background-color 140ms ease-out, color 140ms ease-out; }
+  #sd-tunnel-inline .sd-product button:active:not(:disabled) { filter: brightness(.92); }
+  #sd-tunnel-inline .sd-product svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.7; vertical-align: middle; }
+  #sd-tunnel-inline .nt-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 11px 12px 7px; gap: 10px; }
+  #sd-tunnel-inline .nt-toolbar h2 { font-size: 14px; font-weight: 500; letter-spacing: -.015em; }
+  #sd-tunnel-inline .nt-subtitle { display: flex; align-items: center; gap: 5px; margin-top: 2px; color: var(--nt-muted); font-size: 11px; }
+  #sd-tunnel-inline .nt-subtitle svg { width: 12px; height: 12px; }
+  #sd-tunnel-inline .nt-button { min-height: 28px; padding: 4px 8px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border-radius: 6px; white-space: nowrap; font-size: 12px; font-weight: 500; background: var(--nt-hover); flex-shrink: 0; }
+  #sd-tunnel-inline .nt-button:hover:not(:disabled) { background: var(--nt-line); }
+  #sd-tunnel-inline .nt-button.primary { background: var(--nt-primary); color: var(--nt-on-primary); }
+  #sd-tunnel-inline .nt-button.primary:hover:not(:disabled) { filter: brightness(.95); }
+  #sd-tunnel-inline .nt-button.quiet { background: transparent; color: var(--nt-accent); }
+  #sd-tunnel-inline .nt-button.quiet:hover:not(:disabled) { background: var(--nt-hover); }
+  #sd-tunnel-inline .nt-button.danger { color: var(--nt-bad); }
+  #sd-tunnel-inline .nt-button svg { width: 13px; height: 13px; }
+  #sd-tunnel-inline .nt-counts { display: flex; align-items: center; gap: 7px; padding: 0 12px 8px; color: var(--nt-muted); font-size: 11px; border-bottom: 1px solid var(--nt-line); }
+  #sd-tunnel-inline .nt-counts .nt-count-divider { width: 1px; height: 11px; background: var(--nt-line); margin: 0 3px; }
+  #sd-tunnel-inline .nt-rule { border-bottom: 1px solid var(--nt-line); }
+  #sd-tunnel-inline .nt-rule:last-child { border-bottom: 0; }
+  #sd-tunnel-inline .nt-row { display: flex; align-items: center; gap: 6px; padding: var(--nt-row-space) 8px var(--nt-row-space) 12px; }
+  #sd-tunnel-inline .nt-rule.is-open .nt-row { background: var(--nt-selection); }
+  #sd-tunnel-inline .nt-toggle { display: flex; align-items: center; gap: 7px; padding: 0; text-align: left; flex: 1; min-width: 0; border-radius: 4px; }
+  #sd-tunnel-inline .nt-toggle > .nt-dot { margin-top: 1px; }
+  #sd-tunnel-inline .nt-row-copy { flex: 1; min-width: 0; }
+  #sd-tunnel-inline .nt-name-line { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+  #sd-tunnel-inline .nt-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+  #sd-tunnel-inline .nt-kind { font-size: 11px; color: var(--nt-muted); flex-shrink: 0; }
+  #sd-tunnel-inline .nt-row-address { display: block; margin-top: 1px; font: 11px/1.5 ui-monospace, "SFMono-Regular", Consolas, monospace; color: var(--nt-muted); text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+  #sd-tunnel-inline .nt-chevron { color: var(--nt-muted); margin-left: 3px; transition: transform 170ms cubic-bezier(.16,1,.3,1); }
+  #sd-tunnel-inline .is-open .nt-chevron { transform: rotate(180deg); color: var(--nt-accent); }
+  #sd-tunnel-inline .nt-row-actions { display: flex; align-items: center; gap: 1px; flex-shrink: 0; }
+  #sd-tunnel-inline .nt-icon { width: 28px; height: 28px; min-height: 28px; padding: 6px; color: var(--nt-muted); background: transparent; }
+  #sd-tunnel-inline .nt-icon:hover:not(:disabled) { color: var(--nt-text); background: var(--nt-hover); }
+  #sd-tunnel-inline .nt-icon svg { width: 14px; height: 14px; }
+  #sd-tunnel-inline .nt-icon.nt-run { color: var(--nt-accent); }
+  #sd-tunnel-inline .nt-icon.nt-run svg { width: 12px; height: 12px; fill: currentColor; stroke-width: 1.5; }
+  #sd-tunnel-inline .nt-icon.nt-delete:hover:not(:disabled), #sd-tunnel-inline .nt-icon.nt-delete[data-confirm=yes] { color: var(--nt-bad); }
+  #sd-tunnel-inline .nt-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--nt-muted); flex: 0 0 auto; }
+  #sd-tunnel-inline .nt-dot.running { background: var(--nt-good); }
+  #sd-tunnel-inline .nt-dot.unknown { background: var(--nt-warning); }
+  #sd-tunnel-inline .nt-status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--nt-muted); }
+  #sd-tunnel-inline .nt-status.running { color: var(--nt-good); }
+  #sd-tunnel-inline .nt-detail { background: var(--nt-soft); padding: 10px 12px 8px 25px; }
+  #sd-tunnel-inline .nt-detail[hidden] { display: none; }
+  #sd-tunnel-inline .nt-state-line { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 5px; }
+  #sd-tunnel-inline .nt-state-line .nt-state-type { color: var(--nt-muted); font-size: 11px; }
+  #sd-tunnel-inline .nt-endpoint-label { color: var(--nt-muted); font-size: 12px; }
+  #sd-tunnel-inline .nt-entry { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+  #sd-tunnel-inline .nt-entry code { flex: 1; font: 500 14px/1.5 ui-monospace, "SFMono-Regular", Consolas, monospace; letter-spacing: -.02em; overflow-wrap: anywhere; min-width: 0; font-variant-numeric: tabular-nums; }
+  #sd-tunnel-inline .nt-route { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 2px; font-size: 11px; color: var(--nt-muted); }
+  #sd-tunnel-inline .nt-route svg { width: 12px; height: 12px; }
+  #sd-tunnel-inline .nt-route code { font: 11px/1.7 ui-monospace, "SFMono-Regular", Consolas, monospace; overflow-wrap: anywhere; color: var(--nt-text); }
+  #sd-tunnel-inline .nt-metrics { display: grid; grid-template-columns: .75fr 1fr 1fr; gap: 8px; border-top: 1px solid var(--nt-line); padding-top: 8px; margin: 8px 0 0; }
+  #sd-tunnel-inline .nt-metrics dt { font-size: 11px; color: var(--nt-muted); }
+  #sd-tunnel-inline .nt-metrics dd { margin: 2px 0 0; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #sd-tunnel-inline .nt-check { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 9px 0 4px; }
+  #sd-tunnel-inline .nt-check-state { display: flex; align-items: center; gap: 5px; font-size: 12px; }
+  #sd-tunnel-inline .nt-check-state svg { width: 13px; height: 13px; }
+  #sd-tunnel-inline .nt-check-state.reachable { color: var(--nt-good); }
+  #sd-tunnel-inline .nt-check-note { color: var(--nt-muted); font-size: 11px; margin-top: 1px; }
+  #sd-tunnel-inline .nt-path { font-size: 11px; color: var(--nt-muted); margin: 2px 0 0; }
+  #sd-tunnel-inline .nt-path summary { padding: 4px 0; }
+  #sd-tunnel-inline .nt-path p { padding-top: 5px; overflow-wrap: anywhere; }
+  #sd-tunnel-inline .nt-path code { font: 11px/1.7 ui-monospace, Consolas, monospace; overflow-wrap: anywhere; }
+  #sd-tunnel-inline .nt-usage { margin-top: 8px; }
+  #sd-tunnel-inline .nt-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 12px; border-top: 1px solid var(--nt-line); color: var(--nt-muted); font-size: 11px; }
+  #sd-tunnel-inline .nt-foot > span { display: inline-flex; align-items: center; gap: 5px; }
+  #sd-tunnel-inline .nt-foot svg { width: 12px; height: 12px; }
+  #sd-tunnel-inline .nt-feedback { color: var(--nt-accent); font-size: 12px; padding-top: 8px; }
+  #sd-tunnel-inline .nt-feedback:empty { display: none; }
+  #sd-tunnel-inline .nt-note { font-size: 11px; color: var(--nt-muted); padding: 8px 0 2px; }
+  #sd-tunnel-inline .nt-form { padding: 12px; background: var(--nt-soft); }
+  #sd-tunnel-inline .nt-form h3 { font-size: 13px; font-weight: 500; margin-bottom: 12px; }
+  #sd-tunnel-inline .nt-fields { display: grid; grid-template-columns: 1fr 78px; gap: 9px 8px; }
+  #sd-tunnel-inline .nt-field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; min-width: 0; }
+  #sd-tunnel-inline .nt-field.full { grid-column: 1 / -1; }
+  #sd-tunnel-inline .nt-field input, #sd-tunnel-inline .nt-field select { padding: 7px 9px; border-radius: 7px; border: 1px solid var(--nt-line); background: var(--nt-bg); min-width: 0; width: 100%; font-size: 12px; }
+  #sd-tunnel-inline .nt-field input::placeholder { color: var(--nt-muted); }
+  #sd-tunnel-inline .nt-form-actions { display: flex; gap: 8px; justify-content: flex-end; padding-top: 14px; }
+  #sd-tunnel-inline .nt-check-inputs { display: grid; grid-template-columns: 1fr 72px; gap: 8px; margin-top: 12px; }
+  #sd-tunnel-inline .nt-check-inputs input { width: 100%; min-width: 0; padding: 6px 8px; border: 1px solid var(--nt-line); border-radius: 6px; background: var(--nt-bg); font-size: 12px; }
+  #sd-tunnel-inline .nt-empty { padding: 30px 18px; color: var(--nt-muted); font-size: 12px; text-align: center; }
+  @media (max-width: 430px) { #sd-tunnel-inline .sd-preview { padding: 16px 0; } #sd-tunnel-inline .nt-detail { padding-left: 20px; } #sd-tunnel-inline .nt-foot { flex-wrap: wrap; gap: 4px 10px; } }
+  @media (pointer: coarse) { #sd-tunnel-inline .nt-button { min-height: 44px; } #sd-tunnel-inline .nt-icon { width: 44px; height: 44px; } #sd-tunnel-inline .nt-toggle { min-height: 44px; } #sd-tunnel-inline .nt-field input, #sd-tunnel-inline .nt-field select, #sd-tunnel-inline .nt-check-inputs input { font-size: 16px; } }
+  @media (prefers-reduced-motion: reduce) { #sd-tunnel-inline .sd-product *, #sd-tunnel-inline .sd-product *::before { transition: none !important; animation: none !important; } }
+</style>
+<div id="sd-tunnel-inline">
+  <div class="sd-preview viz-dotted-background">
+    <section class="sd-product" aria-label="网络隧道 · 行内展开工作台">
+      <header class="nt-toolbar">
+        <div><h2>网络隧道</h2><div class="nt-subtitle"><i data-lucide="server" aria-hidden="true"></i>prod-gateway</div></div>
+        <button class="nt-button quiet cursor-interaction" type="button" data-command="create"><i data-lucide="plus" aria-hidden="true"></i>新建</button>
+      </header>
+      <div class="nt-counts" id="nt-counts"></div>
+      <div id="nt-new-rule" hidden></div>
+      <div id="nt-rule-list"></div>
+      <footer class="nt-foot"><span><i data-lucide="lock-keyhole" aria-hidden="true"></i>复用当前服务器连接</span><span>交互预览 · 示例数据</span></footer>
+    </section>
+  </div>
+</div>
+<script>
+(() => {
+  const root = document.getElementById('sd-tunnel-inline');
+  const product = root.querySelector('.sd-product');
+  const list = root.querySelector('#nt-rule-list');
+  const newRule = root.querySelector('#nt-new-rule');
+  const encode = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+  const glyph = name => `<i data-lucide="${name}" aria-hidden="true"></i>`;
+  const defaults = [
+    {id:'database',name:'生产数据库',type:'TCP',host:'db.internal',port:'3306',entry:'127.0.0.1:13306',running:true,connections:3,up:'2.4 KiB/s',down:'18.6 KiB/s',check:'reachable'},
+    {id:'admin',name:'内部管理台',type:'TCP',host:'127.0.0.1',port:'8080',entry:'127.0.0.1:18080',running:true,connections:1,up:'0.6 KiB/s',down:'4.2 KiB/s',check:'none'},
+    {id:'proxy',name:'内网代理',type:'SOCKS5',host:'',port:'',entry:'127.0.0.1:1080',running:false,connections:0,up:'0 B/s',down:'0 B/s',check:'none'},
+    {id:'cache',name:'缓存服务',type:'TCP',host:'redis.internal',port:'6379',entry:'127.0.0.1:16379',running:false,connections:0,up:'0 B/s',down:'0 B/s',check:'none'}
+  ];
+  let rules = structuredClone(defaults), expanded = 'database', editing = null, creating = false, formDraft = null;
+  const feedback = {}, checkTargets = {};
+  const options = {density:'紧凑',showPath:false};
+  function restore(value) {
+    const saved = value?.privateContent;
+    if (!saved) return;
+    if (Array.isArray(saved.rules) && saved.rules.length <= 8 && saved.rules.every(r => r && typeof r.id === 'string' && typeof r.name === 'string' && ['TCP','SOCKS5'].includes(r.type))) rules = saved.rules;
+    if (saved.expanded === null || rules.some(r => r.id === saved.expanded)) expanded = saved.expanded;
+  }
+  restore(window.openai?.widgetState);
+  function remember() {
+    window.openai?.setWidgetState?.({modelContent:{design:'紧凑工作台：所选规则下方行内展开；播放/停止、编辑、删除图标集中在规则行右侧',expandedRule:rules.find(r => r.id === expanded)?.name || null},privateContent:{rules,expanded}})?.catch(() => {});
+  }
+  const goal = rule => rule.type === 'SOCKS5' ? '由客户端指定目标' : `${rule.host}:${rule.port}`;
+  const action = (command,label,extra='',style='') => `<button type="button" class="nt-button cursor-interaction ${style}" data-command="${command}" ${extra}>${label}</button>`;
+  const iconAction = (command,icon,label,extra='',style='') => action(command,glyph(icon),`aria-label="${encode(label)}" data-tooltip="${encode(label)}" ${extra}`,'nt-icon '+style);
+  function formMarkup(rule) {
+    const d = formDraft || {name:rule?.name || '',type:rule?.type || 'TCP',host:rule?.host || '',port:rule?.port || '',mode:'auto',localPort:'',bind:'127.0.0.1'};
+    formDraft = d;
+    return `<form class="nt-form" data-edit-form><h3>${rule ? '编辑规则' : '新建隧道'}</h3><div class="nt-fields">
+      <label class="nt-field full">名称<input name="name" maxlength="128" value="${encode(d.name)}" placeholder="例如：生产数据库"></label>
+      <label class="nt-field full">隧道类型<select name="type" ${rule?'disabled':''}><option value="TCP" ${d.type==='TCP'?'selected':''}>TCP 转发</option><option value="SOCKS5" ${d.type==='SOCKS5'?'selected':''}>SOCKS5 代理</option></select></label>
+      ${d.type==='TCP'?`<label class="nt-field">远端目标主机<input name="host" required value="${encode(d.host)}" placeholder="db.internal"></label><label class="nt-field">端口<input name="port" type="number" min="1" max="65535" required value="${encode(d.port)}" placeholder="3306"></label>`:'<p class="nt-note">客户端指定访问目标，域名由远端解析。</p>'}
+      <label class="nt-field full">本机端口<select name="mode"><option value="auto" ${d.mode==='auto'?'selected':''}>自动分配</option><option value="fixed" ${d.mode==='fixed'?'selected':''}>指定端口</option></select></label>
+      ${d.mode==='fixed'?`<label class="nt-field full">指定本机端口<input name="localPort" type="number" min="1" max="65535" required value="${encode(d.localPort)}" placeholder="例如：13306"></label>`:''}
+    </div><details class="nt-path"><summary>更多设置</summary><label class="nt-field">本地绑定 IP<input name="bind" required value="${encode(d.bind)}"></label></details><p class="nt-note">${rule?.running?'保存不改变当前监听，停止后重新启动以应用。':'保存后手动启动，启动时显示实际本机入口。'}</p><div class="nt-form-actions">${action('cancel-edit','取消')}<button class="nt-button primary cursor-interaction" type="submit">保存规则</button></div></form>`;
+  }
+  function detail(rule) {
+    const target = checkTargets[rule.id] || {host:'',port:'443'};
+    const message = !rule.running ? '尚未检查' : rule.check === 'reachable' ? '目标 TCP 可达' : '目标尚未检查';
+    return `<div class="nt-detail" id="nt-detail-${rule.id}" ${expanded===rule.id?'':'hidden'}>
+      <div class="nt-state-line"><span class="nt-status ${rule.running?'running':''}">${rule.running?'本机入口已监听':'已停止'}</span></div>
+      <div class="nt-entry"><code>${rule.running?encode(rule.entry):'尚未监听'}</code>${iconAction('copy','copy','复制本机入口',rule.running?'':'disabled','quiet')}</div>
+      <div class="nt-route"><span>经 prod-gateway</span>${glyph('arrow-right')}<code>${encode(goal(rule))}</code></div>
+      <dl class="nt-metrics"><div><dt>活动连接</dt><dd>${rule.running?rule.connections:0}</dd></div><div><dt>上传</dt><dd>${rule.running?encode(rule.up):'0 B/s'}</dd></div><div><dt>下载</dt><dd>${rule.running?encode(rule.down):'0 B/s'}</dd></div></dl>
+      ${rule.type==='SOCKS5'?`<div class="nt-check-inputs"><input data-check="host" value="${encode(target.host)}" placeholder="检查目标域名或 IP" aria-label="检查主机"><input data-check="port" value="${encode(target.port)}" type="number" min="1" max="65535" aria-label="检查端口"></div>`:''}
+      <div class="nt-check"><div><div class="nt-check-state ${rule.running&&rule.check==='reachable'?'reachable':''}">${glyph(rule.running&&rule.check==='reachable'?'check':'circle-help')}<span>${message}</span></div><p class="nt-check-note">${rule.running&&rule.check==='reachable'?'仅证明本次 TCP 可达':'启动监听与检查目标分别进行'}</p></div>${action('check','检查连接',rule.running?'':'disabled')}</div>
+      <details class="nt-path" data-path ${options.showPath?'open':''}><summary>连接路径与使用说明</summary><p>本机 → 当前服务器的连接与跳板 → prod-gateway → ${encode(goal(rule))}</p><p class="nt-usage">${rule.type==='SOCKS5'?'客户端选择 SOCKS5，并启用代理端解析域名。':'本地软件连接上方本机入口，即可访问远端目标。'}</p><p>本次运行累计上传 ${rule.running?'2.8 MiB':'0 B'}，下载 ${rule.running?'24.6 MiB':'0 B'}。</p></details>
+      ${rule.changed?'<p class="nt-note">新配置已保存，停止后重新启动以应用。</p>':''}
+      <p class="nt-feedback" aria-live="polite">${encode(feedback[rule.id]||'')}</p>
+    </div>`;
+  }
+  function render() {
+    root.querySelector('#nt-counts').innerHTML = `<span>${rules.length} 条隧道</span><span class="nt-count-divider"></span><span>${rules.filter(r=>r.running).length} 条运行中</span>`;
+    list.innerHTML = rules.length ? rules.map(rule => `<article class="nt-rule ${expanded===rule.id?'is-open':''}" data-rule="${rule.id}">
+      <div class="nt-row"><button type="button" class="nt-toggle cursor-interaction" data-command="expand" aria-expanded="${expanded===rule.id}" aria-controls="nt-detail-${rule.id}"><span class="nt-dot ${rule.running?'running':''}" aria-hidden="true"></span><span class="nt-row-copy"><span class="nt-name-line"><span class="nt-name">${encode(rule.name)}</span><span class="nt-kind">${rule.type}</span></span><span class="nt-row-address">${rule.running?encode(rule.entry):encode(goal(rule))} · ${rule.running?'监听中':'已停止'}</span></span><span class="nt-chevron">${glyph('chevron-down')}</span></button><div class="nt-row-actions" role="group" aria-label="${encode(rule.name)}操作">${iconAction('run',rule.running?'square':'play',`${rule.running?'停止':'启动'}${rule.name}`,'','nt-run')}${iconAction('edit','pencil',`编辑${rule.name}`)}${iconAction('delete','trash-2',rule.running?'停止完成后可删除':`删除${rule.name}`,rule.running?'disabled':'','nt-delete')}</div></div>
+      ${editing===rule.id?`<div id="nt-detail-${rule.id}">${formMarkup(rule)}</div>`:detail(rule)}
+    </article>`).join('') : '<p class="nt-empty">还没有隧道。新建一条规则，连接远端网络。</p>';
+    newRule.hidden = !creating;
+    newRule.innerHTML = creating ? formMarkup(null) : '';
+    if (globalThis.lucide) lucide.createIcons({attrs:{width:16,height:16}});
+  }
+  function saveDraft() {
+    const form = root.querySelector('[data-edit-form]');
+    if (!form) return;
+    formDraft ||= {};
+    for (const [key,value] of new FormData(form)) formDraft[key] = String(value);
+  }
+  root.addEventListener('input', event => {
+    if (event.target.closest('[data-edit-form]')) saveDraft();
+    const name = event.target.dataset.check;
+    if (name) { const id=event.target.closest('[data-rule]').dataset.rule;checkTargets[id] ||= {host:'',port:'443'};checkTargets[id][name]=event.target.value; }
+  });
+  root.addEventListener('change', event => {
+    if (event.target.matches('[name=type],[name=mode]')) {saveDraft();const name=event.target.name;render();root.querySelector(`[name="${name}"]`)?.focus();}
+  });
+  root.addEventListener('submit', event => {
+    const form = event.target.closest('[data-edit-form]');
+    if (!form) return;
+    event.preventDefault();saveDraft();
+    const d=formDraft;
+    if (creating) {
+      const id='new-'+Date.now();
+      rules.unshift({id,name:d.name||`${d.host}:${d.port}`,type:d.type,host:d.host||'',port:d.port||'',entry:`${d.bind||'127.0.0.1'}:${d.mode==='fixed'?d.localPort:'52180'}`,running:false,connections:0,up:'0 B/s',down:'0 B/s',check:'none'});
+      expanded=id;feedback[id]='示例规则已保存，启动后建立监听。';
+    } else {
+      const rule=rules.find(r=>r.id===editing);
+      if(rule){rule.name=d.name||rule.name;rule.host=d.host||'';rule.port=d.port||'';rule.changed=rule.running;feedback[rule.id]='示例配置已保存。';}
+    }
+    creating=false;editing=null;formDraft=null;render();remember();
+  });
+  root.addEventListener('click', async event => {
+    const button=event.target.closest('[data-command]');
+    if(!button||button.disabled)return;
+    const command=button.dataset.command;
+    const rule=rules.find(r=>r.id===button.closest('[data-rule]')?.dataset.rule);
+    if(command==='create'){creating=!creating;editing=null;formDraft=null;render();root.querySelector('[name=name]')?.focus();return;}
+    if(command==='cancel-edit'){creating=false;editing=null;formDraft=null;render();return;}
+    if(!rule)return;
+    if(command==='expand'){
+      expanded=expanded===rule.id?null:rule.id;editing=null;creating=false;formDraft=null;render();
+      root.querySelector(`[data-rule="${rule.id}"] [data-command="expand"]`)?.focus({preventScroll:true});
+    } else if(command==='run') {
+      rule.running=!rule.running;rule.check='none';rule.changed=false;feedback[rule.id]=rule.running?'示例监听已启动，目标尚未检查。':'示例监听已停止。';render();
+      root.querySelector(`[data-rule="${rule.id}"] [data-command="run"]`)?.focus({preventScroll:true});
+    } else if(command==='copy') {
+      try {await navigator.clipboard.writeText(rule.entry);feedback[rule.id]='已复制本机入口。';} catch {feedback[rule.id]=`本机入口：${rule.entry}`;}
+      render();
+    } else if(command==='check') {
+      const destination=checkTargets[rule.id];
+      if(rule.type==='SOCKS5'&&(!destination?.host.trim()||!Number.isInteger(Number(destination.port))||Number(destination.port)<1||Number(destination.port)>65535)) feedback[rule.id]='请填写检查目标主机和 1–65535 的端口。';
+      else {rule.check='reachable';feedback[rule.id]='示例检查完成：目标 TCP 可达。';}
+      render();
+    } else if(command==='edit') {
+      expanded=rule.id;editing=rule.id;creating=false;formDraft=null;render();root.querySelector('[name=name]')?.focus();return;
+    } else if(command==='delete') {
+      if(button.dataset.confirm!=='yes'){button.innerHTML=glyph('check');button.dataset.confirm='yes';button.setAttribute('aria-label',`确认删除${rule.name}`);button.dataset.tooltip='再次点击确认删除';if(globalThis.lucide)lucide.createIcons({attrs:{width:16,height:16}});return;}
+      rules=rules.filter(r=>r.id!==rule.id);expanded=null;render();
+    }
+    remember();
+  });
+  window.addEventListener('openai:set_globals',event=>{
+    if(event.detail?.globals?.widgetState){restore(event.detail.globals.widgetState);render();}
+  });
+  render();
+  if(globalThis.Tweak){
+    const tweaks=new Tweak({container:product,onChange:()=>{
+      product.style.setProperty('--nt-row-space',options.density==='舒适'?'12px':'8px');
+      root.querySelectorAll('[data-path]').forEach(el=>el.open=options.showPath);
+    }});
+    tweaks.addSelect(options,'density',{label:'规则行间距',options:['紧凑','舒适']});
+    tweaks.addToggle(options,'showPath',{label:'展开连接路径'});
+  }
+})();
+</script>

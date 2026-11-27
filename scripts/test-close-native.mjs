@@ -249,15 +249,14 @@ try {
     const networkEntry=page.getByRole('button', { name: '网络隧道', exact: true });
     if(await networkEntry.getAttribute('aria-expanded')!=='true')await networkEntry.click();
     const sidebar = page.frameLocator('iframe[title^="网络隧道 ·"]');
-    await sidebar.getByRole('button', { name: '＋ 新建', exact: true }).click();
-    const ruleEditor = page.frameLocator('iframe[title^="编辑网络隧道 ·"]');
+    await sidebar.getByRole('button', { name: '新建', exact: true }).click();
+    const ruleEditor = sidebar;
     await ruleEditor.locator('input[name=name]').fill(`Native ${entry}`);
     await ruleEditor.locator('input[name=host]').fill('127.0.0.1');
     await ruleEditor.locator('input[name=targetPort]').fill(String(service.address().port));
     await ruleEditor.getByRole('button', { name: '保存', exact: true }).click();
-    await page.locator('.plugin-view-dialog').waitFor({ state: 'detached' });
-    await sidebar.getByRole('button', { name: `Native ${entry}` }).click();
-    await sidebar.locator('.detail').getByRole('button', { name: '启动', exact: true }).click();
+    await ruleEditor.locator('form').waitFor({ state: 'detached' });
+    await sidebar.getByRole('button', { name: '启动', exact: true }).click();
     await sidebar.locator('.entry code').waitFor();
     await until(async () => /127\.0\.0\.1:\d+/.test(await sidebar.locator('.entry code').textContent()), 'Native tunnel did not reach the listening state');
     const address = await sidebar.locator('.entry code').textContent();
@@ -308,6 +307,11 @@ try {
     assert.deepEqual(afterDock.workspaces[workspace.context.workspaceId].views.map(v=>v.id).sort(),beforeDock.workspaces[workspace.context.workspaceId].views.map(v=>v.id).sort());
     fs.mkdirSync('artifacts/workbench-layout',{recursive:true});await page.screenshot({path:`artifacts/workbench-layout/native-tools-${entry}.png`});
     if(!trayOnly)checks.push(`${entry}: native system-pointer tool docking kept button/panel side, original file/network iframes, draft and live forwarding`);
+    const networkButton=board.locator('[data-tool-key="sodeck.network-proxy:manager"]');
+    if(await networkButton.getAttribute('aria-expanded')!=='true')await networkButton.click();
+    await sidebar.getByRole('button',{name:'编辑',exact:true}).click();
+    const tunnelDraft=`Native ${entry} unsaved tunnel`;
+    await sidebar.locator('input[name=name]').fill(tunnelDraft);
     const before = await invoke('component_ui', { operation: 'snapshot', args: {} });
     const identity = before.workspaces[workspace.context.workspaceId].views.map(v => v.id).sort();
     const pids = (await invoke('snapshot')).plugins.map(p => p.pid);
@@ -323,6 +327,7 @@ try {
     await invoke('desktop_present');
     await until(async()=>(await invoke('desktop_state')).visible,'Main window did not restore');
     assert.equal(await editor.inputValue(),draft);
+    assert.equal(await sidebar.locator('input[name=name]').inputValue(),tunnelDraft);
     checks.push(entry+': background kept original views, unsaved editor and actual tunnel bytes; restored original window');
     await invoke('set_close_behavior',{behavior:'exit'});
     if (entry === 'titlebar') await page.getByRole('button', { name: '关闭窗口', exact: true }).click();
@@ -332,6 +337,7 @@ try {
     await page.locator('.component-close-dialog').waitFor({ state: 'detached' });
     assert.equal(child.exitCode, null);
     assert.equal(await editor.inputValue(), draft);
+    assert.equal(await sidebar.locator('input[name=name]').inputValue(),tunnelDraft);
     const after = await invoke('component_ui', { operation: 'snapshot', args: {} });
     assert.deepEqual(after.workspaces[workspace.context.workspaceId].views.map(v => v.id).sort(), identity);
     await echo();

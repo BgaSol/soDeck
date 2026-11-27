@@ -61,7 +61,7 @@ impl Service {
         let a = self.state.lock().unwrap();
         let v = a.views.get(id).ok_or("视图已关闭")?;
         Ok(
-            json!({"data":{"kind":v.kind,"draft":v.draft,"navigation":v.navigation,"dirty":v.dirty,"catalog":a.snapshot(&v.server,v.navigation["offset"].as_u64().unwrap_or(0) as usize)},"metadata":{"dirty":v.dirty,"busy":a.write_view.as_deref()==Some(id)}}),
+            json!({"data":{"kind":v.kind,"draft":v.draft,"draftRevision":v.draft_revision.to_string(),"navigation":v.navigation,"navigationRevision":v.navigation_revision.to_string(),"dirty":v.dirty,"writePending":a.write_view.as_deref()==Some(id),"catalog":a.snapshot(&v.server,v.navigation["offset"].as_u64().unwrap_or(0) as usize)},"metadata":{"dirty":v.dirty,"busy":a.write_view.as_deref()==Some(id)}}),
         )
     }
     pub fn rule_for(&self, view: &str, id: &str) -> Result<Rule, String> {
@@ -74,6 +74,75 @@ impl Service {
             .cloned()
             .ok_or("规则不属于此服务器".into())
     }
+    pub fn begin_edit(&self, view: &str, mut rule: Value) -> Result<(), String> {
+        let _gate = self
+            .changes
+            .try_lock()
+            .map_err(|_| "配置正在保存，请稍后重试")?;
+        let mut a = self.state.lock().unwrap();
+        let v = a.views.get(view).ok_or("视图已关闭")?;
+        if v.dirty {
+            return Err("请先保存或放弃当前草稿".into());
+        }
+        if rule["serverId"] != v.server || !rule["id"].is_string() {
+            return Err("规则不属于当前服务器".into());
+        }
+        if let Some(existing) = a.rules.items.iter().find(|r| rule["id"] == r.id) {
+            if existing.server != v.server || rule["revision"].as_u64() != Some(existing.revision) {
+                return Err("规则已变化，请刷新后编辑".into());
+            }
+            rule = existing.value();
+        } else if rule["revision"] != 0 {
+            return Err("规则已删除，请刷新".into());
+        }
+        if serde_json::to_vec(&rule).map_err(|e| e.to_string())?.len() > 4096 {
+            return Err("草稿过大".into());
+        }
+        let v = a.views.get_mut(view).unwrap();
+        v.draft_revision = v.draft_revision.checked_add(1).ok_or("草稿序号已用尽")?;
+        v.draft_base = rule.clone();
+        v.draft = rule;
+        v.dirty = false;
+        Ok(())
+    }
+    pub fn update_draft(&self, view: &str, rule: Value, expected: &Value) -> Result<(), String> {
+        if serde_json::to_vec(&rule).map_err(|e| e.to_string())?.len() > 4096 {
+            return Err("草稿过大".into());
+        }
+        let mut a = self.state.lock().unwrap();
+        let v = a.views.get_mut(view).ok_or("视图已关闭")?;
+        if expected.as_str() != Some(&v.draft_revision.to_string()) || v.draft.is_null() {
+            return Err("草稿已变化，请重新读取".into());
+        }
+        for field in ["id", "serverId", "revision"] {
+            if rule[field] != v.draft[field] {
+                return Err("草稿身份不能改变".into());
+            }
+        }
+        if v.draft["revision"] != 0 && rule["type"] != v.draft_base["type"] {
+            return Err("已有规则不能改变类型".into());
+        }
+        v.draft_revision = v.draft_revision.checked_add(1).ok_or("草稿序号已用尽")?;
+        v.dirty = rule != v.draft_base;
+        v.draft = rule;
+        Ok(())
+    }
+    pub fn cancel_edit(&self, view: &str, expected: &Value) -> Result<(), String> {
+        let _gate = self
+            .changes
+            .try_lock()
+            .map_err(|_| "配置正在保存，请稍后重试")?;
+        let mut a = self.state.lock().unwrap();
+        let v = a.views.get_mut(view).ok_or("视图已关闭")?;
+        if expected.as_str() != Some(&v.draft_revision.to_string()) {
+            return Err("草稿已变化，请重新读取".into());
+        }
+        v.draft_revision = v.draft_revision.checked_add(1).ok_or("草稿序号已用尽")?;
+        v.draft = Value::Null;
+        v.draft_base = Value::Null;
+        v.dirty = false;
+        Ok(())
+    }
     pub fn save(&self, view: &str) -> Result<Value, String> {
         let _gate = self
             .changes
@@ -82,9 +151,13 @@ impl Service {
         let (mut candidate, server, draft, revision) = {
             let mut a = self.state.lock().unwrap();
             let v = a.views.get(view).ok_or("视图已关闭")?;
-            if v.kind != "rule-editor" || !v.dirty {
+            if v.draft.is_null() {
                 return Ok(v.draft.clone());
             }
+            v.draft_revision.checked_add(1).ok_or("草稿序号已用尽")?;
+            v.navigation_revision
+                .checked_add(1)
+                .ok_or("导航序号已用尽")?;
             let values = (
                 a.rules.clone(),
                 v.server.clone(),
@@ -99,13 +172,34 @@ impl Service {
         a.write_view = None;
         if let Ok(saved) = &result {
             a.rules = candidate;
+            let offset = a
+                .rules
+                .items
+                .iter()
+                .filter(|r| r.server == server)
+                .position(|r| saved["id"] == r.id)
+                .unwrap_or(0)
+                / 20
+                * 20;
             if let Some(v) = a
                 .views
                 .get_mut(view)
                 .filter(|v| v.draft_revision == revision)
             {
-                v.draft = saved.clone();
+                v.draft = Value::Null;
+                v.draft_base = Value::Null;
                 v.dirty = false;
+                v.draft_revision += 1;
+                v.navigate(json!({"selected":saved["id"],"offset":offset}))?;
+            } else if let Some(v) = a
+                .views
+                .get_mut(view)
+                .filter(|v| v.draft["id"] == saved["id"])
+            {
+                // Keep edits made during commit on the newly saved rule revision.
+                v.draft["revision"] = saved["revision"].clone();
+                v.draft_base = saved.clone();
+                v.dirty = v.draft != v.draft_base;
             }
         }
         drop(a);
@@ -354,5 +448,89 @@ impl Service {
         drop(a);
         self.changed();
         Ok(result)
+    }
+}
+#[cfg(test)]
+mod editor_tests {
+    use super::*;
+    use crate::runtime::View;
+    fn service(directory: PathBuf) -> Service {
+        let (wake, _) = mpsc::sync_channel(1);
+        let context =
+            serde_json::json!({"serverId":"server","workspaceId":"workspace","generation":1});
+        Service {
+            state: Arc::new(Mutex::new(App {
+                rules: Rules::open(directory),
+                runs: HashMap::new(),
+                checks: HashMap::new(),
+                sequence: 0,
+                write_view: None,
+                views: HashMap::from([(
+                    "manager".into(),
+                    View {
+                        server: "server".into(),
+                        kind: "manager".into(),
+                        context,
+                        draft: Value::Null,
+                        draft_base: Value::Null,
+                        dirty: false,
+                        navigation: Value::Null,
+                        draft_revision: 0,
+                        navigation_revision: 0,
+                    },
+                )]),
+            })),
+            changes: Mutex::new(()),
+            wake,
+        }
+    }
+    #[test]
+    fn one_draft_uses_identity_and_revision_without_owning_the_listener_lifetime() {
+        let directory = tempfile::tempdir().unwrap();
+        let s = service(directory.path().into());
+        let rule = serde_json::json!({"id":"first","serverId":"server","revision":0,"name":"","type":"socks5","bind":{"host":"127.0.0.1","port":0}});
+        s.begin_edit("manager", rule.clone()).unwrap();
+        let revision = s.response("manager").unwrap()["data"]["draftRevision"].clone();
+        assert_eq!(s.response("manager").unwrap()["metadata"]["dirty"], false);
+        let mut changed = rule.clone();
+        changed["name"] = json!("changed");
+        s.update_draft("manager", changed.clone(), &revision)
+            .unwrap();
+        assert!(s.update_draft("manager", rule.clone(), &revision).is_err());
+        assert!(s.begin_edit("manager", rule.clone()).is_err());
+        s.save("manager").unwrap();
+        let response = s.response("manager").unwrap();
+        assert!(response["data"]["draft"].is_null());
+        assert_eq!(response["data"]["catalog"]["total"], 1);
+        assert_eq!(response["data"]["navigation"]["selected"], "first");
+        assert!(s.state.lock().unwrap().runs.is_empty());
+        let saved = response["data"]["catalog"]["rules"][0]["rule"].clone();
+        s.begin_edit("manager", saved).unwrap();
+        let revision = s.response("manager").unwrap()["data"]["draftRevision"].clone();
+        s.cancel_edit("manager", &revision).unwrap();
+        assert!(s.update_draft("manager", changed, &revision).is_err());
+        assert_eq!(s.state.lock().unwrap().rules.items.len(), 1);
+    }
+    #[test]
+    fn save_failure_keeps_draft_and_dirty_and_navigation_is_monotonic() {
+        let directory = tempfile::tempdir().unwrap();
+        let s = service(directory.path().into());
+        let rule = serde_json::json!({"id":"first","serverId":"server","revision":0,"name":"","type":"tcpForward","bind":{"host":"127.0.0.1","port":0},"target":{"host":"","port":0}});
+        s.begin_edit("manager", rule.clone()).unwrap();
+        let revision = s.response("manager").unwrap()["data"]["draftRevision"].clone();
+        let mut changed = rule;
+        changed["name"] = json!("unfinished");
+        s.update_draft("manager", changed.clone(), &revision)
+            .unwrap();
+        assert!(s.save("manager").is_err());
+        let response = s.response("manager").unwrap();
+        assert_eq!(response["metadata"]["dirty"], true);
+        assert_eq!(response["metadata"]["busy"], false);
+        assert_eq!(response["data"]["draft"], changed);
+        let mut a = s.state.lock().unwrap();
+        let v = a.views.get_mut("manager").unwrap();
+        v.navigate(json!({"selected":"first","offset":0})).unwrap();
+        v.navigate(json!({"selected":"first","offset":0})).unwrap();
+        assert_eq!(v.navigation_revision, 2);
     }
 }

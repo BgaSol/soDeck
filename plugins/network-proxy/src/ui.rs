@@ -14,21 +14,19 @@ pub fn handle(
         let server = context["serverId"].as_str().ok_or("缺少服务器")?.to_owned();
         let kind = p["viewType"]
             .as_str()
-            .filter(|s| ["manager", "rule-editor"].contains(s))
+            .filter(|s| *s == "manager")
             .ok_or("未知视图")?;
         let mut a = service.state.lock().unwrap();
         a.views.entry(id.into()).or_insert(View {
             server,
             kind: kind.into(),
             context: context.clone(),
-            draft: if kind == "rule-editor" {
-                p["params"]["rule"].clone()
-            } else {
-                Value::Null
-            },
+            draft: Value::Null,
+            draft_base: Value::Null,
             dirty: false,
             navigation: Value::Null,
             draft_revision: 0,
+            navigation_revision: 0,
         });
         drop(a);
         service.context(id, context);
@@ -63,19 +61,26 @@ pub fn handle(
         return Err("视图已关闭".into());
     }
     match action {
-        "draft" => {
-            let bytes = serde_json::to_vec(&d["rule"]).map_err(|e| e.to_string())?;
-            if bytes.len() > 4096 {
-                return Err("草稿过大".into());
-            }
+        "edit.begin" => service.begin_edit(id, d["rule"].clone())?,
+        "draft" => service.update_draft(id, d["rule"].clone(), &d["draftRevision"])?,
+        "edit.cancel" => service.cancel_edit(id, &d["draftRevision"])?,
+        "edit.reveal" => {
             let mut a = service.state.lock().unwrap();
-            let v = a.views.get_mut(id).unwrap();
-            if v.kind != "rule-editor" {
-                return Err("不是编辑表单".into());
-            }
-            v.draft = d["rule"].clone();
-            v.dirty = true;
-            v.draft_revision = v.draft_revision.checked_add(1).ok_or("草稿序号已用尽")?;
+            let v = a.views.get(id).unwrap();
+            let rule_id = v.draft["id"].clone();
+            let offset = a
+                .rules
+                .items
+                .iter()
+                .filter(|r| r.server == v.server)
+                .position(|r| rule_id == r.id)
+                .unwrap_or(0)
+                / 20
+                * 20;
+            a.views
+                .get_mut(id)
+                .unwrap()
+                .navigate(json!({"selected":rule_id,"offset":offset}))?;
         }
         "navigation" => {
             if serde_json::to_vec(&d["state"])
@@ -85,14 +90,11 @@ pub fn handle(
             {
                 return Err("导航状态过大".into());
             }
-            service
-                .state
-                .lock()
-                .unwrap()
-                .views
-                .get_mut(id)
-                .unwrap()
-                .navigation = d["state"].clone();
+            let mut a = service.state.lock().unwrap();
+            let v = a.views.get_mut(id).unwrap();
+            if d["navigationRevision"].as_str() == Some(&v.navigation_revision.to_string()) {
+                v.navigate(d["state"].clone())?;
+            }
         }
         "save" => {
             service.save(id)?;

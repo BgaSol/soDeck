@@ -39,10 +39,10 @@ const row=()=>request('ui.getView','manager').then(r=>r.data.catalog.rules[0]);
 try{
   await peer.initialize({dataDirectory:directory,});
   await request('ui.createView','manager',{viewType:'manager'});
-  await request('ui.createView','editor',{viewType:'rule-editor',params:{rule:{id:'rule',serverId:'server',name:'test',revision:0,type:'socks5',bind:{host:'127.0.0.1',port:0}}}});
   const rule={id:'rule',serverId:'server',name:'test',revision:0,type:'socks5',bind:{host:'127.0.0.1',port:0}};
-  await request('ui.event','editor',{data:{action:'draft',rule}});
-  await request('ui.event','editor',{data:{action:'save'}});
+  const edit=await event({action:'edit.begin',rule});
+  await event({action:'draft',rule,draftRevision:edit.data.draftRevision});
+  await event({action:'save'});
   assert.equal(createCount,0,'Saving a rule must not start a listener');
   await event({action:'start',id:'rule'});
   await until(row,r=>r.run?.snapshot.state==='running');

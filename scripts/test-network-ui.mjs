@@ -1,5 +1,6 @@
 import {fixtureBinary} from './cargo-fixture.mjs';
 import {pluginUiFile,fixtureError} from './plugin-ui-fixture.mjs';
+import {completedAction} from './component-command-fixture.mjs';
 // Shipped network plugin UI, actual core service, and isolated OpenSSH.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import net from 'node:net';import readline from 'node:readline';
@@ -25,25 +26,25 @@ try{
  await wait(async()=>{const [v]=await call('connection',{command:{op:'snapshot'}});if(v.question)await call('connection',{command:{op:'answer',attemptId:v.attemptId,questionId:v.question.id,answer:{kind:'hostKey',accept:true}}});if(v.state==='failed')throw new Error(JSON.stringify(v.error));return v.state==='connected';});
  const [connected]=await call('connection',{command:{op:'snapshot'}});await call('connection',{command:{op:'focus',context:connected.context}});
  await page.goto(url);await page.waitForFunction(()=>window.ready);await page.getByRole('button',{name:'网络隧道',exact:true}).click();
- const sidebar=page.frameLocator('iframe[title^="网络隧道 ·"]');await sidebar.getByRole('button',{name:'＋ 新建',exact:true}).click();
- const editor=page.frameLocator('iframe[title^="编辑网络隧道 ·"]');await editor.locator('input[name=name]').fill('应用服务');await editor.locator('input[name=host]').fill('127.0.0.1');await editor.locator('input[name=targetPort]').fill(String(service.address().port));
+ const sidebar=page.frameLocator('iframe[title^="网络隧道 ·"]');await sidebar.getByRole('button',{name:'新建',exact:true}).click();
+ const editor=sidebar;await editor.locator('input[name=name]').fill('应用服务');await editor.locator('input[name=host]').fill('127.0.0.1');await editor.locator('input[name=targetPort]').fill(String(service.address().port));
  // Fixed-port checkbox and small viewport scroll must be usable.
- await editor.locator('input[name=auto]').uncheck();assert.equal(await editor.locator('input[name=port]').isEnabled(),true);await editor.locator('input[name=auto]').check();
- await page.setViewportSize({width:720,height:480});await editor.locator('summary').click();await editor.locator('.fields').evaluate(el=>el.scrollTop=el.scrollHeight);await editor.locator('input[name=bindHost]').waitFor({state:'visible'});
- const scroll=await editor.locator('.fields').evaluate(el=>({scroll:el.scrollHeight,client:el.clientHeight,top:el.scrollTop}));assert(scroll.scroll>scroll.client&&scroll.top>0);assert(await editor.getByRole('button',{name:'保存',exact:true}).isVisible());
+ await editor.locator('input[name=auto]').uncheck();await wait(()=>editor.locator('input[name=port]').isEnabled());await editor.locator('input[name=auto]').check();
+ await page.setViewportSize({width:720,height:480});await editor.locator('summary').click();await editor.locator('.scroll').evaluate(el=>el.scrollTop=el.scrollHeight);await editor.locator('input[name=bindHost]').waitFor({state:'visible'});
+ const scroll=await editor.locator('.scroll').evaluate(el=>({scroll:el.scrollHeight,client:el.clientHeight,top:el.scrollTop}));assert(scroll.scroll>scroll.client&&scroll.top>0);assert(await editor.getByRole('button',{name:'保存',exact:true}).isVisible());
  fs.mkdirSync('artifacts/network-ui',{recursive:true});await page.screenshot({path:'artifacts/network-ui/editor-narrow.png'});
- await editor.getByRole('button',{name:'保存',exact:true}).click();await page.locator('.plugin-view-dialog').waitFor({state:'detached'});await page.setViewportSize({width:1180,height:760});
+ await editor.getByRole('button',{name:'保存',exact:true}).click();await editor.locator('form').waitFor({state:'detached'});await page.setViewportSize({width:1180,height:760});
  const instrument=()=>sidebar.locator('#app').evaluate(()=>{window.refreshes=0;const request=sodeck.request;sodeck.request=async(method,params)=>{const result=await request(method,params);if(method==='event'&&params.action==='snapshot')window.refreshes++;return result;};});
  await instrument();
  const cycles=async()=>{const before=await sidebar.locator('#app').evaluate(()=>window.refreshes);try{await wait(()=>sidebar.locator('#app').evaluate((el,n)=>window.refreshes>=n+2,before));}catch(e){console.log({refreshes:await sidebar.locator('#app').evaluate(()=>window.refreshes),error:await sidebar.locator('#error').textContent(),actions:actions.slice(-5)});throw e;}};
- const listRow=sidebar.getByRole('button',{name:'应用服务'});
+ const listRow=sidebar.getByRole('button',{name:'应用服务',exact:true});
  await listRow.focus();await listRow.evaluate(el=>window.stableRow=el);await cycles();
  assert(await listRow.evaluate(el=>el===window.stableRow&&el===document.activeElement),'List row identity and focus survive real refreshes');
  assert.equal(await sidebar.getByRole('button',{name:'上一页规则',exact:true}).count(),1);
- await listRow.click();assert.equal(await sidebar.getByRole('button',{name:'启动',exact:true}).isEnabled(),true);await sidebar.getByRole('button',{name:'启动',exact:true}).click();await sidebar.getByRole('button',{name:'停止',exact:true}).waitFor();
+ if(await listRow.getAttribute('aria-expanded')!=='true')await listRow.click();assert.equal(await sidebar.getByRole('button',{name:'启动',exact:true}).isEnabled(),true);await sidebar.getByRole('button',{name:'启动',exact:true}).click();await sidebar.getByRole('button',{name:'停止',exact:true}).waitFor();
  const pathSummary=sidebar.getByText('连接路径',{exact:true});await pathSummary.click();await pathSummary.focus();await pathSummary.evaluate(el=>window.stableSummary=el);await cycles();
  assert(await pathSummary.evaluate(el=>el===window.stableSummary&&el===document.activeElement&&el.parentElement.open));
- const getEntry=()=>sidebar.locator('.entry code').textContent();const entry=await getEntry();assert.match(entry,/127\.0\.0\.1:\d+/);
+ const getEntry=()=>sidebar.locator('.entry code').textContent();await wait(()=>getEntry().then(value=>/127\.0\.0\.1:\d+/.test(value)));const entry=await getEntry();assert.match(entry,/127\.0\.0\.1:\d+/);
  await sidebar.getByRole('button',{name:'复制',exact:true}).click();await wait(()=>clipboard===entry);assert.equal(clipboard,entry);await cycles();assert.equal(await sidebar.getByRole('button',{name:'已复制',exact:true}).count(),1);
  const echo=()=>new Promise((resolve,reject)=>{const socket=net.connect(Number(entry.split(':').at(-1)),'127.0.0.1',()=>socket.write('ui-real-relay'));socket.once('data',bytes=>{try{assert.equal(bytes.toString(),'ui-real-relay');socket.destroy();resolve();}catch(e){reject(e)}});socket.on('error',reject);socket.setTimeout(8000,()=>{socket.destroy();reject(new Error('UI tunnel timeout'))});});await echo();
  const networkFrame=await page.locator('iframe[title^="网络隧道 ·"]').elementHandle();
@@ -59,7 +60,34 @@ try{
  await call('save_settings',{pluginId:'sodeck.network-proxy',pageId:'defaults',input:{definitionToken:preference.definitionToken,baseRevision:preference.revision,requestId:'new-rule-defaults',values:{defaultType:'socks5',portMode:'fixed',fixedPort:2080}}});
  assert.deepEqual(fs.readFileSync(rulesFile),rulesBeforeSettings);assert.equal(await getEntry(),entry);await echo();
  for(const theme of ['dopamine','light','dark']){await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);await page.screenshot({path:`artifacts/network-ui/detail-${theme}.png`});}
- await sidebar.getByRole('button',{name:'编辑',exact:true}).click();await editor.locator('input[name=name]').fill('未保存的修改');await editor.getByRole('button',{name:'取消',exact:true}).click();await page.getByRole('button',{name:'取消',exact:true}).waitFor();await page.getByRole('button',{name:'取消',exact:true}).click();assert.equal(await editor.locator('input[name=name]').inputValue(),'未保存的修改');await editor.getByRole('button',{name:'取消',exact:true}).click();await page.getByRole('button',{name:'放弃并关闭',exact:true}).click();await page.locator('.plugin-view-dialog').waitFor({state:'detached'});await echo();
+ const firstId=await sidebar.locator('.rule').first().getAttribute('data-select');
+ const revealRule=async(id,requestId)=>{
+   const args={op:'submit',name:'network.rule.reveal.v1',expectedContext:connected.context,requestId,payload:{version:1,ruleId:id}};
+   await completedAction(call,{window:'main',context:connected.context,requestId},await call('component_ui',{window:'main',operation:'command',args}));
+   await wait(()=>sidebar.locator(`[data-select="${id}"] .rule-toggle`).getAttribute('aria-expanded').then(v=>v==='true'));
+ };
+ // Existing manager, cross-page reveal and one retained draft share the real service.
+ await sidebar.locator('#app').evaluate(async()=>{
+   const snapshot=await sodeck.request('event',{action:'snapshot'}),serverId=snapshot.catalog.rules[0].rule.serverId;
+   for(let i=0;i<20;i++){
+     const rule={id:'navigation-'+i,serverId,revision:0,name:'导航 '+i,type:'socks5',bind:{host:'127.0.0.1',port:0}};
+     const edit=await sodeck.request('event',{action:'edit.begin',rule});
+     await sodeck.request('event',{action:'draft',rule,draftRevision:edit.draftRevision});await sodeck.request('event',{action:'save'});
+   }
+ });
+ await revealRule(firstId,'first-rule');
+ await sidebar.locator(`[data-select="${firstId}"]`).getByRole('button',{name:'编辑',exact:true}).click();
+ await editor.locator('input[name=name]').fill('未保存的修改');await cycles();
+ const originalInput=editor.locator('input[name=name]');await originalInput.evaluate(el=>window.stableInput=el);await cycles();
+ assert(await originalInput.evaluate(el=>el===window.stableInput&&el===document.activeElement),'Editing input survives polling');
+ await page.evaluate(()=>{void manager.exit();});await page.locator('.component-close-dialog').getByRole('button',{name:'取消',exact:true}).click();await page.locator('.component-close-dialog').waitFor({state:'detached'});
+ assert.equal(await originalInput.inputValue(),'未保存的修改');await echo();
+ await revealRule('navigation-19','last-rule');assert.equal(await sidebar.locator('form').count(),0);assert.equal(await sidebar.locator('.detail').count(),1);
+ await sidebar.getByRole('button',{name:'继续编辑未完成的规则',exact:true}).click();await originalInput.waitFor();assert.equal(await originalInput.inputValue(),'未保存的修改');
+ await editor.getByRole('button',{name:'取消',exact:true}).click();await editor.getByRole('button',{name:'继续编辑',exact:true}).click();assert.equal(await originalInput.inputValue(),'未保存的修改');await editor.getByRole('button',{name:'取消',exact:true}).click();await editor.getByRole('button',{name:'放弃修改',exact:true}).click();await editor.locator('form').waitFor({state:'detached'});await echo();
+ await sidebar.locator('#app').evaluate(async()=>{
+   for(let i=0;i<20;i++)await sodeck.request('event',{action:'delete',id:'navigation-'+i,revision:1});
+ });await cycles();
  // A reload remounts the logical view, retaining the native listener and theme.
  await page.reload();await page.waitForFunction(()=>window.ready);await sidebar.locator('.entry code').waitFor();await instrument();assert.equal(await getEntry(),entry);await echo();
  const stop=sidebar.getByRole('button',{name:'停止',exact:true});await stop.evaluate(el=>window.stableStop=el);const box=await stop.boundingBox();await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await cycles();assert(await stop.evaluate(el=>el===window.stableStop));await page.mouse.up();await sidebar.getByRole('button',{name:'启动',exact:true}).waitFor();
@@ -68,9 +96,9 @@ try{
  await page.mouse.move(startBox.x+startBox.width/2,startBox.y+startBox.height/2);await page.mouse.down();await cycles();await page.mouse.move(startBox.x-40,startBox.y+startBox.height+40);await page.mouse.up();await cycles();
  assert.equal(actions.filter(a=>a.event?.action==='start').length,startsBefore,'Dragging out cancels the press');
  await sidebar.getByRole('button',{name:'删除规则',exact:true}).click();await sidebar.getByRole('button',{name:'确认删除',exact:true}).click();await sidebar.getByText('连接远端网络',{exact:true}).waitFor();
- await sidebar.getByRole('button',{name:'＋ 新建',exact:true}).click();await editor.locator('input[name=port]').waitFor();assert.equal(await editor.locator('input[name=port]').inputValue(),'2080');assert(!await editor.locator('input[name=auto]').isChecked());assert.equal(await editor.locator('input[name=host]').count(),0);
- await editor.locator('input[name=name]').fill('SOCKS 检查');await editor.locator('input[name=auto]').check();await editor.getByRole('button',{name:'保存',exact:true}).click();await page.locator('.plugin-view-dialog').waitFor({state:'detached'});
- await sidebar.getByRole('button',{name:'SOCKS 检查'}).click();await sidebar.getByRole('button',{name:'启动',exact:true}).click();await sidebar.getByRole('button',{name:'停止',exact:true}).waitFor();await sidebar.getByText('连通性检查',{exact:true}).click();await sidebar.getByRole('textbox',{name:'检查主机',exact:true}).fill('typed.example');await cycles();
+ await sidebar.getByRole('button',{name:'新建',exact:true}).click();await editor.locator('input[name=port]').waitFor();assert.equal(await editor.locator('input[name=port]').inputValue(),'2080');assert(!await editor.locator('input[name=auto]').isChecked());assert.equal(await editor.locator('input[name=host]').count(),0);
+ await editor.locator('input[name=name]').fill('SOCKS 检查');await editor.locator('input[name=auto]').check();await editor.getByRole('button',{name:'保存',exact:true}).click();await editor.locator('form').waitFor({state:'detached'});
+ await sidebar.getByRole('button',{name:'启动',exact:true}).click();await sidebar.getByRole('button',{name:'停止',exact:true}).waitFor();await sidebar.getByRole('textbox',{name:'检查主机',exact:true}).fill('typed.example');await cycles();
  assert.equal(await sidebar.getByRole('textbox',{name:'检查主机',exact:true}).inputValue(),'typed.example');assert(await sidebar.getByRole('textbox',{name:'检查主机',exact:true}).evaluate(el=>el===document.activeElement));
  // Render a structured failure through the shipped manager; remote rejection is covered separately.
  await sidebar.locator('#app').evaluate(async()=>{
@@ -90,5 +118,14 @@ try{
    assert(await sidebar.locator('.detail').evaluate(el=>el.scrollWidth<=el.clientWidth+2),'failure detail overflow');
    await sidebar.locator('.detail').screenshot({path:'artifacts/network-ui/failure-'+theme+'.png'});
  }
+ const iframe=page.locator('iframe[title^="网络隧道 ·"]');
+ for(const theme of ['light','dark','dopamine'])for(const width of [280,320,400,480]){
+   await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+   await iframe.evaluate((el,width)=>{el.style.cssText=`position:fixed;left:0;top:0;width:${width}px;height:720px;max-width:none;z-index:10000`;},width);
+   assert(await sidebar.locator('body').evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`${theme}/${width} horizontal fit`);
+   assert(await sidebar.locator('.rule-row').evaluate(el=>el.scrollWidth<=el.clientWidth+1),`${theme}/${width} icon row fits`);
+   await iframe.screenshot({path:`artifacts/network-ui/sidebar-${theme}-${width}.png`});
+ }
+ await iframe.evaluate(el=>el.removeAttribute('style'));
  assert.deepEqual(errors,[]);console.log('Network UI: real forwarding, unchanged listener/rules after preferences, new SOCKS/fixed-port defaults, form scroll, themes, dirty close, remount and delete passed.');
 }finally{await browser.close();await vite.close();child.stdin.end();await new Promise(r=>child.exitCode!==null?r():child.once('exit',r));await new Promise(r=>service.close(r));if(!path.basename(data).startsWith('sodeck-network-ui-'))throw new Error('Unexpected cleanup path');fs.rmSync(data,{recursive:true,force:true});}

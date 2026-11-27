@@ -152,7 +152,7 @@ export function selectChecks(files, { suite, fallback } = {}) {
       if(file==='scripts/workbench-transfer-fixture.mjs'){ui();plan.communication=true;['terminal','files','system-status'].forEach(name=>integration.add(name));continue;}
       if (file === 'scripts/test-close-native.mjs' || file === 'scripts/native-pointer.ps1') { core(); ui(); plan.ssh = true; continue; }
       if (/^scripts\/test-network-netem\.mjs$/.test(file)) { plan.scripts = true; integration.add('network-proxy'); continue; }
-      if (/^scripts\/(network-tools|test-network-(ui|process|commands))\.mjs$/.test(file)) { plan.scripts = true; integration.add('network-proxy'); continue; }
+      if (/^scripts\/(network-tools|network-presentation\.test|test-network-(ui|process|commands))\.mjs$/.test(file)) { plan.scripts = true; integration.add('network-proxy'); continue; }
       if (/^scripts\/test-system-status-(ui|package)\.mjs$/.test(file)) { plan.scripts = true; integration.add('system-status'); continue; }
       if (/^scripts\/docker-(presentation|logs|tree-layout)\.test\.mjs$/.test(file)) { plan.scripts = true; integration.add('docker'); continue; }
       if (/^scripts\/(docker-process|docker-logs-fixture|test-docker(?:-(ui|process|logs-process|package|ports-ui|tree-ui|native))?)\.mjs$/.test(file)) { plan.scripts = true; integration.add('docker'); continue; }

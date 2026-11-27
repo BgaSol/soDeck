@@ -1,97 +1,120 @@
 (() => {
   SoDeckMotion.observeMotion(document);
-  let readOnly=false;
-  const root=document.querySelector('#app'),error=document.querySelector('#error');
-  const e=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  let context,kind,catalog={rules:[]},draft,selected,offset=0,visible=true,pending=false,timer,dirty=false,sync=Promise.resolve(),deleteConfirm,checkTarget={host:'',port:443};
-  const stateNames={unknown:'状态待确认',starting:'正在启动',running:'本机入口已监听',stopping:'正在停止',closed:'已停止',failed:'运行失败'};
-  let settingsSnapshot,defaults={defaultType:'tcpForward',portMode:'auto',fixedPort:1080};
+  const root=document.querySelector('#app'),error=document.querySelector('#error'),P=NetworkPresentation;
+  let region=new SoDeckDOM.DomRegion(root),epoch=0,mounted=false,visible=false,readOnly=true,timer,polling=false,writes=0,requestOrder=0,acceptedOrder=0;
+  let context,defaults={defaultType:'tcpForward',portMode:'auto',fixedPort:1080},settingsSnapshot;
+  let draftRevision='0',navigationRevision='0',sync=Promise.resolve(),inputRevision=0,syncedInput=0,composing=false;
+  const ui={catalog:{rules:[]},draft:null,selected:null,busy:new Set(),targets:new Map(),copied:new Map(),feedback:new Map(),saving:false,saveUncertain:false,cancelConfirm:false,deleteConfirm:null};
+  const fail=err=>{error.textContent=String(err?.message||err);error.hidden=false;};error.onclick=()=>error.hidden=true;
+  const valid=version=>mounted&&version===epoch;
   function settings(snapshot){if(!snapshot)return;if(settingsSnapshot?.definitionToken===snapshot.definitionToken&&BigInt(settingsSnapshot.revision)>BigInt(snapshot.revision))return;settingsSnapshot=snapshot;defaults={...defaults,...snapshot.values};void sodeck.request('settings',{op:'applied',pageId:snapshot.pageId,definitionToken:snapshot.definitionToken,revision:snapshot.revision}).catch(()=>{});}
-  const event=data=>sodeck.request('event',data);
-  const fail=err=>{error.textContent=String(err);error.hidden=false;};error.onclick=()=>error.hidden=true;
-  addEventListener('sodeck:textMenuError',ev=>fail(ev.detail));
+  function tokens(values){for(const [name,value]of Object.entries(values||{})){if(name==='color-scheme')document.documentElement.style.colorScheme=value;else document.documentElement.style.setProperty('--'+name,value);}}
+  function accept(data,order,{editor=false}={}){
+    if(order<acceptedOrder)return;acceptedOrder=order;
+    if(data.catalog){
+      for(const row of data.catalog.rules){const old=ui.catalog.rules.find(r=>r.rule.id===row.rule.id);if(!P.ready(row)||old?.run?.snapshot?.listenerId!==row.run?.snapshot?.listenerId){ui.copied.delete(row.rule.id);ui.feedback.delete(row.rule.id);}}
+      ui.catalog=data.catalog;
+    }
+    if(data.navigationRevision!==undefined&&BigInt(data.navigationRevision)>=BigInt(navigationRevision)){
+      ui.selected=data.navigation?.selected??null;navigationRevision=data.navigationRevision;
+    }
+    if(data.draftRevision!==undefined)draftRevision=data.draftRevision;
+    if(ui.saveUncertain&&data.writePending===false){editor=true;ui.saveUncertain=ui.saving=false;inputRevision=syncedInput=0;sync=sync.catch(()=>{});error.hidden=true;}
+    if(editor||inputRevision===syncedInput){if(Object.hasOwn(data,'draft'))ui.draft=data.draft;}
+  }
+  async function request(data,options){const version=epoch,order=++requestOrder;try{const result=await sodeck.request('event',data);if(!valid(version))return null;accept(result,order,options);return result;}catch(err){if(valid(version))throw err;return null;}}
+  function paint(){
+    if(!mounted||composing)return;
+    const active=document.activeElement,focused=root.contains(active),oldId=active.closest?.('[data-select]')?.dataset.select;
+    const entity=active.closest?.('[data-select]'),neighbor=entity?.nextElementSibling?.dataset.select,previous=entity?.previousElementSibling?.dataset.select;
+    region.update(root,P.manager(ui));
+    if(focused&&(!active.isConnected||active.disabled)){
+      ([oldId,neighbor,previous].filter(Boolean).map(id=>root.querySelector(`[data-action="expand"][data-id="${CSS.escape(id)}"]`)).find(Boolean)||root.querySelector('[data-action="create"]'))?.focus({preventScroll:true});
+    }
+  }
+  async function refresh(){if(!mounted||!visible||readOnly||polling||writes||composing)return;polling=true;const version=epoch;try{const previous=navigationRevision;const data=await request({action:'snapshot'});if(data){paint();if(previous!==navigationRevision)reveal(ui.selected);}}catch(err){if(valid(version))fail(err);}finally{if(valid(version))polling=false;}}
+  async function mutation(data,options){const version=epoch;writes++;try{return await request(data,options);}finally{if(valid(version))writes--;}}
+  function enqueue(job){const version=epoch;const task=sync.catch(()=>{}).then(()=>valid(version)?job():null);sync=task;return task;}
+  function collect(){const form=root.querySelector('form');if(!form||!ui.draft||ui.saving)return;const values=new FormData(form);ui.draft={...ui.draft,name:String(values.get('name')||''),bind:{host:String(values.get('bindHost')||'127.0.0.1'),port:values.has('auto')?0:Number(values.get('port')||1080)}};if(ui.draft.type==='tcpForward')ui.draft.target={host:String(values.get('host')||''),port:Number(values.get('targetPort')||0)};}
+  function syncDraft(){
+    if(ui.saving)return sync;
+    collect();if(!ui.draft)return sync;
+    const rule=structuredClone(ui.draft),revision=++inputRevision;
+    return enqueue(async()=>{const result=await mutation({action:'draft',rule,draftRevision});if(result&&revision===inputRevision)syncedInput=revision;return result;});
+  }
+  function reveal(id){if(!id)return;root.querySelector(`[data-select="${CSS.escape(id)}"]`)?.scrollIntoView({block:'nearest'});}
+  async function navigate(selected,offset=ui.catalog.offset||0){await enqueue(()=>mutation({action:'navigation',state:{selected,offset},navigationRevision}));paint();}
+  async function begin(rule){
+    const version=epoch;await sync;if(!valid(version))return;
+    if(ui.draft&&inputRevision!==syncedInput){fail('草稿尚未同步，请重试');return;}
+    if(ui.draft){const snapshot=await request({action:'snapshot'});if(!snapshot)return;if(snapshot.dirty){await resumeEdit();fail('请先保存或放弃当前草稿');return;}}
+    const result=await enqueue(()=>mutation({action:'edit.begin',rule},{editor:true}));if(!result)return;
+    inputRevision=syncedInput=0;ui.cancelConfirm=false;
+    await navigate(rule.revision>0?rule.id:null);
+    paint();root.querySelector('form input')?.focus({preventScroll:true});
+  }
+  async function resumeEdit(){if(!ui.draft)return;const id=ui.draft.id;if(ui.draft.revision>0){await enqueue(()=>mutation({action:'edit.reveal'}));paint();reveal(id);}else{paint();root.querySelector('form')?.scrollIntoView({block:'nearest'});}}
+  async function settledComposition(){if(!composing)return;await new Promise((resolve,reject)=>{const version=epoch;const finish=()=>{clearTimeout(timeout);root.removeEventListener('compositionend',done);};const done=()=>{finish();setTimeout(()=>valid(version)?resolve():reject(new Error('页面已卸载')),0);};const timeout=setTimeout(()=>{finish();reject(new Error('输入法组合尚未结束，请完成输入后重试'));},8000);root.addEventListener('compositionend',done);});}
+  async function save(){
+    await settledComposition();const form=root.querySelector('form');if(!form?.reportValidity())return;
+    const version=epoch;await syncDraft();if(!valid(version))return;
+    ui.saving=true;paint();error.hidden=true;
+    try{const data=await enqueue(()=>mutation({action:'save'},{editor:true}));if(data){inputRevision=syncedInput=0;ui.cancelConfirm=false;}}
+    catch(err){if(valid(version)){ui.saveUncertain=true;await request({action:'snapshot'}).catch(()=>{});throw ui.saveUncertain?new Error('保存结果待确认，正在查询原提交，请稍候。'):err;}}
+    finally{if(valid(version)){ui.saving=ui.saveUncertain;paint();}}
+  }
+  root.addEventListener('compositionstart',()=>composing=true);
+  root.addEventListener('compositionend',()=>{composing=false;void syncDraft().then(paint).catch(fail);});
+  root.addEventListener('input',ev=>{
+    if(ui.saving||readOnly)return;
+    if(ev.target.closest('form')){ui.cancelConfirm=false;if(!composing)void syncDraft().catch(fail);return;}
+    if(ev.target.dataset.check){const id=ev.target.dataset.id,target=ui.targets.get(id)||{host:'',port:443};target[ev.target.dataset.check]=ev.target.value;ui.targets.set(id,target);}
+  });
+  root.addEventListener('change',ev=>{if(ev.target.name==='auto'){void syncDraft().then(paint).catch(fail);}});
+  root.addEventListener('submit',ev=>{ev.preventDefault();if(!readOnly&&!ui.saving)void save().catch(fail);});
+  root.addEventListener('click',ev=>{const version=epoch;void(async()=>{
+    if(readOnly||ui.saving)return;
+    const type=ev.target.closest('[data-type]')?.dataset.type;
+    if(type&&ui.draft){collect();ui.draft.type=type;if(type==='socks5')delete ui.draft.target;else ui.draft.target={host:'',port:0};await syncDraft();paint();return;}
+    const button=ev.target.closest('[data-action]');if(!button||button.disabled)return;
+    const action=button.dataset.action,id=button.dataset.id,row=ui.catalog.rules.find(r=>r.rule.id===id);
+    if(id&&!row)return;
+    if(action!=='delete')ui.deleteConfirm=null;
+    if(action==='expand'){await navigate(ui.selected===id?null:id);return;}
+    if(action==='previous'||action==='next'){await navigate(null,Math.max(0,(ui.catalog.offset||0)+(action==='next'?20:-20)));return;}
+    if(action==='resume-edit'){await resumeEdit();return;}
+    if(action==='create'){
+      const snapshot=await sodeck.request('settings',{op:'get'}).catch(()=>null);if(!valid(version))return;settings(snapshot);
+      await begin({id:crypto.randomUUID(),serverId:context.serverId,revision:0,name:'',type:defaults.defaultType,bind:{host:'127.0.0.1',port:defaults.portMode==='fixed'?defaults.fixedPort:0},...(defaults.defaultType==='tcpForward'?{target:{host:'',port:0}}:{})});return;
+    }
+    if(action==='edit'){await begin(row.rule);return;}
+    if(action==='keep-edit'){ui.cancelConfirm=false;paint();return;}
+    if(action==='cancel'){
+      await sync.catch(()=>{});if(!valid(version))return;const snapshot=await request({action:'snapshot'});if(!snapshot)return;
+      if((snapshot.dirty||inputRevision!==syncedInput)&&!ui.cancelConfirm){ui.cancelConfirm=true;paint();return;}
+      const result=await enqueue(()=>mutation({action:'edit.cancel',draftRevision},{editor:true}));if(!result)return;inputRevision=syncedInput=0;ui.cancelConfirm=false;paint();return;
+    }
+    if(action==='copy'){if(P.ready(row)){await sodeckClipboard.writeText(P.address(row.run.snapshot.address));if(valid(version)){ui.copied.set(id,Date.now()+2500);ui.feedback.set(id,'已复制本机入口');paint();}}return;}
+    if(action==='delete'&&ui.deleteConfirm!==id){ui.deleteConfirm=id;paint();return;}
+    if(ui.busy.has(id))return;
+    const target=ui.targets.get(id)||{host:'',port:443};
+    if(action==='check'&&row.rule.type==='socks5'&&(!target.host.trim()||!Number.isInteger(Number(target.port))||Number(target.port)<1||Number(target.port)>65535))throw new Error('请输入检查主机和 1–65535 的端口');
+    ui.busy.add(id);paint();
+    try{await mutation({action,id,revision:row.rule.revision,target:{host:target.host,port:Number(target.port)}});}
+    finally{if(valid(version)){ui.busy.delete(id);ui.deleteConfirm=null;paint();}}
+  })().catch(err=>{if(valid(version))fail(err);});});
+  addEventListener('sodeck:mount',ev=>{
+    epoch++;mounted=true;writes=0;polling=false;sync=Promise.resolve();requestOrder=acceptedOrder=0;inputRevision=syncedInput=0;composing=false;
+    region.dispose();region=new SoDeckDOM.DomRegion(root);const m=ev.detail;context=m.context;visible=m.visible;readOnly=Boolean(m.readOnly);navigationRevision=draftRevision='0';
+    ui.targets.clear();ui.copied.clear();ui.feedback.clear();ui.busy.clear();ui.saveUncertain=ui.saving=Boolean(m.data.writePending);ui.cancelConfirm=false;ui.deleteConfirm=null;
+    accept(m.data,0,{editor:true});tokens(m.tokens);settings(m.settings);paint();clearInterval(timer);timer=setInterval(refresh,800);sodeck.prepared(true);
+  });
+  addEventListener('sodeck:surfaceReady',()=>{readOnly=false;void refresh();});
+  addEventListener('sodeck:transferCancelled',()=>{readOnly=false;void refresh();});
   addEventListener('sodeck:settingsChanged',ev=>settings(ev.detail.settings));
-  const bytes=v=>{v=Number(v||0);return v<1024?`${v.toFixed(0)} B`:v<1048576?`${(v/1024).toFixed(1)} KiB`:`${(v/1048576).toFixed(1)} MiB`;};
-  const address=a=>a?`${a.host.includes(':')?'['+a.host+']':a.host}:${a.port}`:'';
-  const state=row=>row.run?.queryError?'unknown':row.run?.stopRequested&&row.run?.snapshot?.cleanupComplete!==true?'stopping':row.run?.snapshot?.state||'closed';
-  const ready=row=>state(row)==='running';
-  const canStart=row=>!row.run||row.run.canStart===true;
-  const applyTokens=t=>{for(const [name,value]of Object.entries(t||{})){if(name==='color-scheme')document.documentElement.style.colorScheme=value;else document.documentElement.style.setProperty('--'+name,value);}};
-  const update=data=>{if(data?.catalog){catalog=data.catalog;offset=catalog.offset||0;}if(data?.draft)draft=data.draft;};
-  const saveNavigation=()=>event({action:'navigation',state:{selected,offset}});
-  const {updateDOM,DomRegion}=SoDeckDOM;
-  let pageKey,copiedUntil=0,epoch=0,mounted=false;
-  let region=new DomRegion(root);
-  function paint(html,key){
-    const active=document.activeElement,focused=root.contains(active),neighbor=active.closest?.('[data-select]')?.nextElementSibling?.dataset.select;
-    if(pageKey!==key){const back=pageKey!==undefined&&key===undefined;root.innerHTML=html;pageKey=key;root.dataset.domScope=key;SoDeckMotion.enterMotion(root,back?'back':'x');}
-    else region.update(root,html);
-    if(focused&&(!active.isConnected||active.matches(':disabled')))(root.querySelector(neighbor?`[data-select="${CSS.escape(neighbor)}"]`:'[data-action="create"]')||root.querySelector('button:not(:disabled)'))?.focus({preventScroll:true});
-  }
-  async function refresh(){if(!mounted||readOnly)return;if(kind!=='manager'||pending||!visible)return;pending=true;const version=epoch;try{const data=await event({action:'snapshot'});if(!mounted||version!==epoch)return;update(data);renderManager();}catch(err){if(mounted&&version===epoch)fail(err);}finally{if(version===epoch)pending=false;}}
-  function renderManager(){
-    const row=catalog.rules.find(r=>r.rule.id===selected);
-    if(row){renderDetail(row);return;}
-    paint(`<div class="toolbar"><span>名称 / 本机入口</span><button class="sd-primary" data-action="create">＋ 新建</button></div><div class="scroll">${catalog.storageError?`<p class="detail notice">${e(catalog.storageError)}</p>`:''}${catalog.rules.length?catalog.rules.map(row=>`<div data-motion="reveal" class="row" tabindex="0" role="button" data-select="${e(row.rule.id)}"><div class="row-title"><span class="dot ${e(state(row))}"></span><strong>${e(row.name)}</strong><button data-action="${canStart(row)?'start':'stop'}" data-id="${e(row.rule.id)}" data-dom-key="run:${e(row.rule.id)}" ${state(row)==='stopping'?'disabled':''}>${canStart(row)?'启动':'停止'}</button></div><small>${row.rule.type==='socks5'?'SOCKS5 本机入口':'TCP 转发'} · ${e(stateNames[state(row)]||state(row))}</small><code>${e(ready(row)?address(row.run.snapshot.address):row.rule.bind.port?address(row.rule.bind):'自动分配端口')}</code></div>`).join(''):`<div class="empty"><div class="glyph">⇄</div><h2>连接远端网络</h2><p class="muted">创建端口转发或 SOCKS5 代理<br>复用这台服务器的连接路径</p></div>`}</div><footer class="foot"><span>${catalog.total||0} 条</span><div><button data-action="previous" aria-label="上一页规则" ${offset===0?'disabled':''}>‹</button><button data-action="next" aria-label="下一页规则" ${offset+20>=(catalog.total||0)?'disabled':''}>›</button></div></footer>`,'list');
-  }
-  const time=value=>value?new Date(value).toLocaleString():'尚无';
-  function failureMarkup(failure,key){
-    if(!failure)return '';
-    return `<div class="failure"><p class="notice">${e(failure.message)}</p>${failure.hint?`<p>${e(failure.hint)}</p>`:''}${failure.diagnostic?`<details data-section="diagnostic-${key}"><summary>诊断详情</summary><pre>${e(failure.diagnostic)}</pre></details>`:''}</div>`;
-  }
-  function renderDetail(row){
-    const r=row.rule,s=row.run?.snapshot||{},entry=s.address?address(s.address):'',check=catalog.checks?.[r.id],currentCheck=ready(row)&&check?.listenerId===s.listenerId?check:null;
-    const runningRule=row.run?.rule||r,last=row.run?.lastError;
-    const checkState=!currentCheck?'未检查':currentCheck.checking?'正在检查…':currentCheck.ok?'TCP 可达':'目标检查失败';
-    paint(`<div class="toolbar"><button class="flat" data-action="back">‹ 返回列表</button><span>${r.type==='socks5'?'SOCKS5 本机入口':'TCP 转发'}</span></div><div class="scroll"><article class="detail">
-      <h2>${e(row.name)}</h2><p><span class="dot ${e(state(row))}" style="display:inline-block"></span> ${e(stateNames[state(row)]||state(row))}</p>
-      <div class="actions"><button data-action="edit" data-id="${e(r.id)}">编辑</button><button class="sd-primary" data-action="${canStart(row)?'start':'stop'}" data-id="${e(r.id)}" data-dom-key="run:${e(r.id)}" ${state(row)==='stopping'?'disabled':''}>${canStart(row)?'启动':'停止'}</button></div>
-      ${row.run&&row.run.ruleRevision!==r.revision&&ready(row)?'<p class="muted">配置已保存。停止并确认完成后，再启动以应用。</p>':''}
-      <div class="entry"><header><small>本机入口</small><button class="flat" data-action="copy" ${entry?'':'disabled'}>${Date.now()<copiedUntil?'已复制':'复制'}</button></header><code>${e(entry||'尚未监听')}</code><p class="muted">${runningRule.type==='socks5'?'客户端按请求指定访问目标':`运行目标：远端 ${e(address(runningRule.target))}`}</p></div>
-      <div class="stats"><span>活动连接</span><strong>${s.connections||0}</strong><span>上传 / 下载</span><span>${bytes(s.sent)} / ${bytes(s.received)}</span><span>当前速率 ↑ / ↓</span><span>${row.run?.queryError?'待确认（非实时）':bytes(s.sentPerSecond)+'/s / '+bytes(s.receivedPerSecond)+'/s'}</span></div>
-      <section class="check-result" aria-live="polite"><p><strong>${checkState}</strong>${currentCheck?.observedAt?`<small> · ${e(time(currentCheck.observedAt))}</small>`:''}</p>
-        ${currentCheck?.target?`<p class="muted">检查目标：${e(address(currentCheck.target))}</p>`:''}
-        ${failureMarkup(currentCheck?.failure,'check')}${currentCheck?.ok?'<p class="muted">本次检查仅证明 TCP 可达，不代表应用健康。</p>':''}
-      </section>
-      ${last?`<section class="client-failure"><p><strong>最近一次客户端失败</strong><small> · ${e(time(last.observedAt))}</small></p>${last.target?`<p class="muted">目标：${e(address(last.target))}</p>`:''}${failureMarkup(last.failure,'client')}</section>`:''}
-      ${row.run?.queryError?`<p class="notice">${e(row.run.queryError)} · 最后观测 ${e(row.run.observedAt?new Date(row.run.observedAt*1000).toLocaleString():'尚无')}</p>`:''}
-      ${failureMarkup(s.failure,'listener')}
-      <details data-section="path"><summary>连接路径</summary><p class="muted">${e(s.path?.nodes?.map(n=>`${n.kind==='ssh'?'SSH':'SOCKS5'} ${n.host}:${n.port}`).join(' → ')||'通过当前服务器连接')} · ${s.path?.nodes?.length||1} 站</p><p>本机 → 已配置的 SSH / SOCKS5 跳板 → 当前服务器 → 目标服务</p></details>
-      <details data-section="check"><summary>连通性检查</summary><p class="muted">从实际本机入口检查目标 TCP 连接。</p>${r.type==='socks5'?`<div class="check-fields"><input id="check-host" placeholder="目标域名或 IP" aria-label="检查主机" value="${e(checkTarget.host)}"><input id="check-port" type="number" min="1" max="65535" aria-label="检查端口" value="${e(checkTarget.port)}"></div>`:''}<button data-action="check" data-id="${e(r.id)}" ${!ready(row)||currentCheck?.checking?'disabled':''}>${currentCheck?.checking?'正在检查…':'检查连接'}</button></details>
-      ${r.type==='socks5'?`<details data-section="usage"><summary>如何使用</summary><p>在支持代理的客户端中选择 SOCKS5，并启用代理端解析域名。</p><code>curl --proxy socks5h://${e(entry||'127.0.0.1:端口')} https://内网域名/</code><p class="muted">支持 TCP CONNECT；不包含 HTTP 代理和 UDP。</p></details>`:''}
-      <div class="actions"><button class="danger" data-action="delete" data-id="${e(r.id)}" ${canStart(row)?'':'disabled'}>${deleteConfirm===r.id?'确认删除':'删除规则'}</button></div>
-    </article></div><footer class="foot">本次运行流量 · 有效载荷</footer>`,r.id);
-  }
-  function renderForm(){
-    const fixed=draft.type==='tcpForward',existing=draft.revision>0;
-    updateDOM(root,`<form class="form"><div class="fields"><div class="type-choice"><button type="button" data-type="tcpForward" aria-pressed="${fixed}" ${existing?'disabled':''}>⇄ 端口转发</button><button type="button" data-type="socks5" aria-pressed="${!fixed}" ${existing?'disabled':''}>◎ SOCKS5 代理</button></div><label class="field"><span>名称 <small style="display:inline">可选</small></span><input name="name" maxlength="128" placeholder="${fixed?'例如：生产数据库':'例如：内网访问'}" value="${e(draft.name)}"></label><label class="field"><span>本地端口</span><div class="inline"><input name="port" type="number" min="1" max="65535" ${draft.bind.port===0?'disabled':''} value="${draft.bind.port||''}" placeholder="自动分配"><label><input name="auto" type="checkbox" ${draft.bind.port===0?'checked':''}> 自动</label></div><small>启动后显示实际端口；固定端口被占用时明确报错。</small></label>${fixed?`<label class="field"><span>目标主机</span><input name="host" required maxlength="253" placeholder="127.0.0.1 或内网域名" value="${e(draft.target?.host)}"><small>从当前远端服务器访问；127.0.0.1 指远端自身。</small></label><label class="field"><span>目标端口</span><input name="targetPort" required type="number" min="1" max="65535" value="${draft.target?.port||''}" placeholder="例如 3306"></label>`:'<p class="muted">其他软件通过本机 SOCKS5 入口，访问当前服务器能够到达的目标。域名交给远端解析。</p>'}<details><summary>更多设置</summary><label class="field" style="margin-top:12px"><span>本地绑定 IP</span><input name="bindHost" required value="${e(draft.bind.host)}"><small>默认 127.0.0.1；填写其他本机地址可供对应网络访问。</small></label></details><p class="muted">使用当前服务器的连接与跳板配置，重启应用后规则保持停止。</p></div><footer class="form-footer"><button type="button" data-action="cancel">取消</button><button class="sd-primary" type="submit">保存</button></footer></form>`);
-  }
-  function collect(){if(kind!=='rule-editor')return;const form=root.querySelector('form');if(!form)return;const values=new FormData(form);draft.name=String(values.get('name')||'');draft.bind={host:String(values.get('bindHost')||'127.0.0.1'),port:values.has('auto')?0:Number(values.get('port')||1080)};if(draft.type==='tcpForward')draft.target={host:String(values.get('host')||''),port:Number(values.get('targetPort')||0)};}
-  function syncDraft(){collect();const value=structuredClone(draft);sync=sync.catch(()=>{}).then(()=>event({action:'draft',rule:value}));return sync;}
-  async function submit(){const form=root.querySelector('form');if(!form.reportValidity())return;error.hidden=true;await syncDraft();const data=await event({action:'save'});update(data);dirty=false;void sodeck.request('closeView',{}).catch(fail);}
-  root.addEventListener('input',ev=>{if(kind==='rule-editor'){dirty=true;void syncDraft().catch(fail);}else if(ev.target.id==='check-host')checkTarget.host=ev.target.value;else if(ev.target.id==='check-port')checkTarget.port=Number(ev.target.value);});
-  root.addEventListener('change',ev=>{if(ev.target.name==='auto'){collect();dirty=true;renderForm();void syncDraft().catch(fail);}});
-  root.addEventListener('submit',ev=>{ev.preventDefault();void submit().catch(fail);});
-  root.addEventListener('keydown',ev=>{if(ev.isComposing)return;if((ev.key==='Enter'||ev.key===' ')&&ev.target.dataset.select){ev.preventDefault();copiedUntil=0;selected=ev.target.dataset.select;void saveNavigation().then(refresh).catch(fail);}});
-  root.addEventListener('click',ev=>{void(async()=>{
-    const type=ev.target.closest('[data-type]')?.dataset.type;if(type){collect();draft.type=type;if(type==='socks5')delete draft.target;else draft.target={host:'',port:0};dirty=true;renderForm();await syncDraft();return;}
-    const button=ev.target.closest('[data-action]'),rowNode=ev.target.closest('[data-select]');
-    if(!button&&rowNode){copiedUntil=0;selected=rowNode.dataset.select;await saveNavigation();renderManager();return;}
-    if(!button||button.disabled)return;const action=button.dataset.action,id=button.dataset.id,row=catalog.rules.find(r=>r.rule.id===id);if(id&&!row)return;
-    if(action==='cancel'){await sync;if(dirty)await syncDraft();void sodeck.request('closeView',{}).catch(fail);return;}
-    if(action==='save'){await submit();return;}
-    if(action==='back'){selected=null;deleteConfirm=null;await saveNavigation();renderManager();return;}
-    if(action==='previous'||action==='next'){offset=Math.max(0,offset+(action==='next'?20:-20));selected=null;await saveNavigation();await refresh();return;}
-    if(action==='create'||action==='edit'){if(action==='create')settings(await sodeck.request('settings',{op:'get'}).catch(()=>null));const rule=action==='edit'?row.rule:{id:crypto.randomUUID(),serverId:context.serverId,revision:0,name:'',type:defaults.defaultType,bind:{host:'127.0.0.1',port:defaults.portMode==='fixed'?defaults.fixedPort:0},...(defaults.defaultType==='tcpForward'?{target:{host:'',port:0}}:{})};await sodeck.request('openView',{viewType:'rule-editor',params:{rule}});return;}
-    if(action==='copy'){const r=catalog.rules.find(r=>r.rule.id===selected);if(r&&ready(r)){await sodeckClipboard.writeText(address(r.run.snapshot.address));copiedUntil=Date.now()+2500;renderManager();}return;}
-    if(action==='delete'&&deleteConfirm!==id){deleteConfirm=id;renderManager();return;}
-    update(await event({action,id,revision:row?.rule.revision,target:checkTarget}));await refresh();
-  })().catch(fail);});
-  addEventListener('sodeck:mount',ev=>{epoch++;mounted=true;pending=false;pageKey=undefined;region.dispose();region=new DomRegion(root);const m=ev.detail;context=m.context;kind=m.data.kind;update(m.data);applyTokens(m.tokens);visible=m.visible;readOnly=Boolean(m.readOnly);settings(m.settings);dirty=m.data.dirty;selected=m.data.navigation?.selected;offset=m.data.navigation?.offset||0;if(kind==='rule-editor')renderForm();else{renderManager();clearInterval(timer);timer=setInterval(refresh,800);}sodeck.prepared(true);});
-  addEventListener('sodeck:surfaceReady',()=>{readOnly=false;void event({action:'resumeInput'}).catch(fail);});
-  addEventListener('sodeck:transferCancelled',()=>{readOnly=false;void event({action:'resumeInput'}).then(update).catch(fail);});
-  addEventListener('sodeck:themeChanged',ev=>applyTokens(ev.detail.tokens));
+  addEventListener('sodeck:textMenuError',ev=>fail(ev.detail));
+  addEventListener('sodeck:themeChanged',ev=>tokens(ev.detail.tokens));
   addEventListener('sodeck:visibilityChanged',ev=>{visible=ev.detail.visible;if(visible)void refresh();});
-  addEventListener('sodeck:flush',ev=>{const m=ev.detail;Promise.resolve(kind==='rule-editor'&&dirty?syncDraft():sync).then(()=>sodeck.flushed(m.id)).catch(err=>sodeck.flushed(m.id,String(err)));});
-  addEventListener('sodeck:unmount',()=>{mounted=false;epoch++;pending=false;clearInterval(timer);region.dispose();});
+  addEventListener('sodeck:flush',ev=>{const m=ev.detail,version=epoch;void(async()=>{await settledComposition();if(ui.saveUncertain){await request({action:'snapshot'});if(ui.saveUncertain)throw new Error('保存结果待确认，请稍候');}if(ui.draft)await syncDraft();await sync;if(valid(version))sodeck.flushed(m.id);})().catch(err=>{if(valid(version))sodeck.flushed(m.id,String(err));});});
+  addEventListener('sodeck:unmount',()=>{mounted=false;epoch++;clearInterval(timer);region.dispose();});
 })();

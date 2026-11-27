@@ -60,17 +60,13 @@ pub(super) async fn start(
         if kind == "tcpForward" {
             rule["target"] = json!({"host":"127.0.0.1","port":port})
         }
-        let dialog=core.ui_action("main",context,json!({"op":"open","key":"sodeck.network-proxy:rule-editor","requestId":id,"params":{"rule":rule}}))?["viewId"].as_str().ok_or("没有网络弹窗")?.to_owned();
-        core.workspace_changed();
-        let (win, form) = surface(core, &dialog).await?;
-        core.ui_event(&win, &form, json!({"action":"draft","rule":rule}))?;
-        core.ui_event(&win, &form, json!({"action":"save"}))?;
-        let plan = core.ui_close_prepare(&win, vec![context.workspace_id.clone()], Some(dialog))?;
-        core.ui_close_finish(
-            plan["token"].as_str().ok_or("没有关闭 token")?,
-            serde_json::from_value(plan["views"].clone()).map_err(|e| e.to_string())?,
-            "discard",
+        let edit = core.ui_event(&window, &token, json!({"action":"edit.begin","rule":rule}))?;
+        core.ui_event(
+            &window,
+            &token,
+            json!({"action":"draft","rule":rule,"draftRevision":edit["draftRevision"]}),
         )?;
+        core.ui_event(&window, &token, json!({"action":"save"}))?;
         core.workspace_changed();
         core.ui_event(&window, &token, json!({"action":"start","id":id}))?;
         let addr = tokio::time::timeout(Duration::from_secs(10), async {

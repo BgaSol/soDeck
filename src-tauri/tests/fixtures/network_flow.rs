@@ -21,33 +21,13 @@ fn network_surface(f: &Fixture, context: &sodeck::workspaces::Context) -> (Strin
     f.core.ui_surface_ready("main", &token).unwrap();
     (view, token)
 }
-fn network_save(f: &Fixture, context: &sodeck::workspaces::Context, rule: Value) {
-    let opened=f.core.ui_action("main",context,json!({"op":"open","key":"sodeck.network-proxy:rule-editor","requestId":format!("editor-{}-{}",rule["id"],rule["revision"]),"params":{"rule":rule}})).unwrap();
-    let view = opened["viewId"].as_str().unwrap();
-    let mount = f.core.ui_attach("main", view).unwrap();
-    let token = mount["surfaceId"].as_str().unwrap();
-    f.core.ui_surface_ready("main", token).unwrap();
+fn network_save(f: &Fixture, _context: &sodeck::workspaces::Context, token: &str, rule: Value) {
+    let edit = f.core.ui_event("main", token, json!({"action":"edit.begin","rule":rule})).unwrap();
     f.core
-        .ui_event("main", token, json!({"action":"draft","rule":rule}))
+        .ui_event("main", token, json!({"action":"draft","rule":rule,"draftRevision":edit["draftRevision"]}))
         .unwrap();
     f.core
         .ui_event("main", token, json!({"action":"save"}))
-        .unwrap();
-    let plan = f
-        .core
-        .ui_close_prepare(
-            "main",
-            vec![context.workspace_id.clone()],
-            Some(view.into()),
-        )
-        .unwrap();
-    assert!(plan["dirty"].as_array().unwrap().is_empty());
-    f.core
-        .ui_close_finish(
-            plan["token"].as_str().unwrap(),
-            serde_json::from_value(plan["views"].clone()).unwrap(),
-            "discard",
-        )
         .unwrap();
 }
 fn network_row(f: &Fixture, window: &str, token: &str, id: &str) -> Value {
@@ -186,7 +166,7 @@ async fn network_limits(f: &Fixture, server: &SshServer, context: &sodeck::works
     let (echo, task) = network_echo_server().await;
     let host = "limits.only.remote.invalid";
     server.state.routes.lock().unwrap().insert(host.into(), echo);
-    network_save(f, context, json!({"id":"limits","serverId":context.server_id,"revision":0,
+    network_save(f, context, &token, json!({"id":"limits","serverId":context.server_id,"revision":0,
         "name":"limits","type":"socks5","bind":{"host":"127.0.0.1","port":0}}));
     let address = network_address(f, "main", token, "limits").await;
     let connections = || network_row(f, "main", token, "limits")["run"]["snapshot"]["connections"].as_u64().unwrap();
@@ -280,7 +260,7 @@ async fn network_business(
         if kind == "tcpForward" {
             r["target"] = json!({"host":host,"port":port})
         }
-        network_save(f, context, r);
+        network_save(f, context, &token, r);
     }
     let fixed = network_address(f, "main", &token, "forward").await;
     let socks = network_address(f, "main", &token, "socks").await;
@@ -397,7 +377,7 @@ async fn network_business(
     let mut rule = old["rule"].clone();
     rule["name"] = json!("edited running rule");
     rule["bind"]["port"] = json!(fixed.port());
-    network_save(f, context, rule);
+    network_save(f, context, &token, rule);
     assert_eq!(network_row(f,"main",token,"forward")["run"]["snapshot"]["listenerId"],listener);
     f.core.ui_event("main",token,json!({"action":"stop","id":"forward"})).unwrap();
     until(||network_row(f,"main",token,"forward")["run"]["canStart"]==true).await;
@@ -457,6 +437,7 @@ async fn network_exit_cleanup(crash: bool) {
     network_save(
         &f,
         &context,
+        &token,
         json!({"id":"cleanup","revision":0,"serverId":id,"name":"cleanup","type":"tcpForward","bind":{"host":"127.0.0.1","port":0},"target":{"host":"service.cleanup.invalid","port":echo.port()}}),
     );
     let address = network_address(&f, "main", &token, "cleanup").await;
@@ -527,7 +508,7 @@ async fn network_socks_protocol() {
     let id = f.server("127.0.0.1", server.addr.port(), json!([]));
     let context = connected(&f, &id).await.context.unwrap();
     let (_, token) = network_surface(&f, &context);
-    network_save(&f, &context, json!({"id":"protocol","serverId":id,"revision":0,
+    network_save(&f, &context, &token, json!({"id":"protocol","serverId":id,"revision":0,
         "name":"protocol","type":"socks5","bind":{"host":"127.0.0.1","port":0}}));
     let address = network_address(&f, "main", &token, "protocol").await;
     for input in [vec![4], vec![5], vec![5, 0]] {
@@ -601,7 +582,7 @@ async fn network_socks_netem() {
         let (echo, task) = network_echo_server().await;
         server.state.routes.lock().unwrap().insert("echo.only.remote.invalid".into(), echo);
         let (_, token) = network_surface(&f, &context);
-        network_save(&f, &context, json!({"id":"netem","serverId":id,"revision":0,
+        network_save(&f, &context, &token, json!({"id":"netem","serverId":id,"revision":0,
             "name":"netem","type":"socks5","bind":{"host":"127.0.0.1","port":0}}));
         let address = network_address(&f, "main", &token, "netem").await;
         let result = tokio::time::timeout(Duration::from_secs(20), async {
@@ -669,7 +650,7 @@ async fn network_socks_lifecycle() {
     let id = f.server("127.0.0.1", port, json!([]));
     let context = connected(&f, &id).await.context.unwrap();
     let (_, token) = network_surface(&f, &context);
-    network_save(&f, &context, json!({"id":"lifecycle","serverId":id,"revision":0,
+    network_save(&f, &context, &token, json!({"id":"lifecycle","serverId":id,"revision":0,
         "name":"lifecycle","type":"socks5","bind":{"host":"127.0.0.1","port":0}}));
     let address = network_address(&f, "main", &token, "lifecycle").await;
     for greeting in [vec![5], vec![5, 1, 0]] {
@@ -785,7 +766,7 @@ async fn network_denied_forwarding(f: &Fixture, context: &sodeck::workspaces::Co
     let mount = f.core.ui_attach("main", opened["viewId"].as_str().unwrap()).unwrap();
     let token = mount["surfaceId"].as_str().unwrap().to_owned();
     f.core.ui_surface_ready("main", &token).unwrap();
-    network_save(f, context, json!({"id":"denied","revision":0,"serverId":context.server_id,
+    network_save(f, context, &token, json!({"id":"denied","revision":0,"serverId":context.server_id,
         "name":"denied","type":"tcpForward","bind":{"host":"127.0.0.1","port":0},"target":{"host":host,"port":port}}));
     let address = network_address(f, "main", &token, "denied").await;
     f.core.ui_event("main", &token, json!({"action":"check","id":"denied"})).unwrap();
