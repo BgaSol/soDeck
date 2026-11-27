@@ -6,7 +6,15 @@
 
 要求核心 API 2.2，与核心 2.12.0 及更新版本兼容。规则文件格式和对外命令保持，未新增生产依赖。保存只提交配置，应用新配置仍需停止、确认清理后手动启动。
 
-发行来源与本轮五平台验证结果将在发布收尾补齐；当前不是正式发行证明。
+包来源 [ec1b565](https://github.com/BgaSol/soDeck/commit/ec1b5655af6dabf8c3948c681cf1edf289e254b2)；[原始独立打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/46060800410)的 Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 原生归档、架构／资源、包内握手、协作命令、生命周期和退出全部通过。正式发行 [network-proxy 0.8.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-network-proxy-v0.8.0)共六个附件，保持非 Latest；发布同一份程序归档，更新清单仅同步本版 notes。六附件匿名下载的大小与 SHA-256 全部核对一致，仓库 Latest 仍为核心 v2.12.1。[永久附件与原生报告](release-evidence/v0.8.0-assets.json)。
+
+[包来源 Check](https://github.com/BgaSol/soDeck/actions/runs/46060773240)通过，覆盖五平台源码、类型／格式、脚本、浏览器、Windows 桌面／SSH、两种 Linux 架构网络及普通业务。文件 UI 的分页滚动恢复断言首轮失败，只重跑原提交的失败业务任务及汇总后通过；网络隧道相关任务首轮通过。macOS 测试核心候选的合成登录启动烟测首轮未完成协议，同一原包只重跑该平台 verify 后通过；原始失败和重跑均保留在永久证据。
+
+[五平台原生远程组合](https://github.com/BgaSol/soDeck/actions/runs/46062486146)使用本次确切网络包、终端 0.12.1、文件 0.14.1 和[测试核心候选](https://github.com/BgaSol/soDeck/actions/runs/46060805869)，验证原生 WebView／Channel 下的 SSH、PTY、文件读写／下载、TCP／SOCKS5、移窗、重开与退出；[固定输入和完整结果](release-evidence/v0.8.0-remote.json)。测试核心保持 2.12.1，仅适配新行内编辑器的内置验证入口，未重新发行核心；旧正式核心的旧编辑弹窗烟测不能作为本版验证器。
+
+Windows x86_64 另使用上述确切核心／网络原包和正式系统状态 0.7.1，通过实际 WebView2／系统指针的停靠、移窗、后台隐藏、恢复、取消关闭保留隧道自身草稿及真实转发字节，放弃关闭后四插件退出、端口释放。首次本机运行终端初始化超时；随后定位到测试脚本在第二轮匹配了两个规则的启动按钮，按规则限定启动／编辑定位后通过；仅修正测试脚本，程序归档未变。此专项不外推到其他平台或物理设备。
+
+本机界面覆盖三主题、280／320／400／480px、跨页与重复定位、按压跨轮询、草稿保持、保存结果不确定后的恢复；21 项插件单测、239 项脚本回归及真实 TCP／SOCKS5／SSH 通过。未执行 netem、物理 CJK IME／触摸／触控板／读屏、混合 DPI／多屏切换、真实注销登录、正式旧版实际升级，以及原生剪贴板／默认应用／深度文件编辑专项；剩余设备范围继续维护在[原生设备验收](../../docs/plans/native-verification.md)。
 
 # 0.7.0
 

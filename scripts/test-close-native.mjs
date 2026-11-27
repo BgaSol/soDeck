@@ -256,7 +256,8 @@ try {
     await ruleEditor.locator('input[name=targetPort]').fill(String(service.address().port));
     await ruleEditor.getByRole('button', { name: '保存', exact: true }).click();
     await ruleEditor.locator('form').waitFor({ state: 'detached' });
-    await sidebar.getByRole('button', { name: '启动', exact: true }).click();
+    const ruleActions = sidebar.getByRole('group', { name: `Native ${entry}操作`, exact: true });
+    await ruleActions.getByRole('button', { name: '启动', exact: true }).click();
     await sidebar.locator('.entry code').waitFor();
     await until(async () => /127\.0\.0\.1:\d+/.test(await sidebar.locator('.entry code').textContent()), 'Native tunnel did not reach the listening state');
     const address = await sidebar.locator('.entry code').textContent();
@@ -309,7 +310,7 @@ try {
     if(!trayOnly)checks.push(`${entry}: native system-pointer tool docking kept button/panel side, original file/network iframes, draft and live forwarding`);
     const networkButton=board.locator('[data-tool-key="sodeck.network-proxy:manager"]');
     if(await networkButton.getAttribute('aria-expanded')!=='true')await networkButton.click();
-    await sidebar.getByRole('button',{name:'编辑',exact:true}).click();
+    await ruleActions.getByRole('button',{name:'编辑',exact:true}).click();
     const tunnelDraft=`Native ${entry} unsaved tunnel`;
     await sidebar.locator('input[name=name]').fill(tunnelDraft);
     const before = await invoke('component_ui', { operation: 'snapshot', args: {} });
