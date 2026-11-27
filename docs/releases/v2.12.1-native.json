@@ -38,5 +38,6 @@
   "evidence": "Local release runtime built with npm run build; native WebView2, OS-injected pointer, isolated OpenSSH; not installed-package or physical-device evidence",
   "architecture": "x64",
   "scale": 1.5,
-  "sha256": "bf839faf33c4b2dd33d59fc01cc4d7ff358cb4f29da2c1c3e61c578227541ab8"
+  "sha256": "bf839faf33c4b2dd33d59fc01cc4d7ff358cb4f29da2c1c3e61c578227541ab8",
+  "sourceCommit": "4340d1e8282452dfcb65eb712007ce0f56d1d3e4"
 }
