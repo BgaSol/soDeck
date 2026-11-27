@@ -13,6 +13,7 @@ POSIX 包装脚本在 END 前添加一个换行；旧分段器把它作为数据
 - 修复前新加的分段/原始 Linux 回归稳定失败；修复后 Windows 本机 42 项插件 Rust 测试通过，2 项 Linux 容器专项按环境忽略。
 - 格式/类型、234 项工程脚本、真实 OpenSSH 采集与隐藏/暂停/恢复、三主题七宽度 UI、三插件共享容量通过。
 - 本机原生 Windows 发行归档已构建；正式发行使用 Actions 的同源原包。
+- 首轮候选 `f249a4c` 的 [Check](https://github.com/BgaSol/soDeck/actions/runs/46040210811) 与[打包](https://github.com/BgaSol/soDeck/actions/runs/46040215441)在发布前主动取消：复核发现旧容器测试辅助每轮重建简化状态，需把接口断言移到拓扑当轮。产品修复未改变；最终提交重新检查和打包，不发布首轮候选。
 - 真实 Ubuntu 机器通过现有会话执行生产代码生成的只读命令，再用相同源码的 decode/apply/Publisher 验证；7 个盘/分区、9 个接口、12 个地址、37 个挂载、4 项容量与第二轮磁盘速率通过，发布投影为 complete。[脱敏设备证据](../../plugins/system-status/release-evidence/v0.7.1-device.json)记录范围；未替换用户正在运行的插件，也未操作鼠标。
 
 ## 剩余步骤

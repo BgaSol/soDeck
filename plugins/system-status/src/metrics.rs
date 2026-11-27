@@ -761,6 +761,12 @@ mod tests {
                 5,
             )
             .unwrap();
+            if group == "topology" {
+                assert_eq!(
+                    snapshot["sources"]["interfaces"]["state"], "ok",
+                    "{snapshot}"
+                );
+            }
         }
         assert!(snapshot["identity"]["hostname"].is_string());
         assert!(
@@ -770,7 +776,7 @@ mod tests {
         assert!(snapshot["memory"]["value"].is_number(), "{snapshot}");
         assert!(snapshot["cpu"]["value"].is_number(), "{snapshot}");
         assert!(!snapshot["filesystems"].as_array().unwrap().is_empty());
-        for source in ["interfaces", "network", "disk"] {
+        for source in ["network", "disk"] {
             assert_eq!(snapshot["sources"][source]["state"], "ok", "{snapshot}");
         }
         assert!(
