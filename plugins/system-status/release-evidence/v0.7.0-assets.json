@@ -1,0 +1,324 @@
+{
+  "component": "system-status",
+  "version": "0.7.0",
+  "source": "95ec89b4416b6782f36230d4c7cc8b889ae3f70a",
+  "packageRun": {
+    "id": 46000435679,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/46000435679",
+    "attempt": 1
+  },
+  "checks": [
+    {
+      "run": 46000368859,
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/46000368859",
+      "source": "95ec89b4416b6782f36230d4c7cc8b889ae3f70a",
+      "conclusion": "success",
+      "attempt": 1,
+      "jobs": [
+        {
+          "name": "select",
+          "conclusion": "success"
+        },
+        {
+          "name": "desktop",
+          "conclusion": "success"
+        },
+        {
+          "name": "browser",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-business-linux-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-network-linux-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-windows-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "checks",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-linux-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-network-linux-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-macos-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-windows-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-linux-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "netem",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "format",
+          "conclusion": "success"
+        }
+      ],
+      "scope": "Exact source Check with native source suites, browser UI, Windows SSH, ordinary Linux business and three-plugin communication; netem intentionally skipped."
+    }
+  ],
+  "release": {
+    "id": 460589566,
+    "tag": "plugin-system-status-v0.7.0",
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/plugin-system-status-v0.7.0",
+    "publishedAt": "2026-11-27T12:57:37Z",
+    "isDraft": false,
+    "latest": false
+  },
+  "assets": [
+    {
+      "name": "plugin-update.json",
+      "size": 4084,
+      "digest": "sha256:ab7533a545b7d44bd912dddb3ab850e703c8256c1f3190064f5ac0ba1ef58e97",
+      "id": 800502226,
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.7.0/plugin-update.json"
+    },
+    {
+      "name": "sodeck-system-status_0.7.0_aarch64-apple-darwin.tar.gz",
+      "size": 758065,
+      "digest": "sha256:f8c45d3f50d5e9dc7327e2062da3a4d00b5acb07d4139f3a9a2e9a63b0e5291a",
+      "id": 800457067,
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.7.0/sodeck-system-status_0.7.0_aarch64-apple-darwin.tar.gz"
+    },
+    {
+      "name": "sodeck-system-status_0.7.0_aarch64-pc-windows-msvc.zip",
+      "size": 758512,
+      "digest": "sha256:e7f31cf0676ba339d4ef19b18b4d140b14c1c7f773214cca9a344abf096acc70",
+      "id": 800456941,
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.7.0/sodeck-system-status_0.7.0_aarch64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "sodeck-system-status_0.7.0_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 774092,
+      "digest": "sha256:28877346b8ab6be33338002612f09cb9ab1f12fd7877eae35ce0033bc7205f65",
+      "id": 800457027,
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.7.0/sodeck-system-status_0.7.0_aarch64-unknown-linux-gnu.tar.gz"
+    },
+    {
+      "name": "sodeck-system-status_0.7.0_x86_64-pc-windows-msvc.zip",
+      "size": 822924,
+      "digest": "sha256:e6e31f6d04b58feae073c22e3b57b5a39dcc90a168cae92fb9a15e201ae6cc35",
+      "id": 800456909,
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.7.0/sodeck-system-status_0.7.0_x86_64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "sodeck-system-status_0.7.0_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 860843,
+      "digest": "sha256:4f880502643ee919eb0722734ef39ed9e2c0b92db4d97a90adbee3192e4a01bc",
+      "id": 800456984,
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.7.0/sodeck-system-status_0.7.0_x86_64-unknown-linux-gnu.tar.gz"
+    }
+  ],
+  "nativePackageVerification": [
+    {
+      "id": "sodeck.system-status",
+      "version": "0.7.0",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "95ec89b4416b6782f36230d4c7cc8b889ae3f70a",
+      "sha256": "28877346b8ab6be33338002612f09cb9ab1f12fd7877eae35ce0033bc7205f65",
+      "runId": "46000435679",
+      "toolCommit": "95ec89b4416b6782f36230d4c7cc8b889ae3f70a",
+      "passed": true,
+      "pluginIcons": [
+        "activity"
+      ],
+      "dataDirectory": {
+        "unicode": true,
+        "extended": false,
+        "length": 317
+      },
+      "calls": [
+        "settings.get"
+      ]
+    },
+    {
+      "id": "sodeck.system-status",
+      "version": "0.7.0",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "95ec89b4416b6782f36230d4c7cc8b889ae3f70a",
+      "sha256": "4f880502643ee919eb0722734ef39ed9e2c0b92db4d97a90adbee3192e4a01bc",
+      "runId": "46000435679",
+      "toolCommit": "95ec89b4416b6782f36230d4c7cc8b889ae3f70a",
+      "passed": true,
+      "pluginIcons": [
+        "activity"
+      ],
+      "dataDirectory": {
+        "unicode": true,
+        "extended": false,
+        "length": 317
+      },
+      "calls": [
+        "settings.get"
+      ]
+    },
+    {
+      "id": "sodeck.system-status",
+      "version": "0.7.0",
+      "target": "aarch64-apple-darwin",
+      "commit": "95ec89b4416b6782f36230d4c7cc8b889ae3f70a",
+      "sha256": "f8c45d3f50d5e9dc7327e2062da3a4d00b5acb07d4139f3a9a2e9a63b0e5291a",
+      "runId": "46000435679",
+      "toolCommit": "95ec89b4416b6782f36230d4c7cc8b889ae3f70a",
+      "passed": true,
+      "pluginIcons": [
+        "activity"
+      ],
+      "dataDirectory": {
+        "unicode": true,
+        "extended": false,
+        "length": 361
+      },
+      "calls": [
+        "settings.get"
+      ]
+    },
+    {
+      "id": "sodeck.system-status",
+      "version": "0.7.0",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "95ec89b4416b6782f36230d4c7cc8b889ae3f70a",
+      "sha256": "e7f31cf0676ba339d4ef19b18b4d140b14c1c7f773214cca9a344abf096acc70",
+      "runId": "46000435679",
+      "toolCommit": "95ec89b4416b6782f36230d4c7cc8b889ae3f70a",
+      "passed": true,
+      "pluginIcons": [
+        "activity"
+      ],
+      "dataDirectory": {
+        "unicode": true,
+        "extended": true,
+        "length": 353
+      },
+      "calls": [
+        "settings.get"
+      ]
+    },
+    {
+      "id": "sodeck.system-status",
+      "version": "0.7.0",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "95ec89b4416b6782f36230d4c7cc8b889ae3f70a",
+      "sha256": "e6e31f6d04b58feae073c22e3b57b5a39dcc90a168cae92fb9a15e201ae6cc35",
+      "runId": "46000435679",
+      "toolCommit": "95ec89b4416b6782f36230d4c7cc8b889ae3f70a",
+      "passed": true,
+      "pluginIcons": [
+        "activity"
+      ],
+      "dataDirectory": {
+        "unicode": true,
+        "extended": true,
+        "length": 353
+      },
+      "calls": [
+        "settings.get"
+      ]
+    }
+  ],
+  "packageJobs": [
+    {
+      "name": "select",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/46000435679/job/140510403368"
+    },
+    {
+      "name": "linux-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/46000435679/job/140510596977"
+    },
+    {
+      "name": "macos-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/46000435679/job/140510596982"
+    },
+    {
+      "name": "windows-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/46000435679/job/140510596996"
+    },
+    {
+      "name": "windows-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/46000435679/job/140510597008"
+    },
+    {
+      "name": "linux-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/46000435679/job/140510597049"
+    },
+    {
+      "name": "verify-macos-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/46000435679/job/140511678443"
+    },
+    {
+      "name": "verify-windows-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/46000435679/job/140511678454"
+    },
+    {
+      "name": "verify-linux-x86_64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/46000435679/job/140511678471"
+    },
+    {
+      "name": "verify-windows-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/46000435679/job/140511678562"
+    },
+    {
+      "name": "verify-linux-aarch64",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/46000435679/job/140511678576"
+    },
+    {
+      "name": "release",
+      "conclusion": "success",
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/46000435679/job/140511980842"
+    }
+  ],
+  "localVerification": {
+    "typeAndFormatting": "passed",
+    "scriptTests": 234,
+    "pluginRust": {
+      "passed": 36,
+      "ignored": 2
+    },
+    "browserUI": "Three themes/seven widths, footer position, retained reading nodes, default/saved disclosure and scroll, old-context control failure; source, local archive and exact-source Actions Windows x86_64 archive passed",
+    "openssh": "Windows x86_64 actual collection, hidden sampling, pause/resume and close passed",
+    "communication": "Three real local plugin packages and mount/capacity sharing passed"
+  },
+  "limitations": [
+    "Linux container-only Rust tests ignored on local Windows; native CI results retained separately.",
+    "No new physical IME, mixed-DPI, screen-reader, touchpad or five-platform native WebView card geometry certification.",
+    "No netem, published-version online upgrade, full remote OS/device matrix or new native remote package combination."
+  ],
+  "retryHistory": {
+    "packageAndSourceChecks": "Both original Actions runs passed on attempt 1; no platform rebuild or job retry.",
+    "localPublication": "Initial REST lookup by tag returned 404 for the draft before any Release mutation. Resumed using confirmed draft ID 460589566; published the same five archives, updating only draft manifest notes."
+  },
+  "publicVerification": {
+    "anonymousDownloads": "All six public assets matched exact byte size and SHA-256",
+    "checkedAt": "2026-11-27T12:57:59.921Z",
+    "latestCoreTag": "v2.12.0"
+  }
+}

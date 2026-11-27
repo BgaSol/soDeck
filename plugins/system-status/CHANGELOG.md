@@ -5,7 +5,13 @@
 - 页面调度、DOM 呈现和网卡弹层分离；固定读数与旧值说明插槽，保留容量节点、焦点和展开状态，阻止旧连接控制错误污染新连接。
 - 首次打开磁盘与设备卡展开，后续尊重已保存状态；完整诊断、历史缺口、容量告警和内存口径继续保留。
 
-要求核心 2.12.0 的 API 2.2；未新增核心 API 或生产依赖，未改变后台采集和文件插件容量共享。本版待独立五平台打包与发行；当前验证及剩余范围见[实施计划](../../docs/plans/system-status-cards.md)。
+要求核心 2.12.0 的 API 2.2；未新增核心 API 或生产依赖，未改变后台采集和文件插件容量共享。先更新核心，再更新插件并重启；本轮核心不升版。
+
+包来源 [95ec89b](https://github.com/BgaSol/soDeck/commit/95ec89b4416b6782f36230d4c7cc8b889ae3f70a)；[原始独立打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/46000435679) 的 Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 原生归档、架构/资源、包内握手、生命周期和退出全部通过。发行 [system-status 0.7.0](https://github.com/BgaSol/soDeck/releases/tag/plugin-system-status-v0.7.0) 使用同一草稿的五份程序归档及更新清单，显式保持非 Latest；清单仅同步 notes。[永久附件与原生报告](release-evidence/v0.7.0-assets.json)保留来源和公开下载核对。
+
+[同一来源 Check](https://github.com/BgaSol/soDeck/actions/runs/46000368859) 全部选中检查通过，覆盖五平台源码、格式/类型/工程脚本、Linux 浏览器 UI、Windows SSH、普通 Linux 业务和三插件通信。本机 234 项工程脚本、36 项插件 Rust 测试、真实 OpenSSH 采集及容量共享通过，2 项 Linux 容器专项按本机 Windows 环境忽略。源码、本机归档和最终 Actions Windows x86_64 归档均通过三主题七宽度 UI，包含宽字体 100% 读数、强制颜色、网卡地址、固定底栏、保存/默认展开、滚动恢复、失败旧值、历史缺口与迟到控制错误回归。
+
+未执行 netem、正式旧版线上升级、全部远端系统矩阵或新一轮原生远程包组合；五平台原生包进程验收不等于卡片的原生 WebView 人工体验验收。物理 IME、混合 DPI、读屏、触控板和原生 popover/滚动专项继续由[原生设备计划](../../docs/plans/native-verification.md)保留。
 
 # 0.6.2
 
