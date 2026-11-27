@@ -4,6 +4,7 @@ mod runtime;
 use crate::connections::io::Stream;
 use crate::{connections::Session, resource_owner::Owner, AppCore};
 use serde_json::{json, Value};
+use sodeck_plugin_protocol::network::{FailureCode, FailureStage, NetworkFailure};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     sync::{
@@ -23,7 +24,7 @@ pub(crate) enum Command {
 }
 struct StreamState {
     state: &'static str,
-    error: Option<String>,
+    failure: Option<NetworkFailure>,
     read: Option<Vec<u8>>,
     reading: bool,
     eof: bool,
@@ -44,7 +45,7 @@ pub(crate) struct TcpStream {
 struct Status {
     state: &'static str,
     address: Value,
-    error: Option<Value>,
+    failure: Option<NetworkFailure>,
 }
 pub(crate) struct Listener {
     id: String,
@@ -388,7 +389,7 @@ impl AppCore {
                 status: Mutex::new(Status {
                     state: "starting",
                     address: Value::Null,
-                    error: None,
+                    failure: None,
                 }),
                 streams: Mutex::new(HashMap::new()),
                 cancel: CancellationToken::new(),
@@ -620,7 +621,9 @@ impl AppCore {
         let s = stream.ok_or("需要 streamId")?;
         let mut st = s.state.lock().unwrap();
         match method {
-            "net.stream.status" => Ok(json!({"state":st.state,"error":st.error})),
+            "net.stream.status" => Ok(
+                json!({"state":st.state,"error":st.failure.as_ref().map(NetworkFailure::legacy_message),"failure":st.failure}),
+            ),
             "net.stream.read" => {
                 if st.claimed {
                     return Err("流已交给原生转发".into());
@@ -636,7 +639,11 @@ impl AppCore {
                     return Ok(json!({"data":[],"eof":true}));
                 }
                 if st.state == "failed" || st.state == "closed" {
-                    return Err(st.error.clone().unwrap_or("连接已关闭".into()));
+                    return Err(st
+                        .failure
+                        .as_ref()
+                        .map(|f| f.legacy_message().to_owned())
+                        .unwrap_or("连接已关闭".into()));
                 }
                 if !st.reading {
                     if st.budget + max > 1024 {
@@ -710,8 +717,8 @@ impl Listener {
         {
             samples.push_back((now, sent, received));
         }
-        let children:Vec<_>=streams.values().filter(|s|!s.remote).take(64).map(|s|{let state=s.state.lock().unwrap();let remote=streams.values().find(|r|r.client.as_deref()==Some(&s.id)).map(|r|{let x=r.state.lock().unwrap();json!({"state":x.state,"error":x.error})});json!({"id":s.id,"state":state.state,"probeId":s.id.split_once("@probe:").map(|(_,p)|p),"target":remote})}).collect();
-        json!({"listenerId":self.id,"cleanupComplete":self.tasks.finished(),"state":st.state,"address":st.address,"error":st.error,"path":self.path,"sent":sent.to_string(),"received":received.to_string(),"sentPerSecond":up,"receivedPerSecond":down,"connections":streams.values().filter(|s|!s.remote&&matches!(s.state.lock().unwrap().state,"ready"|"relaying")).count(),"clients":children})
+        let children:Vec<_>=streams.values().filter(|s|!s.remote).take(64).map(|s|{let state=s.state.lock().unwrap();let remote=streams.values().find(|r|r.client.as_deref()==Some(&s.id)).map(|r|{let x=r.state.lock().unwrap();json!({"state":x.state,"error":x.failure.as_ref().map(NetworkFailure::client_legacy_message),"failure":x.failure.as_ref().map(NetworkFailure::client_summary)})});json!({"id":s.id,"state":state.state,"probeId":s.id.split_once("@probe:").map(|(_,p)|p),"target":remote})}).collect();
+        json!({"listenerId":self.id,"cleanupComplete":self.tasks.finished(),"state":st.state,"address":st.address,"error":st.failure.as_ref().map(|f|json!({"stage":if st.address.is_null(){"listen"}else{"sessionLost"},"message":f.legacy_message()})),"failure":st.failure,"path":self.path,"sent":sent.to_string(),"received":received.to_string(),"sentPerSecond":up,"receivedPerSecond":down,"connections":streams.values().filter(|s|!s.remote&&matches!(s.state.lock().unwrap().state,"ready"|"relaying")).count(),"clients":children})
     }
 }
 

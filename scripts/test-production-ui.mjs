@@ -41,7 +41,7 @@ for(let index=0;index<20;index++)uiMetadata.ui.views.push({id:`extra${index}`,ti
 fs.writeFileSync(path.join(uiFixture,'plugin.json'),JSON.stringify({...uiMetadata,target,entry:`workspace-ui-fixture${suffix}`}));
 fs.copyFileSync(fixtureBinary('plugin-fixture'), path.join(fixture, `plugin-fixture${suffix}`));
 if (process.platform !== "win32") fs.chmodSync(path.join(fixture, `plugin-fixture${suffix}`), 0o755);
-fs.writeFileSync(path.join(fixture, "plugin.json"), JSON.stringify({ id: "sodeck.terminal", name: "Loopback terminal fixture", version: "0.1.1", apiVersion:'2.1', target, entry: `plugin-fixture${suffix}` }));
+fs.writeFileSync(path.join(fixture, "plugin.json"), JSON.stringify({ id: "sodeck.terminal", name: "Loopback terminal fixture", version: "0.1.1", apiVersion:'2.2', target, entry: `plugin-fixture${suffix}` }));
 const archive = path.join(directory, "fixture.tar.gz");
 const tar = process.platform === "win32" ? path.join(process.env.SystemRoot, "System32", "tar.exe") : "tar";
 if (spawnSync(tar, ["-czf", archive, "-C", directory, "fixture"], { windowsHide: true, stdio: "inherit" }).status !== 0) throw new Error("Failed to package test fixture");
@@ -52,7 +52,7 @@ const extraPackages = new Map(), extraManifests = new Map(), extraReleases = [];
 const filesFixture = path.join(directory, 'files-fixture'); fs.mkdirSync(filesFixture);
 fs.copyFileSync(path.join(fixture, `plugin-fixture${suffix}`), path.join(filesFixture, `plugin-fixture${suffix}`));
 if (process.platform !== 'win32') fs.chmodSync(path.join(filesFixture, `plugin-fixture${suffix}`), 0o755);
-fs.writeFileSync(path.join(filesFixture, 'plugin.json'), JSON.stringify({ id:'sodeck.files', name:'文件安装验收', version:'0.1.1', apiVersion:'2.1', target, entry:`plugin-fixture${suffix}` }));
+fs.writeFileSync(path.join(filesFixture, 'plugin.json'), JSON.stringify({ id:'sodeck.files', name:'文件安装验收', version:'0.1.1', apiVersion:'2.2', target, entry:`plugin-fixture${suffix}` }));
 const filesArchive = path.join(directory, 'files.tar.gz');
 assert.equal(spawnSync(tar, ['-czf', filesArchive, '-C', directory, 'files-fixture'], { windowsHide:true }).status, 0);
 const filesBytes = fs.readFileSync(filesArchive);
@@ -97,11 +97,11 @@ const downloads = http.createServer(async (request, response) => {
     }
   }
   else if (request.url === '/core-update.json') data = JSON.stringify({id:'sodeck.core',version:'0.1.1',platforms:{[target]:{url:`${base}/fixture.tar.gz`,signature:'fixture-diagnostic-only'}}});
-  else if (request.url === '/files.json') data = JSON.stringify({ id:'sodeck.files', version:'0.1.1', apiVersion:'2.1', platforms:{[target]:{url:`${base}/files.tar.gz`,sha256:createHash('sha256').update(filesBytes).digest('hex')}} });
+  else if (request.url === '/files.json') data = JSON.stringify({ id:'sodeck.files', version:'0.1.1', apiVersion:'2.2', platforms:{[target]:{url:`${base}/files.tar.gz`,sha256:createHash('sha256').update(filesBytes).digest('hex')}} });
   else if (request.url === '/files.tar.gz') data = filesBytes;
   else if (extraManifests.has(request.url)) data = JSON.stringify(extraManifests.get(request.url));
   else if (extraPackages.has(request.url)) data = extraCorrupt && request.url.includes('update-two') ? Buffer.from('broken archive') : extraPackages.get(request.url);
-  else if (request.url === "/manifest.json") data = JSON.stringify({ id: "sodeck.terminal", version: "0.1.1", apiVersion:'2.1', platforms: { [target]: { url: `${base}/fixture.tar.gz`, sha256: createHash("sha256").update(archiveBytes).digest("hex") } } });
+  else if (request.url === "/manifest.json") data = JSON.stringify({ id: "sodeck.terminal", version: "0.1.1", apiVersion:'2.2', platforms: { [target]: { url: `${base}/fixture.tar.gz`, sha256: createHash("sha256").update(archiveBytes).digest("hex") } } });
   else if (request.url === "/fixture.tar.gz") data = corrupt ? Buffer.from("interrupted download") : archiveBytes;
   else { response.writeHead(404).end(); return; }
   response.writeHead(200, { "Content-Length": Buffer.byteLength(data) }); response.end(data);
@@ -591,12 +591,12 @@ try {
     const pluginDirectory=path.join(directory,name);fs.mkdirSync(pluginDirectory);
     fs.copyFileSync(fixtureBinary('plugin-fixture'),path.join(pluginDirectory,`plugin-fixture${suffix}`));
     if(process.platform!=='win32')fs.chmodSync(path.join(pluginDirectory,`plugin-fixture${suffix}`),0o755);
-    const metadata={id:`test.${name}`,name:`更新测试 ${name}`,version:'0.1.1',apiVersion:'2.1',target,entry:`plugin-fixture${suffix}`,updateSource:{repository:'BgaSol/soDeck',tagPrefix:`plugin-${name}-v`}};
+    const metadata={id:`test.${name}`,name:`更新测试 ${name}`,version:'0.1.1',apiVersion:'2.2',target,entry:`plugin-fixture${suffix}`,updateSource:{repository:'BgaSol/soDeck',tagPrefix:`plugin-${name}-v`}};
     fs.writeFileSync(path.join(pluginDirectory,'plugin.json'),JSON.stringify(metadata));
     const packed=path.join(directory,`${name}.tar.gz`);
     assert.equal(spawnSync(tar,['-czf',packed,'-C',directory,name],{windowsHide:true}).status,0);
     const bytes=fs.readFileSync(packed);extraPackages.set(`/${name}.tar.gz`,bytes);
-    extraManifests.set(`/${name}.json`,{id:metadata.id,version:'0.1.1',apiVersion:'2.1',notes:markdownNotes,platforms:{[target]:{url:`${base}/${name}.tar.gz`,sha256:createHash('sha256').update(bytes).digest('hex')}}});
+    extraManifests.set(`/${name}.json`,{id:metadata.id,version:'0.1.1',apiVersion:'2.2',notes:markdownNotes,platforms:{[target]:{url:`${base}/${name}.tar.gz`,sha256:createHash('sha256').update(bytes).digest('hex')}}});
     extraReleases.push({tag_name:`plugin-${name}-v0.1.1`,draft:false,prerelease:false,assets:[{name:'plugin-update.json',browser_download_url:`${base}/${name}.json`}]});
     fs.writeFileSync(path.join(pluginDirectory,'plugin.json'),JSON.stringify({...metadata,version:'0.1.0'}));
     if (name === 'update-one') {
@@ -937,7 +937,7 @@ try {
   }
   await page.locator('#return-workbench').click();await page.locator('#catalog-tab').click();checks.push('Bundled component settings: existing navigation, core save, global refresh preserves input DOM, returning from the workbench keeps drafts');
   await page.locator('#shell-status [data-action="status"]').click();
-  const pluginState=(id,name,status='running')=>({directory:'fixture',manifest:{id,name,version:'1.0.0',apiVersion:'2.1',target,entry:'fixture'},status,instanceId:'fixture',pid:1,startedAt:Date.now(),error:status==='failed'?'进程异常退出':null,cleanupComplete:true,enabled:true,pendingRestart:false,pendingVersion:null,updateError:null});
+  const pluginState=(id,name,status='running')=>({directory:'fixture',manifest:{id,name,version:'1.0.0',apiVersion:'2.2',target,entry:'fixture'},status,instanceId:'fixture',pid:1,startedAt:Date.now(),error:status==='failed'?'进程异常退出':null,cleanupComplete:true,enabled:true,pendingRestart:false,pendingVersion:null,updateError:null});
   statusSnapshot={connectedServers:1,connectingServers:0,plugins:[pluginState('test.status','系统状态'),pluginState('test.terminal','终端'),pluginState('test.docker','Docker')],storageErrors:[]};
   statusNetwork={servers:[{serverId:'status-live',name:'生产服务器',received:'10485760',sent:'307200',receivedPerSecond:2048,sentPerSecond:0,quality:'socket'},{serverId:'status-old',name:'历史断线服务器',received:'1024',sent:'2048',receivedPerSecond:0,sentPerSecond:0,quality:'socket'}],plugins:[{serverId:'status-live',pluginId:'test.status',received:'9437184',sent:'204800',receivedPerSecond:1024,sentPerSecond:0,quality:'payload'},{serverId:'status-old',pluginId:'test.docker',received:'100',sent:'100',receivedPerSecond:0,sentPerSecond:0,quality:'payload'}],connections:[{serverId:'status-live',state:'connected',endpoint:'root@192.168.1.186:22',error:null},{serverId:'status-old',state:'disconnected',endpoint:'root@127.0.0.1:22',error:null}],note:'连接传输包含 SSH/SOCKS 封装。'};
   const refreshStatus=async()=>{const previous=await page.evaluate(()=>snapshotReplies);await page.evaluate(()=>emitTestEvent('core-changed'));await page.waitForFunction(n=>snapshotReplies>n,previous);};

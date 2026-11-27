@@ -4,7 +4,7 @@
   "description": "读取服务器设备信息、CPU、内存、磁盘和网络状态，隐藏面板继续采集。",
   "icon": "activity",
   "order": 40,
-  "apiVersion": "2.1",
+  "apiVersion": "2.2",
   "binary": "sodeck-system-status",
   "tagPrefix": "plugin-system-status-v",
   "ui": {

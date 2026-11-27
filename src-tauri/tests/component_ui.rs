@@ -326,7 +326,7 @@ fn separately_registered_plugins_keep_their_own_recommended_defaults() {
     let binary = format!("fixture{}", std::env::consts::EXE_SUFFIX);
     fs::copy(env!("CARGO_BIN_EXE_plugin-fixture"), second.join(&binary)).unwrap();
     fs::write(second.join("ui/index.html"), "ok").unwrap();
-    fs::write(second.join("plugin.json"),json!({"id":"test.second","name":"Second","version":"0.1.0","apiVersion":"2.1","target":TARGET,"entry":binary,"ui":{"entry":"ui/index.html","views":[{"id":"browser","title":"Second files","icon":"folder","container":"sidebar","instancePolicy":"perWorkspace","defaultPinned":true,"openOnWorkspace":"reveal"}]}}).to_string()).unwrap();
+    fs::write(second.join("plugin.json"),json!({"id":"test.second","name":"Second","version":"0.1.0","apiVersion":"2.2","target":TARGET,"entry":binary,"ui":{"entry":"ui/index.html","views":[{"id":"browser","title":"Second files","icon":"folder","container":"sidebar","instancePolicy":"perWorkspace","defaultPinned":true,"openOnWorkspace":"reveal"}]}}).to_string()).unwrap();
     f.core.ui_snapshot("main").unwrap();
     {
         let _startup = STARTUP.lock().unwrap();
@@ -529,7 +529,7 @@ impl Fixture {
         let binary = format!("fixture{}", std::env::consts::EXE_SUFFIX);
         fs::copy(env!("CARGO_BIN_EXE_plugin-fixture"), plugin.join(&binary)).unwrap();
         fs::write(plugin.join("ui/index.html"), "<p>fixture</p>").unwrap();
-        fs::write(plugin.join("plugin.json"),json!({"id":"test.ui","name":"UI fixture","version":"0.1.0","apiVersion":"2.1","target":TARGET,"entry":binary,"ui":{"entry":"ui/index.html","views":[
+        fs::write(plugin.join("plugin.json"),json!({"id":"test.ui","name":"UI fixture","version":"0.1.0","apiVersion":"2.2","target":TARGET,"entry":binary,"ui":{"entry":"ui/index.html","views":[
             {"id":"browser","title":"Files","icon":"folder","container":"sidebar","instancePolicy":"perWorkspace","defaultPinned":true,"openOnWorkspace":"reveal"},
             {"id":"terminal","title":"Terminal","icon":"terminal","container":"editor","instancePolicy":"multiple","openOnWorkspace":"createOne","startupOrder":20},
             {"id":"editor","title":"Editor","icon":"log","container":"editor","instancePolicy":"perResource"}

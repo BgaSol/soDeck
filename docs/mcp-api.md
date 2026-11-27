@@ -295,4 +295,4 @@ phase=collecting 表示接纳/采集，finalizing 表示最终保存和原生清
 
 返回[文档索引](README.md)。
 
-当前 API 2.1 文件任务的 `native.transfer` 增加 `phase`（preparing/transferring/finalizing/committing/finished）和 `stage`；终态保留最终 `received/total`，`native.error` 保留 `stage/osCode`。下载 `file.commitState` 与上传使用相同核心事实，只有稳定交付才提供 `localPath`。正文进度完成不代表校验或提交成功。
+API 2.1 文件任务的 `native.transfer` 增加 `phase`（preparing/transferring/finalizing/committing/finished）和 `stage`；终态保留最终 `received/total`，`native.error` 保留 `stage/osCode`。下载 `file.commitState` 与上传使用相同核心事实，只有稳定交付才提供 `localPath`。正文进度完成不代表校验或提交成功。

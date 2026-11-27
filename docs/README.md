@@ -37,7 +37,7 @@
 - [当前架构](architecture.md)：分层、资源归属、显示交接和系统适配。
 - [界面设计系统](../DESIGN.md)：三主题、公共控件、核心尺寸和插件视觉边界。
 - [通用文件编辑 SDK](features/file-editor.md)：组件自己的编辑页、草稿、保存、导出与关闭接入。
-- [插件 API](plugin-api.md)：统一 API 2.1、SDK、清单、RPC 与版本契约。
+- [插件 API](plugin-api.md)：统一 API 2.2、SDK、清单、RPC 与版本契约。
 - [MCP API](mcp-api.md)：Agent MCP 的资料发现、打开/取消、歧义与任务身份、工具、查询分页、输出模式、等待与错误契约。
 - [开发指南](development.md)：环境、命令、检查范围与文档收束流程。
 - [分发文档](distribution.md)：五平台原生打包、签名、独立发布和失败恢复。
@@ -74,5 +74,7 @@
 - [核心 2.10.0](releases/v2.10.0.md)：文件传输阶段、安全本地提交与统一 API 2.1。
 
 - [核心 2.11.0](releases/v2.11.0.md)：通用用户激活通知；终端、文件及 Docker 独立提供目录发布与跟随。
+
+- [核心 2.12.0](releases/v2.12.0.md)：网络故障原因、监听与检查表达及统一 API 2.2。
 
 返回[项目首页](../README.md)。

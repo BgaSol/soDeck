@@ -129,7 +129,7 @@ pub fn run_with_commands(
                         serde_json::from_value(frame["params"].clone())
                             .map_err(|e| RpcError::invalid(e.to_string()))?;
                     if !sodeck_plugin_protocol::compatible(&init.core_api_version, API_VERSION) {
-                        return Err(RpcError::invalid("核心 API 不匹配，需要 API 2.1"));
+                        return Err(RpcError::invalid("核心 API 不匹配，需要 API 2.2"));
                     }
                     client
                         .inner

@@ -375,7 +375,7 @@ fn main() {
                     fs::write(format!("{directory}/child-pid"), child.id().to_string()).unwrap();
                 }
                 send(
-                    json!({"jsonrpc":"2.0","id":frame["id"],"result":{"apiVersion":"2.1","commandHandlers":if mode=="second-command" {json!(["second.open.v1"])} else {json!(["terminal.open.v1"])}}}),
+                    json!({"jsonrpc":"2.0","id":frame["id"],"result":{"apiVersion":"2.2","commandHandlers":if mode=="second-command" {json!(["second.open.v1"])} else {json!(["terminal.open.v1"])}}}),
                 );
                 eprintln!("fixture diagnostic");
                 send(
@@ -462,7 +462,7 @@ fn main() {
                     frame.to_string(),
                 )
                 .unwrap();
-                send(json!({"jsonrpc":"2.0","id":"initialize","result":{"apiVersion":"2.1"}}));
+                send(json!({"jsonrpc":"2.0","id":"initialize","result":{"apiVersion":"2.2"}}));
             }
             _ if frame["id"]
                 .as_str()

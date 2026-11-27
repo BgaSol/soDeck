@@ -66,6 +66,31 @@ fn put(
         }
     }
 }
+fn summary(value: &Value) -> Value {
+    let mut value = value.clone();
+    if let Some(failure) = value.get_mut("failure").and_then(Value::as_object_mut) {
+        failure.remove("diagnostic");
+    }
+    if let Some(object) = value.as_object_mut() {
+        object.remove("diagnostic");
+    }
+    value
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn shared_failures_keep_recovery_facts_without_raw_diagnostics() {
+        let value = json!({"ok":false,"target":{"host":"127.0.0.1","port":8080},"failure":{"code":"forwardingDenied","message":"拒绝转发","hint":"检查策略","diagnostic":"raw remote error"}});
+        let result = summary(&value);
+        assert!(result["failure"].get("diagnostic").is_none());
+        assert_eq!(result["failure"]["hint"], value["failure"]["hint"]);
+        assert_eq!(result["target"], value["target"]);
+        assert!(value["failure"].get("diagnostic").is_some());
+    }
+}
+
 pub fn start(service: Arc<Service>, client: Client, receive: Receiver<()>) {
     std::thread::spawn(move || {
         let mut cache: HashMap<String, Published> = HashMap::new();
@@ -83,9 +108,9 @@ pub fn start(service: Arc<Service>, client: Client, receive: Receiver<()>) {
                 let rows=a.rules.items.iter().filter(|r|r.server==v.server).map(|rule|{
                     let run=a.runs.get(&rule.id).map(|r|{
                         let elsewhere=r.request["expectedContext"]!=v.context;
-                        json!({"runId":r.request["operationId"],"ruleRevision":r.rule.revision,"rule":r.rule.value(),"ownedElsewhere":elsewhere,"canStart":r.snapshot["cleanupComplete"]==true&&r.released&&r.query_error.is_none(),"released":r.released,"stopRequested":r.stop_requested,"queryError":r.query_error.as_ref().map(|s|s.chars().take(1024).collect::<String>()),"observedAt":r.observed_at.map(|s|s*1000),"snapshot":{"state":r.snapshot["state"],"cleanupComplete":r.snapshot["cleanupComplete"],"address":if elsewhere{Value::Null}else{r.snapshot["address"].clone()},"error":r.snapshot["error"]["message"].as_str().map(|s|s.chars().take(1024).collect::<String>())}})
+                        json!({"runId":r.request["operationId"],"lastError":r.last_error.as_ref().map(summary),"ruleRevision":r.rule.revision,"rule":r.rule.value(),"ownedElsewhere":elsewhere,"canStart":r.snapshot["cleanupComplete"]==true&&r.released&&r.query_error.is_none(),"released":r.released,"stopRequested":r.stop_requested,"queryError":r.query_error.as_ref().map(|s|s.chars().take(1024).collect::<String>()),"observedAt":r.observed_at.map(|s|s*1000),"snapshot":{"state":r.snapshot["state"],"cleanupComplete":r.snapshot["cleanupComplete"],"address":if elsewhere{Value::Null}else{r.snapshot["address"].clone()},"error":r.snapshot["error"]["message"].as_str().map(|s|s.chars().take(1024).collect::<String>()),"failure":r.snapshot.get("failure").map(summary)}})
                     });
-                    (rule.id.clone(),json!({"version":1,"rule":Rule::value(rule),"run":run,"check":a.checks.get(&rule.id)}))
+                    (rule.id.clone(),json!({"version":1,"rule":Rule::value(rule),"run":run,"check":a.checks.get(&rule.id).map(summary)}))
                 }).collect::<Vec<_>>();
                 (id.clone(),v.context.clone(),a.rules.error.clone(),rows)
             }).collect::<Vec<_>>()

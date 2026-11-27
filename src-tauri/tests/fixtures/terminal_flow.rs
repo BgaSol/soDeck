@@ -95,7 +95,7 @@ fn terminal_fixture(f: &Fixture) -> (String, String, String) {
     let binary = format!("plugin{}", std::env::consts::EXE_SUFFIX);
     std::fs::copy(env!("CARGO_BIN_EXE_plugin-fixture"), plugin.join(&binary)).unwrap();
     std::fs::write(plugin.join("ui/index.html"), "<p>terminal</p>").unwrap();
-    std::fs::write(plugin.join("plugin.json"),json!({"id":"test.terminal","name":"PTY test","version":"0.1.0","apiVersion":"2.1","target":sodeck::TARGET,"entry":binary,"ui":{"entry":"ui/index.html","views":[{"id":"terminal","title":"终端","icon":"terminal","container":"editor","instancePolicy":"multiple","openOnWorkspace":"createOne"}]}}).to_string()).unwrap();
+    std::fs::write(plugin.join("plugin.json"),json!({"id":"test.terminal","name":"PTY test","version":"0.1.0","apiVersion":"2.2","target":sodeck::TARGET,"entry":binary,"ui":{"entry":"ui/index.html","views":[{"id":"terminal","title":"终端","icon":"terminal","container":"editor","instancePolicy":"multiple","openOnWorkspace":"createOne"}]}}).to_string()).unwrap();
     f.core.load(&plugin).unwrap();
     let context = f.core.workspace_projection("main").unwrap().workspaces[0].context.clone();
     f.core.ui_action("main", &context, json!({"op":"open","key":"test.terminal:terminal","requestId":"terminal-fixture"})).unwrap();

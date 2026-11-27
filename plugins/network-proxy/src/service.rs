@@ -206,7 +206,15 @@ impl Service {
                     .get(&id)
                     .is_some_and(|v| v["listenerId"] == listener)
             {
-                a.checks.insert(id,json!({"checking":false,"listenerId":listener,"runId":request["operationId"],"observedAt":now(),"ok":result.is_ok(),"message":result.map(|v|v["message"].as_str().unwrap_or("TCP 可达").to_owned()).unwrap_or_else(|e|e)}));
+                let (ok, message, failure) = match result {
+                    Ok(value) => (
+                        true,
+                        value["message"].as_str().unwrap_or("TCP 可达").to_owned(),
+                        None,
+                    ),
+                    Err(error) => (false, error.message.clone(), Some(error)),
+                };
+                a.checks.insert(id,json!({"checking":false,"listenerId":listener,"runId":request["operationId"],"observedAt":now(),"ok":ok,"message":message,"failure":failure,"target":if rule["type"]=="tcpForward"{&rule["target"]}else{&target}}));
             }
             drop(a);
             service.changed();

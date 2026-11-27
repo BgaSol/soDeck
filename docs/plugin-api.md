@@ -1,10 +1,10 @@
-# 外置插件 API 2.1
+# 外置插件 API 2.2
 
 本文定义当前核心与插件的唯一 SDK 基线。功能操作见[功能索引](README.md)，工程与打包见[开发指南](development.md)。插件是可信扩展，分进程用于生命周期与故障恢复；不声明权限列表，不引入授权或沙箱流程。
 
 ## 版本与 SDK 边界
 
-清单必须声明 version、apiVersion:"2.1"、target 和包内入口。API 使用规范 major.minor：主版本相同且核心 minor 不低于插件要求才可加载。API 1 插件停止执行，但已安装登记、启用意图、数据和更新来源保留，可在管理页升级；不加载历史 UI、能力或 RPC 适配。核心 2.10.0 起的当前 SDK 基线为 2.1，六插件使用同一份协议与客户端；新增复制阶段和故障字段后全部同步，不维护历史 SDK 或运行时字段降级。未来变更通过显式 API 版本与插件升级处理。
+清单必须声明 version、apiVersion:"2.2"、target 和包内入口。API 使用规范 major.minor：主版本相同且核心 minor 不低于插件要求才可加载。API 1 插件停止执行，但已安装登记、启用意图、数据和更新来源保留，可在管理页升级；不加载历史 UI、能力或 RPC 适配。核心 2.12.0 起的当前 SDK 基线为 2.2，六插件使用同一份协议与客户端；网络故障结构和 SDK 清单同步升级，旧 API 2.1 插件仍可在 2.2 核心加载，不维护历史 SDK 或运行时字段降级。未来变更通过显式 API 版本与插件升级处理。
 
 - [plugin-protocol](../crates/plugin-protocol/src/lib.rs) 是核心与 Rust 客户端共同使用的数据契约；[Request](../crates/plugin-protocol/src/requests.rs) 定义当前控制方法、参数、Context 和错误。业务 payload、共享状态值及插件 UI data 仍由插件定义。
 - [plugin-client](../crates/plugin-client/src/lib.rs) 统一初始化、有界并发收发、命令票据和文件编辑生命周期。插件通过 `client.request(api::call::Target(api::ViewContext { ... }))` 等封闭请求入口调用服务；稳定的会话、程序、exec/process 和资源回执由关联类型解码，领域快照及插件自定内容保留 JSON。底层原始方法名发送为私有实现。初始化前或重复初始化失败，不执行业务回调。反向调用先按共享 `Callback` 校验方法、Context 与核心字段，插件业务状态机可以投影已校验的回调内容。
@@ -14,7 +14,7 @@
 ## 清单与初始化
 
 ```json
-{"id":"example.plugin","name":"示例","version":"1.0.0","apiVersion":"2.1","target":"x86_64-pc-windows-msvc","entry":"bin/example.exe","updateSource":{"repository":"BgaSol/soDeck","tagPrefix":"plugin-example-v"}}
+{"id":"example.plugin","name":"示例","version":"1.0.0","apiVersion":"2.2","target":"x86_64-pc-windows-msvc","entry":"bin/example.exe","updateSource":{"repository":"BgaSol/soDeck","tagPrefix":"plugin-example-v"}}
 ```
 
 version 按 SemVer 校验；API 与组件版本独立。每包对应一个正式支持的平台架构，Unix 入口保留执行位。ui、commands、settings 可按实际使用声明，但它们不再分别声明 apiVersion。
@@ -258,9 +258,9 @@ outcome 为：
 | topic／key | value |
 | --- | --- |
 | `network.tunnelService.v1`／current | `{version:1,ready:true,publishState:"synced"或"limited",storageError:null或string,observedAt}` |
-| `network.tunnelRules.v1`／ruleId | `{version:1,rule,run:null或{runId,ruleRevision,rule,ownedElsewhere,canStart,released,stopRequested,queryError,observedAt,snapshot:{state,cleanupComplete,address,error}},check:null或{checking,listenerId,runId,observedAt?,ok?,message?}}` |
+| `network.tunnelRules.v1`／ruleId | `{version:1,rule,run:null或{runId,ruleRevision,rule,ownedElsewhere,canStart,released,stopRequested,queryError,observedAt,snapshot:{state,cleanupComplete,address,error,failure?},lastError?},check:null或{checking,listenerId,runId,observedAt?,target?,ok?,message?,failure?}}` |
 
-rule 是网络插件既有 schema 1 的普通规则配置。run.rule 固定启动配置，与当前保存配置分别表达；runId 是 opaque 关联标识，不是核心资源操作凭证。其他 Context 持有时 ownedElsewhere=true、address=null。snapshot.error 与 queryError 只提供有界说明，不含客户端流、凭据或完整网络路径。日期时间为 Unix 毫秒，生产者每约 5 秒更新服务 observedAt；消费者超过 15 秒没有有效服务观测，或具体 Run 观测过期时停止把入口当作当前可用事实。
+rule 是网络插件既有 schema 1 的普通规则配置。run.rule 固定启动配置，与当前保存配置分别表达；runId 是 opaque 关联标识，不是核心资源操作凭证。其他 Context 持有时 ownedElsewhere=true、address=null。snapshot.error 与 queryError 只提供有界说明。failure 摘要保留 code/stage/message/hint，lastError 为最近一次普通客户端失败的 {message,failure,target,observedAt}；共享投影不含 diagnostic、客户端流、凭据或完整网络路径。TCP probe 失败只进入原 Run 的 check，最近客户端失败是独立历史观测。日期时间为 Unix 毫秒，生产者每约 5 秒更新服务 observedAt；消费者超过 15 秒没有有效服务观测，或具体 Run 观测过期时停止把入口当作当前可用事实。
 
 单条记录与整个范围沿用 sharedState 预算，不增加跨记录事务。发布失败为 limited；尚未取得同步副本不能把缺少记录解释为可以安全重复启动。UI 候选只是提示，真正命令由 Service 重读事实决定。删除移除记录，进程／逻辑 view／Context 结束由核心回收其事实；Surface 变化不结束监听。新启动自动检查一次实际入口到目标的 TCP，joined／reused 不重复检查，TCP 可达不表示应用健康。用户行为和失败恢复见[网络隧道](features/network-proxy.md#其他插件的快捷入口)及[Docker](features/docker.md#容器端口隧道)。
 
@@ -318,6 +318,10 @@ DraftRef 为 `{documentId,revision}`。revision、sequence 和 editRevision 用�
 ## 通用网络流
 
 net.poll({viewId}) 每次最多领取 16 个本地客户端；net.tcp.open 固定 listenerId/clientStreamId/operationId/host/port，同客户端只接纳一个目标。net.stream.status/read/write/finish/splice 处理协商和转交，net.stream.close({id}) 只关闭流；监听使用下述票据生命周期。默认绑定回环，可传其他本机地址；远端 DNS 由最终会话解析。
+
+网络资源新增 failure，字段为 {code,stage,message,hint,diagnostic}，正常时为 null。单流状态及监听快照保留完整对象；clients[].target.failure 只含 code/stage，批量旧 error 使用最多 128 UTF-8 字节的友好说明，控制字符替换为空格，完整诊断由 net.stream.status 读取。已有 error 的字符串/对象类型不变，从同一失败派生，不能解析文字判断分类。失败类型与构造见 [network.rs](../crates/plugin-protocol/src/network.rs)。message 最多 256、hint 384、diagnostic 1024 UTF-8 字节；批量摘要不重复说明和诊断，64 客户端与最多四个 probe 的最坏转义仍受 64 KiB 帧约束。
+
+code 包括 forwardingDenied、targetConnectFailed、forwardingUnsupported、resourceLimit、connectionRefused、timeout、sessionLost、cancelled、listenFailed、protocolError、ioFailed 和 unknown；stage 为 listen/targetConnect/negotiation/relay/check。SSH ConnectFailed 只证明远端连接失败，不表示确定拒绝或 DNS 故障；forwardingDenied 只表示服务端策略拒绝，不证明具体配置项。message/hint 由掌握该事实的一层生成，插件不导入传输实现。
 
 协商每次最多 512 字节，累计最多 1024 字节，控制队列 8 项。每监听最多 64 活跃/16 待协商连接，每实例 32 监听、全核心 256 本地客户端；协商约 15 秒、远端连接 10 秒。probe 最多 4 并发、10 秒。正常正文原生转发；资源停止需等待真实端口、流和 worker 退出。
 

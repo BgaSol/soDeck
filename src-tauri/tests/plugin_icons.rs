@@ -14,7 +14,7 @@ fn static_icons_use_the_installed_package_without_process_or_catalog() {
     ));
     fs::create_dir_all(root.join("plugin/assets")).unwrap();
     fs::write(root.join("plugin/entry"), "not executed").unwrap();
-    let definition = |version: &str| json!({"id":"arbitrary.tool","name":"tool","version":version,"apiVersion":"2.1","target":TARGET,"entry":"entry","icon":"custom","icons":{"custom":"assets/shape.svg"}});
+    let definition = |version: &str| json!({"id":"arbitrary.tool","name":"tool","version":version,"apiVersion":"2.2","target":TARGET,"entry":"entry","icon":"custom","icons":{"custom":"assets/shape.svg"}});
     fs::write(
         root.join("plugin/plugin.json"),
         definition("1.0.0").to_string(),
@@ -57,7 +57,7 @@ fn icon_mapping_rejects_external_paths_and_keeps_old_manifests_compatible() {
         model::Manifest,
         plugin_icons::{url, validate},
     };
-    let legacy:Manifest=serde_json::from_value(json!({"id":"test","name":"test","version":"1.0.0","apiVersion":"2.1","target":TARGET,"entry":"entry"})).unwrap();
+    let legacy:Manifest=serde_json::from_value(json!({"id":"test","name":"test","version":"1.0.0","apiVersion":"2.2","target":TARGET,"entry":"entry"})).unwrap();
     assert!(url(&legacy, "bot").is_none());
     for path in [
         "../a.svg",

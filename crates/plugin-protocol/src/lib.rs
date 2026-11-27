@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-pub const API_VERSION: &str = "2.1";
+pub const API_VERSION: &str = "2.2";
 pub const FRAME_LIMIT: usize = 64 * 1024;
 pub const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
@@ -146,7 +146,8 @@ mod tests {
     #[test]
     fn rejects_other_protocols_and_malformed_versions() {
         assert!(supports("2.0"));
-        for v in ["1", "1.0", "2", "2.00", "2.2", "2.0.0", "3.0", "2.-1", ""] {
+        assert!(supports("2.1"));
+        for v in ["1", "1.0", "2", "2.00", "2.3", "2.0.0", "3.0", "2.-1", ""] {
             assert!(!supports(v), "{v}");
         }
         assert!(compatible("2.1", "2.0"));
@@ -218,5 +219,6 @@ pub mod program;
 pub mod requests;
 
 pub mod callbacks;
+pub mod network;
 pub mod replies;
 pub mod servers;

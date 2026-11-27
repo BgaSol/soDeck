@@ -72,5 +72,23 @@ try{
  await editor.locator('input[name=name]').fill('SOCKS 检查');await editor.locator('input[name=auto]').check();await editor.getByRole('button',{name:'保存',exact:true}).click();await page.locator('.plugin-view-dialog').waitFor({state:'detached'});
  await sidebar.getByRole('button',{name:'SOCKS 检查'}).click();await sidebar.getByRole('button',{name:'启动',exact:true}).click();await sidebar.getByRole('button',{name:'停止',exact:true}).waitFor();await sidebar.getByText('连通性检查',{exact:true}).click();await sidebar.getByRole('textbox',{name:'检查主机',exact:true}).fill('typed.example');await cycles();
  assert.equal(await sidebar.getByRole('textbox',{name:'检查主机',exact:true}).inputValue(),'typed.example');assert(await sidebar.getByRole('textbox',{name:'检查主机',exact:true}).evaluate(el=>el===document.activeElement));
+ // Render a structured failure through the shipped manager; remote rejection is covered separately.
+ await sidebar.locator('#app').evaluate(async()=>{
+   const data=await sodeck.request('event',{action:'snapshot'}),catalog=data.catalog,row=catalog.rules[0];
+   row.rule.type='tcpForward';row.rule.target={host:'127.0.0.1',port:8080};row.run.rule=structuredClone(row.rule);row.run.lastError=null;
+   catalog.checks[row.rule.id]={listenerId:row.run.snapshot.listenerId,checking:false,ok:false,observedAt:Date.now(),target:row.rule.target,failure:{code:'forwardingDenied',stage:'targetConnect',message:'SSH 服务器拒绝端口转发',hint:'请检查 AllowTcpForwarding、DisableForwarding、PermitOpen 或登录密钥限制。',diagnostic:'Failed to open channel (AdministrativelyProhibited) <untrusted>'}};
+   const request=sodeck.request;sodeck.request=(method,p)=>method==='event'&&p.action==='snapshot'?Promise.resolve({catalog}).then(data=>{window.refreshes++;return data;}):request(method,p);
+ });
+ await sidebar.getByText('SSH 服务器拒绝端口转发',{exact:true}).waitFor();assert.equal(await sidebar.getByText('本机入口已监听',{exact:true}).count(),1);
+ assert.equal(await sidebar.locator('.client-failure').count(),0);assert(await sidebar.getByRole('button',{name:'停止',exact:true}).isEnabled());
+ const diagnostic=sidebar.getByText('诊断详情',{exact:true});assert(!await diagnostic.evaluate(el=>el.parentElement.open));await diagnostic.click();await diagnostic.focus();await cycles();
+ assert(await diagnostic.evaluate(el=>el.parentElement.open&&el===document.activeElement));assert.match(await sidebar.locator('.failure pre').textContent(),/<untrusted>/);assert.equal(await sidebar.locator('untrusted').count(),0);
+ fs.mkdirSync('artifacts/network-ui',{recursive:true});
+ for(const theme of ['light','dark','dopamine']){
+   await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+   await page.setViewportSize({width:900,height:760});
+   assert(await sidebar.locator('.detail').evaluate(el=>el.scrollWidth<=el.clientWidth+2),'failure detail overflow');
+   await sidebar.locator('.detail').screenshot({path:'artifacts/network-ui/failure-'+theme+'.png'});
+ }
  assert.deepEqual(errors,[]);console.log('Network UI: real forwarding, unchanged listener/rules after preferences, new SOCKS/fixed-port defaults, form scroll, themes, dirty close, remount and delete passed.');
 }finally{await browser.close();await vite.close();child.stdin.end();await new Promise(r=>child.exitCode!==null?r():child.once('exit',r));await new Promise(r=>service.close(r));if(!path.basename(data).startsWith('sodeck-network-ui-'))throw new Error('Unexpected cleanup path');fs.rmSync(data,{recursive:true,force:true});}

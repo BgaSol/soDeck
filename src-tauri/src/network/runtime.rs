@@ -19,7 +19,7 @@ pub(super) fn new_stream(
             remote,
             state: Mutex::new(StreamState {
                 state: if remote { "connecting" } else { "ready" },
-                error: None,
+                failure: None,
                 read: None,
                 reading: false,
                 eof: false,
@@ -42,15 +42,15 @@ pub(super) async fn listen(
     slots: Arc<Semaphore>,
 ) {
     let result=async {
-        let socket=TcpListener::bind((host,port)).await.map_err(|e|e.to_string())?;
-        {let mut st=l.status.lock().unwrap();let addr=socket.local_addr().map_err(|e|e.to_string())?;st.address=json!({"host":addr.ip().to_string(),"port":addr.port()});st.state="running";}
+        let socket=TcpListener::bind((host,port)).await.map_err(|e|NetworkFailure::new(FailureCode::ListenFailed,FailureStage::Listen,"本机端口监听失败").with_diagnostic(e))?;
+        {let mut st=l.status.lock().unwrap();let addr=socket.local_addr().map_err(|e|NetworkFailure::io(e,FailureStage::Listen))?;st.address=json!({"host":addr.ip().to_string(),"port":addr.port()});st.state="running";}
         let session_cancel=l.session.cancellation();
         loop {tokio::select!{
             biased;
             _=l.cancel.cancelled()=>break,
-            _=session_cancel.cancelled()=>return Err("服务器连接已断开".to_owned()),
+            _=session_cancel.cancelled()=>return Err(NetworkFailure::session_lost(FailureStage::Listen)),
             accepted=socket.accept()=>{
-                let (socket,peer)=accepted.map_err(|e|e.to_string())?;let _=socket.set_nodelay(true);
+                let (socket,peer)=accepted.map_err(|e|NetworkFailure::io(e,FailureStage::Listen))?;let _=socket.set_nodelay(true);
                 let Ok(permit)=slots.clone().try_acquire_owned() else {drop(socket);continue};
                 let (s,rx)={let mut all=l.streams.lock().unwrap();
                     all.retain(|_,s|!matches!(s.state.lock().unwrap().state,"closed"|"failed")||s.created.elapsed()<Duration::from_secs(20));
@@ -70,16 +70,14 @@ pub(super) async fn listen(
                 tokio::spawn(async move {let _task=task;serve(s,rx,Box::new(socket),Some(permit)).await;});
             }
         }}
-        Ok::<(),String>(())
+        Ok::<(),NetworkFailure>(())
     }.await;
     l.close();
     l.probe_clients.lock().unwrap().clear();
     let mut status = l.status.lock().unwrap();
     status.state = if result.is_ok() { "closed" } else { "failed" };
     if let Err(error) = result {
-        status.error = Some(
-            json!({"stage":if status.address.is_null(){"listen"}else{"sessionLost"},"message":error}),
-        );
+        status.failure = Some(error);
     }
 }
 pub(super) async fn connect(
@@ -92,9 +90,9 @@ pub(super) async fn connect(
     let cancel = l.session.cancellation();
     let result = tokio::select! {
         biased;
-        _=s.cancel.cancelled()=>Err("已取消".to_owned()),
-        _=cancel.cancelled()=>Err("服务器连接已断开".to_owned()),
-        r=tokio::time::timeout(Duration::from_secs(10),l.session.open_tcp(&host,port))=>r.unwrap_or_else(|_|Err("目标 TCP 连接超时".into()))
+        _=s.cancel.cancelled()=>Err(NetworkFailure::cancelled(FailureStage::TargetConnect)),
+        _=cancel.cancelled()=>Err(NetworkFailure::session_lost(FailureStage::TargetConnect)),
+        r=tokio::time::timeout(Duration::from_secs(10),l.session.open_tcp(&host,port))=>r.unwrap_or_else(|_|Err(NetworkFailure::timeout(FailureStage::TargetConnect,"目标 TCP 连接超时")))
     };
     match result {
         Ok(stream) => {
@@ -113,7 +111,7 @@ pub(super) async fn connect(
         Err(error) => {
             let mut st = s.state.lock().unwrap();
             st.state = "failed";
-            st.error = Some(error);
+            st.failure = Some(error);
         }
     }
 }
@@ -126,14 +124,14 @@ async fn serve(
     let mut stream = Some(stream);
     let outcome=async {
         loop {
-            let command=tokio::select!{biased;_=s.cancel.cancelled()=>return Ok(()),_=tokio::time::sleep_until((s.created+Duration::from_secs(15)).into())=>return Err("代理协商超时".into()),c=rx.recv()=>c};
+            let command=tokio::select!{biased;_=s.cancel.cancelled()=>return Ok(()),_=tokio::time::sleep_until((s.created+Duration::from_secs(15)).into())=>return Err(NetworkFailure::timeout(FailureStage::Negotiation,"代理协商超时")),c=rx.recv()=>c};
             let operation=async {match command {
-                Some(Command::Read(max))=>{let mut bytes=vec![0;max];let n=stream.as_mut().unwrap().read(&mut bytes).await.map_err(|e|e.to_string())?;bytes.truncate(n);let mut st=s.state.lock().unwrap();st.budget+=n;st.eof=n==0;st.read=Some(bytes);st.reading=false;}
-                Some(Command::Write(bytes))=>{stream.as_mut().unwrap().write_all(&bytes).await.map_err(|e|e.to_string())?;}
-                Some(Command::Take(reply))=>{let _=reply.send(stream.take().unwrap());return Ok::<bool,String>(true)},
+                Some(Command::Read(max))=>{let mut bytes=vec![0;max];let n=stream.as_mut().unwrap().read(&mut bytes).await.map_err(|e|NetworkFailure::io(e,FailureStage::Negotiation))?;bytes.truncate(n);let mut st=s.state.lock().unwrap();st.budget+=n;st.eof=n==0;st.read=Some(bytes);st.reading=false;}
+                Some(Command::Write(bytes))=>{stream.as_mut().unwrap().write_all(&bytes).await.map_err(|e|NetworkFailure::io(e,FailureStage::Negotiation))?;}
+                Some(Command::Take(reply))=>{let _=reply.send(stream.take().unwrap());return Ok::<bool,NetworkFailure>(true)},
                 Some(Command::Finish)|None=>{let _=stream.as_mut().unwrap().shutdown().await;return Ok(true)}
             }Ok(false)};
-            let done=tokio::select!{biased;_=s.cancel.cancelled()=>return Ok(()),r=tokio::time::timeout(Duration::from_secs(10),operation)=>r.map_err(|_|"协商 I/O 超时".to_owned())??};
+            let done=tokio::select!{biased;_=s.cancel.cancelled()=>return Ok(()),r=tokio::time::timeout(Duration::from_secs(10),operation)=>r.map_err(|_|NetworkFailure::timeout(FailureStage::Negotiation,"协商 I/O 超时"))??};
             if done{return Ok(())}
         }
     }.await;
@@ -143,36 +141,38 @@ async fn serve(
     let mut state = s.state.lock().unwrap();
     if !state.claimed {
         state.state = if outcome.is_ok() { "closed" } else { "failed" };
-        state.error = outcome.err();
+        state.failure = outcome.err();
     }
 }
 pub(super) async fn splice(l: Arc<Listener>, a: Arc<TcpStream>, b: Arc<TcpStream>) {
     let work = async {
         let (tx, rx) = oneshot::channel();
         let (ty, ry) = oneshot::channel();
-        a.commands
-            .send(Command::Take(tx))
-            .await
-            .map_err(|_| "本地流已关闭")?;
-        b.commands
-            .send(Command::Take(ty))
-            .await
-            .map_err(|_| "远端流已关闭")?;
-        let mut left = rx.await.map_err(|_| "本地流移交失败")?;
-        let mut right = ry.await.map_err(|_| "远端流移交失败")?;
+        a.commands.send(Command::Take(tx)).await.map_err(|_| {
+            NetworkFailure::new(FailureCode::IoFailed, FailureStage::Relay, "本地流已关闭")
+        })?;
+        b.commands.send(Command::Take(ty)).await.map_err(|_| {
+            NetworkFailure::new(FailureCode::IoFailed, FailureStage::Relay, "远端流已关闭")
+        })?;
+        let mut left = rx.await.map_err(|_| {
+            NetworkFailure::new(FailureCode::IoFailed, FailureStage::Relay, "本地流移交失败")
+        })?;
+        let mut right = ry.await.map_err(|_| {
+            NetworkFailure::new(FailureCode::IoFailed, FailureStage::Relay, "远端流移交失败")
+        })?;
         // Tokio preserves half-close: EOF in one direction still drains the other.
         tokio::io::copy_bidirectional(&mut left, &mut right)
             .await
-            .map_err(|e| e.to_string())?;
-        Ok::<(), String>(())
+            .map_err(|e| NetworkFailure::io(e, FailureStage::Relay))?;
+        Ok::<(), NetworkFailure>(())
     };
     let session = l.session.cancellation();
-    let result = tokio::select! {biased;_=a.cancel.cancelled()=>Ok(()),_=b.cancel.cancelled()=>Ok(()),_=session.cancelled()=>Err("服务器连接已断开".into()),r=work=>r};
+    let result = tokio::select! {biased;_=a.cancel.cancelled()=>Ok(()),_=b.cancel.cancelled()=>Ok(()),_=session.cancelled()=>Err(NetworkFailure::session_lost(FailureStage::Relay)),r=work=>r};
     for s in [&a, &b] {
         s.cancel.cancel();
         let mut st = s.state.lock().unwrap();
         st.state = if result.is_ok() { "closed" } else { "failed" };
-        st.error = result.clone().err();
+        st.failure = result.clone().err();
     }
     if let Some((_, probe)) = a.id.split_once("@probe:") {
         l.probe_clients.lock().unwrap().remove(probe);

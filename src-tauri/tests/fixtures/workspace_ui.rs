@@ -114,7 +114,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let result = match frame["method"].as_str() {
             Some("initialize") => {
                 let manifest: Value = serde_json::from_slice(&std::fs::read("plugin.json")?)?;
-                Ok(json!({"apiVersion":"2.1","commandHandlers":manifest["commands"]["handlers"]}))
+                Ok(json!({"apiVersion":"2.2","commandHandlers":manifest["commands"]["handlers"]}))
             }
             Some("commands.handle") => {
                 if frame["params"]["payload"]["none"] == true {

@@ -21,6 +21,66 @@ pub(crate) struct Client {
     index: usize,
     keys: Arc<HostKeys>,
 }
+pub(super) fn tcp_failure(error: russh::Error) -> sodeck_plugin_protocol::network::NetworkFailure {
+    use russh::{ChannelOpenFailure as Reason, Error};
+    use sodeck_plugin_protocol::network::{
+        FailureCode as Code, FailureStage as Stage, NetworkFailure,
+    };
+    if let Error::IO(error) = error {
+        return NetworkFailure::io(error, Stage::TargetConnect);
+    }
+    let failure = match &error {
+        Error::ChannelOpenFailure(Reason::AdministrativelyProhibited) => NetworkFailure::new(Code::ForwardingDenied, Stage::TargetConnect, "SSH 服务器拒绝端口转发")
+            .with_hint("请检查服务器转发策略，例如 AllowTcpForwarding、DisableForwarding、PermitOpen 或登录密钥限制。"),
+        Error::ChannelOpenFailure(Reason::ConnectFailed) => NetworkFailure::new(Code::TargetConnectFailed, Stage::TargetConnect, "SSH 服务器未能连接目标")
+            .with_hint("请从远端服务器核对目标地址、端口、服务及域名解析。"),
+        Error::ChannelOpenFailure(Reason::UnknownChannelType) => NetworkFailure::new(Code::ForwardingUnsupported, Stage::TargetConnect, "SSH 服务器不支持此转发通道"),
+        Error::ChannelOpenFailure(Reason::ResourceShortage) => NetworkFailure::new(Code::ResourceLimit, Stage::TargetConnect, "SSH 服务器通道资源不足"),
+        Error::Disconnect | Error::HUP => NetworkFailure::session_lost(Stage::TargetConnect),
+        Error::ConnectionTimeout => NetworkFailure::timeout(Stage::TargetConnect, "目标连接超时"),
+        _ => NetworkFailure::new(Code::Unknown, Stage::TargetConnect, "无法建立远端 TCP 通道"),
+    };
+    failure.with_diagnostic(error)
+}
+
+#[cfg(test)]
+mod tcp_failure_tests {
+    use super::*;
+    use sodeck_plugin_protocol::network::FailureCode;
+    #[test]
+    fn channel_rejections_keep_their_actual_meaning() {
+        use russh::ChannelOpenFailure as R;
+        for (reason, code) in [
+            (R::AdministrativelyProhibited, FailureCode::ForwardingDenied),
+            (R::ConnectFailed, FailureCode::TargetConnectFailed),
+            (R::UnknownChannelType, FailureCode::ForwardingUnsupported),
+            (R::ResourceShortage, FailureCode::ResourceLimit),
+            (
+                R::Other {
+                    code: 80,
+                    reason: "refused 超时".into(),
+                },
+                FailureCode::Unknown,
+            ),
+        ] {
+            let failure = tcp_failure(russh::Error::ChannelOpenFailure(reason));
+            assert_eq!(failure.code, code);
+            assert!(failure.diagnostic.is_some());
+        }
+        let refused = tcp_failure(russh::Error::IO(
+            std::io::ErrorKind::ConnectionRefused.into(),
+        ));
+        assert_eq!(refused.code, FailureCode::ConnectionRefused);
+        assert_eq!(
+            tcp_failure(russh::Error::ConnectionTimeout).code,
+            FailureCode::Timeout
+        );
+        assert_eq!(
+            tcp_failure(russh::Error::HUP).code,
+            FailureCode::SessionLost
+        );
+    }
+}
 impl client::Handler for Client {
     type Error = Error;
     async fn check_server_key(&mut self, public: &PublicKeyOrCertificate) -> Result<bool, Error> {

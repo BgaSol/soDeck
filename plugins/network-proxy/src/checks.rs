@@ -1,9 +1,10 @@
-use crate::socks5;
+use crate::{failure, socks5};
 use serde_json::{json, Value};
 use socker::socks5::{
     Address, AuthenticationMethod, ClientGreeting, CommandType, Request, Response, ServerChoice,
     VERSION,
 };
+use sodeck_plugin_client::protocol::network::{FailureStage, NetworkFailure};
 use sodeck_plugin_client::protocol::requests as api;
 use sodeck_plugin_client::Client;
 use std::{
@@ -17,7 +18,7 @@ pub fn check(
     snapshot: &Value,
     rule: &Value,
     target: &Value,
-) -> Result<Value, String> {
+) -> Result<Value, NetworkFailure> {
     let began = Instant::now();
     if rule["type"] == "tcpForward" {
         let probe = format!(
@@ -32,15 +33,15 @@ pub fn check(
         )
         .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
         .and_then(|params| c.request(api::call::ListenerProbe(params)))
-        .map_err(|e| e.message)?;
+        .map_err(failure::rpc)?;
         while began.elapsed() < Duration::from_secs(11) {
             let s = c
                 .request(api::call::ListenerSnapshot(api::Listener {
                     listener_id: listener.to_string(),
                 }))
-                .map_err(|e| e.message)?;
+                .map_err(failure::rpc)?;
             if s["state"] != "running" {
-                return Err("隧道已停止，检查未完成".into());
+                return Err(NetworkFailure::cancelled(FailureStage::Check));
             }
             if let Some(client) = s["clients"]
                 .as_array()
@@ -63,29 +64,38 @@ pub fn check(
                         );
                     }
                     Some("failed") => {
+                        let status = c
+                            .request(api::call::StreamStatus(api::Stream {
+                                stream_id: format!(
+                                    "{}:target",
+                                    client["id"].as_str().unwrap_or_default()
+                                ),
+                            }))
+                            .map_err(failure::rpc)?;
+                        let error = failure::read(&status);
                         let _ = serde_json::from_value::<api::Resource>(json!({"id":client["id"]}))
                             .map_err(|_| {
                                 sodeck_plugin_client::RpcError::invalid("核心请求参数无效")
                             })
                             .and_then(|params| c.request(api::call::StreamClose(params)))
                             .map_err(|e| e.message);
-                        return Err(client["target"]["error"]
-                            .as_str()
-                            .unwrap_or("目标不可达")
-                            .into());
+                        return Err(error);
                     }
                     _ => {}
                 }
             }
             std::thread::sleep(Duration::from_millis(40));
         }
-        return Err("实际入口检查超时".into());
+        return Err(NetworkFailure::timeout(
+            FailureStage::Check,
+            "实际入口检查超时",
+        ));
     }
     let mut ip = snapshot["address"]["host"]
         .as_str()
-        .ok_or("入口未就绪")?
+        .ok_or_else(|| failure::protocol("入口未就绪"))?
         .parse::<std::net::IpAddr>()
-        .map_err(|_| "入口无效")?;
+        .map_err(|_| failure::protocol("入口无效"))?;
     if ip.is_unspecified() {
         ip = if ip.is_ipv4() {
             "127.0.0.1".parse().unwrap()
@@ -93,20 +103,22 @@ pub fn check(
             "::1".parse().unwrap()
         }
     }
-    let port = snapshot["address"]["port"].as_u64().ok_or("入口未就绪")? as u16;
+    let port = snapshot["address"]["port"]
+        .as_u64()
+        .ok_or_else(|| failure::protocol("入口未就绪"))? as u16;
     let host = target["host"]
         .as_str()
         .filter(|s| !s.is_empty() && s.len() <= 253)
-        .ok_or("请输入检查目标主机")?;
+        .ok_or_else(|| failure::protocol("请输入检查目标主机"))?;
     let target_port = target["port"]
         .as_u64()
         .filter(|p| *p > 0 && *p <= 65535)
-        .ok_or("请输入检查目标端口")? as u16;
+        .ok_or_else(|| failure::protocol("请输入检查目标端口"))? as u16;
     let mut socket = TcpStream::connect_timeout(&SocketAddr::new(ip, port), Duration::from_secs(2))
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| NetworkFailure::io(e, FailureStage::Check))?;
     socket
         .set_write_timeout(Some(Duration::from_secs(2)))
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| NetworkFailure::io(e, FailureStage::Check))?;
     negotiate(&mut socket, host, target_port, Duration::from_secs(12))?;
     Ok(json!({"ok":true,"message":"SOCKS5 入口与目标 TCP 可达","listenerId":listener}))
 }
@@ -115,19 +127,19 @@ fn read_frame(
     bytes: &mut Vec<u8>,
     total: usize,
     deadline: Instant,
-) -> Result<(), String> {
+) -> Result<(), NetworkFailure> {
     let mut offset = bytes.len();
     bytes.resize(total, 0);
     while offset < total {
         let remaining = deadline
             .checked_duration_since(Instant::now())
             .filter(|d| !d.is_zero())
-            .ok_or("SOCKS5 检查超时")?;
+            .ok_or_else(|| NetworkFailure::timeout(FailureStage::Check, "SOCKS5 检查超时"))?;
         socket
             .set_read_timeout(Some(remaining))
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| NetworkFailure::io(e, FailureStage::Check))?;
         match socket.read(&mut bytes[offset..]) {
-            Ok(0) => return Err("SOCKS5 响应提前结束".into()),
+            Ok(0) => return Err(failure::protocol("SOCKS5 响应提前结束")),
             Ok(n) => offset += n,
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(e)
@@ -136,9 +148,12 @@ fn read_frame(
                     std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
                 ) =>
             {
-                return Err("SOCKS5 检查超时".into())
+                return Err(NetworkFailure::timeout(
+                    FailureStage::Check,
+                    "SOCKS5 检查超时",
+                ))
             }
-            Err(e) => return Err(e.to_string()),
+            Err(e) => return Err(NetworkFailure::io(e, FailureStage::Check)),
         }
     }
     Ok(())
@@ -197,7 +212,10 @@ mod tests {
             let (mut socket, task) = serve(frame.clone(), Duration::ZERO);
             let error = negotiate(&mut socket, "probe", 80, Duration::from_secs(1)).unwrap_err();
             if frame[1] == 5 {
-                assert!(error.contains("状态 5"));
+                assert_eq!(
+                    error.code,
+                    sodeck_plugin_client::protocol::network::FailureCode::ConnectionRefused
+                );
             }
             task.join().unwrap();
         }
@@ -210,7 +228,10 @@ mod tests {
         );
         let start = Instant::now();
         let error = negotiate(&mut socket, "probe", 80, Duration::from_millis(180)).unwrap_err();
-        assert!(error.contains("超时"));
+        assert_eq!(
+            error.code,
+            sodeck_plugin_client::protocol::network::FailureCode::Timeout
+        );
         assert!(
             start.elapsed() < Duration::from_millis(450),
             "deadline reset on partial read"
@@ -224,42 +245,52 @@ fn negotiate(
     host: &str,
     port: u16,
     timeout: Duration,
-) -> Result<(), String> {
+) -> Result<(), NetworkFailure> {
     let method = AuthenticationMethod::NO_AUTHENTICATION;
     socket
-        .write_all(&socks5::encode(ClientGreeting {
-            methods: vec![method].into_boxed_slice(),
-        })?)
-        .map_err(|e| e.to_string())?;
+        .write_all(
+            &socks5::encode(ClientGreeting {
+                methods: vec![method].into_boxed_slice(),
+            })
+            .map_err(failure::protocol)?,
+        )
+        .map_err(|e| NetworkFailure::io(e, FailureStage::Check))?;
     let mut bytes = Vec::new();
     read_frame(socket, &mut bytes, 2, Instant::now() + timeout)?;
-    if socks5::decode::<ServerChoice>(&bytes)?.method != method {
-        return Err("SOCKS5 协商失败".into());
+    if socks5::decode::<ServerChoice>(&bytes)
+        .map_err(failure::protocol)?
+        .method
+        != method
+    {
+        return Err(failure::protocol("SOCKS5 协商失败"));
     }
     let address = host
         .parse::<std::net::IpAddr>()
         .map(Address::from)
         .unwrap_or_else(|_| Address::from(host));
     socket
-        .write_all(&socks5::encode(Request {
-            command: CommandType::CONNECT,
-            address,
-            port,
-        })?)
-        .map_err(|e| e.to_string())?;
+        .write_all(
+            &socks5::encode(Request {
+                command: CommandType::CONNECT,
+                address,
+                port,
+            })
+            .map_err(failure::protocol)?,
+        )
+        .map_err(|e| NetworkFailure::io(e, FailureStage::Check))?;
     bytes.clear();
     let deadline = Instant::now() + timeout;
     read_frame(socket, &mut bytes, 4, deadline)?;
     if bytes[0] != VERSION || bytes[2] != 0 {
-        return Err("SOCKS5 代理响应无效".into());
+        return Err(failure::protocol("SOCKS5 代理响应无效"));
     }
     if bytes[1] != 0 {
-        return Err(format!("目标连接失败，SOCKS5 状态 {}", bytes[1]));
+        return Err(failure::socks_failure(bytes[1]));
     }
-    let first = socks5::frame_len(&bytes)?;
+    let first = socks5::frame_len(&bytes).map_err(failure::protocol)?;
     read_frame(socket, &mut bytes, first, deadline)?;
-    let total = socks5::frame_len(&bytes)?;
+    let total = socks5::frame_len(&bytes).map_err(failure::protocol)?;
     read_frame(socket, &mut bytes, total, deadline)?;
-    socks5::decode::<Response>(&bytes)?;
+    socks5::decode::<Response>(&bytes).map_err(failure::protocol)?;
     Ok(())
 }

@@ -7,7 +7,7 @@
     "bot": "assets/icons/robot.svg"
   },
   "order": 60,
-  "apiVersion": "2.1",
+  "apiVersion": "2.2",
   "binary": "sodeck-mcp",
   "tagPrefix": "plugin-mcp-v",
   "ui": {

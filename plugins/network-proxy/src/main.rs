@@ -1,5 +1,6 @@
 mod checks;
 mod commands;
+mod failure;
 mod publication;
 mod rules;
 mod runtime;

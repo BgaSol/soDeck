@@ -78,6 +78,13 @@ try {
     if (ready) break;
   }
   if (!ready) throw new Error("OpenSSH did not listen within 5 seconds");
+  let networkDeniedPort;
+  if(flags.network){
+    const available=net.createServer();await new Promise(r=>available.listen(0,'127.0.0.1',r));networkDeniedPort=available.address().port;await new Promise(r=>available.close(r));
+    const config=path.join(directory,'sshd-network-denied.conf');fs.writeFileSync(config,fs.readFileSync(path.join(directory,'sshd_config'),'utf8').replace(`Port ${port}`,`Port ${networkDeniedPort}`).replace(`PidFile ${quote(path.join(directory,'pid'))}`,`PidFile ${quote(path.join(directory,'network-denied-pid'))}`).replace('AllowTcpForwarding yes','AllowTcpForwarding no'));
+    const child=startDaemon(config);extraDaemons.push(child);child.stderr.on('data',data=>{diagnostic+=data;});let error;child.on('error',e=>{error=e;});
+    let listening=false;for(let n=0;n<50;n++){await delay(100);if(error||child.exitCode!==null)throw new Error('Denied-forwarding SSH startup failed: '+(error??diagnostic));listening=await new Promise(r=>{const probe=net.connect({host:'127.0.0.1',port:networkDeniedPort});probe.on('connect',()=>{probe.destroy();r(true);});probe.on('error',()=>r(false));});if(listening)break;}if(!listening)throw new Error('Denied-forwarding SSH daemon did not listen');
+  }
   const mcpPorts=[port];
   if(flags.mcp)for(let i=0;i<2;i++){
     const extraSocket=net.createServer();await new Promise(r=>extraSocket.listen(0,'127.0.0.1',r));const extraPort=extraSocket.address().port;await new Promise(r=>extraSocket.close(r));
@@ -101,7 +108,7 @@ try {
     const network=flags.network;
     const status=flags['system-status']||communication;
     const uiOnly=communication||(files&&flags['files-ui-only'])||(network&&flags['network-ui-only']);
-    const env={ ...process.env, SODECK_TEST_SSH_PORT: String(port), SODECK_TEST_SSH_USER: username, SODECK_TEST_SSH_KEY: path.join(directory, "user"),SODECK_TEST_MCP_PORTS:JSON.stringify(mcpPorts) };
+    const env={ ...process.env, SODECK_TEST_SSH_PORT: String(port), SODECK_TEST_SSH_DENIED_PORT: String(networkDeniedPort??""), SODECK_TEST_SSH_USER: username, SODECK_TEST_SSH_KEY: path.join(directory, "user"),SODECK_TEST_MCP_PORTS:JSON.stringify(mcpPorts) };
     if(sudoTest){env.SODECK_TEST_SUDO_USER=sudoUser;env.SODECK_TEST_SUDO_PASSWORD=sudoPassword;env.SODECK_TEST_SUDO_MARKER=path.join(directory,'sudo-marker');}
     if(flags.mcp){env.SODECK_TEST_MCP_PLUGIN=testPluginDirectory('mcp');env.SODECK_TEST_MCP_OUTPUT=path.resolve('artifacts/mcp');}
     if(network) env.SODECK_TEST_CURL=await testCurl();
@@ -117,7 +124,7 @@ try {
   });
   if (result !== 0) throw new Error(`OpenSSH interoperability failed (${result}): ${diagnostic}`);
   if(network&&!uiOnly){const result=await new Promise((resolve,reject)=>{const test=spawn('cargo',['test','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--locked','--test','connections','openssh_network_plugin','--','--ignored','--exact','--nocapture'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('OpenSSH network plugin failed: '+diagnostic);}
-  if(network&&!uiOnly){for(const name of ['network_socks_protocol','network_socks_lifecycle']){const result=await new Promise((resolve,reject)=>{const test=spawn('cargo',['test','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--locked','--test','connections',name,'--','--ignored','--exact','--nocapture'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error(name+' failed');}}
+  if(network&&!uiOnly){for(const name of ['network_socks_protocol','network_socks_lifecycle','network_forwarding_denied','openssh_network_forwarding_denied']){const result=await new Promise((resolve,reject)=>{const test=spawn('cargo',['test','--manifest-path','src-tauri/Cargo.toml','--features','test-fixtures','--locked','--test','connections',name,'--','--ignored','--exact','--nocapture'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error(name+' failed');}}
   if(network){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-network-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('Network UI failed');}
   if(status&&!communication){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-system-status-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('Status UI failed');}
   if(terminal&&!communication){const result=await new Promise((resolve,reject)=>{const test=spawn(process.execPath,['scripts/test-terminal-ui.mjs'],{stdio:'inherit',windowsHide:true,env});test.on('error',reject);test.on('exit',resolve);});if(result!==0)throw new Error('Terminal UI failed');}

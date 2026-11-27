@@ -754,6 +754,75 @@ async fn network_proxy_plugin() {
     network_exit_cleanup(true).await;
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "requires actual network plugin; npm run network:test"]
+async fn network_forwarding_denied() {
+    let f = Fixture::new();
+    let server = SshServer::new().await;
+    let id = f.server("127.0.0.1", server.addr.port(), json!([]));
+    let context = connected(&f, &id).await.context.unwrap();
+    network_surface(&f, &context);
+    network_denied_forwarding(&f, &context, "denied.remote.invalid", 8080).await;
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "requires isolated OpenSSH with forwarding disabled; npm run network:test"]
+async fn openssh_network_forwarding_denied() {
+    let f = Fixture::new();
+    let port = std::env::var("SODECK_TEST_SSH_DENIED_PORT").unwrap().parse().unwrap();
+    let id = f.server("127.0.0.1", port, json!([]));
+    let mut draft = f.core.server_catalog()["servers"][0].clone();
+    draft["username"] = json!(std::env::var("SODECK_TEST_SSH_USER").unwrap());
+    draft["authentication"] = json!({"type":"privateKey","privateKeyPath":std::env::var("SODECK_TEST_SSH_KEY").unwrap(),"secret":{"action":"clear"}});
+    f.change(json!({"op":"saveServer","draft":draft}));
+    let context = connected(&f, &id).await.context.unwrap();
+    let (echo, task) = network_echo_server().await;
+    network_roundtrip(echo, false, "127.0.0.1", echo.port()).await;
+    network_surface(&f, &context);
+    network_denied_forwarding(&f, &context, "127.0.0.1", echo.port()).await;
+    task.abort();
+}
+async fn network_denied_forwarding(f: &Fixture, context: &sodeck::workspaces::Context, host: &str, port: u16) {
+    let opened = f.core.ui_action("main", context, json!({"op":"open","key":"sodeck.network-proxy:manager","requestId":"denied-manager"})).unwrap();
+    let mount = f.core.ui_attach("main", opened["viewId"].as_str().unwrap()).unwrap();
+    let token = mount["surfaceId"].as_str().unwrap().to_owned();
+    f.core.ui_surface_ready("main", &token).unwrap();
+    network_save(f, context, json!({"id":"denied","revision":0,"serverId":context.server_id,
+        "name":"denied","type":"tcpForward","bind":{"host":"127.0.0.1","port":0},"target":{"host":host,"port":port}}));
+    let address = network_address(f, "main", &token, "denied").await;
+    f.core.ui_event("main", &token, json!({"action":"check","id":"denied"})).unwrap();
+    let mut check = Value::Null;
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            check = f.core.ui_event("main", &token, json!({"action":"snapshot"})).unwrap()["catalog"]["checks"]["denied"].clone();
+            if check["checking"] == false { break; }
+            tokio::time::sleep(Duration::from_millis(30)).await;
+        }
+    }).await.unwrap_or_else(|_|panic!("check did not finish: {check}"));
+    assert_eq!(check["ok"], false, "{check}");
+    assert_eq!(check["failure"]["code"], "forwardingDenied", "{check}");
+    assert!(check["failure"]["diagnostic"].as_str().unwrap().contains("AdministrativelyProhibited"));
+    let row = network_row(f, "main", &token, "denied");
+    assert_eq!(row["run"]["snapshot"]["state"], "running");
+    assert!(row["run"]["lastError"].is_null(), "A probe must not become a client failure: {row}");
+    let mut ordinary = TcpStream::connect(address).await.unwrap();
+    let mut bytes = Vec::new();
+    let _ = tokio::time::timeout(Duration::from_secs(3), ordinary.read_to_end(&mut bytes)).await.unwrap();
+    until(|| network_row(f, "main", &token, "denied")["run"]["lastError"]["failure"]["code"] == "forwardingDenied").await;
+    let last = network_row(f, "main", &token, "denied")["run"]["lastError"].clone();
+    assert_eq!(last["target"], json!({"host":host,"port":port}));
+    assert!(last["observedAt"].as_u64().unwrap() > 0);
+    f.core.ui_event("main", &token, json!({"action":"stop","id":"denied"})).unwrap();
+    until(|| network_row(f, "main", &token, "denied")["run"]["canStart"] == true).await;
+    TcpListener::bind(address).await.expect("rejected target retained local port");
+    f.core.ui_event("main", &token, json!({"action":"start","id":"denied"})).unwrap();
+    let restarted = network_address(f, "main", &token, "denied").await;
+    let row = network_row(f, "main", &token, "denied");
+    assert!(row["run"]["lastError"].is_null());
+    assert!(f.core.ui_event("main", &token, json!({"action":"snapshot"})).unwrap()["catalog"]["checks"]["denied"].is_null());
+    f.core.ui_event("main", &token, json!({"action":"stop","id":"denied"})).unwrap();
+    until(||network_row(f,"main",&token,"denied")["run"]["canStart"]==true).await;
+    TcpListener::bind(restarted).await.expect("restarted listener retained port");
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "requires isolated OpenSSH and actual network plugin; npm run network:test"]
 async fn openssh_network_plugin() {
     let f = Fixture::new();

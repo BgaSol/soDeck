@@ -4,7 +4,7 @@
   "description": "浏览远端 Docker 资源树、数据根目录与容器关系，查看日志并维护资源。",
   "icon": "docker",
   "order": 50,
-  "apiVersion": "2.1",
+  "apiVersion": "2.2",
   "binary": "sodeck-docker",
   "tagPrefix": "plugin-docker-v",
   "ui": {

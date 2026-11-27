@@ -5,6 +5,7 @@ use super::{
 };
 use crate::servers::connection_profile::{Auth, Profile};
 use crate::workspaces::ConnectionTarget;
+use sodeck_plugin_protocol::network::{FailureStage, NetworkFailure};
 use std::{sync::Arc, time::Duration};
 use tokio::net::TcpStream;
 use tokio_util::sync::CancellationToken;
@@ -30,17 +31,17 @@ impl Session {
             .await
             .map_err(|e| e.to_string())
     }
-    pub(crate) async fn open_tcp(&self, host: &str, port: u16) -> Result<Stream, String> {
+    pub(crate) async fn open_tcp(&self, host: &str, port: u16) -> Result<Stream, NetworkFailure> {
         if self.is_closed() {
-            return Err("服务器连接已断开".into());
+            return Err(NetworkFailure::session_lost(FailureStage::TargetConnect));
         }
         self.chain
             .last()
-            .ok_or("SSH 会话不存在")?
+            .ok_or_else(|| NetworkFailure::session_lost(FailureStage::TargetConnect))?
             .channel_open_direct_tcpip(host, port as u32, "127.0.0.1", 0)
             .await
             .map(|channel| Box::new(channel.into_stream()) as Stream)
-            .map_err(|error| error.to_string())
+            .map_err(ssh::tcp_failure)
     }
     pub fn is_closed(&self) -> bool {
         self.cancel.is_cancelled() || self.chain.iter().any(|s| s.is_closed())

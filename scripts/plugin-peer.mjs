@@ -36,7 +36,7 @@ export function pluginPeer(executable, core, { args = [], timeout = 10000 } = {}
   }
   return {
     child,
-    initialize({dataDirectory = '.', settings = [], coreVersion = '2.0.0', coreApiVersion = '2.1'} = {}) {
+    initialize({dataDirectory = '.', settings = [], coreVersion = '2.0.0', coreApiVersion = '2.2'} = {}) {
       return this.request('initialize', {coreApiVersion, coreVersion, dataDirectory, settings});
     },
     request(method, params = {}) {

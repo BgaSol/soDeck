@@ -1,9 +1,10 @@
+use crate::failure;
 use crate::{
     rules::{Kind, Rule, Rules},
     socks5::{Action, Socks},
 };
 use serde_json::{json, Value};
-use socker::socks5::Reply;
+use sodeck_plugin_client::protocol::network::{FailureCode, FailureStage, NetworkFailure};
 use sodeck_plugin_client::protocol::requests as api;
 use sodeck_plugin_client::Client;
 use std::{
@@ -31,13 +32,14 @@ pub struct Run {
     pub observed_at: Option<u64>,
     sent: bool,
     pub released: bool,
-    last_error: Option<Value>,
+    pub last_error: Option<Value>,
     clients: HashMap<String, Peer>,
 }
 struct Peer {
     socks: Option<Socks>,
     remote: Option<String>,
     created: Instant,
+    target: Option<Value>,
 }
 pub struct App {
     pub rules: Rules,
@@ -74,7 +76,7 @@ impl App {
             .filter(|r| r.server == server)
             .count();
         let offset = offset.min(total.saturating_sub(1) / 20 * 20);
-        let rows:Vec<_>=self.rules.items.iter().filter(|r|r.server==server).skip(offset).take(20).map(|r|json!({"rule":r.value(),"name":name(r),"run":self.runs.get(r.id.as_str()).map(|v|json!({"ruleRevision":v.rule.revision,"canStart":v.snapshot["cleanupComplete"]==true&&v.released&&v.query_error.is_none(),"lastError":v.last_error,"queryError":v.query_error,"observedAt":v.observed_at,"stopRequested":v.stop_requested,"snapshot":({let mut snapshot=v.snapshot.clone();snapshot.as_object_mut().map(|s|s.remove("clients"));snapshot})}))})).collect();
+        let rows:Vec<_>=self.rules.items.iter().filter(|r|r.server==server).skip(offset).take(20).map(|r|json!({"rule":r.value(),"name":name(r),"run":self.runs.get(r.id.as_str()).map(|v|json!({"ruleRevision":v.rule.revision,"rule":v.rule.value(),"canStart":v.snapshot["cleanupComplete"]==true&&v.released&&v.query_error.is_none(),"lastError":v.last_error,"queryError":v.query_error,"observedAt":v.observed_at,"stopRequested":v.stop_requested,"snapshot":({let mut snapshot=v.snapshot.clone();snapshot.as_object_mut().map(|s|s.remove("clients"));snapshot})}))})).collect();
         let checks: serde_json::Map<String, Value> = rows
             .iter()
             .filter_map(|row| {
@@ -286,6 +288,7 @@ pub fn tick(shared: &std::sync::Arc<std::sync::Mutex<App>>, c: &Client) {
                             },
                             remote: None,
                             created: Instant::now(),
+                            target: None,
                         });
                         continue;
                     }
@@ -321,18 +324,32 @@ pub fn tick(shared: &std::sync::Arc<std::sync::Mutex<App>>, c: &Client) {
             )
         };
         let mut last_error = None;
-        clients.retain(|peer_id,peer|{
-            let active={let state=shared.lock().unwrap();state.runs.get(&id).is_some_and(|r|r.request==request&&!r.stop_requested)};
-            let result=if active{advance(c,&listener,&rule,peer_id,peer)}else{Err("监听正在停止".into())};
-            match result{Ok(done)=>!done,Err(e)=>{
-                let response=peer.socks.as_mut().and_then(|s|s.failure_reply(if e.contains("超时"){Reply::TTL_EXPIRED}else if e.to_lowercase().contains("refused"){Reply::CONNECTION_REFUSED}else{Reply::GENERAL_FAILURE}));
-                if active{if let Some(bytes)=response{let _=serde_json::from_value::<api::StreamWrite>(json!({"streamId":peer_id,"bytes":bytes})).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| c.request(api::call::StreamWrite(params))).map_err(|e|e.message);let _=c.request(api::call::StreamFinish(api::Stream { stream_id: peer_id.to_string() })).map_err(|e|e.message);}else{let _=c.request(api::call::StreamClose(api::Resource { id: peer_id.to_string() })).map_err(|e|e.message);}}
-                if let Some(remote)=&peer.remote{let _=c.request(api::call::StreamClose(api::Resource { id: remote.to_string() })).map_err(|e|e.message);}
-                let stage=if peer.remote.is_some(){"targetConnect"}else{"protocol"};last_error=Some(json!({"stage":stage,"message":e}));
-                let _=serde_json::from_value::<api::Log>(json!({"level":"warn","message":"隧道客户端连接失败","fields":{"ruleId":id,"stage":stage,"error":e}})).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| c.request(api::call::Log(params))).map_err(|e|e.message);false}}
+        clients.retain(|peer_id, peer| {
+            let active = { let state = shared.lock().unwrap(); state.runs.get(&id).is_some_and(|r| r.request == request && !r.stop_requested) };
+            let result = if active { advance(c, &listener, &rule, peer_id, peer) } else { Err(NetworkFailure::cancelled(FailureStage::Negotiation)) };
+            match result {
+                Ok(done) => !done,
+                Err(error) => {
+                    finish_peer(c, peer_id, peer, active, &error);
+                    if active && error.code != FailureCode::Cancelled {
+                        // Core-created probes belong to the check, not ordinary client history.
+                        if !peer_id.contains("@probe:") {
+                            last_error = Some(json!({"message":error.message,"failure":error,"target":peer.target,"observedAt":crate::service::now()}));
+                        }
+                        let _ = serde_json::from_value::<api::Log>(json!({"level":"warn","message":"隧道目标连接或协商失败","fields":{"ruleId":id,"runId":request["operationId"],"target":peer.target,"failure":error}}))
+                            .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+                            .and_then(|params| c.request(api::call::Log(params)));
+                    }
+                    false
+                }
+            }
         });
         let mut state = shared.lock().unwrap();
-        if let Some(r) = state.runs.get_mut(&id).filter(|r| r.request == request) {
+        if let Some(r) = state
+            .runs
+            .get_mut(&id)
+            .filter(|r| r.request == request && !r.stop_requested)
+        {
             r.clients.extend(clients);
             if last_error.is_some() {
                 r.last_error = last_error;
@@ -345,8 +362,37 @@ pub fn tick(shared: &std::sync::Arc<std::sync::Mutex<App>>, c: &Client) {
         .retain(|_, r| a.views.contains_key(&r.view) || !r.released);
 }
 
-fn target(c: &Client, listener: &str, id: &str, host: &str, port: u16) -> Result<String, String> {
-    serde_json::from_value::<api::TcpOpen>(json!({"listenerId":listener,"clientStreamId":id,"operationId":"target","host":host,"port":port})).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| c.request(api::call::TcpOpen(params))).map_err(|e|e.message)?["streamId"].as_str().map(str::to_owned).ok_or("没有返回远端流".into())
+fn finish_peer(c: &Client, id: &str, peer: &mut Peer, active: bool, failure: &NetworkFailure) {
+    let response = peer
+        .socks
+        .as_mut()
+        .and_then(|s| s.failure_reply(failure::socks_reply(failure)));
+    if active {
+        if let Some(bytes) = response {
+            let _ =
+                serde_json::from_value::<api::StreamWrite>(json!({"streamId":id,"bytes":bytes}))
+                    .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
+                    .and_then(|params| c.request(api::call::StreamWrite(params)));
+            let _ = c.request(api::call::StreamFinish(api::Stream {
+                stream_id: id.to_owned(),
+            }));
+        } else {
+            let _ = c.request(api::call::StreamClose(api::Resource { id: id.to_owned() }));
+        }
+    }
+    if let Some(remote) = &peer.remote {
+        let _ = c.request(api::call::StreamClose(api::Resource { id: remote.clone() }));
+    }
+}
+
+fn target(
+    c: &Client,
+    listener: &str,
+    id: &str,
+    host: &str,
+    port: u16,
+) -> Result<String, NetworkFailure> {
+    serde_json::from_value::<api::TcpOpen>(json!({"listenerId":listener,"clientStreamId":id,"operationId":"target","host":host,"port":port})).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| c.request(api::call::TcpOpen(params))).map_err(failure::rpc)?["streamId"].as_str().map(str::to_owned).ok_or_else(||failure::protocol("没有返回远端流"))
 }
 fn advance(
     c: &Client,
@@ -354,16 +400,19 @@ fn advance(
     rule: &Rule,
     id: &str,
     p: &mut Peer,
-) -> Result<bool, String> {
+) -> Result<bool, NetworkFailure> {
     if p.created.elapsed() > Duration::from_secs(14) {
-        return Err("代理协商超时".into());
+        return Err(NetworkFailure::timeout(
+            FailureStage::Negotiation,
+            "代理协商超时",
+        ));
     }
     if let Some(remote) = &p.remote {
         let status = c
             .request(api::call::StreamStatus(api::Stream {
                 stream_id: remote.to_string(),
             }))
-            .map_err(|e| e.message)?;
+            .map_err(failure::rpc)?;
         return match status["state"].as_str() {
             Some("ready") => {
                 if let Some(socks) = &mut p.socks {
@@ -372,24 +421,30 @@ fn advance(
                     )
                     .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
                     .and_then(|params| c.request(api::call::StreamWrite(params)))
-                    .map_err(|e| e.message)?;
+                    .map_err(failure::rpc)?;
                 }
-                serde_json::from_value::<api::StreamSplice>(json!({"listenerId":listener,"leftId":id,"rightId":remote,"operationId":"relay"})).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| c.request(api::call::StreamSplice(params))).map_err(|e|e.message)?;
+                serde_json::from_value::<api::StreamSplice>(json!({"listenerId":listener,"leftId":id,"rightId":remote,"operationId":"relay"})).map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效")).and_then(|params| c.request(api::call::StreamSplice(params))).map_err(failure::rpc)?;
                 Ok(true)
             }
-            Some("failed" | "closed") => {
-                Err(status["error"].as_str().unwrap_or("目标连接失败").into())
-            }
+            Some("failed" | "closed") => Err(failure::read(&status)),
             _ => Ok(false),
         };
     }
     let Some(socks) = &mut p.socks else {
+        p.target = Some(
+            json!({"host":rule.target().map(|t| &t.host),"port":rule.target().map(|t| t.port)}),
+        );
         p.remote = Some(target(
             c,
             listener,
             id,
-            &rule.target().ok_or("TCP 规则缺少目标")?.host,
-            rule.target().ok_or("TCP 规则缺少目标")?.port,
+            &rule
+                .target()
+                .ok_or_else(|| failure::protocol("TCP 规则缺少目标"))?
+                .host,
+            rule.target()
+                .ok_or_else(|| failure::protocol("TCP 规则缺少目标"))?
+                .port,
         )?);
         return Ok(false);
     };
@@ -397,16 +452,17 @@ fn advance(
         serde_json::from_value::<api::StreamRead>(json!({"streamId":id,"maxBytes":socks.next()}))
             .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
             .and_then(|params| c.request(api::call::StreamRead(params)))
-            .map_err(|e| e.message)?;
+            .map_err(failure::rpc)?;
     if read["pending"] == true {
         return Ok(false);
     }
     if read["eof"] == true {
-        return Err("客户端已关闭".into());
+        let _ = c.request(api::call::StreamClose(api::Resource { id: id.to_owned() }));
+        return Ok(true);
     }
-    let bytes: Vec<u8> =
-        serde_json::from_value(read["data"].clone()).map_err(|_| "协商响应无效")?;
-    match socks.feed(&bytes)? {
+    let bytes: Vec<u8> = serde_json::from_value(read["data"].clone())
+        .map_err(|_| failure::protocol("协商响应无效"))?;
+    match socks.feed(&bytes).map_err(failure::protocol)? {
         Action::Read(needed) => {
             debug_assert!(needed > 0);
         }
@@ -414,20 +470,23 @@ fn advance(
             serde_json::from_value::<api::StreamWrite>(json!({"streamId":id,"bytes":bytes}))
                 .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
                 .and_then(|params| c.request(api::call::StreamWrite(params)))
-                .map_err(|e| e.message)?;
+                .map_err(failure::rpc)?;
         }
         Action::Reject(bytes) => {
             serde_json::from_value::<api::StreamWrite>(json!({"streamId":id,"bytes":bytes}))
                 .map_err(|_| sodeck_plugin_client::RpcError::invalid("核心请求参数无效"))
                 .and_then(|params| c.request(api::call::StreamWrite(params)))
-                .map_err(|e| e.message)?;
+                .map_err(failure::rpc)?;
             c.request(api::call::StreamFinish(api::Stream {
                 stream_id: id.to_string(),
             }))
-            .map_err(|e| e.message)?;
+            .map_err(failure::rpc)?;
             return Ok(true);
         }
-        Action::Connect(host, port) => p.remote = Some(target(c, listener, id, &host, port)?),
+        Action::Connect(host, port) => {
+            p.target = Some(json!({"host":host,"port":port}));
+            p.remote = Some(target(c, listener, id, &host, port)?);
+        }
     }
     Ok(false)
 }
