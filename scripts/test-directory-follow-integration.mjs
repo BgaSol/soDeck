@@ -15,7 +15,9 @@ try{
   await wait(async()=>{[connection]=await call('connection',{command:{op:'snapshot'}});if(connection.question)await call('connection',{command:{op:'answer',attemptId:connection.attemptId,questionId:connection.question.id,answer:{kind:'hostKey',accept:true}}});if(connection.state==='failed')throw new Error(JSON.stringify(connection.error));return connection.state==='connected';},'isolated SSH');
   await call('connection',{command:{op:'focus',context:connection.context}});
   await call('component_ui',{window:'main',operation:'action',args:{context:connection.context,action:{op:'open',key:'sodeck.docker:browser',requestId:'directory-docker'}}});
-  const page=await pageFor('main'),files=page.frameLocator('iframe[title^="文件 ·"]'),docker=page.frameLocator('iframe[title^="Docker ·"]'),terminal=page.frameLocator('iframe[title^="终端 ·"]');
+  const page=await pageFor('main'),files=page.frameLocator('iframe[title^="文件 ·"]'),docker=page.frameLocator('iframe[title^="Docker ·"]');
+  const ui=await call('component_ui',{window:'main',operation:'snapshot',args:{}}),workspace=Object.values(ui.workspaces)[0],terminalView=workspace.views.find(v=>v.pluginId==='sodeck.terminal');assert(terminalView,'default terminal view');
+  const terminal=page.frameLocator(`.component-surface[data-view-id="${terminalView.id}"] iframe`);
   await terminal.locator('body[data-ready=true]').waitFor();await docker.locator('#state[data-state=ready]').waitFor();
   const selected=()=>files.getByRole('textbox',{name:'远端路径'}).inputValue(),expectPath=target=>wait(async()=>await selected()===target,'directory '+target);
   await terminal.locator('.xterm-helper-textarea').focus();await page.keyboard.type('cd /srv/sodeck-terminal');await page.keyboard.press('Enter');await expectPath('/srv/sodeck-terminal');
@@ -28,4 +30,5 @@ try{
   assert.deepEqual(errors,[]);fs.mkdirSync('artifacts/directory-follow',{recursive:true});await page.screenshot({path:'artifacts/directory-follow/compose-terminal.png'});
   fs.writeFileSync('artifacts/directory-follow/result.json',JSON.stringify({passed:true,actualCore:true,actualIndependentPlugins:Object.keys(packages),ssh:true,sftp:true,engine:'isolated',composeLabelDirectory:true,terminalAutomaticDirectory:true,repeatedSameDirectory:true,userReactivation:true},null,2)+'\n');
   console.log('Actual core/PTY/SFTP/isolated Docker Engine: Compose directory publication, repeated same-path follow, manual browsing and terminal reactivation passed.');
-}finally{await harness.close();assert.equal(path.dirname(directory),os.tmpdir());assert(path.basename(directory).startsWith('sodeck-directory-follow-'));fs.rmSync(directory,{recursive:true,force:true});}
+}catch(error){console.error('Directory integration page errors:',errors);console.error('Directory integration core state:',JSON.stringify(await call('component_ui',{window:'main',operation:'snapshot',args:{}}).catch(e=>String(e))));throw error;}
+finally{await harness.close();assert.equal(path.dirname(directory),os.tmpdir());assert(path.basename(directory).startsWith('sodeck-directory-follow-'));fs.rmSync(directory,{recursive:true,force:true});}
