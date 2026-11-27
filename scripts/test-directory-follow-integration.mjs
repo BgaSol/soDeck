@@ -16,7 +16,7 @@ try{
   await wait(async()=>{[connection]=await call('connection',{command:{op:'snapshot'}});if(connection.question)await call('connection',{command:{op:'answer',attemptId:connection.attemptId,questionId:connection.question.id,answer:{kind:'hostKey',accept:true}}});if(connection.state==='failed')throw new Error(JSON.stringify(connection.error));return connection.state==='connected';},'isolated SSH');
   await call('connection',{command:{op:'focus',context:connection.context}});
   await call('component_ui',{window:'main',operation:'action',args:{context:connection.context,action:{op:'open',key:'sodeck.docker:browser',requestId:'directory-docker'}}});
-  const page=await pageFor('main'),files=page.frameLocator('iframe[title^="文件 ·"]');docker=page.frameLocator('iframe[title^="Docker ·"]');
+  const page=await pageFor('main');await page.setViewportSize({width:1600,height:1000});await page.emulateMedia({reducedMotion:'reduce'});const files=page.frameLocator('iframe[title^="文件 ·"]');docker=page.frameLocator('iframe[title^="Docker ·"]');
   const ui=await call('component_ui',{window:'main',operation:'snapshot',args:{}}),workspace=Object.values(ui.workspaces)[0],terminalView=workspace.views.find(v=>v.pluginId==='sodeck.terminal');assert(terminalView,'default terminal view');
   const terminal=page.frameLocator(`.component-surface[data-view-id="${terminalView.id}"] iframe`);
   await terminal.locator('body[data-ready=true]').waitFor();await docker.locator('#state[data-state=ready]').waitFor();
