@@ -2,7 +2,13 @@
 
 - 使用当前 API 2.2 SDK，与核心网络故障契约保持一致，既有业务行为沿用。
 
-要求核心 2.12.0 的 API 2.2，先更新核心，再更新所需插件并重启。未新增生产依赖。发行与本次验证证据待补齐。
+要求核心 2.12.0 的 API 2.2，先更新核心，再更新所需插件并重启。未新增生产依赖。
+
+包来源 [a73a39d](https://github.com/BgaSol/soDeck/commit/a73a39dcb3ad0f21bca18fc68f99d85d09f0d641)；[原始独立打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/45980434261) 的 Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 原生归档、架构/资源、包内握手、生命周期和退出全部通过。正式发行 [files 0.14.1](https://github.com/BgaSol/soDeck/releases/tag/plugin-files-v0.14.1) 共六个附件，显式保持非 Latest；发布同一份原程序归档，更新清单仅同步 notes。[永久附件与原生报告](release-evidence/v0.14.1-assets.json)。
+
+[本轮完整源码与业务 Check](https://github.com/BgaSol/soDeck/actions/runs/45982596258) 通过；包来源、SDK/锁文件及测试夹具修正的等价范围和初次失败记录统一见[核心版本说明](../../docs/releases/v2.12.0.md#验证与发行)。[五平台原生远程组合](https://github.com/BgaSol/soDeck/actions/runs/45983071300) 使用该组件本次原包通过，完整输入和结果见[永久组合证据](../../docs/releases/v2.12.0-remote.json)。
+
+未执行 netem、物理 IME/DPI/读屏、真实注销登录、正式旧版实际升级或全部 Docker 远端组合。
 
 # 0.14.0
 

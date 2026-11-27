@@ -1,0 +1,476 @@
+{
+  "component": "system-status",
+  "version": "0.6.2",
+  "source": "402883f3f5734617c811eca36570437d33fb675a",
+  "packageRun": {
+    "id": 45981326216,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45981326216"
+  },
+  "checks": [
+    {
+      "run": 45982596258,
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45982596258",
+      "source": "a9bf5920d2ef5f671c134b40fd2a8907b3680f4a",
+      "conclusion": "success",
+      "attempt": 1,
+      "jobs": [
+        {
+          "name": "select",
+          "conclusion": "success"
+        },
+        {
+          "name": "desktop",
+          "conclusion": "success"
+        },
+        {
+          "name": "browser",
+          "conclusion": "success"
+        },
+        {
+          "name": "checks",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-business-linux-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-network-linux-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-linux-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-windows-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-network-linux-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-macos-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-windows-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "netem",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "native-linux-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "format",
+          "conclusion": "success"
+        }
+      ],
+      "scope": "Five native core/shared SDK/six plugin suites, browser, Windows SSH, Linux network on both architectures and ordinary business. Product code equals original packages; intervening commits only fix system-status lock version and workspace test fixture API."
+    }
+  ],
+  "release": {
+    "id": 460448813,
+    "tag": "plugin-system-status-v0.6.2",
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/plugin-system-status-v0.6.2",
+    "publishedAt": "2026-11-27T10:48:37Z",
+    "isDraft": false,
+    "latest": false
+  },
+  "assets": [
+    {
+      "name": "plugin-update.json",
+      "size": 2986,
+      "digest": "sha256:4729245fc2cd64f532de0673b0a91c6fbfc8717ccb8957b7bceb24c1e72dc0a6",
+      "id": "800092945",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.6.2/plugin-update.json"
+    },
+    {
+      "name": "sodeck-system-status_0.6.2_aarch64-apple-darwin.tar.gz",
+      "size": 757270,
+      "digest": "sha256:9af0772bcd5c61dc4611ffa8d6752203eecf1548118e08228305ddf76cf78d4f",
+      "id": "800019431",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.6.2/sodeck-system-status_0.6.2_aarch64-apple-darwin.tar.gz"
+    },
+    {
+      "name": "sodeck-system-status_0.6.2_aarch64-pc-windows-msvc.zip",
+      "size": 756011,
+      "digest": "sha256:87f542a51148fa7800fb1d59fff07348a863e61b9fc47e727ecd1b496ae16ed8",
+      "id": "800019324",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.6.2/sodeck-system-status_0.6.2_aarch64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "sodeck-system-status_0.6.2_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 772731,
+      "digest": "sha256:cf8415d4c38d1eaf4d30d5ad05fb43d8e2865e9ac398db352d64a9bee0335e9e",
+      "id": "800019393",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.6.2/sodeck-system-status_0.6.2_aarch64-unknown-linux-gnu.tar.gz"
+    },
+    {
+      "name": "sodeck-system-status_0.6.2_x86_64-pc-windows-msvc.zip",
+      "size": 820528,
+      "digest": "sha256:f1018cc6a979bd6e58082113ca8a22b4b9044c571296aeec699d588bda05f5f1",
+      "id": "800019274",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.6.2/sodeck-system-status_0.6.2_x86_64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "sodeck-system-status_0.6.2_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 860370,
+      "digest": "sha256:f2167ebe22d460c51c6d4d65d7344d5ccd75f827de1dcefd920d12e5160d71d7",
+      "id": "800019345",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-system-status-v0.6.2/sodeck-system-status_0.6.2_x86_64-unknown-linux-gnu.tar.gz"
+    }
+  ],
+  "nativePackageVerification": [
+    {
+      "id": "sodeck.system-status",
+      "version": "0.6.2",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "402883f3f5734617c811eca36570437d33fb675a",
+      "sha256": "cf8415d4c38d1eaf4d30d5ad05fb43d8e2865e9ac398db352d64a9bee0335e9e",
+      "runId": "45981326216",
+      "toolCommit": "402883f3f5734617c811eca36570437d33fb675a",
+      "passed": true,
+      "pluginIcons": [
+        "activity"
+      ],
+      "dataDirectory": {
+        "unicode": true,
+        "extended": false,
+        "length": 317
+      },
+      "calls": [
+        "settings.get"
+      ]
+    },
+    {
+      "id": "sodeck.system-status",
+      "version": "0.6.2",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "402883f3f5734617c811eca36570437d33fb675a",
+      "sha256": "f2167ebe22d460c51c6d4d65d7344d5ccd75f827de1dcefd920d12e5160d71d7",
+      "runId": "45981326216",
+      "toolCommit": "402883f3f5734617c811eca36570437d33fb675a",
+      "passed": true,
+      "pluginIcons": [
+        "activity"
+      ],
+      "dataDirectory": {
+        "unicode": true,
+        "extended": false,
+        "length": 317
+      },
+      "calls": [
+        "settings.get"
+      ]
+    },
+    {
+      "id": "sodeck.system-status",
+      "version": "0.6.2",
+      "target": "aarch64-apple-darwin",
+      "commit": "402883f3f5734617c811eca36570437d33fb675a",
+      "sha256": "9af0772bcd5c61dc4611ffa8d6752203eecf1548118e08228305ddf76cf78d4f",
+      "runId": "45981326216",
+      "toolCommit": "402883f3f5734617c811eca36570437d33fb675a",
+      "passed": true,
+      "pluginIcons": [
+        "activity"
+      ],
+      "dataDirectory": {
+        "unicode": true,
+        "extended": false,
+        "length": 361
+      },
+      "calls": [
+        "settings.get"
+      ]
+    },
+    {
+      "id": "sodeck.system-status",
+      "version": "0.6.2",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "402883f3f5734617c811eca36570437d33fb675a",
+      "sha256": "87f542a51148fa7800fb1d59fff07348a863e61b9fc47e727ecd1b496ae16ed8",
+      "runId": "45981326216",
+      "toolCommit": "402883f3f5734617c811eca36570437d33fb675a",
+      "passed": true,
+      "pluginIcons": [
+        "activity"
+      ],
+      "dataDirectory": {
+        "unicode": true,
+        "extended": true,
+        "length": 353
+      },
+      "calls": [
+        "settings.get"
+      ]
+    },
+    {
+      "id": "sodeck.system-status",
+      "version": "0.6.2",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "402883f3f5734617c811eca36570437d33fb675a",
+      "sha256": "f1018cc6a979bd6e58082113ca8a22b4b9044c571296aeec699d588bda05f5f1",
+      "runId": "45981326216",
+      "toolCommit": "402883f3f5734617c811eca36570437d33fb675a",
+      "passed": true,
+      "pluginIcons": [
+        "activity"
+      ],
+      "dataDirectory": {
+        "unicode": true,
+        "extended": true,
+        "length": 353
+      },
+      "calls": [
+        "settings.get"
+      ]
+    }
+  ],
+  "packageJobs": [
+    {
+      "name": "select",
+      "conclusion": "success"
+    },
+    {
+      "name": "macos-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "linux-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "linux-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-windows-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-windows-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-linux-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-macos-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-linux-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "release",
+      "conclusion": "success"
+    }
+  ],
+  "remoteVerification": null,
+  "retryHistory": {
+    "previousChecks": [
+      {
+        "run": 45980308084,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45980308084",
+        "source": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+        "conclusion": "cancelled",
+        "jobs": [
+          {
+            "name": "select",
+            "conclusion": "success"
+          },
+          {
+            "name": "browser",
+            "conclusion": "cancelled"
+          },
+          {
+            "name": "desktop",
+            "conclusion": "success"
+          },
+          {
+            "name": "integration-network-linux-x86_64",
+            "conclusion": "success"
+          },
+          {
+            "name": "integration-network-linux-aarch64",
+            "conclusion": "success"
+          },
+          {
+            "name": "native-windows-aarch64",
+            "conclusion": "cancelled"
+          },
+          {
+            "name": "native-windows-x86_64",
+            "conclusion": "failure"
+          },
+          {
+            "name": "native-macos-aarch64",
+            "conclusion": "failure"
+          },
+          {
+            "name": "integration-business-linux-x86_64",
+            "conclusion": "failure"
+          },
+          {
+            "name": "native-linux-x86_64",
+            "conclusion": "failure"
+          },
+          {
+            "name": "native-linux-aarch64",
+            "conclusion": "failure"
+          },
+          {
+            "name": "checks",
+            "conclusion": "success"
+          },
+          {
+            "name": "netem",
+            "conclusion": "skipped"
+          },
+          {
+            "name": "format",
+            "conclusion": "failure"
+          }
+        ]
+      },
+      {
+        "run": 45981339329,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45981339329",
+        "source": "402883f3f5734617c811eca36570437d33fb675a",
+        "conclusion": "failure",
+        "jobs": [
+          {
+            "name": "select",
+            "conclusion": "success"
+          },
+          {
+            "name": "browser",
+            "conclusion": "failure"
+          },
+          {
+            "name": "checks",
+            "conclusion": "success"
+          },
+          {
+            "name": "desktop",
+            "conclusion": "success"
+          },
+          {
+            "name": "integration-network-linux-aarch64",
+            "conclusion": "success"
+          },
+          {
+            "name": "integration-network-linux-x86_64",
+            "conclusion": "success"
+          },
+          {
+            "name": "integration-business-linux-x86_64",
+            "conclusion": "success"
+          },
+          {
+            "name": "native-windows-x86_64",
+            "conclusion": "success"
+          },
+          {
+            "name": "native-macos-aarch64",
+            "conclusion": "success"
+          },
+          {
+            "name": "native-linux-aarch64",
+            "conclusion": "success"
+          },
+          {
+            "name": "native-windows-aarch64",
+            "conclusion": "success"
+          },
+          {
+            "name": "native-linux-x86_64",
+            "conclusion": "success"
+          },
+          {
+            "name": "netem",
+            "conclusion": "skipped"
+          },
+          {
+            "name": "format",
+            "conclusion": "failure"
+          }
+        ]
+      }
+    ],
+    "systemStatusLockFix": {
+      "source": "402883f3f5734617c811eca36570437d33fb675a",
+      "originalPackageRun": 45980439663,
+      "replacementPackageRun": 45981326216
+    },
+    "workspaceFixtureApiFix": {
+      "source": "a9bf5920d2ef5f671c134b40fd2a8907b3680f4a",
+      "previousCheck": 45981339329
+    },
+    "coreMacosVerification": {
+      "originalRun": 45980365002,
+      "attempt": 2,
+      "reason": "Synthetic native login event exited without smoke completion report; same original package passed a single verification rerun."
+    }
+  },
+  "limitations": [
+    "netem not run",
+    "physical IME/DPI/screen reader and real logout/login not run",
+    "published-to-published actual upgrade not run",
+    "all Docker remote Engine combinations not covered",
+    "Docker and system-status are not inputs to native remote package workflow"
+  ],
+  "publicVerification": {
+    "verifiedAt": "2026-11-27T10:54:16.748Z",
+    "anonymous": true,
+    "assets": [
+      {
+        "name": "plugin-update.json",
+        "size": 2986,
+        "digest": "sha256:4729245fc2cd64f532de0673b0a91c6fbfc8717ccb8957b7bceb24c1e72dc0a6"
+      },
+      {
+        "name": "sodeck-system-status_0.6.2_aarch64-apple-darwin.tar.gz",
+        "size": 757270,
+        "digest": "sha256:9af0772bcd5c61dc4611ffa8d6752203eecf1548118e08228305ddf76cf78d4f"
+      },
+      {
+        "name": "sodeck-system-status_0.6.2_aarch64-pc-windows-msvc.zip",
+        "size": 756011,
+        "digest": "sha256:87f542a51148fa7800fb1d59fff07348a863e61b9fc47e727ecd1b496ae16ed8"
+      },
+      {
+        "name": "sodeck-system-status_0.6.2_aarch64-unknown-linux-gnu.tar.gz",
+        "size": 772731,
+        "digest": "sha256:cf8415d4c38d1eaf4d30d5ad05fb43d8e2865e9ac398db352d64a9bee0335e9e"
+      },
+      {
+        "name": "sodeck-system-status_0.6.2_x86_64-pc-windows-msvc.zip",
+        "size": 820528,
+        "digest": "sha256:f1018cc6a979bd6e58082113ca8a22b4b9044c571296aeec699d588bda05f5f1"
+      },
+      {
+        "name": "sodeck-system-status_0.6.2_x86_64-unknown-linux-gnu.tar.gz",
+        "size": 860370,
+        "digest": "sha256:f2167ebe22d460c51c6d4d65d7344d5ccd75f827de1dcefd920d12e5160d71d7"
+      }
+    ]
+  }
+}

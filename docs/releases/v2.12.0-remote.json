@@ -1,0 +1,1331 @@
+{
+  "run": 45983071300,
+  "url": "https://github.com/BgaSol/soDeck/actions/runs/45983071300",
+  "inputs": {
+    "schemaVersion": 1,
+    "repository": "BgaSol/soDeck",
+    "testCommit": "a9bf5920d2ef5f671c134b40fd2a8907b3680f4a",
+    "components": {
+      "core": {
+        "id": "sodeck.core",
+        "version": "2.12.0",
+        "apiVersion": "2.2",
+        "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+        "source": {
+          "kind": "artifact",
+          "runId": "45980365002",
+          "conclusion": "success",
+          "tag": null
+        },
+        "platforms": {
+          "x86_64-pc-windows-msvc": {
+            "file": "SoDeck_2.12.0_x64-setup.exe",
+            "artifact": {
+              "id": 15189118282,
+              "name": "SoDeck-windows-x86_64",
+              "size": 8125060,
+              "sha256": "f6501d5b1a31b38bdcb803a6ddad08bdcbd6457175c9416737bada784d67382d"
+            }
+          },
+          "aarch64-pc-windows-msvc": {
+            "file": "SoDeck_2.12.0_arm64-setup.exe",
+            "artifact": {
+              "id": 15188867850,
+              "name": "SoDeck-windows-aarch64",
+              "size": 7058574,
+              "sha256": "7434cca45342b1871f48bd081a9bb45c1cfce23d382443a89d73149946519522"
+            }
+          },
+          "x86_64-unknown-linux-gnu": {
+            "file": "SoDeck_2.12.0_amd64.deb",
+            "artifact": {
+              "id": 15188733386,
+              "name": "SoDeck-linux-x86_64",
+              "size": 100498143,
+              "sha256": "e1ceca172dc3d2c2d37ca37521b8aff1cf9a2d6f184f42c1577f4ac1a0ab528c"
+            }
+          },
+          "aarch64-unknown-linux-gnu": {
+            "file": "SoDeck_2.12.0_arm64.deb",
+            "artifact": {
+              "id": 15189551246,
+              "name": "SoDeck-linux-aarch64",
+              "size": 97032397,
+              "sha256": "560766d0a59c5e20c3da2b0191de11f37797711f4c2e1fbf3df232ed71f22550"
+            }
+          },
+          "aarch64-apple-darwin": {
+            "file": "SoDeck_2.12.0_aarch64.dmg",
+            "artifact": {
+              "id": 15190090663,
+              "name": "SoDeck-macos-aarch64",
+              "size": 21439194,
+              "sha256": "1aaa188ca565aed15117ea5e511422d336364cb752d7b948273322afc6e2b772"
+            }
+          }
+        }
+      },
+      "terminal": {
+        "id": "sodeck.terminal",
+        "version": "0.12.1",
+        "apiVersion": "2.2",
+        "binary": "sodeck-terminal",
+        "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+        "source": {
+          "kind": "artifact",
+          "runId": "45980426848",
+          "conclusion": "success",
+          "tag": null
+        },
+        "platforms": {
+          "x86_64-pc-windows-msvc": {
+            "file": "sodeck-terminal_0.12.1_x86_64-pc-windows-msvc.zip",
+            "artifact": {
+              "id": 15190055153,
+              "name": "Plugin-terminal-windows-x86_64",
+              "size": 1141165,
+              "sha256": "120e1f0d239e52c4250536f929406361964ed6a18ab01c02e689f59f431b0fd6"
+            }
+          },
+          "aarch64-pc-windows-msvc": {
+            "file": "sodeck-terminal_0.12.1_aarch64-pc-windows-msvc.zip",
+            "artifact": {
+              "id": 15189291763,
+              "name": "Plugin-terminal-windows-aarch64",
+              "size": 1105745,
+              "sha256": "edf4f2d0628c660c643c27793075c53d17ffe2d2cb937f5ced20d44dc7e693c0"
+            }
+          },
+          "x86_64-unknown-linux-gnu": {
+            "file": "sodeck-terminal_0.12.1_x86_64-unknown-linux-gnu.tar.gz",
+            "artifact": {
+              "id": 15189985504,
+              "name": "Plugin-terminal-linux-x86_64",
+              "size": 1192192,
+              "sha256": "2361e229304ef28afa6e8e64e8b64624ceb5db1cc4cf235cec554ec9b0886874"
+            }
+          },
+          "aarch64-unknown-linux-gnu": {
+            "file": "sodeck-terminal_0.12.1_aarch64-unknown-linux-gnu.tar.gz",
+            "artifact": {
+              "id": 15189311432,
+              "name": "Plugin-terminal-linux-aarch64",
+              "size": 1128263,
+              "sha256": "eab32c5f10fb7cf5d4fb0d0c19363279516a19f4f3b005db2e9b8028efbfb4f1"
+            }
+          },
+          "aarch64-apple-darwin": {
+            "file": "sodeck-terminal_0.12.1_aarch64-apple-darwin.tar.gz",
+            "artifact": {
+              "id": 15188672855,
+              "name": "Plugin-terminal-macos-aarch64",
+              "size": 1125246,
+              "sha256": "e4b19f5a6f5b37ba531ae724fca8a246d198083c53fdd72cbc1eac909aef7d0a"
+            }
+          }
+        }
+      },
+      "files": {
+        "id": "sodeck.files",
+        "version": "0.14.1",
+        "apiVersion": "2.2",
+        "binary": "sodeck-files",
+        "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+        "source": {
+          "kind": "artifact",
+          "runId": "45980434261",
+          "conclusion": "success",
+          "tag": null
+        },
+        "platforms": {
+          "x86_64-pc-windows-msvc": {
+            "file": "sodeck-files_0.14.1_x86_64-pc-windows-msvc.zip",
+            "artifact": {
+              "id": 15189990874,
+              "name": "Plugin-files-windows-x86_64",
+              "size": 2216934,
+              "sha256": "ea974f7f25cba00b58d11140fbffd5a3b47de9e0c67c8a6a09ac9953e30e3b2f"
+            }
+          },
+          "aarch64-pc-windows-msvc": {
+            "file": "sodeck-files_0.14.1_aarch64-pc-windows-msvc.zip",
+            "artifact": {
+              "id": 15189317280,
+              "name": "Plugin-files-windows-aarch64",
+              "size": 2155158,
+              "sha256": "00f2f5eaf1c20961dfba2ff309c35bc2abbb80b9e9ef03d74b23144f497c7897"
+            }
+          },
+          "x86_64-unknown-linux-gnu": {
+            "file": "sodeck-files_0.14.1_x86_64-unknown-linux-gnu.tar.gz",
+            "artifact": {
+              "id": 15189511869,
+              "name": "Plugin-files-linux-x86_64",
+              "size": 2229861,
+              "sha256": "44e1176e4d1cbdd28686778e8c1dad01f4e9afd37e49f927aab926815c13767f"
+            }
+          },
+          "aarch64-unknown-linux-gnu": {
+            "file": "sodeck-files_0.14.1_aarch64-unknown-linux-gnu.tar.gz",
+            "artifact": {
+              "id": 15189092382,
+              "name": "Plugin-files-linux-aarch64",
+              "size": 2153484,
+              "sha256": "189da538f6afdc21122e5d59c43b4b18509594dc5e622b5a8c6f12e14a59a3c5"
+            }
+          },
+          "aarch64-apple-darwin": {
+            "file": "sodeck-files_0.14.1_aarch64-apple-darwin.tar.gz",
+            "artifact": {
+              "id": 15188449902,
+              "name": "Plugin-files-macos-aarch64",
+              "size": 2140945,
+              "sha256": "01c48a2ed4840aba3944fd9608a54edc607b2c012de4db791e79bdabc437f36d"
+            }
+          }
+        }
+      },
+      "network": {
+        "id": "sodeck.network-proxy",
+        "version": "0.7.0",
+        "apiVersion": "2.2",
+        "binary": "sodeck-network-proxy",
+        "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+        "source": {
+          "kind": "artifact",
+          "runId": "45980374227",
+          "conclusion": "success",
+          "tag": null
+        },
+        "platforms": {
+          "x86_64-pc-windows-msvc": {
+            "file": "sodeck-network-proxy_0.7.0_x86_64-pc-windows-msvc.zip",
+            "artifact": {
+              "id": 15188324735,
+              "name": "Plugin-network-proxy-windows-x86_64",
+              "size": 725521,
+              "sha256": "8ca28f4a9e0b2554bff2837f35b8e5605af787cdc8eb24c4e619cf4e8b7d63a0"
+            }
+          },
+          "aarch64-pc-windows-msvc": {
+            "file": "sodeck-network-proxy_0.7.0_aarch64-pc-windows-msvc.zip",
+            "artifact": {
+              "id": 15189496222,
+              "name": "Plugin-network-proxy-windows-aarch64",
+              "size": 677416,
+              "sha256": "f8b47321cdb6a5fea143337919d38e4594f25fd812b2390cfe1da0ff71448d5b"
+            }
+          },
+          "x86_64-unknown-linux-gnu": {
+            "file": "sodeck-network-proxy_0.7.0_x86_64-unknown-linux-gnu.tar.gz",
+            "artifact": {
+              "id": 15188414996,
+              "name": "Plugin-network-proxy-linux-x86_64",
+              "size": 768120,
+              "sha256": "b5383ee46e7c1777534ea0fe526669fd7c097d50c648d90b6ac4460fb5423334"
+            }
+          },
+          "aarch64-unknown-linux-gnu": {
+            "file": "sodeck-network-proxy_0.7.0_aarch64-unknown-linux-gnu.tar.gz",
+            "artifact": {
+              "id": 15189001816,
+              "name": "Plugin-network-proxy-linux-aarch64",
+              "size": 690145,
+              "sha256": "278582617c6d0d7b61854c74480bf819c5502d4e59084b7858414fb0281ad8e3"
+            }
+          },
+          "aarch64-apple-darwin": {
+            "file": "sodeck-network-proxy_0.7.0_aarch64-apple-darwin.tar.gz",
+            "artifact": {
+              "id": 15189346098,
+              "name": "Plugin-network-proxy-macos-aarch64",
+              "size": 684613,
+              "sha256": "b7f0d1860b965f7e2bb96ddd0aa04f609ea9a4dfd7bc7d0e2d1d48dbc78fed30"
+            }
+          }
+        }
+      }
+    }
+  },
+  "summary": {
+    "schemaVersion": 1,
+    "testCommit": "a9bf5920d2ef5f671c134b40fd2a8907b3680f4a",
+    "scope": "all",
+    "success": true,
+    "inputs": {
+      "schemaVersion": 1,
+      "repository": "BgaSol/soDeck",
+      "testCommit": "a9bf5920d2ef5f671c134b40fd2a8907b3680f4a",
+      "components": {
+        "core": {
+          "id": "sodeck.core",
+          "version": "2.12.0",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980365002",
+            "conclusion": "success",
+            "tag": null
+          },
+          "platforms": {
+            "x86_64-pc-windows-msvc": {
+              "file": "SoDeck_2.12.0_x64-setup.exe",
+              "artifact": {
+                "id": 15189118282,
+                "name": "SoDeck-windows-x86_64",
+                "size": 8125060,
+                "sha256": "f6501d5b1a31b38bdcb803a6ddad08bdcbd6457175c9416737bada784d67382d"
+              }
+            },
+            "aarch64-pc-windows-msvc": {
+              "file": "SoDeck_2.12.0_arm64-setup.exe",
+              "artifact": {
+                "id": 15188867850,
+                "name": "SoDeck-windows-aarch64",
+                "size": 7058574,
+                "sha256": "7434cca45342b1871f48bd081a9bb45c1cfce23d382443a89d73149946519522"
+              }
+            },
+            "x86_64-unknown-linux-gnu": {
+              "file": "SoDeck_2.12.0_amd64.deb",
+              "artifact": {
+                "id": 15188733386,
+                "name": "SoDeck-linux-x86_64",
+                "size": 100498143,
+                "sha256": "e1ceca172dc3d2c2d37ca37521b8aff1cf9a2d6f184f42c1577f4ac1a0ab528c"
+              }
+            },
+            "aarch64-unknown-linux-gnu": {
+              "file": "SoDeck_2.12.0_arm64.deb",
+              "artifact": {
+                "id": 15189551246,
+                "name": "SoDeck-linux-aarch64",
+                "size": 97032397,
+                "sha256": "560766d0a59c5e20c3da2b0191de11f37797711f4c2e1fbf3df232ed71f22550"
+              }
+            },
+            "aarch64-apple-darwin": {
+              "file": "SoDeck_2.12.0_aarch64.dmg",
+              "artifact": {
+                "id": 15190090663,
+                "name": "SoDeck-macos-aarch64",
+                "size": 21439194,
+                "sha256": "1aaa188ca565aed15117ea5e511422d336364cb752d7b948273322afc6e2b772"
+              }
+            }
+          }
+        },
+        "terminal": {
+          "id": "sodeck.terminal",
+          "version": "0.12.1",
+          "apiVersion": "2.2",
+          "binary": "sodeck-terminal",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980426848",
+            "conclusion": "success",
+            "tag": null
+          },
+          "platforms": {
+            "x86_64-pc-windows-msvc": {
+              "file": "sodeck-terminal_0.12.1_x86_64-pc-windows-msvc.zip",
+              "artifact": {
+                "id": 15190055153,
+                "name": "Plugin-terminal-windows-x86_64",
+                "size": 1141165,
+                "sha256": "120e1f0d239e52c4250536f929406361964ed6a18ab01c02e689f59f431b0fd6"
+              }
+            },
+            "aarch64-pc-windows-msvc": {
+              "file": "sodeck-terminal_0.12.1_aarch64-pc-windows-msvc.zip",
+              "artifact": {
+                "id": 15189291763,
+                "name": "Plugin-terminal-windows-aarch64",
+                "size": 1105745,
+                "sha256": "edf4f2d0628c660c643c27793075c53d17ffe2d2cb937f5ced20d44dc7e693c0"
+              }
+            },
+            "x86_64-unknown-linux-gnu": {
+              "file": "sodeck-terminal_0.12.1_x86_64-unknown-linux-gnu.tar.gz",
+              "artifact": {
+                "id": 15189985504,
+                "name": "Plugin-terminal-linux-x86_64",
+                "size": 1192192,
+                "sha256": "2361e229304ef28afa6e8e64e8b64624ceb5db1cc4cf235cec554ec9b0886874"
+              }
+            },
+            "aarch64-unknown-linux-gnu": {
+              "file": "sodeck-terminal_0.12.1_aarch64-unknown-linux-gnu.tar.gz",
+              "artifact": {
+                "id": 15189311432,
+                "name": "Plugin-terminal-linux-aarch64",
+                "size": 1128263,
+                "sha256": "eab32c5f10fb7cf5d4fb0d0c19363279516a19f4f3b005db2e9b8028efbfb4f1"
+              }
+            },
+            "aarch64-apple-darwin": {
+              "file": "sodeck-terminal_0.12.1_aarch64-apple-darwin.tar.gz",
+              "artifact": {
+                "id": 15188672855,
+                "name": "Plugin-terminal-macos-aarch64",
+                "size": 1125246,
+                "sha256": "e4b19f5a6f5b37ba531ae724fca8a246d198083c53fdd72cbc1eac909aef7d0a"
+              }
+            }
+          }
+        },
+        "files": {
+          "id": "sodeck.files",
+          "version": "0.14.1",
+          "apiVersion": "2.2",
+          "binary": "sodeck-files",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980434261",
+            "conclusion": "success",
+            "tag": null
+          },
+          "platforms": {
+            "x86_64-pc-windows-msvc": {
+              "file": "sodeck-files_0.14.1_x86_64-pc-windows-msvc.zip",
+              "artifact": {
+                "id": 15189990874,
+                "name": "Plugin-files-windows-x86_64",
+                "size": 2216934,
+                "sha256": "ea974f7f25cba00b58d11140fbffd5a3b47de9e0c67c8a6a09ac9953e30e3b2f"
+              }
+            },
+            "aarch64-pc-windows-msvc": {
+              "file": "sodeck-files_0.14.1_aarch64-pc-windows-msvc.zip",
+              "artifact": {
+                "id": 15189317280,
+                "name": "Plugin-files-windows-aarch64",
+                "size": 2155158,
+                "sha256": "00f2f5eaf1c20961dfba2ff309c35bc2abbb80b9e9ef03d74b23144f497c7897"
+              }
+            },
+            "x86_64-unknown-linux-gnu": {
+              "file": "sodeck-files_0.14.1_x86_64-unknown-linux-gnu.tar.gz",
+              "artifact": {
+                "id": 15189511869,
+                "name": "Plugin-files-linux-x86_64",
+                "size": 2229861,
+                "sha256": "44e1176e4d1cbdd28686778e8c1dad01f4e9afd37e49f927aab926815c13767f"
+              }
+            },
+            "aarch64-unknown-linux-gnu": {
+              "file": "sodeck-files_0.14.1_aarch64-unknown-linux-gnu.tar.gz",
+              "artifact": {
+                "id": 15189092382,
+                "name": "Plugin-files-linux-aarch64",
+                "size": 2153484,
+                "sha256": "189da538f6afdc21122e5d59c43b4b18509594dc5e622b5a8c6f12e14a59a3c5"
+              }
+            },
+            "aarch64-apple-darwin": {
+              "file": "sodeck-files_0.14.1_aarch64-apple-darwin.tar.gz",
+              "artifact": {
+                "id": 15188449902,
+                "name": "Plugin-files-macos-aarch64",
+                "size": 2140945,
+                "sha256": "01c48a2ed4840aba3944fd9608a54edc607b2c012de4db791e79bdabc437f36d"
+              }
+            }
+          }
+        },
+        "network": {
+          "id": "sodeck.network-proxy",
+          "version": "0.7.0",
+          "apiVersion": "2.2",
+          "binary": "sodeck-network-proxy",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980374227",
+            "conclusion": "success",
+            "tag": null
+          },
+          "platforms": {
+            "x86_64-pc-windows-msvc": {
+              "file": "sodeck-network-proxy_0.7.0_x86_64-pc-windows-msvc.zip",
+              "artifact": {
+                "id": 15188324735,
+                "name": "Plugin-network-proxy-windows-x86_64",
+                "size": 725521,
+                "sha256": "8ca28f4a9e0b2554bff2837f35b8e5605af787cdc8eb24c4e619cf4e8b7d63a0"
+              }
+            },
+            "aarch64-pc-windows-msvc": {
+              "file": "sodeck-network-proxy_0.7.0_aarch64-pc-windows-msvc.zip",
+              "artifact": {
+                "id": 15189496222,
+                "name": "Plugin-network-proxy-windows-aarch64",
+                "size": 677416,
+                "sha256": "f8b47321cdb6a5fea143337919d38e4594f25fd812b2390cfe1da0ff71448d5b"
+              }
+            },
+            "x86_64-unknown-linux-gnu": {
+              "file": "sodeck-network-proxy_0.7.0_x86_64-unknown-linux-gnu.tar.gz",
+              "artifact": {
+                "id": 15188414996,
+                "name": "Plugin-network-proxy-linux-x86_64",
+                "size": 768120,
+                "sha256": "b5383ee46e7c1777534ea0fe526669fd7c097d50c648d90b6ac4460fb5423334"
+              }
+            },
+            "aarch64-unknown-linux-gnu": {
+              "file": "sodeck-network-proxy_0.7.0_aarch64-unknown-linux-gnu.tar.gz",
+              "artifact": {
+                "id": 15189001816,
+                "name": "Plugin-network-proxy-linux-aarch64",
+                "size": 690145,
+                "sha256": "278582617c6d0d7b61854c74480bf819c5502d4e59084b7858414fb0281ad8e3"
+              }
+            },
+            "aarch64-apple-darwin": {
+              "file": "sodeck-network-proxy_0.7.0_aarch64-apple-darwin.tar.gz",
+              "artifact": {
+                "id": 15189346098,
+                "name": "Plugin-network-proxy-macos-aarch64",
+                "size": 684613,
+                "sha256": "b7f0d1860b965f7e2bb96ddd0aa04f609ea9a4dfd7bc7d0e2d1d48dbc78fed30"
+              }
+            }
+          }
+        }
+      }
+    },
+    "platforms": [
+      {
+        "platform": "windows-x86_64",
+        "target": "x86_64-pc-windows-msvc",
+        "status": "success",
+        "stage": "complete",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45983071300/job/140451833937",
+        "result": {
+          "schemaVersion": 1,
+          "target": "x86_64-pc-windows-msvc",
+          "platform": "windows-x86_64",
+          "testCommit": "a9bf5920d2ef5f671c134b40fd2a8907b3680f4a",
+          "status": "success",
+          "stage": "complete",
+          "components": {
+            "core": {
+              "id": "sodeck.core",
+              "version": "2.12.0",
+              "apiVersion": "2.2",
+              "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+              "source": {
+                "kind": "artifact",
+                "runId": "45980365002",
+                "conclusion": "success",
+                "tag": null
+              },
+              "file": "SoDeck_2.12.0_x64-setup.exe",
+              "size": 8136955,
+              "sha256": "6b178cabb6f7614f3d8defc803f08ac91fcb931ed1ad59a84c537df878560ef7"
+            },
+            "terminal": {
+              "id": "sodeck.terminal",
+              "version": "0.12.1",
+              "apiVersion": "2.2",
+              "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+              "source": {
+                "kind": "artifact",
+                "runId": "45980426848",
+                "conclusion": "success",
+                "tag": null
+              },
+              "file": "sodeck-terminal_0.12.1_x86_64-pc-windows-msvc.zip",
+              "size": 1155036,
+              "sha256": "646a99b8eb7ba9311b5e2e5de528ee0eac2117ec9d18ab77d13ddc66dc36d502"
+            },
+            "files": {
+              "id": "sodeck.files",
+              "version": "0.14.1",
+              "apiVersion": "2.2",
+              "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+              "source": {
+                "kind": "artifact",
+                "runId": "45980434261",
+                "conclusion": "success",
+                "tag": null
+              },
+              "file": "sodeck-files_0.14.1_x86_64-pc-windows-msvc.zip",
+              "size": 2234046,
+              "sha256": "7ebf9c77ccc36e14e54ee448dee981af699ab4176c3c931c3fb8c38b977ea34f"
+            },
+            "network": {
+              "id": "sodeck.network-proxy",
+              "version": "0.7.0",
+              "apiVersion": "2.2",
+              "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+              "source": {
+                "kind": "artifact",
+                "runId": "45980374227",
+                "conclusion": "success",
+                "tag": null
+              },
+              "file": "sodeck-network-proxy_0.7.0_x86_64-pc-windows-msvc.zip",
+              "size": 732081,
+              "sha256": "2bea31922a5cfbcfb7dd40c2c0cf5141258792be05cc1c450af7d0dc18c0ad6b"
+            }
+          },
+          "runtime": {
+            "version": "2.12.0",
+            "target": "x86_64-pc-windows-msvc",
+            "completed": true,
+            "workspaceNative": true,
+            "sshNative": true,
+            "networkNative": true,
+            "desktopFilesNative": false
+          }
+        }
+      },
+      {
+        "platform": "windows-aarch64",
+        "target": "aarch64-pc-windows-msvc",
+        "status": "success",
+        "stage": "complete",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45983071300/job/140451833842",
+        "result": {
+          "schemaVersion": 1,
+          "target": "aarch64-pc-windows-msvc",
+          "platform": "windows-aarch64",
+          "testCommit": "a9bf5920d2ef5f671c134b40fd2a8907b3680f4a",
+          "status": "success",
+          "stage": "complete",
+          "components": {
+            "core": {
+              "id": "sodeck.core",
+              "version": "2.12.0",
+              "apiVersion": "2.2",
+              "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+              "source": {
+                "kind": "artifact",
+                "runId": "45980365002",
+                "conclusion": "success",
+                "tag": null
+              },
+              "file": "SoDeck_2.12.0_arm64-setup.exe",
+              "size": 7070773,
+              "sha256": "4383b9d52f8240221bec9654f0cf9e61d7de76bb7427fa041a4e961e61a3b4ae"
+            },
+            "terminal": {
+              "id": "sodeck.terminal",
+              "version": "0.12.1",
+              "apiVersion": "2.2",
+              "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+              "source": {
+                "kind": "artifact",
+                "runId": "45980426848",
+                "conclusion": "success",
+                "tag": null
+              },
+              "file": "sodeck-terminal_0.12.1_aarch64-pc-windows-msvc.zip",
+              "size": 1119951,
+              "sha256": "83c2039eb94c1d5804c8431e5cc2c31e4d8072dca3f5785fb78eb66f001cc75f"
+            },
+            "files": {
+              "id": "sodeck.files",
+              "version": "0.14.1",
+              "apiVersion": "2.2",
+              "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+              "source": {
+                "kind": "artifact",
+                "runId": "45980434261",
+                "conclusion": "success",
+                "tag": null
+              },
+              "file": "sodeck-files_0.14.1_aarch64-pc-windows-msvc.zip",
+              "size": 2171960,
+              "sha256": "5c9eb8ed5923edad2da6d705cac232aa4df3f882f84470cd2dae5b07f0243fba"
+            },
+            "network": {
+              "id": "sodeck.network-proxy",
+              "version": "0.7.0",
+              "apiVersion": "2.2",
+              "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+              "source": {
+                "kind": "artifact",
+                "runId": "45980374227",
+                "conclusion": "success",
+                "tag": null
+              },
+              "file": "sodeck-network-proxy_0.7.0_aarch64-pc-windows-msvc.zip",
+              "size": 684130,
+              "sha256": "64c9ca3b77ee93400f938ec0a90a9de534ebf5d0f0c6a2474cdf16f7d8dca8a5"
+            }
+          },
+          "runtime": {
+            "version": "2.12.0",
+            "target": "aarch64-pc-windows-msvc",
+            "completed": true,
+            "workspaceNative": true,
+            "sshNative": true,
+            "networkNative": true,
+            "desktopFilesNative": false
+          }
+        }
+      },
+      {
+        "platform": "linux-x86_64",
+        "target": "x86_64-unknown-linux-gnu",
+        "status": "success",
+        "stage": "complete",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45983071300/job/140451833834",
+        "result": {
+          "schemaVersion": 1,
+          "target": "x86_64-unknown-linux-gnu",
+          "platform": "linux-x86_64",
+          "testCommit": "a9bf5920d2ef5f671c134b40fd2a8907b3680f4a",
+          "status": "success",
+          "stage": "complete",
+          "components": {
+            "core": {
+              "id": "sodeck.core",
+              "version": "2.12.0",
+              "apiVersion": "2.2",
+              "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+              "source": {
+                "kind": "artifact",
+                "runId": "45980365002",
+                "conclusion": "success",
+                "tag": null
+              },
+              "file": "SoDeck_2.12.0_amd64.deb",
+              "size": 11823244,
+              "sha256": "08214d0566ec711581400122d14374fecb9484ef5b9f1a049d053f2fdcafb717"
+            },
+            "terminal": {
+              "id": "sodeck.terminal",
+              "version": "0.12.1",
+              "apiVersion": "2.2",
+              "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+              "source": {
+                "kind": "artifact",
+                "runId": "45980426848",
+                "conclusion": "success",
+                "tag": null
+              },
+              "file": "sodeck-terminal_0.12.1_x86_64-unknown-linux-gnu.tar.gz",
+              "size": 1191923,
+              "sha256": "674086b18b8c4900784bdf5dba9b45f7a3034a0ddf39000b16a75f85425f83e1"
+            },
+            "files": {
+              "id": "sodeck.files",
+              "version": "0.14.1",
+              "apiVersion": "2.2",
+              "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+              "source": {
+                "kind": "artifact",
+                "runId": "45980434261",
+                "conclusion": "success",
+                "tag": null
+              },
+              "file": "sodeck-files_0.14.1_x86_64-unknown-linux-gnu.tar.gz",
+              "size": 2232190,
+              "sha256": "0b77614c595f3716d748d9d01009a72c295b29d8be72526665dbc8e601d548b9"
+            },
+            "network": {
+              "id": "sodeck.network-proxy",
+              "version": "0.7.0",
+              "apiVersion": "2.2",
+              "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+              "source": {
+                "kind": "artifact",
+                "runId": "45980374227",
+                "conclusion": "success",
+                "tag": null
+              },
+              "file": "sodeck-network-proxy_0.7.0_x86_64-unknown-linux-gnu.tar.gz",
+              "size": 768052,
+              "sha256": "aaab8fb84c8e2d167a66ed326a5712990d2e807b533f89764d2644171e658619"
+            }
+          },
+          "runtime": {
+            "version": "2.12.0",
+            "target": "x86_64-unknown-linux-gnu",
+            "completed": true,
+            "workspaceNative": true,
+            "sshNative": true,
+            "networkNative": true,
+            "desktopFilesNative": false
+          }
+        }
+      },
+      {
+        "platform": "linux-aarch64",
+        "target": "aarch64-unknown-linux-gnu",
+        "status": "success",
+        "stage": "complete",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45983071300/job/140451833922",
+        "result": {
+          "schemaVersion": 1,
+          "target": "aarch64-unknown-linux-gnu",
+          "platform": "linux-aarch64",
+          "testCommit": "a9bf5920d2ef5f671c134b40fd2a8907b3680f4a",
+          "status": "success",
+          "stage": "complete",
+          "components": {
+            "core": {
+              "id": "sodeck.core",
+              "version": "2.12.0",
+              "apiVersion": "2.2",
+              "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+              "source": {
+                "kind": "artifact",
+                "runId": "45980365002",
+                "conclusion": "success",
+                "tag": null
+              },
+              "file": "SoDeck_2.12.0_arm64.deb",
+              "size": 11004416,
+              "sha256": "04afcc2607238adfe15a0f7565fd2cd4b655470d07df82192345d667b64507ba"
+            },
+            "terminal": {
+              "id": "sodeck.terminal",
+              "version": "0.12.1",
+              "apiVersion": "2.2",
+              "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+              "source": {
+                "kind": "artifact",
+                "runId": "45980426848",
+                "conclusion": "success",
+                "tag": null
+              },
+              "file": "sodeck-terminal_0.12.1_aarch64-unknown-linux-gnu.tar.gz",
+              "size": 1128319,
+              "sha256": "373f8c48d0b38416bc61f0a55e2dd5d0eb4050700046004eec654dad7b710ebc"
+            },
+            "files": {
+              "id": "sodeck.files",
+              "version": "0.14.1",
+              "apiVersion": "2.2",
+              "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+              "source": {
+                "kind": "artifact",
+                "runId": "45980434261",
+                "conclusion": "success",
+                "tag": null
+              },
+              "file": "sodeck-files_0.14.1_aarch64-unknown-linux-gnu.tar.gz",
+              "size": 2155879,
+              "sha256": "6226204936b1b2191fab3b73ebe07fd0cc3dd5964c6a56cd066456d2764d4fa4"
+            },
+            "network": {
+              "id": "sodeck.network-proxy",
+              "version": "0.7.0",
+              "apiVersion": "2.2",
+              "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+              "source": {
+                "kind": "artifact",
+                "runId": "45980374227",
+                "conclusion": "success",
+                "tag": null
+              },
+              "file": "sodeck-network-proxy_0.7.0_aarch64-unknown-linux-gnu.tar.gz",
+              "size": 690232,
+              "sha256": "7c19e66ae859df5b6e4f8d0b7548f9d5ea15c54c05bc3c6c494feb56f3282e19"
+            }
+          },
+          "runtime": {
+            "version": "2.12.0",
+            "target": "aarch64-unknown-linux-gnu",
+            "completed": true,
+            "workspaceNative": true,
+            "sshNative": true,
+            "networkNative": true,
+            "desktopFilesNative": false
+          }
+        }
+      },
+      {
+        "platform": "macos-aarch64",
+        "target": "aarch64-apple-darwin",
+        "status": "success",
+        "stage": "complete",
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45983071300/job/140451834881",
+        "result": {
+          "schemaVersion": 1,
+          "target": "aarch64-apple-darwin",
+          "platform": "macos-aarch64",
+          "testCommit": "a9bf5920d2ef5f671c134b40fd2a8907b3680f4a",
+          "status": "success",
+          "stage": "complete",
+          "components": {
+            "core": {
+              "id": "sodeck.core",
+              "version": "2.12.0",
+              "apiVersion": "2.2",
+              "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+              "source": {
+                "kind": "artifact",
+                "runId": "45980365002",
+                "conclusion": "success",
+                "tag": null
+              },
+              "file": "SoDeck_2.12.0_aarch64.dmg",
+              "size": 10593395,
+              "sha256": "d68d1c71ae0cc6f15f9cf3f2f6ab71f79f37cd39a2756078334a1a57c8d3b7ec"
+            },
+            "terminal": {
+              "id": "sodeck.terminal",
+              "version": "0.12.1",
+              "apiVersion": "2.2",
+              "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+              "source": {
+                "kind": "artifact",
+                "runId": "45980426848",
+                "conclusion": "success",
+                "tag": null
+              },
+              "file": "sodeck-terminal_0.12.1_aarch64-apple-darwin.tar.gz",
+              "size": 1125317,
+              "sha256": "e50cc791390ae04aa7407212d2b375f8dce860eccc3eebac509ab10772856494"
+            },
+            "files": {
+              "id": "sodeck.files",
+              "version": "0.14.1",
+              "apiVersion": "2.2",
+              "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+              "source": {
+                "kind": "artifact",
+                "runId": "45980434261",
+                "conclusion": "success",
+                "tag": null
+              },
+              "file": "sodeck-files_0.14.1_aarch64-apple-darwin.tar.gz",
+              "size": 2143495,
+              "sha256": "92dec171453362804e8b29b96f5d2c686219da94a8b58ccab1dab42347f61ba9"
+            },
+            "network": {
+              "id": "sodeck.network-proxy",
+              "version": "0.7.0",
+              "apiVersion": "2.2",
+              "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+              "source": {
+                "kind": "artifact",
+                "runId": "45980374227",
+                "conclusion": "success",
+                "tag": null
+              },
+              "file": "sodeck-network-proxy_0.7.0_aarch64-apple-darwin.tar.gz",
+              "size": 685008,
+              "sha256": "e40cebba3800238a24d0174c724009ca931c68098cab7cd7bf65781378311e8d"
+            }
+          },
+          "runtime": {
+            "version": "2.12.0",
+            "target": "aarch64-apple-darwin",
+            "completed": true,
+            "workspaceNative": true,
+            "sshNative": true,
+            "networkNative": true,
+            "desktopFilesNative": false
+          }
+        }
+      }
+    ]
+  },
+  "results": [
+    {
+      "schemaVersion": 1,
+      "target": "aarch64-unknown-linux-gnu",
+      "platform": "linux-aarch64",
+      "testCommit": "a9bf5920d2ef5f671c134b40fd2a8907b3680f4a",
+      "status": "success",
+      "stage": "complete",
+      "components": {
+        "core": {
+          "id": "sodeck.core",
+          "version": "2.12.0",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980365002",
+            "conclusion": "success",
+            "tag": null
+          },
+          "file": "SoDeck_2.12.0_arm64.deb",
+          "size": 11004416,
+          "sha256": "04afcc2607238adfe15a0f7565fd2cd4b655470d07df82192345d667b64507ba"
+        },
+        "terminal": {
+          "id": "sodeck.terminal",
+          "version": "0.12.1",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980426848",
+            "conclusion": "success",
+            "tag": null
+          },
+          "file": "sodeck-terminal_0.12.1_aarch64-unknown-linux-gnu.tar.gz",
+          "size": 1128319,
+          "sha256": "373f8c48d0b38416bc61f0a55e2dd5d0eb4050700046004eec654dad7b710ebc"
+        },
+        "files": {
+          "id": "sodeck.files",
+          "version": "0.14.1",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980434261",
+            "conclusion": "success",
+            "tag": null
+          },
+          "file": "sodeck-files_0.14.1_aarch64-unknown-linux-gnu.tar.gz",
+          "size": 2155879,
+          "sha256": "6226204936b1b2191fab3b73ebe07fd0cc3dd5964c6a56cd066456d2764d4fa4"
+        },
+        "network": {
+          "id": "sodeck.network-proxy",
+          "version": "0.7.0",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980374227",
+            "conclusion": "success",
+            "tag": null
+          },
+          "file": "sodeck-network-proxy_0.7.0_aarch64-unknown-linux-gnu.tar.gz",
+          "size": 690232,
+          "sha256": "7c19e66ae859df5b6e4f8d0b7548f9d5ea15c54c05bc3c6c494feb56f3282e19"
+        }
+      },
+      "runtime": {
+        "version": "2.12.0",
+        "target": "aarch64-unknown-linux-gnu",
+        "completed": true,
+        "workspaceNative": true,
+        "sshNative": true,
+        "networkNative": true,
+        "desktopFilesNative": false
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "target": "x86_64-unknown-linux-gnu",
+      "platform": "linux-x86_64",
+      "testCommit": "a9bf5920d2ef5f671c134b40fd2a8907b3680f4a",
+      "status": "success",
+      "stage": "complete",
+      "components": {
+        "core": {
+          "id": "sodeck.core",
+          "version": "2.12.0",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980365002",
+            "conclusion": "success",
+            "tag": null
+          },
+          "file": "SoDeck_2.12.0_amd64.deb",
+          "size": 11823244,
+          "sha256": "08214d0566ec711581400122d14374fecb9484ef5b9f1a049d053f2fdcafb717"
+        },
+        "terminal": {
+          "id": "sodeck.terminal",
+          "version": "0.12.1",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980426848",
+            "conclusion": "success",
+            "tag": null
+          },
+          "file": "sodeck-terminal_0.12.1_x86_64-unknown-linux-gnu.tar.gz",
+          "size": 1191923,
+          "sha256": "674086b18b8c4900784bdf5dba9b45f7a3034a0ddf39000b16a75f85425f83e1"
+        },
+        "files": {
+          "id": "sodeck.files",
+          "version": "0.14.1",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980434261",
+            "conclusion": "success",
+            "tag": null
+          },
+          "file": "sodeck-files_0.14.1_x86_64-unknown-linux-gnu.tar.gz",
+          "size": 2232190,
+          "sha256": "0b77614c595f3716d748d9d01009a72c295b29d8be72526665dbc8e601d548b9"
+        },
+        "network": {
+          "id": "sodeck.network-proxy",
+          "version": "0.7.0",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980374227",
+            "conclusion": "success",
+            "tag": null
+          },
+          "file": "sodeck-network-proxy_0.7.0_x86_64-unknown-linux-gnu.tar.gz",
+          "size": 768052,
+          "sha256": "aaab8fb84c8e2d167a66ed326a5712990d2e807b533f89764d2644171e658619"
+        }
+      },
+      "runtime": {
+        "version": "2.12.0",
+        "target": "x86_64-unknown-linux-gnu",
+        "completed": true,
+        "workspaceNative": true,
+        "sshNative": true,
+        "networkNative": true,
+        "desktopFilesNative": false
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "target": "aarch64-apple-darwin",
+      "platform": "macos-aarch64",
+      "testCommit": "a9bf5920d2ef5f671c134b40fd2a8907b3680f4a",
+      "status": "success",
+      "stage": "complete",
+      "components": {
+        "core": {
+          "id": "sodeck.core",
+          "version": "2.12.0",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980365002",
+            "conclusion": "success",
+            "tag": null
+          },
+          "file": "SoDeck_2.12.0_aarch64.dmg",
+          "size": 10593395,
+          "sha256": "d68d1c71ae0cc6f15f9cf3f2f6ab71f79f37cd39a2756078334a1a57c8d3b7ec"
+        },
+        "terminal": {
+          "id": "sodeck.terminal",
+          "version": "0.12.1",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980426848",
+            "conclusion": "success",
+            "tag": null
+          },
+          "file": "sodeck-terminal_0.12.1_aarch64-apple-darwin.tar.gz",
+          "size": 1125317,
+          "sha256": "e50cc791390ae04aa7407212d2b375f8dce860eccc3eebac509ab10772856494"
+        },
+        "files": {
+          "id": "sodeck.files",
+          "version": "0.14.1",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980434261",
+            "conclusion": "success",
+            "tag": null
+          },
+          "file": "sodeck-files_0.14.1_aarch64-apple-darwin.tar.gz",
+          "size": 2143495,
+          "sha256": "92dec171453362804e8b29b96f5d2c686219da94a8b58ccab1dab42347f61ba9"
+        },
+        "network": {
+          "id": "sodeck.network-proxy",
+          "version": "0.7.0",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980374227",
+            "conclusion": "success",
+            "tag": null
+          },
+          "file": "sodeck-network-proxy_0.7.0_aarch64-apple-darwin.tar.gz",
+          "size": 685008,
+          "sha256": "e40cebba3800238a24d0174c724009ca931c68098cab7cd7bf65781378311e8d"
+        }
+      },
+      "runtime": {
+        "version": "2.12.0",
+        "target": "aarch64-apple-darwin",
+        "completed": true,
+        "workspaceNative": true,
+        "sshNative": true,
+        "networkNative": true,
+        "desktopFilesNative": false
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "target": "aarch64-pc-windows-msvc",
+      "platform": "windows-aarch64",
+      "testCommit": "a9bf5920d2ef5f671c134b40fd2a8907b3680f4a",
+      "status": "success",
+      "stage": "complete",
+      "components": {
+        "core": {
+          "id": "sodeck.core",
+          "version": "2.12.0",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980365002",
+            "conclusion": "success",
+            "tag": null
+          },
+          "file": "SoDeck_2.12.0_arm64-setup.exe",
+          "size": 7070773,
+          "sha256": "4383b9d52f8240221bec9654f0cf9e61d7de76bb7427fa041a4e961e61a3b4ae"
+        },
+        "terminal": {
+          "id": "sodeck.terminal",
+          "version": "0.12.1",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980426848",
+            "conclusion": "success",
+            "tag": null
+          },
+          "file": "sodeck-terminal_0.12.1_aarch64-pc-windows-msvc.zip",
+          "size": 1119951,
+          "sha256": "83c2039eb94c1d5804c8431e5cc2c31e4d8072dca3f5785fb78eb66f001cc75f"
+        },
+        "files": {
+          "id": "sodeck.files",
+          "version": "0.14.1",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980434261",
+            "conclusion": "success",
+            "tag": null
+          },
+          "file": "sodeck-files_0.14.1_aarch64-pc-windows-msvc.zip",
+          "size": 2171960,
+          "sha256": "5c9eb8ed5923edad2da6d705cac232aa4df3f882f84470cd2dae5b07f0243fba"
+        },
+        "network": {
+          "id": "sodeck.network-proxy",
+          "version": "0.7.0",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980374227",
+            "conclusion": "success",
+            "tag": null
+          },
+          "file": "sodeck-network-proxy_0.7.0_aarch64-pc-windows-msvc.zip",
+          "size": 684130,
+          "sha256": "64c9ca3b77ee93400f938ec0a90a9de534ebf5d0f0c6a2474cdf16f7d8dca8a5"
+        }
+      },
+      "runtime": {
+        "version": "2.12.0",
+        "target": "aarch64-pc-windows-msvc",
+        "completed": true,
+        "workspaceNative": true,
+        "sshNative": true,
+        "networkNative": true,
+        "desktopFilesNative": false
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "target": "x86_64-pc-windows-msvc",
+      "platform": "windows-x86_64",
+      "testCommit": "a9bf5920d2ef5f671c134b40fd2a8907b3680f4a",
+      "status": "success",
+      "stage": "complete",
+      "components": {
+        "core": {
+          "id": "sodeck.core",
+          "version": "2.12.0",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980365002",
+            "conclusion": "success",
+            "tag": null
+          },
+          "file": "SoDeck_2.12.0_x64-setup.exe",
+          "size": 8136955,
+          "sha256": "6b178cabb6f7614f3d8defc803f08ac91fcb931ed1ad59a84c537df878560ef7"
+        },
+        "terminal": {
+          "id": "sodeck.terminal",
+          "version": "0.12.1",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980426848",
+            "conclusion": "success",
+            "tag": null
+          },
+          "file": "sodeck-terminal_0.12.1_x86_64-pc-windows-msvc.zip",
+          "size": 1155036,
+          "sha256": "646a99b8eb7ba9311b5e2e5de528ee0eac2117ec9d18ab77d13ddc66dc36d502"
+        },
+        "files": {
+          "id": "sodeck.files",
+          "version": "0.14.1",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980434261",
+            "conclusion": "success",
+            "tag": null
+          },
+          "file": "sodeck-files_0.14.1_x86_64-pc-windows-msvc.zip",
+          "size": 2234046,
+          "sha256": "7ebf9c77ccc36e14e54ee448dee981af699ab4176c3c931c3fb8c38b977ea34f"
+        },
+        "network": {
+          "id": "sodeck.network-proxy",
+          "version": "0.7.0",
+          "apiVersion": "2.2",
+          "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+          "source": {
+            "kind": "artifact",
+            "runId": "45980374227",
+            "conclusion": "success",
+            "tag": null
+          },
+          "file": "sodeck-network-proxy_0.7.0_x86_64-pc-windows-msvc.zip",
+          "size": 732081,
+          "sha256": "2bea31922a5cfbcfb7dd40c2c0cf5141258792be05cc1c450af7d0dc18c0ad6b"
+        }
+      },
+      "runtime": {
+        "version": "2.12.0",
+        "target": "x86_64-pc-windows-msvc",
+        "completed": true,
+        "workspaceNative": true,
+        "sshNative": true,
+        "networkNative": true,
+        "desktopFilesNative": false
+      }
+    }
+  ]
+}

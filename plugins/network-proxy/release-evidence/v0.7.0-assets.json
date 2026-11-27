@@ -1,0 +1,475 @@
+{
+  "component": "network-proxy",
+  "version": "0.7.0",
+  "source": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+  "packageRun": {
+    "id": 45980374227,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45980374227"
+  },
+  "checks": [
+    {
+      "run": 45982596258,
+      "url": "https://github.com/BgaSol/soDeck/actions/runs/45982596258",
+      "source": "a9bf5920d2ef5f671c134b40fd2a8907b3680f4a",
+      "conclusion": "success",
+      "attempt": 1,
+      "jobs": [
+        {
+          "name": "select",
+          "conclusion": "success"
+        },
+        {
+          "name": "desktop",
+          "conclusion": "success"
+        },
+        {
+          "name": "browser",
+          "conclusion": "success"
+        },
+        {
+          "name": "checks",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-business-linux-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-network-linux-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-linux-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-windows-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "integration-network-linux-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-macos-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "native-windows-aarch64",
+          "conclusion": "success"
+        },
+        {
+          "name": "netem",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "native-linux-x86_64",
+          "conclusion": "success"
+        },
+        {
+          "name": "format",
+          "conclusion": "success"
+        }
+      ],
+      "scope": "Five native core/shared SDK/six plugin suites, browser, Windows SSH, Linux network on both architectures and ordinary business. Product code equals original packages; intervening commits only fix system-status lock version and workspace test fixture API."
+    }
+  ],
+  "release": {
+    "id": 460444333,
+    "tag": "plugin-network-proxy-v0.7.0",
+    "url": "https://github.com/BgaSol/soDeck/releases/tag/plugin-network-proxy-v0.7.0",
+    "publishedAt": "2026-11-27T10:48:26Z",
+    "isDraft": false,
+    "latest": false
+  },
+  "assets": [
+    {
+      "name": "plugin-update.json",
+      "size": 3246,
+      "digest": "sha256:abb1e1eee7ce62356a9e8f2e252361bda9add976c6428a0b43d2e732b621a818",
+      "id": "800090088",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-network-proxy-v0.7.0/plugin-update.json"
+    },
+    {
+      "name": "sodeck-network-proxy_0.7.0_aarch64-apple-darwin.tar.gz",
+      "size": 685008,
+      "digest": "sha256:e40cebba3800238a24d0174c724009ca931c68098cab7cd7bf65781378311e8d",
+      "id": "800003706",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-network-proxy-v0.7.0/sodeck-network-proxy_0.7.0_aarch64-apple-darwin.tar.gz"
+    },
+    {
+      "name": "sodeck-network-proxy_0.7.0_aarch64-pc-windows-msvc.zip",
+      "size": 684130,
+      "digest": "sha256:64c9ca3b77ee93400f938ec0a90a9de534ebf5d0f0c6a2474cdf16f7d8dca8a5",
+      "id": "800003542",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-network-proxy-v0.7.0/sodeck-network-proxy_0.7.0_aarch64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "sodeck-network-proxy_0.7.0_aarch64-unknown-linux-gnu.tar.gz",
+      "size": 690232,
+      "digest": "sha256:7c19e66ae859df5b6e4f8d0b7548f9d5ea15c54c05bc3c6c494feb56f3282e19",
+      "id": "800003648",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-network-proxy-v0.7.0/sodeck-network-proxy_0.7.0_aarch64-unknown-linux-gnu.tar.gz"
+    },
+    {
+      "name": "sodeck-network-proxy_0.7.0_x86_64-pc-windows-msvc.zip",
+      "size": 732081,
+      "digest": "sha256:2bea31922a5cfbcfb7dd40c2c0cf5141258792be05cc1c450af7d0dc18c0ad6b",
+      "id": "800003493",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-network-proxy-v0.7.0/sodeck-network-proxy_0.7.0_x86_64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "sodeck-network-proxy_0.7.0_x86_64-unknown-linux-gnu.tar.gz",
+      "size": 768052,
+      "digest": "sha256:aaab8fb84c8e2d167a66ed326a5712990d2e807b533f89764d2644171e658619",
+      "id": "800003596",
+      "url": "https://github.com/BgaSol/soDeck/releases/download/plugin-network-proxy-v0.7.0/sodeck-network-proxy_0.7.0_x86_64-unknown-linux-gnu.tar.gz"
+    }
+  ],
+  "nativePackageVerification": [
+    {
+      "id": "sodeck.network-proxy",
+      "version": "0.7.0",
+      "target": "aarch64-unknown-linux-gnu",
+      "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+      "sha256": "7c19e66ae859df5b6e4f8d0b7548f9d5ea15c54c05bc3c6c494feb56f3282e19",
+      "runId": "45980374227",
+      "toolCommit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+      "passed": true,
+      "pluginIcons": [
+        "network"
+      ],
+      "dataDirectory": {
+        "unicode": true,
+        "extended": false,
+        "length": 317
+      },
+      "tunnelCommands": true,
+      "calls": []
+    },
+    {
+      "id": "sodeck.network-proxy",
+      "version": "0.7.0",
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+      "sha256": "aaab8fb84c8e2d167a66ed326a5712990d2e807b533f89764d2644171e658619",
+      "runId": "45980374227",
+      "toolCommit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+      "passed": true,
+      "pluginIcons": [
+        "network"
+      ],
+      "dataDirectory": {
+        "unicode": true,
+        "extended": false,
+        "length": 317
+      },
+      "tunnelCommands": true,
+      "calls": []
+    },
+    {
+      "id": "sodeck.network-proxy",
+      "version": "0.7.0",
+      "target": "aarch64-apple-darwin",
+      "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+      "sha256": "e40cebba3800238a24d0174c724009ca931c68098cab7cd7bf65781378311e8d",
+      "runId": "45980374227",
+      "toolCommit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+      "passed": true,
+      "pluginIcons": [
+        "network"
+      ],
+      "dataDirectory": {
+        "unicode": true,
+        "extended": false,
+        "length": 361
+      },
+      "tunnelCommands": true,
+      "calls": []
+    },
+    {
+      "id": "sodeck.network-proxy",
+      "version": "0.7.0",
+      "target": "aarch64-pc-windows-msvc",
+      "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+      "sha256": "64c9ca3b77ee93400f938ec0a90a9de534ebf5d0f0c6a2474cdf16f7d8dca8a5",
+      "runId": "45980374227",
+      "toolCommit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+      "passed": true,
+      "pluginIcons": [
+        "network"
+      ],
+      "dataDirectory": {
+        "unicode": true,
+        "extended": true,
+        "length": 353
+      },
+      "tunnelCommands": true,
+      "calls": []
+    },
+    {
+      "id": "sodeck.network-proxy",
+      "version": "0.7.0",
+      "target": "x86_64-pc-windows-msvc",
+      "commit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+      "sha256": "2bea31922a5cfbcfb7dd40c2c0cf5141258792be05cc1c450af7d0dc18c0ad6b",
+      "runId": "45980374227",
+      "toolCommit": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+      "passed": true,
+      "pluginIcons": [
+        "network"
+      ],
+      "dataDirectory": {
+        "unicode": true,
+        "extended": true,
+        "length": 353
+      },
+      "tunnelCommands": true,
+      "calls": []
+    }
+  ],
+  "packageJobs": [
+    {
+      "name": "select",
+      "conclusion": "success"
+    },
+    {
+      "name": "linux-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "macos-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "linux-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-windows-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-windows-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-macos-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-linux-aarch64",
+      "conclusion": "success"
+    },
+    {
+      "name": "verify-linux-x86_64",
+      "conclusion": "success"
+    },
+    {
+      "name": "release",
+      "conclusion": "success"
+    }
+  ],
+  "remoteVerification": {
+    "run": 45983071300,
+    "url": "https://github.com/BgaSol/soDeck/actions/runs/45983071300",
+    "evidence": "docs/releases/v2.12.0-remote.json"
+  },
+  "retryHistory": {
+    "previousChecks": [
+      {
+        "run": 45980308084,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45980308084",
+        "source": "a73a39dcb3ad0f21bca18fc68f99d85d09f0d641",
+        "conclusion": "cancelled",
+        "jobs": [
+          {
+            "name": "select",
+            "conclusion": "success"
+          },
+          {
+            "name": "browser",
+            "conclusion": "cancelled"
+          },
+          {
+            "name": "desktop",
+            "conclusion": "success"
+          },
+          {
+            "name": "integration-network-linux-x86_64",
+            "conclusion": "success"
+          },
+          {
+            "name": "integration-network-linux-aarch64",
+            "conclusion": "success"
+          },
+          {
+            "name": "native-windows-aarch64",
+            "conclusion": "cancelled"
+          },
+          {
+            "name": "native-windows-x86_64",
+            "conclusion": "failure"
+          },
+          {
+            "name": "native-macos-aarch64",
+            "conclusion": "failure"
+          },
+          {
+            "name": "integration-business-linux-x86_64",
+            "conclusion": "failure"
+          },
+          {
+            "name": "native-linux-x86_64",
+            "conclusion": "failure"
+          },
+          {
+            "name": "native-linux-aarch64",
+            "conclusion": "failure"
+          },
+          {
+            "name": "checks",
+            "conclusion": "success"
+          },
+          {
+            "name": "netem",
+            "conclusion": "skipped"
+          },
+          {
+            "name": "format",
+            "conclusion": "failure"
+          }
+        ]
+      },
+      {
+        "run": 45981339329,
+        "url": "https://github.com/BgaSol/soDeck/actions/runs/45981339329",
+        "source": "402883f3f5734617c811eca36570437d33fb675a",
+        "conclusion": "failure",
+        "jobs": [
+          {
+            "name": "select",
+            "conclusion": "success"
+          },
+          {
+            "name": "browser",
+            "conclusion": "failure"
+          },
+          {
+            "name": "checks",
+            "conclusion": "success"
+          },
+          {
+            "name": "desktop",
+            "conclusion": "success"
+          },
+          {
+            "name": "integration-network-linux-aarch64",
+            "conclusion": "success"
+          },
+          {
+            "name": "integration-network-linux-x86_64",
+            "conclusion": "success"
+          },
+          {
+            "name": "integration-business-linux-x86_64",
+            "conclusion": "success"
+          },
+          {
+            "name": "native-windows-x86_64",
+            "conclusion": "success"
+          },
+          {
+            "name": "native-macos-aarch64",
+            "conclusion": "success"
+          },
+          {
+            "name": "native-linux-aarch64",
+            "conclusion": "success"
+          },
+          {
+            "name": "native-windows-aarch64",
+            "conclusion": "success"
+          },
+          {
+            "name": "native-linux-x86_64",
+            "conclusion": "success"
+          },
+          {
+            "name": "netem",
+            "conclusion": "skipped"
+          },
+          {
+            "name": "format",
+            "conclusion": "failure"
+          }
+        ]
+      }
+    ],
+    "systemStatusLockFix": {
+      "source": "402883f3f5734617c811eca36570437d33fb675a",
+      "originalPackageRun": 45980439663,
+      "replacementPackageRun": 45981326216
+    },
+    "workspaceFixtureApiFix": {
+      "source": "a9bf5920d2ef5f671c134b40fd2a8907b3680f4a",
+      "previousCheck": 45981339329
+    },
+    "coreMacosVerification": {
+      "originalRun": 45980365002,
+      "attempt": 2,
+      "reason": "Synthetic native login event exited without smoke completion report; same original package passed a single verification rerun."
+    }
+  },
+  "limitations": [
+    "netem not run",
+    "physical IME/DPI/screen reader and real logout/login not run",
+    "published-to-published actual upgrade not run",
+    "all Docker remote Engine combinations not covered",
+    "Docker and system-status are not inputs to native remote package workflow"
+  ],
+  "publicVerification": {
+    "verifiedAt": "2026-11-27T10:54:06.331Z",
+    "anonymous": true,
+    "assets": [
+      {
+        "name": "plugin-update.json",
+        "size": 3246,
+        "digest": "sha256:abb1e1eee7ce62356a9e8f2e252361bda9add976c6428a0b43d2e732b621a818"
+      },
+      {
+        "name": "sodeck-network-proxy_0.7.0_aarch64-apple-darwin.tar.gz",
+        "size": 685008,
+        "digest": "sha256:e40cebba3800238a24d0174c724009ca931c68098cab7cd7bf65781378311e8d"
+      },
+      {
+        "name": "sodeck-network-proxy_0.7.0_aarch64-pc-windows-msvc.zip",
+        "size": 684130,
+        "digest": "sha256:64c9ca3b77ee93400f938ec0a90a9de534ebf5d0f0c6a2474cdf16f7d8dca8a5"
+      },
+      {
+        "name": "sodeck-network-proxy_0.7.0_aarch64-unknown-linux-gnu.tar.gz",
+        "size": 690232,
+        "digest": "sha256:7c19e66ae859df5b6e4f8d0b7548f9d5ea15c54c05bc3c6c494feb56f3282e19"
+      },
+      {
+        "name": "sodeck-network-proxy_0.7.0_x86_64-pc-windows-msvc.zip",
+        "size": 732081,
+        "digest": "sha256:2bea31922a5cfbcfb7dd40c2c0cf5141258792be05cc1c450af7d0dc18c0ad6b"
+      },
+      {
+        "name": "sodeck-network-proxy_0.7.0_x86_64-unknown-linux-gnu.tar.gz",
+        "size": 768052,
+        "digest": "sha256:aaab8fb84c8e2d167a66ed326a5712990d2e807b533f89764d2644171e658619"
+      }
+    ]
+  }
+}

@@ -2,7 +2,13 @@
 
 - 使用当前 API 2.2 SDK，与核心网络故障契约保持一致，既有业务行为沿用。
 
-要求核心 2.12.0 的 API 2.2，先更新核心，再更新所需插件并重启。未新增生产依赖。发行与本次验证证据待补齐。
+要求核心 2.12.0 的 API 2.2，先更新核心，再更新所需插件并重启。未新增生产依赖。
+
+包来源 [402883f](https://github.com/BgaSol/soDeck/commit/402883f3f5734617c811eca36570437d33fb675a)；[原始独立打包与实际包验收](https://github.com/BgaSol/soDeck/actions/runs/45981326216) 的 Windows x86_64/ARM64、Linux x86_64/ARM64、macOS ARM64 原生归档、架构/资源、包内握手、生命周期和退出全部通过。正式发行 [system-status 0.6.2](https://github.com/BgaSol/soDeck/releases/tag/plugin-system-status-v0.6.2) 共六个附件，显式保持非 Latest；发布同一份原程序归档，更新清单仅同步 notes。[永久附件与原生报告](release-evidence/v0.6.2-assets.json)。
+
+[本轮完整源码与业务 Check](https://github.com/BgaSol/soDeck/actions/runs/45982596258) 通过；包来源、SDK/锁文件及测试夹具修正的等价范围和初次失败记录统一见[核心版本说明](../../docs/releases/v2.12.0.md#验证与发行)。本组件不在原生远程包组合工作流中，源码普通业务和独立包验收分别记录，不推定全部远端系统/Engine 已验。
+
+未执行 netem、物理 IME/DPI/读屏、真实注销登录、正式旧版实际升级或全部 Docker 远端组合。
 
 # 0.6.1
 
