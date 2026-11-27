@@ -341,28 +341,108 @@ test('line and page wheels normalize distance, single long labels fit without ov
     assert.equal(await page.locator('.component-tab').evaluate(n=>{const r=n.parentElement.getBoundingClientRect(),close=n.lastElementChild.getBoundingClientRect();return close.left>=r.left&&close.right<=r.right+1;}),true);
   }finally{await page.close();}
 });
-test('settling a drop stops edge scrolling, reports its token and rejects late previews',async()=>{
+const dragFixture=async()=>{
   const page=await stripFixture();
+  await page.evaluate(async()=>{
+    const {WorkbenchDrag}=await import('/workbench-drag.ts');
+    window.calls=[];window.notices=[];window.currentRevision=0;window.ackOnly=false;window.lastPreview=undefined;window.validSource=true;window.clicks=0;
+    window.startGate=undefined;window.prepareGate=undefined;window.sampleGate=undefined;
+    const trigger=document.querySelector('[role="tab"]');window.trigger=trigger;
+    const frame=document.createElement('iframe');frame.srcdoc='<body>Terminal content</body>';frame.style.cssText='display:block;width:350px;height:240px;border:0';document.querySelector('#chrome').append(frame);
+    window.drag=new WorkbenchDrag(async(command,args)=>{
+      calls.push({command,args});
+      if(command==='workspace_drag_start')await startGate;
+      if(command==='workspace_drag_sample'){
+        const revision=++currentRevision;await sampleGate;
+        drag.receive({kind:'update',revision,token:args.token,target:{kind:'strip',windowId:'main',index:0},point:args.localPoint});
+      }
+      if(command==='workspace_drag_release'||command==='workspace_drag_finish'&&args.cancel){const end={kind:'end',revision:++currentRevision,token:args.token};if(!ackOnly)drag.receive(end);return end;}
+    },message=>notices.push(message),preview=>{window.lastPreview=preview;strip.drag(preview.kind==='strip'?preview.point:undefined);});
+    trigger.addEventListener('click',()=>clicks++);
+    trigger.addEventListener('pointerdown',event=>drag.begin(event,{workspaceId:'w',scope:{kind:'view',id:'terminal'},trigger,label:'Terminal',threshold:6,valid:()=>validSource,prepare:async()=>{await prepareGate;}}));
+    window.inspect=()=>({busy:drag.busy,body:document.body.classList.contains('workbench-dragging'),ghost:!!document.querySelector('.workbench-drag-ghost'),calls:calls.map(c=>c.command),preview:lastPreview?.kind});
+  });
+  return page;
+};
+const startPointerDrag=async page=>{const r=await page.locator('[role="tab"]').first().boundingBox();await page.mouse.move(r.x+20,r.y+10);await page.mouse.down();await page.mouse.move(r.x+40,r.y+10);return r;};
+
+test('preview end before first update, reordered updates and old settle cannot revive or erase a new drag',async()=>{
+  const page=await dragFixture();
   try{
-    await page.evaluate(async()=>{
-      const {Workspaces}=await import('/workspaces.ts');window.dropHost=Object.create(Workspaces.prototype);window.reports=[];
-      Object.assign(dropHost,{tabs:strip.viewport,strip,state:{window:{id:'main'}},retiredPreviews:new Set(),components:{previewDrop:()=>{},dropZones:()=>[],dockZones:()=>[]},call:async(command,args)=>reports.push({command,args})});
-      const r=strip.viewport.getBoundingClientRect();window.preview={kind:'strip',windowId:'main',token:'drag-one',index:0,point:{x:r.right-2,y:r.top+10}};dropHost.previewDrop(preview);
-    });
-    await page.waitForTimeout(250);assert((await page.evaluate(()=>positions().left))>0);
-    await page.evaluate(async()=>{await dropHost.settleDrop('drag-one');window.finished=positions().left;dropHost.previewDrop(preview);});
-    await page.waitForTimeout(250);assert.equal(await page.evaluate(()=>positions().left),await page.evaluate(()=>finished));
-    assert.equal(await page.evaluate(()=>reports.at(-1).args.dragToken),'drag-one');
-    await page.evaluate(()=>{
-      const gate=new Promise(resolve=>window.savedGate=resolve);window.flushing=false;
-      Object.assign(dropHost,{moving:new Set(),finishResize:()=>{},flushLayouts:()=>{window.flushing=true;return gate;},clearGesture:()=>{},refresh:async()=>{},notify:()=>{}});dropHost.components.flush=async()=>{};
-      window.finishPromise=dropHost.completeGesture({id:'server',token:'drag-two',cancelled:false});
-    });
-    await page.waitForFunction(()=>flushing);
-    assert.equal(await page.evaluate(()=>reports.at(-1).command),'workspace_drag_release','Remote scrolling stops before waiting for a save');
-    await page.evaluate(async()=>{savedGate();await finishPromise;});
-    assert.equal(await page.evaluate(()=>reports.at(-1).command),'workspace_drag_finish');
+    const result=await page.evaluate(()=>{
+      const update=(revision,token)=>drag.receive({kind:'update',revision,token,target:{kind:'strip',windowId:'main',index:0},point:{x:10,y:10}});
+      drag.receive({kind:'end',revision:2,token:'a'});update(1,'a');const first=lastPreview?.kind;
+      update(4,'b');drag.receive({kind:'end',revision:2,token:'a'});const newer=lastPreview.kind;
+      drag.receive({kind:'end',revision:5,token:'b'});update(3,'b');const ended=lastPreview.kind;
+      return {first,newer,ended};
+    });assert.deepEqual(result,{first:undefined,newer:'strip',ended:'invalid'});
   }finally{await page.close();}
+});
+
+test('release over terminal iframe below threshold stays a click and hover cannot start dragging',async()=>{
+  const page=await dragFixture();
+  try{
+    const r=await page.locator('[role="tab"]').first().boundingBox(),frame=await page.locator('iframe').boundingBox();
+    await page.mouse.move(r.x+20,r.y+r.height-2);await page.mouse.down();await page.mouse.move(r.x+20,frame.y+1);await page.mouse.up();
+    await page.mouse.move(r.x+50,r.y+5);await page.mouse.move(frame.x+100,frame.y+50);
+    assert.deepEqual(await page.evaluate(()=>({busy:drag.busy,starts:calls.filter(c=>c.command==='workspace_drag_start').length,body:inspect().body,clicks})),{busy:false,starts:0,body:false,clicks:1});
+    await page.locator('[role="tab"]').first().click();assert.equal(await page.evaluate(()=>clicks),2);
+  }finally{await page.close();}
+});
+
+test('cancel while native start is pending cleans immediately and late start never samples or commits',async()=>{
+  const page=await dragFixture();
+  try{
+    await page.evaluate(()=>{startGate=new Promise(resolve=>window.releaseStart=resolve);});await startPointerDrag(page);
+    await page.keyboard.press('Escape');assert.deepEqual(await page.evaluate(()=>({body:inspect().body,ghost:inspect().ghost})),{body:false,ghost:false});
+    await page.mouse.up();await page.evaluate(()=>releaseStart());await page.waitForFunction(()=>!drag.busy);
+    assert.deepEqual(await page.evaluate(()=>inspect().calls),['workspace_drag_start','workspace_drag_finish']);assert.equal(await page.evaluate(()=>calls.at(-1).args.cancel),true);
+    await page.locator('[role="tab"]').first().click();assert.equal(await page.evaluate(()=>clicks),1,'The next independent click is not suppressed');
+  }finally{await page.close();}
+});
+
+test('failed native start cleans its known token once and reports one failure',async()=>{
+  const page=await dragFixture();
+  try{
+    await page.evaluate(()=>{startGate=new Promise((resolve,reject)=>window.failStart=()=>reject(new Error('injected start failure')));});
+    await startPointerDrag(page);await page.evaluate(()=>failStart());await page.waitForFunction(()=>!drag.busy);await page.mouse.up();
+    assert.deepEqual(await page.evaluate(()=>inspect().calls),['workspace_drag_start','workspace_drag_finish']);
+    assert.equal(await page.evaluate(()=>notices.length),1);assert.equal(await page.evaluate(()=>inspect().body),false);
+  }finally{await page.close();}
+});
+
+test('release freezes final pointerup, stops scrolling before prepare and failed prepare always cancels core state',async()=>{
+  const page=await dragFixture();
+  try{
+    await page.evaluate(()=>{prepareGate=new Promise((resolve,reject)=>window.failPrepare=()=>reject(new Error('injected save failure')));});
+    const r=await startPointerDrag(page);await page.mouse.move(345,r.y+10);await page.waitForTimeout(200);await page.mouse.up();
+    await page.waitForFunction(()=>calls.some(c=>c.command==='workspace_drag_release'));
+    assert.equal(await page.evaluate(()=>inspect().body),false);const stopped=await page.evaluate(()=>positions().left);
+    await page.mouse.move(80,240);await page.waitForTimeout(150);assert.equal(await page.evaluate(()=>positions().left),stopped);
+    await page.evaluate(()=>failPrepare());await page.waitForFunction(()=>!drag.busy);
+    assert.equal(await page.evaluate(()=>calls.find(c=>c.command==='workspace_drag_release').args.localPoint.x),345);
+    assert.equal(await page.evaluate(()=>calls.at(-1).args.cancel),true);assert.equal(await page.evaluate(()=>calls.filter(c=>c.command==='workspace_drag_finish'&&!c.args.cancel).length),0);
+  }finally{await page.close();}
+});
+
+test('blur, hidden host, lost buttons and invalid source all cancel with no late sample resurrection',async()=>{
+  for(const reason of ['blur','hidden','buttons','source','dispose','receipt']){
+    const page=await dragFixture();
+    try{
+      await page.evaluate(()=>{sampleGate=new Promise(resolve=>window.releaseSample=resolve);});await startPointerDrag(page);await page.waitForFunction(()=>calls.some(c=>c.command==='workspace_drag_sample'));
+      await page.evaluate(reason=>{
+        if(reason==='receipt'){ackOnly=true;drag.cancel();}
+        if(reason==='blur')dispatchEvent(new Event('blur'));
+        if(reason==='hidden')drag.setVisible(false);
+        if(reason==='buttons')trigger.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:1,isPrimary:true,buttons:0}));
+        if(reason==='source'){validSource=false;drag.validate();}
+        if(reason==='dispose')drag.dispose();
+      },reason);
+      assert.equal(await page.evaluate(()=>inspect().body),false,reason);await page.mouse.up();await page.evaluate(()=>releaseSample());await page.waitForFunction(()=>!drag.busy);
+      assert.equal(await page.evaluate(()=>inspect().preview),'invalid',reason);assert.equal(await page.evaluate(()=>calls.filter(c=>c.command==='workspace_drag_sample').length),1,reason);
+      assert.equal(await page.evaluate(()=>calls.at(-1).args.cancel),true,reason);
+    }finally{await page.close();}
+  }
 });
 
 test('form refresh preserves supported selections and direction without transferring values or outside focus',async()=>{
@@ -426,7 +506,7 @@ test('workspace menu follows a right-edge anchor when the open window shrinks',a
       const {Workspaces}=await import('/workspaces.ts');
       const anchor=document.createElement('button');anchor.textContent='菜单';anchor.style.cssText='position:fixed;right:12px;top:56px;width:32px;height:32px';document.body.append(anchor);
       window.workspaceMenu=Object.create(Workspaces.prototype);
-      Object.assign(workspaceMenu,{moving:new Set(),tabs:document.querySelector('#chrome'),state:{window:{id:'main'},workspaces:[{context:{workspaceId:'one'}}]}});
+      Object.assign(workspaceMenu,{drag:{cancel:async()=>{}},moving:new Set(),tabs:document.querySelector('#chrome'),state:{window:{id:'main'},workspaces:[{context:{workspaceId:'one'}}]}});
       workspaceMenu.openMenu('one',anchor);
     });
     await page.locator('.workspace-menu').waitFor();
@@ -679,7 +759,7 @@ test('component filtering resizes one menu and workspace context replacement clo
     await page.setViewportSize({width:180,height:160});
     await page.waitForFunction(()=>{const r=document.querySelector('.component-menu').getBoundingClientRect();return r.left>=7&&r.top>=7&&r.right<=innerWidth-7&&r.bottom<=innerHeight-7;});
     await page.evaluate(()=>document.querySelector('#anchor').remove());await menu.waitFor({state:'detached'});
-    await page.evaluate(()=>{const anchor=document.createElement('button');document.body.append(anchor);window.workspace=Object.create(Workspaces.prototype);Object.assign(workspace,{moving:new Set(),state:{window:{id:'main',activeWorkspace:'one'},workspaces:[{context:{workspaceId:'one'}},{context:{workspaceId:'two'}}]}});workspace.openMenu('one',anchor);workspace.state.window.activeWorkspace='two';workspace.menuPosition.update();});
+    await page.evaluate(()=>{const anchor=document.createElement('button');document.body.append(anchor);window.workspace=Object.create(Workspaces.prototype);Object.assign(workspace,{drag:{cancel:async()=>{}},moving:new Set(),state:{window:{id:'main',activeWorkspace:'one'},workspaces:[{context:{workspaceId:'one'}},{context:{workspaceId:'two'}}]}});workspace.openMenu('one',anchor);workspace.state.window.activeWorkspace='two';workspace.menuPosition.update();});
     await page.locator('.workspace-menu').waitFor({state:'detached'});
   }finally{await page.close();}
 });

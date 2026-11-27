@@ -7,6 +7,8 @@ use std::{
     time::{Duration, Instant},
 };
 use tauri::{Emitter, Manager, State, WebviewWindow};
+mod drag;
+use drag::{Drag, DragEvent, DragState, Position};
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -126,13 +128,6 @@ pub struct LocalPoint {
     pub x: f64,
     pub y: f64,
 }
-#[derive(Serialize)]
-pub struct DropPreview {
-    #[serde(flatten)]
-    target: DropTarget,
-    token: String,
-    point: Option<LocalPoint>,
-}
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum DropTarget {
@@ -161,23 +156,11 @@ pub enum DropTarget {
         before_tool_key: Option<String>,
     },
 }
-#[derive(Clone)]
-struct Drag {
-    token: String,
-    source: String,
-    workspace: String,
-    offset: (f64, f64),
-    scope: crate::workbench_move::Scope,
-    revision: u64,
-    context: crate::workspaces::Context,
-    released: bool,
-}
-
 pub struct DesktopWindows {
     pub core: Arc<AppCore>,
     surfaces: Mutex<HashMap<String, Surface>>,
     focus: Mutex<Vec<String>>,
-    drag: Mutex<Option<Drag>>,
+    drag: Mutex<DragState>,
     settling: Mutex<HashMap<String, (String, tokio::sync::oneshot::Sender<()>)>>,
     native_moves: Mutex<std::collections::HashSet<String>>,
 }
@@ -486,7 +469,7 @@ impl DesktopWindows {
             core,
             surfaces: Mutex::new(HashMap::new()),
             focus: Mutex::new(vec!["main".into()]),
-            drag: Mutex::new(None),
+            drag: Mutex::new(DragState::default()),
             settling: Mutex::new(HashMap::new()),
             native_moves: Mutex::new(Default::default()),
         }
@@ -519,12 +502,12 @@ impl DesktopWindows {
         focus.retain(|w| w != window);
         focus.push(window.into());
     }
-    pub fn remove_surface(&self, window: &str) {
+    pub fn remove_surface(&self, handle: &tauri::AppHandle, window: &str) {
         self.surfaces.lock().unwrap().remove(window);
         self.focus.lock().unwrap().retain(|w| w != window);
-        let mut drag = self.drag.lock().unwrap();
-        if drag.as_ref().is_some_and(|d| d.source == window) {
-            *drag = None;
+        let end = self.drag.lock().unwrap().cancel_source(window);
+        if let Some(end) = end {
+            let _ = handle.emit("workspace-drop-preview", end);
         }
     }
     pub fn close_secondary(&self, handle: &tauri::AppHandle, window: &str) -> Result<(), String> {
@@ -539,8 +522,7 @@ impl DesktopWindows {
         Ok(())
     }
     pub fn finish_window(&self, handle: &tauri::AppHandle, window: &str) -> Result<(), String> {
-        self.remove_surface(window);
-        let _ = handle.emit("workspace-drop-preview", DropTarget::Invalid);
+        self.remove_surface(handle, window);
         if let Some(w) = handle.get_webview_window(window) {
             w.destroy().map_err(|e| e.to_string())?;
         }
@@ -940,6 +922,20 @@ impl DesktopWindows {
             return Err("Wayland 不支持此跨窗口拖动，请使用 Tab 菜单移至新窗口或返回主窗口".into());
         }
         self.hit_scoped(handle, p.x, p.y, &drag.workspace, drag.offset, &drag.scope)
+    }
+    fn hit_released(
+        &self,
+        handle: &tauri::AppHandle,
+        drag: &Drag,
+        position: &Position,
+    ) -> Result<DropTarget, String> {
+        match position {
+            Position::Global { x, y } => {
+                self.hit_scoped(handle, *x, *y, &drag.workspace, drag.offset, &drag.scope)
+            }
+            #[cfg(target_os = "linux")]
+            Position::Local(point) => self.hit(handle, drag, Some(point)),
+        }
     }
     fn hit_scoped(
         &self,
@@ -1426,6 +1422,10 @@ pub fn workspace_ready(
     window: WebviewWindow,
     desktop: State<DesktopWindows>,
 ) -> Result<(), String> {
+    let end = desktop.drag.lock().unwrap().cancel_source(window.label());
+    if let Some(end) = end {
+        let _ = window.emit("workspace-drop-preview", end);
+    }
     desktop.core.workspace_state().ready(window.label())?;
     desktop.focused(window.label());
     Ok(())
@@ -1548,36 +1548,39 @@ pub fn workspace_close_window(
     }
     desktop.close_secondary(&handle, window.label())
 }
+fn drag_origin(window: &WebviewWindow) -> Result<(i32, i32), String> {
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WAYLAND_DISPLAY").is_some()
+        && std::env::var("GDK_BACKEND").as_deref() != Ok("x11")
+    {
+        return Ok((0, 0));
+    }
+    let origin = window.inner_position().map_err(|e| e.to_string())?;
+    Ok((origin.x, origin.y))
+}
 #[tauri::command]
 pub fn workspace_drag_start(
     window: WebviewWindow,
     desktop: State<DesktopWindows>,
     id: String,
+    token: String,
     offset_x: f64,
     offset_y: f64,
     scope: Option<crate::workbench_move::Scope>,
-) -> Result<String, String> {
+) -> Result<(), String> {
+    if token.len() > 128 || token.is_empty() || !offset_x.is_finite() || !offset_y.is_finite() {
+        return Err("无效拖动参数".into());
+    }
     let state = desktop.core.workspace_projection(window.label())?;
-    if !state
-        .workspaces
-        .iter()
-        .any(|w| w.context.workspace_id == id)
-    {
-        return Err("工作区已移动或关闭".into());
-    }
-    let scale = window.scale_factor().map_err(|e| e.to_string())?;
-    let mut drag = desktop.drag.lock().unwrap();
-    if drag.is_some() {
-        return Err("已有 Tab 正在拖动".into());
-    }
-    let token = desktop.core.next_id();
     let context = state
         .workspaces
         .iter()
         .find(|w| w.context.workspace_id == id)
-        .unwrap()
+        .ok_or("工作区已移动或关闭")?
         .context
         .clone();
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    let origin = drag_origin(&window)?;
     let revision = desktop
         .core
         .ui_state()
@@ -1586,17 +1589,18 @@ pub fn workspace_drag_start(
         .ok_or("工作台尚未就绪")?
         .host(window.label())?
         .revision;
-    *drag = Some(Drag {
-        token: token.clone(),
+    desktop.drag.lock().unwrap().start(Drag {
+        token,
         source: window.label().into(),
         workspace: id,
         offset: (offset_x * scale, offset_y * scale),
         scope: scope.unwrap_or(crate::workbench_move::Scope::Host),
         revision,
         context,
-        released: false,
-    });
-    Ok(token)
+        origin,
+        scale,
+        released: None,
+    })
 }
 #[tauri::command]
 pub fn workspace_drag_sample(
@@ -1605,36 +1609,18 @@ pub fn workspace_drag_sample(
     desktop: State<DesktopWindows>,
     token: String,
     local_point: Option<LocalPoint>,
-) -> Result<DropPreview, String> {
+) -> Result<(), String> {
     let drag = desktop
         .drag
         .lock()
         .unwrap()
-        .as_ref()
-        .filter(|d| d.token == token && d.source == window.label())
+        .get(&token, window.label())
         .cloned()
         .ok_or("拖动已取消")?;
-    if drag.released {
-        return Ok(DropPreview {
-            target: DropTarget::Invalid,
-            token,
-            point: None,
-        });
+    if drag.released.is_some() {
+        return Ok(());
     }
     let target = desktop.hit(&handle, &drag, local_point.as_ref())?;
-    if !desktop
-        .drag
-        .lock()
-        .unwrap()
-        .as_ref()
-        .is_some_and(|d| d.token == token && !d.released)
-    {
-        return Ok(DropPreview {
-            target: DropTarget::Invalid,
-            token,
-            point: None,
-        });
-    }
     let label = match &target {
         DropTarget::Strip { window_id, .. } | DropTarget::Group { window_id, .. } => {
             Some(window_id)
@@ -1659,13 +1645,15 @@ pub fn workspace_drag_sample(
             y: (cursor.y - origin.y as f64) / scale,
         })
     });
-    let preview = DropPreview {
-        target,
-        token,
-        point,
-    };
-    let _ = handle.emit("workspace-drop-preview", &preview);
-    Ok(preview)
+    let event = desktop
+        .drag
+        .lock()
+        .unwrap()
+        .update(&token, window.label(), target, point);
+    if let Some(event) = event {
+        let _ = handle.emit("workspace-drop-preview", event);
+    }
+    Ok(())
 }
 #[tauri::command]
 pub fn workspace_drag_release(
@@ -1673,16 +1661,46 @@ pub fn workspace_drag_release(
     window: WebviewWindow,
     desktop: State<DesktopWindows>,
     token: String,
-) -> Result<(), String> {
-    let mut lock = desktop.drag.lock().unwrap();
-    let drag = lock
-        .as_mut()
-        .filter(|d| d.token == token && d.source == window.label())
+    local_point: LocalPoint,
+) -> Result<DragEvent, String> {
+    let drag = desktop
+        .drag
+        .lock()
+        .unwrap()
+        .get(&token, window.label())
+        .cloned()
         .ok_or("拖动已取消")?;
-    drag.released = true;
-    drop(lock);
-    let _ = handle.emit("workspace-drop-preview", DropTarget::Invalid);
-    Ok(())
+    if let Some(released) = &drag.released {
+        return Ok(released.end.clone());
+    }
+    if !local_point.x.is_finite() || !local_point.y.is_finite() {
+        return Err("无效松手坐标".into());
+    }
+    let origin = drag_origin(&window)?;
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    if drag.origin != origin || drag.scale != scale {
+        return Err("拖动期间窗口位置或缩放已改变，请重试".into());
+    }
+    let position = Position::Global {
+        x: origin.0 as f64 + local_point.x * scale,
+        y: origin.1 as f64 + local_point.y * scale,
+    };
+    #[cfg(target_os = "linux")]
+    let position = if std::env::var_os("WAYLAND_DISPLAY").is_some()
+        && std::env::var("GDK_BACKEND").as_deref() != Ok("x11")
+    {
+        Position::Local(local_point)
+    } else {
+        position
+    };
+    let target = desktop.hit_released(&handle, &drag, &position)?;
+    let end = desktop
+        .drag
+        .lock()
+        .unwrap()
+        .release(&token, window.label(), position, target)?;
+    let _ = handle.emit("workspace-drop-preview", &end);
+    Ok(end)
 }
 #[tauri::command]
 pub async fn workspace_drag_finish(
@@ -1691,24 +1709,26 @@ pub async fn workspace_drag_finish(
     desktop: State<'_, DesktopWindows>,
     token: String,
     cancel: bool,
-    local_point: Option<LocalPoint>,
-) -> Result<(), String> {
-    let drag = {
-        let mut lock = desktop.drag.lock().unwrap();
-        if !lock
-            .as_ref()
-            .is_some_and(|d| d.token == token && d.source == window.label())
-        {
-            return Err("拖动已取消".into());
-        }
-        lock.take().unwrap()
+) -> Result<Option<DragEvent>, String> {
+    let (drag, end) = desktop
+        .drag
+        .lock()
+        .unwrap()
+        .take(&token, window.label(), cancel)?;
+    if let Some(end) = &end {
+        let _ = handle.emit("workspace-drop-preview", end);
+    }
+    let Some(drag) = drag else {
+        return Ok(end);
     };
-    let _ = handle.emit("workspace-drop-preview", DropTarget::Invalid);
-    let mut target = if cancel {
-        DropTarget::Invalid
-    } else {
-        desktop.hit(&handle, &drag, local_point.as_ref())?
-    };
+    if cancel {
+        return Ok(end);
+    }
+    let released = drag.released.as_ref().ok_or("尚未释放拖动")?;
+    let mut target = desktop.hit_released(&handle, &drag, &released.position)?;
+    if !drag::same_destination(&released.target, &target) {
+        return Err("标签落点已失效，已取消拖动，请重试".into());
+    }
     if let DropTarget::Strip { window_id, .. } | DropTarget::Group { window_id, .. } = &target {
         let (sender, receiver) = tokio::sync::oneshot::channel();
         desktop
@@ -1717,11 +1737,7 @@ pub async fn workspace_drag_finish(
             .unwrap()
             .insert(token.clone(), (window_id.clone(), sender));
         let sent = handle
-            .emit_to(
-                window_id,
-                "workspace-drop-settle",
-                serde_json::json!({"token":token}),
-            )
+            .emit_to(window_id, "workspace-drop-settle", &released.end)
             .is_ok();
         let confirmed = sent
             && matches!(
@@ -1732,7 +1748,11 @@ pub async fn workspace_drag_finish(
         if !confirmed {
             return Err("标签落点未确认，已取消拖动，请重试".into());
         }
-        target = desktop.hit(&handle, &drag, local_point.as_ref())?;
+        let latest = desktop.hit_released(&handle, &drag, &released.position)?;
+        if !drag::same_destination(&target, &latest) {
+            return Err("标签落点已失效，已取消拖动，请重试".into());
+        }
+        target = latest;
     }
     let source = drag.source;
     let id = drag.workspace;
@@ -1815,5 +1835,6 @@ pub async fn workspace_drag_finish(
         }
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())??;
+    Ok(end)
 }

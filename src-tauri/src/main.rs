@@ -1034,7 +1034,7 @@ fn run() -> Result<(), String> {
             if let tauri::WindowEvent::Destroyed = event {
                 shell.page_started(window.label());
                 let desktop = window.state::<DesktopWindows>();
-                desktop.core.close_host_lost(window.label()); desktop.remove_surface(window.label()); desktop.core.workspace_changed();
+                desktop.core.close_host_lost(window.label()); desktop.remove_surface(window.app_handle(), window.label()); desktop.core.workspace_changed();
                 if window.label() == "main" && !desktop.core.is_closing() && !shell.handed_off() {
                     let native = window.app_handle().clone(); let recreate = native.clone();
                     let _ = native.run_on_main_thread(move || {

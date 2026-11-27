@@ -1,0 +1,42 @@
+{
+  "completed": true,
+  "platform": "win32",
+  "trayOnly": false,
+  "checks": [
+    "titlebar: native left/right drag, refresh during capture, cancel, saved widths and retained terminal iframe",
+    "native drag: iframe-boundary release/hover stays idle, final local point survives a different system cursor, repeated cleanup is harmless",
+    "titlebar: native nested-layout entry, page tear-out with OS pointer, live PTY input, original-group return and empty-window reclamation",
+    "titlebar: native system-pointer tool docking kept button/panel side, original file/network iframes, draft and live forwarding",
+    "titlebar: background kept original views, unsaved editor and actual tunnel bytes; restored original window",
+    "titlebar: cancel kept original views/draft, PTY and forwarding; discard stopped four plugins, drained SSH/forwarding, released the port and exited",
+    "native: native left/right drag, refresh during capture, cancel, saved widths and retained terminal iframe",
+    "native: native nested-layout entry, page tear-out via command, live PTY input, original-group return and empty-window reclamation",
+    "native: native system-pointer tool docking kept button/panel side, original file/network iframes, draft and live forwarding",
+    "native: background kept original views, unsaved editor and actual tunnel bytes; restored original window",
+    "native: cancel kept original views/draft, PTY and forwarding; discard stopped four plugins, drained SSH/forwarding, released the port and exited"
+  ],
+  "plugins": [
+    {
+      "id": "sodeck.terminal",
+      "version": "0.12.1"
+    },
+    {
+      "id": "sodeck.files",
+      "version": "0.14.1"
+    },
+    {
+      "id": "sodeck.network-proxy",
+      "version": "0.7.0"
+    },
+    {
+      "id": "sodeck.system-status",
+      "version": "0.6.2"
+    }
+  ],
+  "executable": "sodeck.exe",
+  "coreVersion": "2.12.1",
+  "evidence": "Local release runtime built with npm run build; native WebView2, OS-injected pointer, isolated OpenSSH; not installed-package or physical-device evidence",
+  "architecture": "x64",
+  "scale": 1.5,
+  "sha256": "bf839faf33c4b2dd33d59fc01cc4d7ff358cb4f29da2c1c3e61c578227541ab8"
+}

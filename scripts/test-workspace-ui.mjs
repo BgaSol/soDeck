@@ -75,10 +75,10 @@ async function makePage(window) {
     }
     if(command==='component_ui'&&args.operation==='action'&&args.args?.action?.op==='open'&&args.args.action.key==='test.workbench:editor'&&openEditorGate) await openEditorGate();
     if(command==='workspace_layout'){layoutCalls.push(args);if(layoutGate)await layoutGate();}
-    if(command==="workspace_drag_start") { dragCalls.push({command,args}); drags.set(window,args.id);return `browser-${window}`; }
-    if(command==="workspace_drag_sample") return dropTargets.get(window)??{kind:"invalid"};
-    if(command==="workspace_drag_release") { dragCalls.push({command,args});return null; }
-    if(command==="workspace_drag_finish") { dragCalls.push({command,args}); const target=dropTargets.get(window); const id=drags.get(window);drags.delete(window); if(!args.cancel&&target?.kind==="strip")return call("workspace_move",{window,id,target:target.windowId,index:target.index});return null; }
+    if(command==="workspace_drag_start") { dragCalls.push({command,args}); drags.set(window,args.id);return null; }
+    if(command==="workspace_drag_sample") { await page.evaluate(({token,target})=>manager.receiveDrag({kind:'update',token,revision:(window.dragRevision=(window.dragRevision??0)+1),target}),{token:args.token,target:dropTargets.get(window)??{kind:'invalid'}});return null; }
+    if(command==="workspace_drag_release") { dragCalls.push({command,args});await page.evaluate(token=>manager.receiveDrag({kind:'end',token,revision:(window.dragRevision=(window.dragRevision??0)+1)}),args.token);return null; }
+    if(command==="workspace_drag_finish") { dragCalls.push({command,args}); const target=dropTargets.get(window); const id=drags.get(window);drags.delete(window); if(!args.cancel&&id&&target?.kind==="strip")return call("workspace_move",{window,id,target:target.windowId,index:target.index});return null; }
     return call(command,{...args,window});
   });
   await page.route(url+'__plugin__/**',route=>{
@@ -344,6 +344,15 @@ try {
   await main.keyboard.press("Home"); await main.waitForFunction(()=>document.querySelector("#catalog-tab").getAttribute("aria-selected")==="true");
   checks.push("键盘箭头和 Home 切换固定页及服务器页");
   await select(main,bid);
+  const terminalTab=main.locator('.server-workbench:visible .component-tab [role="tab"]').first();
+  const terminalBox=await terminalTab.boundingBox();
+  const dragCallsBefore=dragCalls.length;
+  await main.mouse.move(terminalBox.x+20,terminalBox.y+terminalBox.height-2);await main.mouse.down();
+  await main.mouse.move(terminalBox.x+20,terminalBox.y+terminalBox.height+1);await main.mouse.up();
+  await main.mouse.move(terminalBox.x+50,terminalBox.y+5);
+  assert.equal(dragCalls.length,dragCallsBefore,'Actual component source never starts a drag after release at the iframe boundary');
+  assert.equal(await main.locator('.workbench-drag-ghost,[data-drop-edge],[data-dock-preview]').count(),0);
+  checks.push('组件标签在 iframe 边缘松手后，悬停不误拖动且普通点击保持一次');
   const beforeDrag=(await projection("main")).window.workspaceIds;
   await main.locator(`.server-tab[data-id="${bid}"]`).evaluate(node=>Promise.all(node.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
   let tabBox=await main.locator(`.server-tab-select[data-id="${bid}"]`).boundingBox();
@@ -351,12 +360,12 @@ try {
   assert.equal(dragCalls.length,0,"Below threshold remains an ordinary tab click");
   dropTargets.set("main",{kind:"strip",windowId:"main",index:1});
   await main.mouse.move(tabBox.x+20,tabBox.y+15);await main.mouse.down();await main.mouse.move(tabBox.x+65,tabBox.y+15);await main.locator(".workspace-drag-ghost").waitFor();
-  await main.keyboard.press("Escape");await main.mouse.up();await main.waitForFunction(()=>!document.querySelector('.workspace-drag-ghost'));
+  await main.keyboard.press("Escape");await main.mouse.up();await main.waitForFunction(()=>!document.querySelector('.workspace-drag-ghost')&&!manager.drag.busy);
   assert.deepEqual((await projection("main")).window.workspaceIds,beforeDrag);assert.equal(dragCalls.at(-1).args.cancel,true);
-  await main.mouse.move(tabBox.x+20,tabBox.y+15);await main.mouse.down();await main.mouse.move(tabBox.x+65,tabBox.y+15);await main.locator(".workspace-drag-ghost").waitFor();await main.mouse.up();await main.waitForFunction(()=>!document.querySelector('.workspace-drag-ghost'));
+  await main.mouse.move(tabBox.x+20,tabBox.y+15);await main.mouse.down();await main.mouse.move(tabBox.x+65,tabBox.y+15);await main.locator(".workspace-drag-ghost").waitFor();await main.mouse.up();await main.waitForFunction(()=>!document.querySelector('.workspace-drag-ghost')&&!manager.drag.busy);
   assert.deepEqual((await projection("main")).window.workspaceIds,[cid,bid]);
   dropTargets.set("main",{kind:"invalid"});await main.evaluate(()=>window.manager.refresh());await main.locator(`.server-tab-select[data-id="${bid}"]`).waitFor();await main.locator(`.server-tab[data-id="${bid}"]`).evaluate(node=>Promise.all(node.getAnimations().map(animation=>animation.finished.catch(()=>{}))));tabBox=await main.locator(`.server-tab-select[data-id="${bid}"]`).boundingBox();
-  await main.mouse.move(tabBox.x+20,tabBox.y+15);await main.mouse.down();await main.mouse.move(tabBox.x+65,200);await main.locator(".workspace-drag-ghost").waitFor();await main.mouse.up();await main.waitForFunction(()=>!document.querySelector('.workspace-drag-ghost'));
+  await main.mouse.move(tabBox.x+20,tabBox.y+15);await main.mouse.down();await main.mouse.move(tabBox.x+65,200);await main.locator(".workspace-drag-ghost").waitFor();await main.mouse.up();await main.waitForFunction(()=>!document.querySelector('.workspace-drag-ghost')&&!manager.drag.busy);
   assert.deepEqual((await projection("main")).window.workspaceIds,[cid,bid]);
   checks.push("指针门槛、拖动排序、Esc 和无效落点；原生命中由独立测试验证");
   await select(main,bid); await panel(main,"left").click();

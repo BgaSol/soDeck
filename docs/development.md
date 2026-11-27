@@ -51,6 +51,8 @@ npm run terminal:history:test
 
 标签溢出回归在 `interactions:test` 验证可打断缓动、像素输入接管、边缘停留、减少动态与搜索输入保持；`ui:test` 使用真实核心覆盖 20 个服务器、单组 50 页、各分屏位置、关闭取消和 iframe 保留。设备专项仍需在原生包中验证鼠标/触控板、静止边缘拖动、跨窗松手后的最终落点与混合 DPI；浏览器合成 WheelEvent 不证明真实设备惯性。
 
+拖拽生命周期回归也在 `interactions:test`：真实鼠标在 iframe 边界松手、无按钮移动、延迟启动/采样、准备失败、结束先到及乱序预览；核心 Rust 单测验证释放、幂等取消、事件顺序与目标身份。`test-workspace-ui.mjs` 使用实际组件来源，`layout:test` 保留工具停靠与草稿连续性。Windows 的 `test-close-native.mjs` 与同架构 `native-pointer-fixture` 增加系统指针边缘松手后悬停、固定落点和重复清理；运行方式仍为 `node scripts/test-openssh.mjs --close-native --packaged <本次核心程序>`，设置四个独立插件目录及 `SODECK_TEST_NATIVE_POINTER`。该专项使用真实 WebView2 和系统注入指针，不代表其他平台或物理输入设备已验证。
+
 CI 使用 `npm run ci:test -- <现有测试命令>`，例如 `npm run ci:test -- ui:test`。该入口保留原命令的退出码，输出实时日志，并将 SHA、attempt、平台、耗时和结果写入 `artifacts/ci/<命令>/`；命令中的冒号转换为连字符。服务器、工作台和正式产物 UI 在该入口下记录 Playwright trace，失败时保存，成功时丢弃；本机直接运行原入口不记录 trace。
 
 `terminal:history:test` 验证本地打包的真实 xterm/Worker：10 万行检索、计数/定位、移窗元数据、预览手势、输入法组合事件、清屏/备用屏幕/重排和冻结快照。最后运行 100 个不同关键词的计算与内存基准；数字报告写入 `artifacts/terminal-history/`，界面截图写入 `artifacts/terminal-search/`。无需 OpenSSH，不能代替原生 WebView、系统 IME 或五平台实际包验收。xterm / SerializeAddon 更新前必须复验本入口，构建会检查固定适配版本。

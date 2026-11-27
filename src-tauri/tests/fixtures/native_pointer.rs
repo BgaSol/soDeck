@@ -42,6 +42,8 @@ mod native {
     struct Drag {
         from: Point,
         to: Point,
+        #[serde(default)]
+        hover_after: Option<Point>,
     }
     fn coordinate(value: f64) -> Result<i32, String> {
         if !value.is_finite() || value < i32::MIN as f64 || value > i32::MAX as f64 {
@@ -154,6 +156,10 @@ mod native {
         let drag = if args[1] == "drag" {
             let drag: Drag = serde_json::from_str(&args[2]).map_err(|e| e.to_string())?;
             for point in [&drag.from, &drag.to] {
+                coordinate(point.x)?;
+                coordinate(point.y)?;
+            }
+            if let Some(point) = &drag.hover_after {
                 coordinate(point.x)?;
                 coordinate(point.y)?;
             }
@@ -292,6 +298,18 @@ mod native {
                 pause(40);
             }
             pause(300);
+            if let Some(point) = drag.hover_after {
+                unsafe {
+                    mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+                }
+                pointer.pressed = false;
+                pause(100);
+                checked(
+                    unsafe { SetCursorPos(coordinate(point.x)?, coordinate(point.y)?) },
+                    "Cannot hover after release",
+                )?;
+                pause(150);
+            }
         }
         Ok(())
     }

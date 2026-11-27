@@ -5,7 +5,8 @@ import {DesktopUi, chooseLocalPath} from "./desktop";
 import {GeneralSettings} from './general-settings';
 import * as settingsViews from './settings-views';
 import { invoke } from "@tauri-apps/api/core";
-import { Workspaces, type DropPreview } from "./workspaces";
+import { Workspaces } from "./workspaces";
+import type { DragEvent } from "./workbench-drag";
 import { core, type Snapshot, type Message } from "./core";
 import * as views from "./views";
 import { selectedUpdates, updateNotice } from "./update-model";
@@ -516,8 +517,8 @@ async function start() {
   await subscribe("connections-changed", () => { void connections.refresh().catch(error => toast(String(error), undefined, true)); scheduleRefresh(); });
   await subscribe("workspaces-changed", () => void workspaces.refresh().catch(error => toast(String(error), undefined, true)));
   await subscribe("workspace-request-close", () => void action(() => workspaces.closeWindow()));
-  await subscribe<{token:string}>("workspace-drop-settle", event => { void workspaces.settleDrop(event.payload.token).catch(error => toast(String(error))); });
-  await subscribe<DropPreview>("workspace-drop-preview", event => workspaces.previewDrop(event.payload));
+  await subscribe<DragEvent>("workspace-drop-settle", event => { void workspaces.settleDrop(event.payload).catch(error => toast(String(error))); });
+  await subscribe<DragEvent>("workspace-drop-preview", event => workspaces.receiveDrag(event.payload));
   await subscribe<Message>("core-message", (event) => {
     toast(event.payload.title, event.payload);
     scheduleRefresh();

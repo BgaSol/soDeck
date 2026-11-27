@@ -118,7 +118,7 @@ async function verifyPanelResize(workspace, terminalFrame, entry) {
   await until(async()=>(await width('left'))===280&&(await width('right'))===280,'Native baseline widths were not applied');
   const before=await board.evaluate(el=>({room:el.getBoundingClientRect().width-[...el.querySelectorAll('.workbench-rail')].reduce((n,r)=>n+r.getBoundingClientRect().width,0)-320,frames:[...el.querySelectorAll('iframe')].length}));
   await page.evaluate(()=>window.resizeFrames=[...document.querySelectorAll('.component-surface:not([hidden]) iframe')]);
-  const drag=async(side,delta)=>{const handle=board.locator(`[data-resize="${side}"]`);const r=await handle.boundingBox();await page.mouse.move(r.x+4,r.y+80);await page.mouse.down();await page.mouse.move(r.x+4+delta,r.y+80,{steps:12});};
+  const drag=async(side,delta)=>{await page.evaluate(()=>Promise.all(document.getAnimations().map(a=>a.finished.catch(()=>{}))));const handle=board.locator(`[data-resize="${side}"]`);const r=await handle.boundingBox();await page.mouse.move(r.x+4,r.y+80);await page.mouse.down();await page.mouse.move(r.x+4+delta,r.y+80,{steps:12});};
   const target=Math.min(350,Math.floor(before.room)-280);
   await drag('left',70);await until(async()=>(await width('left'))===target,'Native preview did not follow the pointer');
   await invoke('workspace_activate',{id});
@@ -171,14 +171,36 @@ async function verifyWorkbench(workspace, terminal, marker, entry) {
     await invoke('component_ui',{operation:'action',args:{context:workspace.context,action:{op:'select',viewId:terminal.viewId}}});
     const tab = page.locator(`.component-tab[data-view="${terminal.viewId}"] [data-component-action="select"]`);
     await tab.waitFor();
-    const rect = await tab.boundingBox();
+    await until(()=>tab.getAttribute('aria-selected').then(value=>value==='true'),'Selected native tab did not render');
+    await page.evaluate(()=>Promise.all(document.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
+    await page.waitForFunction(view=>{const tab=document.querySelector('.component-tab[data-view="'+view+'"] [role=tab]');if(!tab)return false;const r=tab.getBoundingClientRect();return document.elementFromPoint(r.x+20,r.bottom-2)?.closest('.component-tab')?.dataset.view===view;},terminal.viewId);
+    const visibleTabRect=()=>tab.evaluate(el=>{const r=el.getBoundingClientRect(),v=el.closest('.component-tab-list').getBoundingClientRect();const x=Math.max(r.left,v.left),right=Math.min(r.right,v.right);return {x,y:r.y,width:right-x,height:r.height};});
+    const edge=await visibleTabRect();assert(edge.width>4,'Native source tab must have a visible hit region');
+    const nativePoint=(x,y)=>({x:Math.round(geometry.x+x*geometry.scale),y:Math.round(geometry.y+y*geometry.scale)});
+    const edgeX=edge.x+edge.width/2;
+    await nativePointer('drag',{from:nativePoint(edgeX,edge.y+edge.height-2),to:nativePoint(edgeX,edge.y+edge.height+1),hover_after:nativePoint(edgeX,edge.y+5)});
+    assert.equal(await page.locator('.workbench-drag-ghost,.workspace-drag-ghost,[data-drop-edge],[data-dock-preview]').count(),0,'Native release across iframe boundary must not leave a preview');
+    assert.equal(await page.locator('body').evaluate(el=>el.classList.contains('workbench-dragging')),false);
+    assert((await invoke('component_ui',{operation:'snapshot',args:{}})).workspaces[id].views.some(v=>v.id===terminal.viewId),'Boundary click must not close the terminal');
+    const frozenRect=await page.locator('[data-group="'+originalGroup+'"] .component-tab-list').boundingBox();const frozenToken=crypto.randomUUID(),frozenPoint={x:frozenRect.x+2,y:frozenRect.y+15};
+    await invoke('workspace_drag_start',{token:frozenToken,id,offsetX:20,offsetY:10,scope:{kind:'view',id:terminal.viewId}});
+    await invoke('workspace_drag_release',{token:frozenToken,localPoint:frozenPoint});
+    // The system pointer is restored away from this explicit drop point by the native helper.
+    await invoke('workspace_drag_finish',{token:frozenToken,cancel:false});
+    await invoke('workspace_drag_finish',{token:frozenToken,cancel:true});
+    const frozenAfter=await invoke('component_ui',{operation:'snapshot',args:{}});
+    assert.equal(frozenAfter.workspaces[id].host.groups[originalGroup].viewIds[0],terminal.viewId,'Frozen release must reorder to the requested native tab location');
+    checks.push('native drag: iframe-boundary release/hover stays idle, final local point survives a different system cursor, repeated cleanup is harmless');
+    await page.evaluate(()=>Promise.all(document.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    const rect = await visibleTabRect();assert(rect.width>4,'Tear-out tab must remain visible');
     // Real system pointers require the native viewport and monitor DPI.
     const from = { x: Math.round(geometry.x + (rect.x + rect.width / 2) * geometry.scale), y: Math.round(geometry.y + (rect.y + rect.height / 2) * geometry.scale) };
     const to = { x: geometry.right + 50, y: from.y + 70 };
     assert(to.x < geometry.workRight, 'Native tear-out needs desktop space beside the test window');
-    await page.evaluate(() => document.addEventListener('pointerdown', event => { window.nativeDragStart = { view: event.target.closest('.component-tab')?.dataset.view, x: event.clientX, y: event.clientY }; }, { once: true, capture: true }));
+    await page.evaluate(() => document.addEventListener('pointerdown', event => { window.nativeDragStart = { target:event.target.outerHTML,view: event.target.closest('.component-tab')?.dataset.view, x: event.clientX, y: event.clientY }; }, { once: true, capture: true }));
     await nativePointer('drag', { from, to });
-    assert.equal((await page.evaluate(() => window.nativeDragStart))?.view, terminal.viewId, 'Native pointer must start on the requested page tab');
+    const nativeStart=await page.evaluate(()=>window.nativeDragStart);assert.equal(nativeStart?.view,terminal.viewId,'Native pointer must start on the requested page tab');
     await display.detach();
   } else {
     await invoke('workbench_move',{id,context:workspace.context,requestId:crypto.randomUUID(),scope:{kind:'view',id:terminal.viewId},target:null,destination:null});
